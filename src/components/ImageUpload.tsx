@@ -207,13 +207,19 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     // Only the property folder should have folder_id = null
     const folderIdToUse = parentId || null;
    // Check if folder exists using folder_id and name which is the unique constraint
-    const { data: existing, error: fetchError } = await supabase
+    let query = supabase
       .from('files')
       .select('id')
       .eq('name', name)
-      .eq('type', 'folder/directory')
-      .eq('folder_id', folderIdToUse)
-      .maybeSingle();
+      .eq('type', 'folder/directory');
+
+    if (folderIdToUse === null) {
+      query = query.is('folder_id', null);
+    } else {
+      query = query.eq('folder_id', folderIdToUse);
+    }
+
+    const { data: existing, error: fetchError } = await query.maybeSingle();
     
     if (fetchError) {
       console.error('Error checking for existing folder:', {
