@@ -66,54 +66,6 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     console.log('ImageUpload auth state:', { user, authLoading, folder });
   }, [user, authLoading, folder]);
 
-  // Helper function to construct the folder path
-  const constructFolderPath = async () => {
-    const { data: jobData, error: jobError } = await supabase
-      .from('jobs')
-      .select(`
-        work_order_num,
-        property_id,
-        properties!property_id (
-          property_name
-        )
-      `)
-      .eq('id', jobId)
-      .single();
-
-    if (jobError || !jobData) {
-      throw new Error('Failed to fetch job data');
-    }
-
-    const workOrderNum = `WO-${String(jobData.work_order_num).padStart(6, '0')}`;
-    const propertyName = Array.isArray(jobData.properties) 
-      ? jobData.properties[0]?.property_name 
-      : (jobData.properties as { property_name: string })?.property_name;
-
-    if (!propertyName) {
-      throw new Error('Property name not found');
-    }
-
-    const folderMap = {
-      before: 'Before Images',
-      sprinkler: 'Sprinkler Images',
-      other: 'Other Files'
-    };
-
-    // Create the path segments without encoding
-    const pathSegments = [
-      'Work Orders',
-      propertyName,
-      workOrderNum,
-      folderMap[folder]
-    ];
-
-    // Return both the display path and the storage path
-    return {
-      displayPath: pathSegments.join('/'),
-      storagePath: pathSegments.map(segment => encodeURIComponent(segment)).join('/')
-    };
-  };
-
   // Fetch images on mount or when resetTrigger changes
   useEffect(() => {
     const fetchImages = async () => {
