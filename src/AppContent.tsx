@@ -1,90 +1,33 @@
-import React, { lazy, Suspense, useEffect, useState } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { MainLayout } from './components/ui/MainLayout';
-import { useAuth } from './contexts/AuthContext';
-import { useUserRole } from './hooks/useUserRole';
+import { useEffect, useState, lazy, Suspense } from 'react';
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { useUserRole } from '../hooks/useUserRole';
+import { MainLayout } from './ui/MainLayout';
 
-// Lazy load components with error handling
-const Auth = lazy(() => 
-  import('./components/Auth')
-    .then(module => ({ default: module.Auth }))
-    .catch(error => {
-      console.error('Error loading Auth component:', error);
-      throw error;
-    })
-);
-
-const Dashboard = lazy(() => 
-  import('./components/Dashboard')
-    .then(module => ({ default: module.Dashboard }))
-    .catch(error => {
-      console.error('Error loading Dashboard component:', error);
-      throw error;
-    })
-);
-
-const SubcontractorDashboard = lazy(() => 
-  import('./components/SubcontractorDashboard')
-    .then(module => ({ default: module.SubcontractorDashboard }))
-    .catch(error => {
-      console.error('Error loading SubcontractorDashboard component:', error);
-      throw error;
-    })
-);
-
-const Unauthorized = lazy(() =>
-  import('./components/Unauthorized')
-    .then(module => ({ default: module.Unauthorized }))
-    .catch(error => {
-      console.error('Error loading Unauthorized component:', error);
-      throw error;
-    })
-);
-
-const NewWorkOrder = lazy(() =>
-  import('./components/NewWorkOrder')
-    .then(module => ({ default: module.default }))
-    .catch(error => {
-      console.error('Error loading NewWorkOrder component:', error);
-      throw error;
-    })
-);
-
-// Error boundary component
-const ErrorFallback = ({ error }: { error: Error }) => (
-  <div className="min-h-screen bg-background dark:bg-background-dark flex items-center justify-center p-4">
-    <div className="max-w-md w-full space-y-4 bg-white dark:bg-[#1E293B] p-8 rounded-xl shadow-lg">
-      <h2 className="text-2xl font-bold text-red-600 dark:text-red-400">Something went wrong</h2>
-      <p className="text-gray-600 dark:text-gray-400">{error.message}</p>
-      <button
-        onClick={() => window.location.reload()}
-        className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-      >
-        Reload Page
-      </button>
-    </div>
-  </div>
-);
+const Auth = lazy(() => import('./Auth'));
+const Dashboard = lazy(() => import('./Dashboard'));
+const SubcontractorDashboard = lazy(() => import('./SubcontractorDashboard'));
 
 const LoadingSpinner = () => (
-  <div className="min-h-screen bg-gray-100 dark:bg-[#0F172A] flex items-center justify-center">
-    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+  <div className="min-h-screen bg-background dark:bg-background-dark flex items-center justify-center">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
   </div>
 );
 
 export function AppContent() {
+  const navigate = useNavigate();
   const location = useLocation();
   const { session, loading: authLoading } = useAuth();
   const { role, loading: roleLoading } = useUserRole();
   const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   useEffect(() => {
-    console.log('AppContent: Auth state:', { 
-      hasSession: !!session, 
-      authLoading, 
-      roleLoading, 
+    console.log('AppContent: Effect running with state:', {
+      hasSession: !!session,
+      authLoading,
+      roleLoading,
       role,
-      pathname: location.pathname 
+      pathname: location.pathname
     });
 
     // Only handle routing after initial load
@@ -94,72 +37,50 @@ export function AppContent() {
       }
       return;
     }
-  }, [session, authLoading, roleLoading, role, location.pathname, isInitialLoad]);
 
-  // Show loading spinner during initial load or while loading auth/role
+    // Handle routing based on auth state
+    if (!authLoading) {
+      if (!session) {
+        console.log('AppContent: No session, redirecting to auth');
+        navigate('/auth', { replace: true });
+      } else if (session && !roleLoading) {
+        console.log('AppContent: Session exists, handling dashboard routing');
+        // Only redirect to dashboard if we're on the auth page
+        if (location.pathname === '/auth') {
+          // Redirect based on user role
+          if (role === 'subcontractor') {
+            navigate('/dashboard/subcontractor', { replace: true });
+          } else {
+            navigate('/dashboard', { replace: true });
+          }
+        }
+      }
+    }
+  }, [session, authLoading, roleLoading, role, navigate, location.pathname, isInitialLoad]);
+
   if (authLoading || roleLoading || isInitialLoad) {
     return <LoadingSpinner />;
   }
 
-  // Handle authentication routes
-  if (!session) {
-    if (location.pathname === '/auth') {
-      return (
+  return (
+    <Routes>
+      <Route path="/auth" element={
         <Suspense fallback={<LoadingSpinner />}>
           <Auth />
         </Suspense>
-      );
-    }
-    return <Navigate to="/auth" replace />;
-  }
-
-  // Handle authenticated routes
-  return (
-    <Routes>
-      <Route path="/auth" element={<Navigate to="/dashboard" replace />} />
-      <Route
-        path="/dashboard/subcontractor"
-        element={
-          <MainLayout>
-            <Suspense fallback={<LoadingSpinner />}>
-              {role === 'subcontractor' || role === 'admin' || role === 'jg_management' ? (
-                <SubcontractorDashboard />
-              ) : (
-                <Navigate to="/unauthorized" replace />
-              )}
-            </Suspense>
-          </MainLayout>
-        }
-      />
-
-  <Route
-        path="/dashboard/jobs/:jobId/new-work-order"
-        element={
-          <MainLayout>
-            <Suspense fallback={<LoadingSpinner />}>
-              <NewWorkOrder />
-            </Suspense>
-          </MainLayout>
-        }
-      />
-      
-      <Route
-        path="/dashboard/*"
-        element={
-          <MainLayout>
-            <Suspense fallback={<LoadingSpinner />}>
-              {role === 'subcontractor' ? (
-                <Navigate to="/dashboard/subcontractor" replace />
-              ) : (
-                <Dashboard />
-              )}
-            </Suspense>
-          </MainLayout>
-        }
-      />
-      <Route path="/unauthorized" element={<Unauthorized />} />
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      } />
+      <Route path="/dashboard/*" element={
+        <MainLayout>
+          <Suspense fallback={<LoadingSpinner />}>
+            {role === 'subcontractor' ? <SubcontractorDashboard /> : <Dashboard />}
+          </Suspense>
+        </MainLayout>
+      } />
+      <Route path="*" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <Auth />
+        </Suspense>
+      } />
     </Routes>
   );
 }
