@@ -32,11 +32,20 @@ const SubcontractorDashboard = lazy(() =>
     })
 );
 
-const Unauthorized = lazy(() => 
+const Unauthorized = lazy(() =>
   import('./components/Unauthorized')
     .then(module => ({ default: module.Unauthorized }))
     .catch(error => {
       console.error('Error loading Unauthorized component:', error);
+      throw error;
+    })
+);
+
+const NewWorkOrder = lazy(() =>
+  import('./components/NewWorkOrder')
+    .then(module => ({ default: module.default }))
+    .catch(error => {
+      console.error('Error loading NewWorkOrder component:', error);
       throw error;
     })
 );
@@ -122,6 +131,18 @@ export function AppContent() {
           </MainLayout>
         }
       />
+
+  <Route
+        path="/dashboard/jobs/:jobId/new-work-order"
+        element={
+          <MainLayout>
+            <Suspense fallback={<LoadingSpinner />}>
+              <NewWorkOrder />
+            </Suspense>
+          </MainLayout>
+        }
+      />
+      
       <Route
         path="/dashboard/*"
         element={
