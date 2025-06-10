@@ -85,12 +85,13 @@ export function Auth() {
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#0F172A] flex items-center justify-center p-4">
       <div className="max-w-md w-full space-y-8 bg-white dark:bg-[#1E293B] p-8 rounded-xl shadow-lg">
-        <div className="text-center">
-          <div className="mx-auto h-16 w-16 flex items-center justify-center">
-            <img 
-              src="https://obpigateacucxhunpyqc.supabase.co/storage/v1/object/public/files//1743394383387_jg-icon.png" 
-              alt="JG Portal Logo" 
-              className="h-16 w-auto object-contain"
+         <div className="text-center">
+    <div className="mx-auto h-16 w-16 flex items-center justify-center">
+      <img
+        src="https://obpigateacucxhunpyqc.supabase.co/storage/v1/object/public/files//1743394383387_jg-icon.png"
+        alt="JG Portal Logo"
+       className="h-16 w-auto object-contain"
+
               onError={(e) => {
                 // Fallback to the current icon if logo fails to load
                 const target = e.currentTarget;
