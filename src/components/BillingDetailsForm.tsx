@@ -1,0 +1,882 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Plus, X, DollarSign, Save, Trash2, ArrowLeft } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+
+interface JobCategory {
+  id: string;
+  name: string;
+  description: string | null;
+  sort_order: number;
+}
+
+interface PropertyBillingCategory {
+  id: string;
+  property_id: string;
+  name: string;
+  description: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface UnitSize {
+  id: string;
+  unit_size_label: string;
+}
+
+interface BillingDetail {
+  id: string;
+  property_id: string;
+  category_id: string;
+  unit_size_id: string;
+  bill_amount: number;
+  sub_pay_amount: number;
+  profit_amount: number | null;
+  is_hourly: boolean;
+}
+
+interface CategoryLineItem {
+  id: string;
+  unitSizeId: string;
+  billAmount: string;
+  subPayAmount: string;
+  isHourly: boolean;
+}
+
+interface CategoryLineItems {
+  [key: string]: CategoryLineItem[];
+}
+
+export function BillingDetailsForm() {
+  const { propertyId } = useParams<{ propertyId: string }>();
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [jobCategories, setJobCategories] = useState<JobCategory[]>([]);
+  const [propertyBillingCategories, setPropertyBillingCategories] = useState<PropertyBillingCategory[]>([]);
+  const [unitSizes, setUnitSizes] = useState<UnitSize[]>([]);
+  const [billingDetails, setBillingDetails] = useState<BillingDetail[]>([]);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [categoryLineItems, setCategoryLineItems] = useState<CategoryLineItems>({});
+  const [showAddBillingItemModal, setShowAddBillingItemModal] = useState(false);
+  const [selectedJobCategoryId, setSelectedJobCategoryId] = useState<string>('');
+  const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryDescription, setNewCategoryDescription] = useState('');
+  const [propertyName, setPropertyName] = useState<string>('');
+
+  useEffect(() => {
+    if (!propertyId) {
+      navigate('/dashboard/properties');
+      return;
+    }
+    // Fetch property name
+    const fetchPropertyName = async () => {
+      const { data, error } = await supabase
+        .from('properties')
+        .select('property_name')
+        .eq('id', propertyId)
+        .single();
+      if (!error && data) setPropertyName(data.property_name);
+    };
+    fetchPropertyName();
+    Promise.all([
+      fetchJobCategories(),
+      fetchUnitSizes(),
+    ]);
+  }, [propertyId, navigate]);
+
+  useEffect(() => {
+    if (propertyId && jobCategories.length > 0 && unitSizes.length > 0) {
+      fetchPropertyBillingData();
+    }
+  }, [propertyId, jobCategories, unitSizes]);
+
+  const fetchJobCategories = async () => {
+    try {
+      console.log('Fetching master job categories for dropdown...');
+
+      // Define the default categories to ensure they exist
+      const defaultCategories = [
+        { name: 'Regular Paint', description: 'Standard interior and exterior painting services', sort_order: 1 },
+        { name: 'Ceiling Paint', description: 'Specialized ceiling painting services', sort_order: 2 },
+        { name: 'Unit with High Ceilings', description: 'Billing for units with high ceilings', sort_order: 3 },
+        { name: 'Extra Charges', description: 'Additional charges for special services or materials', sort_order: 4 },
+        { name: 'Miscellaneous', description: 'Miscellaneous billing items', sort_order: 5 }
+      ];
+
+      console.log('Ensuring default master job categories exist via upsert:', defaultCategories);
+
+      // Use upsert to insert default categories if they don't exist based on name
+      const { error: upsertError } = await supabase
+        .from('job_categories')
+        .upsert(defaultCategories, { onConflict: 'name' });
+
+      if (upsertError) {
+        console.error('Error upserting default job categories:', upsertError);
+        // Depending on how critical it is, you might want to show a user-friendly error
+      }
+
+      // Fetch all job categories (including the defaults, now ensured to be present)
+      const { data, error } = await supabase
+        .from('job_categories') // Fetch from the master job_categories table
+        .select('*')
+        .order('sort_order');
+
+      if (error) {
+        console.error('Error fetching master job categories:', error);
+        setError('Failed to load job categories for selection.'); // Consider showing a user-friendly error
+        throw error;
+      }
+
+      console.log('Fetched master job categories:', data);
+      setJobCategories(data || []);
+
+    } catch (err) {
+      console.error('Error in fetchJobCategories:', err);
+      // The upsert or fetch error should ideally be handled above
+      // setError('Failed to load job categories for selection.'); // Avoid setting error twice
+    }
+  };
+
+  const fetchUnitSizes = async () => {
+    try {
+      console.log('Fetching unit sizes...');
+      const { data, error } = await supabase
+        .from('unit_sizes')
+        .select('*')
+        .order('unit_size_label');
+
+      if (error) throw error;
+      console.log('Fetched unit sizes:', data);
+      setUnitSizes(data || []);
+    } catch (err) {
+      console.error('Error fetching unit sizes:', err);
+    }
+  };
+
+  const fetchPropertyBillingData = async () => {
+    try {
+      console.log(`Fetching billing categories and details for property ${propertyId}`);
+
+      const { data: propertyBillingCategoriesData, error: fetchCategoriesError } = await supabase
+        .from('billing_categories')
+        .select('*')
+        .eq('property_id', propertyId);
+
+      if (fetchCategoriesError) throw fetchCategoriesError;
+      console.log('Fetched property billing categories:', propertyBillingCategoriesData);
+      setPropertyBillingCategories(propertyBillingCategoriesData || []);
+
+      // Check if Extra Charges category exists
+      const hasExtraCharges = propertyBillingCategoriesData?.some(cat => cat.name === 'Extra Charges');
+      let extraChargesCategoryId: string | null = null;
+      
+      // If Extra Charges doesn't exist, create it
+      if (!hasExtraCharges) {
+        console.log('Creating Extra Charges category for property');
+        const { data: extraChargesCategory, error: insertError } = await supabase
+          .from('billing_categories')
+          .insert([
+            {
+              property_id: propertyId,
+              name: 'Extra Charges',
+              description: 'Additional charges for special services or materials',
+              sort_order: 4
+            }
+          ])
+          .select()
+          .single();
+
+        if (insertError) throw insertError;
+        extraChargesCategoryId = extraChargesCategory.id;
+        
+        // Update the categories list with the new Extra Charges category
+        setPropertyBillingCategories(prev => [...prev, extraChargesCategory]);
+
+        // Create default billing details for Extra Charges
+        const { error: billingDetailsError } = await supabase
+          .from('billing_details')
+          .insert([
+            {
+              property_id: propertyId,
+              category_id: extraChargesCategoryId,
+              unit_size_id: unitSizes[0]?.id, // Use first unit size as default
+              bill_amount: 40,
+              sub_pay_amount: 20,
+              profit_amount: null,
+              is_hourly: true
+            }
+          ]);
+
+        if (billingDetailsError) throw billingDetailsError;
+      } else {
+        // If category exists, check if it has billing details
+        extraChargesCategoryId = propertyBillingCategoriesData.find(cat => cat.name === 'Extra Charges')?.id;
+      }
+
+      const { data: billingDetailsData, error: fetchDetailsError } = await supabase
+        .from('billing_details')
+        .select('*')
+        .eq('property_id', propertyId);
+
+      if (fetchDetailsError) throw fetchDetailsError;
+      console.log('Fetched billing details:', billingDetailsData);
+      setBillingDetails(billingDetailsData || []);
+
+      // If Extra Charges exists but has no billing details, create default ones
+      if (extraChargesCategoryId && !billingDetailsData?.some(detail => detail.category_id === extraChargesCategoryId)) {
+        const { error: billingDetailsError } = await supabase
+          .from('billing_details')
+          .insert([
+            {
+              property_id: propertyId,
+              category_id: extraChargesCategoryId,
+              unit_size_id: unitSizes[0]?.id, // Use first unit size as default
+              bill_amount: 40,
+              sub_pay_amount: 20,
+              profit_amount: null,
+              is_hourly: true
+            }
+          ]);
+
+        if (billingDetailsError) throw billingDetailsError;
+
+        // Refresh billing details after adding default rates
+        const { data: updatedBillingDetails, error: refreshError } = await supabase
+          .from('billing_details')
+          .select('*')
+          .eq('property_id', propertyId);
+
+        if (refreshError) throw refreshError;
+        setBillingDetails(updatedBillingDetails || []);
+      }
+
+    } catch (err) {
+      console.error('Error fetching property billing data:', err);
+      setError('Failed to load existing billing information.');
+    }
+  };
+
+  const handleAddBillingItem = () => {
+    setShowAddBillingItemModal(true);
+    setSelectedJobCategoryId('');
+  };
+
+  const handleCategorySelect = async (jobCategoryId: string) => {
+    if (!jobCategoryId || !propertyId) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const selectedCategory = jobCategories.find(cat => cat.id === jobCategoryId);
+      if (!selectedCategory) {
+        throw new Error('Selected category not found');
+      }
+
+      // Check if this category already exists for the property
+      const { data: existingPropertyBillingCategory, error: fetchPBCError } = await supabase
+        .from('billing_categories')
+        .select('id')
+        .eq('property_id', propertyId)
+        .eq('name', selectedCategory.name)
+        .single();
+
+      if (fetchPBCError && fetchPBCError.code !== 'PGRST116') {
+        throw fetchPBCError;
+      }
+
+      if (existingPropertyBillingCategory) {
+        setError('This category already exists for this property');
+        setLoading(false);
+        return;
+      }
+
+      // Create new property billing category
+      const { data: newPropertyBillingCategory, error: insertPBCError } = await supabase
+        .from('billing_categories')
+        .insert([
+          { 
+            property_id: propertyId, 
+            name: selectedCategory.name,
+            description: selectedCategory.description,
+            sort_order: selectedCategory.sort_order
+          }
+        ])
+        .select('id')
+        .single();
+
+      if (insertPBCError) throw insertPBCError;
+
+      // Add a new line item for the new category
+      setCategoryLineItems(prev => ({
+        ...prev,
+        [newPropertyBillingCategory.id]: [{
+          id: crypto.randomUUID(),
+          unitSizeId: '',
+          billAmount: '',
+          subPayAmount: '',
+          isHourly: false
+        }]
+      }));
+
+      await fetchPropertyBillingData();
+      setShowAddBillingItemModal(false);
+      setHasChanges(true);
+
+    } catch (err) {
+      console.error('Error in handleCategorySelect:', err);
+      setError(err instanceof Error ? err.message : 'Failed to add billing category.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteCategory = async (propertyBillingCategoryId: string) => {
+    console.log(`Attempting to delete property billing category entry with ID ${propertyBillingCategoryId} for property ${propertyId}`);
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { error: deleteBillingDetailsError } = await supabase
+        .from('billing_details')
+        .delete()
+        .eq('category_id', propertyBillingCategoryId);
+
+      if (deleteBillingDetailsError) {
+        console.error('Error deleting associated billing details:', deleteBillingDetailsError);
+      }
+
+      const { error: deletePBCError } = await supabase
+        .from('billing_categories')
+        .delete()
+        .eq('id', propertyBillingCategoryId)
+        .eq('property_id', propertyId);
+
+      if (deletePBCError) {
+        console.error('Error deleting property billing category:', deletePBCError);
+        throw deletePBCError;
+      }
+
+      console.log(`Successfully deleted property billing category entry ${propertyBillingCategoryId} and associated details.`);
+
+      await fetchPropertyBillingData();
+
+      setShowDeleteConfirm(null);
+      setHasChanges(true);
+
+    } catch (err) {
+      console.error('Error in handleDeleteCategory:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete billing category entry.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    console.log('Initializing category line items from fetched billing details:', billingDetails);
+    const initialLineItems: CategoryLineItems = {};
+    billingDetails.forEach(detail => {
+      if (!initialLineItems[detail.category_id]) {
+        initialLineItems[detail.category_id] = [];
+      }
+      initialLineItems[detail.category_id].push({
+        id: crypto.randomUUID(),
+        unitSizeId: detail.unit_size_id,
+        billAmount: detail.bill_amount.toString(),
+        subPayAmount: detail.sub_pay_amount.toString(),
+        isHourly: detail.is_hourly
+      });
+    });
+
+    setCategoryLineItems(initialLineItems);
+  }, [billingDetails]);
+
+  const handleRemoveLineItem = (propertyBillingCategoryId: string, lineItemId: string) => {
+    setCategoryLineItems(prev => ({
+      ...prev,
+      [propertyBillingCategoryId]: prev[propertyBillingCategoryId].filter(item => item.id !== lineItemId)
+    }));
+    setHasChanges(true);
+  };
+
+  const handleLineItemChange = (
+    propertyBillingCategoryId: string,
+    lineItemId: string,
+    field: keyof CategoryLineItem,
+    value: string | boolean
+  ) => {
+    setCategoryLineItems(prev => ({
+      ...prev,
+      [propertyBillingCategoryId]: prev[propertyBillingCategoryId].map(item =>
+        item.id === lineItemId ? { ...item, [field]: value } : item
+      )
+    }));
+    setHasChanges(true);
+  };
+
+  const handleSaveAll = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const updates = [];
+
+      for (const propertyBillingCategoryId in categoryLineItems) {
+        for (const lineItem of categoryLineItems[propertyBillingCategoryId]) {
+          const pbc = propertyBillingCategories.find(p => p.id === propertyBillingCategoryId);
+          if (!pbc || pbc.property_id !== propertyId) {
+            console.warn(`Skipping line item for property billing category ${propertyBillingCategoryId} not associated with property ${propertyId}`);
+            continue;
+          }
+
+          // Skip validation for Extra Charges category
+          if (pbc.name === 'Extra Charges') {
+            if (!lineItem.billAmount || !lineItem.subPayAmount) continue;
+          } else {
+            if (!lineItem.unitSizeId || !lineItem.billAmount || !lineItem.subPayAmount) continue;
+          }
+
+          const billAmountNum = parseFloat(lineItem.billAmount);
+          const subPayAmountNum = parseFloat(lineItem.subPayAmount);
+          
+          // For hourly rates, we don't calculate profit here as it will be based on actual hours worked
+          const profitAmount = lineItem.isHourly ? null : billAmountNum - subPayAmountNum;
+
+          updates.push({
+            property_id: propertyId,
+            category_id: propertyBillingCategoryId,
+            unit_size_id: pbc.name === 'Extra Charges' ? unitSizes[0]?.id : lineItem.unitSizeId, // Use first unit size for Extra Charges
+            bill_amount: billAmountNum,
+            sub_pay_amount: subPayAmountNum,
+            profit_amount: profitAmount,
+            is_hourly: pbc.name === 'Extra Charges' ? true : lineItem.isHourly
+          });
+        }
+      }
+
+      const { error: deleteError } = await supabase
+        .from('billing_details')
+        .delete()
+        .eq('property_id', propertyId);
+
+      if (deleteError) throw deleteError;
+
+      if (updates.length > 0) {
+        const { error: insertError } = await supabase
+          .from('billing_details')
+          .insert(updates);
+
+        if (insertError) throw insertError;
+      }
+
+      setHasChanges(false);
+      console.log('Billing details saved successfully!');
+      
+      // Navigate back to property details page
+      navigate(`/dashboard/properties/${propertyId}`);
+
+    } catch (err) {
+      console.error('Error saving billing details:', err);
+      setError(err instanceof Error ? err.message : 'Failed to save billing details.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddLineItem = (propertyBillingCategoryId: string) => {
+    setCategoryLineItems(prev => ({
+      ...prev,
+      [propertyBillingCategoryId]: [
+        ...(prev[propertyBillingCategoryId] || []),
+        {
+          id: crypto.randomUUID(),
+          unitSizeId: '',
+          billAmount: '',
+          subPayAmount: '',
+          isHourly: false
+        }
+      ]
+    }));
+    setHasChanges(true);
+  };
+
+  const handleAddNewCategory = async (name: string, description: string) => {
+    if (!propertyId) return;
+    
+    setLoading(true);
+    setError(null);
+
+    try {
+      // First, create the job category
+      const { data: newJobCategory, error: jobCategoryError } = await supabase
+        .from('job_categories')
+        .insert([
+          {
+            name,
+            description,
+            sort_order: jobCategories.length + 1
+          }
+        ])
+        .select()
+        .single();
+
+      if (jobCategoryError) throw jobCategoryError;
+
+      // Then create the property billing category
+      const { data: newPropertyBillingCategory, error: billingCategoryError } = await supabase
+        .from('billing_categories')
+        .insert([
+          {
+            property_id: propertyId,
+            name: name,
+            description: description,
+            sort_order: jobCategories.length + 1
+          }
+        ])
+        .select()
+        .single();
+
+      if (billingCategoryError) throw billingCategoryError;
+
+      // Add a new line item for the new category
+      setCategoryLineItems(prev => ({
+        ...prev,
+        [newPropertyBillingCategory.id]: [{
+          id: crypto.randomUUID(),
+          unitSizeId: '',
+          billAmount: '',
+          subPayAmount: '',
+          isHourly: false
+        }]
+      }));
+
+      // Refresh the data
+      await fetchJobCategories();
+      await fetchPropertyBillingData();
+      
+      setShowNewCategoryModal(false);
+      setNewCategoryName('');
+      setNewCategoryDescription('');
+      setHasChanges(true);
+
+    } catch (err) {
+      console.error('Error in handleAddNewCategory:', err);
+      setError(err instanceof Error ? err.message : 'Failed to add new category.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* Property name label above the page title */}
+        {propertyName && (
+          <div className="text-xs text-gray-400 mb-1">
+            Billing details for: <span className="font-medium text-gray-500">{propertyName}</span>
+          </div>
+        )}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => navigate(`/dashboard/properties/${propertyId}`)}
+              className="inline-flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Property Billing Details</h1>
+          </div>
+          <div className="flex space-x-3">
+            <button
+              onClick={() => setShowNewCategoryModal(true)}
+              className="inline-flex items-center px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add New Category
+            </button>
+            <button
+              onClick={handleAddBillingItem}
+              className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Billing Item
+            </button>
+            <button
+              onClick={handleSaveAll}
+              disabled={loading || !hasChanges}
+              className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {loading ? 'Saving...' : 'Save All Changes'}
+            </button>
+            <button
+              onClick={() => navigate(`/dashboard/properties/${propertyId}`)}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-400 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 dark:bg-red-900/50 border border-red-200 dark:border-red-500/50 text-red-700 dark:text-red-200 px-4 py-3 rounded-lg">
+            {error}
+          </div>
+        )}
+
+        <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+          <div className="space-y-4">
+            {propertyBillingCategories.map(pbc => {
+              const propertyBillingCategoryId = pbc.id;
+
+              return (
+                <div key={propertyBillingCategoryId} className="bg-gray-50 dark:bg-[#0F172A] rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-gray-900 dark:text-white font-medium">{pbc.name}</h3>
+                      {pbc.description && (
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{pbc.description}</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setShowDeleteConfirm(propertyBillingCategoryId)}
+                      className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {categoryLineItems[propertyBillingCategoryId]?.map(lineItem => (
+                      <div key={lineItem.id} className="flex items-center space-x-4">
+                        {pbc.name !== 'Extra Charges' ? (
+                          <select
+                            value={lineItem.unitSizeId}
+                            onChange={(e) => handleLineItemChange(propertyBillingCategoryId, lineItem.id, 'unitSizeId', e.target.value)}
+                            className="flex-1 h-11 px-4 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">Select Unit Size</option>
+                            {unitSizes.map(size => (
+                              <option key={size.id} value={size.id}>
+                                {size.unit_size_label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="flex-1 text-sm text-gray-600 dark:text-gray-400">
+                            Hourly Rates
+                          </div>
+                        )}
+
+                        <div className="flex flex-col space-y-1">
+                          <label className="text-xs text-gray-500 dark:text-gray-400">
+                            {pbc.name === 'Extra Charges' ? 'Billed Amount' : 'Bill Amount'}
+                          </label>
+                          <div className="flex items-center space-x-2">
+                            <DollarSign className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                            <input
+                              type="number"
+                              value={lineItem.billAmount}
+                              onChange={(e) => handleLineItemChange(propertyBillingCategoryId, lineItem.id, 'billAmount', e.target.value)}
+                              placeholder={lineItem.isHourly ? "Hourly Rate" : "Bill Amount"}
+                              className="w-32 h-11 px-4 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col space-y-1">
+                          <label className="text-xs text-gray-500 dark:text-gray-400">
+                            {pbc.name === 'Extra Charges' ? 'Sub Pay Amount' : 'Sub Pay'}
+                          </label>
+                          <div className="flex items-center space-x-2">
+                            <DollarSign className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                            <input
+                              type="number"
+                              value={lineItem.subPayAmount}
+                              onChange={(e) => handleLineItemChange(propertyBillingCategoryId, lineItem.id, 'subPayAmount', e.target.value)}
+                              placeholder={lineItem.isHourly ? "Sub Hourly Rate" : "Sub Pay"}
+                              className="w-32 h-11 px-4 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        {pbc.name !== 'Extra Charges' && (
+                          <div className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={lineItem.isHourly}
+                              onChange={(e) => handleLineItemChange(propertyBillingCategoryId, lineItem.id, 'isHourly', e.target.checked)}
+                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            />
+                            <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                              Hourly Rate
+                            </label>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => handleRemoveLineItem(propertyBillingCategoryId, lineItem.id)}
+                          className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+
+                    <button
+                      onClick={() => handleAddLineItem(propertyBillingCategoryId)}
+                      className="inline-flex items-center px-4 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Line Item
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {showAddBillingItemModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 w-full max-w-md">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Billing Item</h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="jobCategorySelect" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                    Select Job Category
+                  </label>
+                  <select
+                    id="jobCategorySelect"
+                    value={selectedJobCategoryId}
+                    onChange={(e) => setSelectedJobCategoryId(e.target.value)}
+                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select a category</option>
+                    {jobCategories.map(category => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddBillingItemModal(false)}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCategorySelect(selectedJobCategoryId)}
+                  disabled={!selectedJobCategoryId}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Add Selected Category
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 w-full max-w-md">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Delete Billing Category from Property</h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                Are you sure you want to remove this billing category and all its line items from this property? This action cannot be undone.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(null)}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteCategory(showDeleteConfirm)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500"
+                >
+                  Delete from Property
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showNewCategoryModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 w-full max-w-md">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add New Category</h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="newCategoryName" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                    Category Name *
+                  </label>
+                  <input
+                    type="text"
+                    id="newCategoryName"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter new category name"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="newCategoryDescription" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                    Description (Optional)
+                  </label>
+                  <textarea
+                    id="newCategoryDescription"
+                    value={newCategoryDescription}
+                    onChange={(e) => setNewCategoryDescription(e.target.value)}
+                    className="w-full px-4 py-2 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter category description"
+                    rows={3}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNewCategoryModal(false);
+                    setNewCategoryName('');
+                    setNewCategoryDescription('');
+                  }}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAddNewCategory(newCategoryName, newCategoryDescription)}
+                  disabled={!newCategoryName.trim() || loading}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Adding...' : 'Add Category'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
