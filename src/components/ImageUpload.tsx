@@ -59,7 +59,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const [selectedImage, setSelectedImage] = useState<UploadedFile | null>(null);
   const [filesToDelete, setFilesToDelete] = useState<Set<string>>(new Set());
   const { user, loading: authLoading } = useAuth();
-
+  const fileInputId = useId();
+ 
   // Add debug logging for auth state
   useEffect(() => {
     console.log('ImageUpload auth state:', { user, authLoading, folder });
@@ -455,13 +456,13 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           onDrop={handleDrop}
         >
           <input
-            type="file"
-            multiple
-            accept={folder === 'other' ? '*/*' : 'image/*'}
-            onChange={handleFileInput}
-            className="hidden"
-            id={fileInputId}
-          />
+  type="file"
+  multiple
+  accept={folder === 'other' ? '*/*' : 'image/*'}
+  onChange={handleFileInput}
+  className="hidden"
+  id={fileInputId}
+/>
           <label
              htmlFor={fileInputId}
             className="cursor-pointer text-blue-500 hover:text-blue-600"
