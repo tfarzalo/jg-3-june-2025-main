@@ -206,13 +206,13 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   ): Promise<string> => {
     // Only the property folder should have folder_id = null
     const folderIdToUse = parentId || null;
-    // Check if folder exists
+   // Check if folder exists using folder_id and name which is the unique constraint
     const { data: existing, error: fetchError } = await supabase
       .from('files')
       .select('id')
       .eq('name', name)
       .eq('type', 'folder/directory')
-      .eq('path', path)
+      .eq('folder_id', folderIdToUse)
       .maybeSingle();
     
     if (fetchError) {
@@ -456,15 +456,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           onDrop={handleDrop}
         >
           <input
-  type="file"
-  multiple
-  accept={folder === 'other' ? '*/*' : 'image/*'}
-  onChange={handleFileInput}
-  className="hidden"
-  id={fileInputId}
-/>
+            type="file"
+            multiple
+            accept={folder === 'other' ? '*/*' : 'image/*'}
+            onChange={handleFileInput}
+            className="hidden"
+            id={fileInputId}
+          />
           <label
-             htmlFor={fileInputId}
+            htmlFor={fileInputId}
             className="cursor-pointer text-blue-500 hover:text-blue-600"
           >
             <div className="space-y-2">
