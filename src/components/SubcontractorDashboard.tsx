@@ -220,27 +220,17 @@ export function SubcontractorDashboard() {
         throw jobsError;
       }
       
-      console.log('fetchJobsForDate: Raw jobs data received:', jobsData);
+            console.log('fetchJobsForDate: Raw jobs data received:', jobsData);
 
-      // Map the data to match the Job interface, ensuring nested objects are always present with fallbacks
+      // Map the data to match the Job interface and flatten nested arrays
       const mappedJobs: Job[] = (jobsData || []).map(job => ({
         ...job,
-        property: (job.property as any)?.[0] || {
-          property_name: 'Unknown Property',
-          address: 'No address available',
-          city: '',
-          state: '',
-        } as Job['property'], // Cast the fallback to the correct type
-        job_phase: (job.job_phase as any)?.[0] || {
-          job_phase_label: 'Unknown Phase',
-          color_dark_mode: '#6B7280',
-          id: '',
-        } as Job['job_phase'], // Cast the fallback to the correct type
-        job_type: (job.job_type as any)?.[0] || {
-          job_type_label: 'Unknown Type',
-        } as Job['job_type'], // Cast the fallback to the correct type
-        work_order: (job.work_order as any)?.[0] || null,
+        property: Array.isArray(job.property) ? job.property[0] : job.property,
+        job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase,
+        job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
+        work_order: Array.isArray(job.work_order) ? job.work_order[0] : job.work_order,
       }));
+
       
       console.log('fetchJobsForDate: Mapped jobs:', mappedJobs);
       return mappedJobs;
