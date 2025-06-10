@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useId } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useUserRole } from '../hooks/useUserRole';
 
 interface ImageUploadProps {
   jobId: string;
@@ -59,12 +60,26 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const [selectedImage, setSelectedImage] = useState<UploadedFile | null>(null);
   const [filesToDelete, setFilesToDelete] = useState<Set<string>>(new Set());
   const { user, loading: authLoading } = useAuth();
+  const { hasPermission, isSubcontractor } = useUserRole();
   const fileInputId = useId();
- 
-  // Add debug logging for auth state
+
+  // Add permission checks
+  const canUploadFiles = hasPermission('files', 'create');
+  const canUpdateFiles = hasPermission('files', 'update');
+  const canDeleteFiles = hasPermission('files', 'delete');
+
+  // Add debug logging for auth and permissions state
   useEffect(() => {
-    console.log('ImageUpload auth state:', { user, authLoading, folder });
-  }, [user, authLoading, folder]);
+    console.log('ImageUpload state:', { 
+      user, 
+      authLoading, 
+      folder,
+      canUploadFiles,
+      canUpdateFiles,
+      canDeleteFiles,
+      isSubcontractor
+    });
+  }, [user, authLoading, folder, canUploadFiles, canUpdateFiles, canDeleteFiles, isSubcontractor]);
 
   // Helper function to construct the folder path
   const constructFolderPath = async () => {
@@ -269,7 +284,16 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   };
 
   const handleFiles = async (files: File[]) => {
-    if (!files || files.length === 0 || !user) return;
+    if (!files || files.length === 0 || !user) {
+      if (onError) onError('No files selected or user not authenticated');
+      return;
+    }
+
+    if (!canUploadFiles) {
+      if (onError) onError('You do not have permission to upload files');
+      return;
+    }
+
     const newUploadingFiles: UploadingFile[] = files.map(file => ({
       file,
       preview: URL.createObjectURL(file),
@@ -442,6 +466,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   };
 
   const handleDeleteImage = (filePath: string) => {
+    if (!canDeleteFiles) {
+      if (onError) onError('You do not have permission to delete files');
+      return;
+    }
+
     if (onImageDelete) {
       onImageDelete(filePath);
     }
@@ -451,7 +480,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
   return (
     <div className="w-full">
-      {!readOnly && (
+      {!readOnly && canUploadFiles && (
         <div
           className={`border-2 border-dashed rounded-lg p-6 text-center ${
             isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
@@ -511,7 +540,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           {uploadedFiles.map((file, index) => (
             <div key={index} className="relative group">
               <ImageWithErrorBoundary file={file} />
-              {!readOnly && (
+              {!readOnly && canDeleteFiles && (
                 <button
                   onClick={(e) => {
                     e.preventDefault();
