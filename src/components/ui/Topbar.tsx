@@ -208,9 +208,9 @@ export function Topbar({ showOnlyProfile = false }: TopbarProps) {
           {/* Logo - only show for subcontractors */}
           {isSubcontractor && (
             <div className="flex items-center">
-              <img 
-                src="https://obpigateacucxhunpyqc.supabase.co/storage/v1/object/public/files//1743394383387_jg-icon.png" 
-                alt="JG Painting" 
+              <img
+                src="https://obpigateacucxhunpyqc.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1749521668533_jg-logo-1.png"
+                alt="JG Painting"
                 className="h-8 w-auto"
               />
             </div>
