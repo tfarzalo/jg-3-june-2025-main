@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useId } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -460,10 +460,10 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             accept={folder === 'other' ? '*/*' : 'image/*'}
             onChange={handleFileInput}
             className="hidden"
-            id="file-upload"
+            id={fileInputId}
           />
           <label
-            htmlFor="file-upload"
+             htmlFor={fileInputId}
             className="cursor-pointer text-blue-500 hover:text-blue-600"
           >
             <div className="space-y-2">
