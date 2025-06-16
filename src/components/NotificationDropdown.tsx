@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, X, Check, CheckCheck, Clock, Calendar, FileText, AlertTriangle } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 import { Link } from 'react-router-dom';
 import { format, parseISO, isToday, isYesterday, isThisWeek } from 'date-fns';
 import { toast } from 'sonner';

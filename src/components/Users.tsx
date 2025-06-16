@@ -19,7 +19,7 @@ import {
   ExternalLink,
   Calendar
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/utils/supabase';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 
@@ -72,20 +72,22 @@ export function Users() {
       
       // Get current user first
       const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser) throw new Error('No current user found');
-
+      if (!currentUser || !currentUser.id) throw new Error('No current user found or user id missing');
+      console.log('Updating last_seen for user id:', currentUser.id);
       // Update current user's last_seen immediately
       const now = new Date().toISOString();
-      const { error: updateError } = await supabase
+      const updatePayload = { 
+        last_seen: now,
+        updated_at: now
+      };
+      console.log('PATCH payload for last_seen:', updatePayload, 'user id:', currentUser.id);
+      const { error: updateError, data: updateData } = await supabase
         .from('profiles')
-        .update({ 
-          last_seen: now,
-          updated_at: now
-        })
+        .update(updatePayload)
         .eq('id', currentUser.id);
-
+      console.log('Supabase update response:', { updateError, updateData });
       if (updateError) {
-        console.error('Error updating last_seen:', updateError);
+        console.error('Error updating last_seen:', updateError, 'for user id:', currentUser.id);
       }
 
       const { data, error } = await supabase

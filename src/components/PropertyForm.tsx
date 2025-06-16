@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Building2, ArrowLeft, MapPin } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 import { useLeafletMap } from '../hooks/useLeafletMap';
 
 interface PropertyManagementGroup {

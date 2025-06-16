@@ -13,8 +13,11 @@ export function PropertyMap({ address, className = '' }: PropertyMapProps) {
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
   const { theme } = useTheme();
+  // Track if component is mounted
+  const isMounted = useRef(true);
 
   useEffect(() => {
+    isMounted.current = true;
     const container = mapRef.current;
     if (!container || !address) return;
 
@@ -64,15 +67,18 @@ export function PropertyMap({ address, className = '' }: PropertyMapProps) {
         );
         const data = await response.json();
 
-        if (data && data.length > 0) {
+        if (isMounted.current && data && data.length > 0) {
           const { lat, lon } = data[0];
-          map.setView([lat, lon], 15);
-
-          // Add marker
-          if (markerRef.current) {
-            markerRef.current.remove();
+          const latNum = parseFloat(lat);
+          const lonNum = parseFloat(lon);
+          if (!isNaN(latNum) && !isNaN(lonNum) && mapInstanceRef.current) {
+            map.setView([latNum, lonNum], 15);
+            // Add marker
+            if (markerRef.current) {
+              markerRef.current.remove();
+            }
+            markerRef.current = L.marker([latNum, lonNum]).addTo(map);
           }
-          markerRef.current = L.marker([lat, lon]).addTo(map);
         }
       } catch (error) {
         console.error('Error geocoding address:', error);
@@ -83,6 +89,7 @@ export function PropertyMap({ address, className = '' }: PropertyMapProps) {
 
     // Cleanup
     return () => {
+      isMounted.current = false;
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -97,4 +104,4 @@ export function PropertyMap({ address, className = '' }: PropertyMapProps) {
       style={{ visibility: 'visible', display: 'block' }}
     />
   );
-} 
+}

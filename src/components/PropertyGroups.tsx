@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Search, Plus, ArrowUpDown, Building2, MapPin, Archive } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/utils/supabase';
 import { formatAddress } from '../lib/utils/formatUtils';
 import { toast } from 'sonner';
 

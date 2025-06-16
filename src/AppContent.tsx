@@ -1,12 +1,13 @@
 import { useEffect, useState, lazy, Suspense } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { useUserRole } from '../hooks/useUserRole';
-import { MainLayout } from './ui/MainLayout';
+import { useAuth } from '@/contexts/AuthContext';
+import { useUserRole } from '@/hooks/useUserRole';
+import { MainLayout } from '@/components/ui/MainLayout';
 
-const Auth = lazy(() => import('./Auth'));
-const Dashboard = lazy(() => import('./Dashboard'));
-const SubcontractorDashboard = lazy(() => import('./SubcontractorDashboard'));
+const Auth = lazy(() => import('@/components/Auth'));
+const Dashboard = lazy(() => import('@/components/Dashboard'));
+const SubcontractorDashboard = lazy(() => import('@/components/SubcontractorDashboard'));
+const NewWorkOrder = lazy(() => import('@/components/NewWorkOrder'));
 
 const LoadingSpinner = () => (
   <div className="min-h-screen bg-background dark:bg-background-dark flex items-center justify-center">
@@ -59,6 +60,14 @@ export function AppContent() {
   }, [session, authLoading, roleLoading, role, navigate, location.pathname, isInitialLoad]);
 
   if (authLoading || roleLoading || isInitialLoad) {
+    console.log('AppContent: Rendering spinner', {
+      authLoading,
+      roleLoading,
+      isInitialLoad,
+      session,
+      role,
+      location: location.pathname
+    });
     return <LoadingSpinner />;
   }
 
@@ -67,6 +76,11 @@ export function AppContent() {
       <Route path="/auth" element={
         <Suspense fallback={<LoadingSpinner />}>
           <Auth />
+        </Suspense>
+      } />
+      <Route path="/dashboard/jobs/:jobId/new-work-order" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <NewWorkOrder />
         </Suspense>
       } />
       <Route path="/dashboard/*" element={

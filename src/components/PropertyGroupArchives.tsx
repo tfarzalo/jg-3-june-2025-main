@@ -9,9 +9,10 @@ import {
   RefreshCw,
   X
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 import { formatAddress } from '../lib/utils/formatUtils';
 import { toast } from 'sonner';
+import { useAuth } from '/src/contexts/AuthContext';
 
 interface PropertyGroup {
   id: string;

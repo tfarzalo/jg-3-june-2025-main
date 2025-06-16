@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '@/utils/supabase';
 import type { Job } from './JobListingPage';
 
 interface UseJobFetchProps {

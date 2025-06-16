@@ -3,7 +3,7 @@ import { X, Activity, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { debounce } from '../lib/utils/debounce';
 

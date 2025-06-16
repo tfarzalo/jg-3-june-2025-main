@@ -17,11 +17,10 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '@/utils/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthContext';
 import { useUserRole } from '../../hooks/useUserRole';
-import type { Profile } from '../../lib/supabase';
 import { SearchOverlay } from '../SearchOverlay';
 import { Button } from './Button';
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Building2, Pencil, MapPin, Phone, Mail, User, Building } from 'lucide-react';
-import { supabase, type PropertyManagementGroup } from '../lib/supabase';
+import { supabase, type PropertyManagementGroup } from '../utils/supabase';
 
 interface PropertyGroupWithProperties extends PropertyManagementGroup {
   properties: {

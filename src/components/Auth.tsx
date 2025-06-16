@@ -16,6 +16,8 @@ export function Auth() {
   useEffect(() => {
     console.log('Auth: Component mounted');
     console.log('Auth: Current auth state:', { session: !!session, authLoading });
+    // Debug: log when Auth is rendered
+    console.log('Auth: Rendered', { session, authLoading });
     
     // Only redirect if we have a valid session and we're not already loading
     if (session && !authLoading) {

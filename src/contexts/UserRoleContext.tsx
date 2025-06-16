@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 
 interface UserRoleContextType {
   role: string | null;
@@ -57,4 +57,4 @@ export function useUserRole() {
     throw new Error('useUserRole must be used within a UserRoleProvider');
   }
   return context;
-} 
+}

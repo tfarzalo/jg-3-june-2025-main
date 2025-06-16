@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Plus, X, DollarSign, Save, Trash2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/utils/supabase';
 
 interface BillingCategory {
   id: string;

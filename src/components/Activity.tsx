@@ -16,7 +16,7 @@ import {
 import { Link } from 'react-router-dom';
 import { parseISO, subDays } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 
 interface ActivityItem {
   id: string;

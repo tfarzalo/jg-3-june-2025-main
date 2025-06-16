@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Trash2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 
 interface WorkOrderFile {
   id: string;
@@ -208,4 +208,4 @@ export function ImageGallery({ workOrderId, folder, allowDelete = false }: Image
       )}
     </div>
   );
-} 
+}

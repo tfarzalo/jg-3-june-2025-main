@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useId } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
 interface ImageUploadProps {
@@ -205,6 +205,32 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       .single();
     
     if (createError) {
+      // If error is 409 (conflict), fetch the existing folder and return its id
+      if (createError.code === '23505' || createError.message?.includes('duplicate key') || createError.message?.includes('conflict')) {
+        console.warn('Folder already exists, fetching existing folder:', { name, path, folderIdToUse });
+        let retryQuery = supabase
+          .from('files')
+          .select('id')
+          .eq('name', name)
+          .eq('type', 'folder/directory');
+        if (folderIdToUse === null) {
+          retryQuery = retryQuery.is('folder_id', null);
+        } else {
+          retryQuery = retryQuery.eq('folder_id', folderIdToUse);
+        }
+        const { data: retryExisting, error: retryError } = await retryQuery.maybeSingle();
+        if (retryError || !retryExisting) {
+          console.error('Failed to fetch existing folder after conflict:', {
+            retryError,
+            retryExisting,
+            name,
+            path,
+            folderIdToUse
+          });
+          throw createError;
+        }
+        return retryExisting.id;
+      }
       console.error('Error creating folder:', {
         error: createError,
         name,
@@ -221,7 +247,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   };
 
   const handleFiles = async (files: File[]) => {
-    if (!files || files.length === 0 || !user) return;
+    if (!files || files.length === 0) {
+      if (onError) onError('No files selected');
+      return;
+    }
+    if (!user) {
+      console.error('No user found in ImageUpload handleFiles', { user });
+      if (onError) onError('User not authenticated');
+      return;
+    }
     const newUploadingFiles: UploadingFile[] = files.map(file => ({
       file,
       preview: URL.createObjectURL(file),
@@ -236,7 +270,10 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         .select(`work_order_num, property_id, properties!property_id (property_name)`)
         .eq('id', jobId)
         .single();
-      if (jobError || !jobData) throw new Error('Failed to fetch job data');
+      if (jobError || !jobData) {
+        console.error('Failed to fetch job data', { jobError, jobId });
+        throw new Error('Failed to fetch job data');
+      }
       const workOrderNum = `WO-${String(jobData.work_order_num).padStart(6, '0')}`;
       const propertyName = Array.isArray(jobData.properties)
         ? jobData.properties[0]?.property_name
@@ -325,10 +362,12 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           }]);
           if (onUploadComplete) onUploadComplete(filePath);
         } catch (error) {
+          console.error('Error uploading file:', error);
           if (onError) onError(error instanceof Error ? error.message : 'Failed to upload file');
         }
       }
     } catch (error) {
+      console.error('Error processing files in handleFiles:', error);
       if (onError) onError(error instanceof Error ? error.message : 'Failed to process files');
     } finally {
       setIsUploading(false);
@@ -495,4 +534,4 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   );
 };
 
-export default ImageUpload; 
+export default ImageUpload;

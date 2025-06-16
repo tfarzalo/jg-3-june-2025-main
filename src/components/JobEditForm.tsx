@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ClipboardList, ArrowLeft, Trash2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 import { formatDateForInput } from '../lib/dateUtils';
 import { JobType } from '../lib/types';
 

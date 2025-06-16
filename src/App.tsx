@@ -25,7 +25,9 @@ const router = createBrowserRouter(
   createRoutesFromElements(
     <Route path="*" element={
       <Suspense fallback={<LoadingSpinner />}>
-        <AppContent />
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
       </Suspense>
     } />
   ),
@@ -38,26 +40,24 @@ const router = createBrowserRouter(
 
 function App() {
   return (
-    <AuthProvider>
-      <ThemeProvider>
-        <RouterProvider 
-          router={router}
-          future={{
-            v7_startTransition: true
-          }}
-        />
-        <Toaster 
-          position="bottom-right"
-          toastOptions={{
-            style: {
-              background: '#1E293B',
-              color: '#F8FAFC',
-              border: '1px solid #334155'
-            }
-          }}
-        />
-      </ThemeProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <RouterProvider 
+        router={router}
+        future={{
+          v7_startTransition: true
+        }}
+      />
+      <Toaster 
+        position="bottom-right"
+        toastOptions={{
+          style: {
+            background: '#1E293B',
+            color: '#F8FAFC',
+            border: '1px solid #334155'
+          }
+        }}
+      />
+    </ThemeProvider>
   );
 }
 

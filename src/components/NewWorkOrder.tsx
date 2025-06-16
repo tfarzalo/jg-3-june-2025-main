@@ -9,13 +9,15 @@ import {
   AlertCircle,
   Info
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 import { formatDate } from '../lib/dateUtils';
 import { toast } from 'sonner';
 import ImageUpload from './ImageUpload';
 import { ImageGallery } from './ImageGallery';
 import { useSubcontractorPreview } from '../contexts/SubcontractorPreviewContext';
 import { toast as hotToast } from 'react-hot-toast';
+import { withSubcontractorAccessCheck } from './withSubcontractorAccessCheck';
+import { useUserRole } from '../contexts/UserRoleContext';
 
 interface Job {
   id: string;
@@ -152,6 +154,7 @@ const NewWorkOrder = () => {
   });
 
   const { previewUserId: subcontractorPreviewUserId } = useSubcontractorPreview();
+  const { role, isAdmin, isJGManagement, isSubcontractor } = useUserRole();
 
   useEffect(() => {
     if (!jobId) {
@@ -362,10 +365,16 @@ const NewWorkOrder = () => {
     e.preventDefault();
     setSaving(true);
     setError(null);
-    
     try {
       if (!job) throw new Error('Job not found');
-      
+
+      // Subcontractor: block insert if work order exists
+      if (isSubcontractor && existingWorkOrder) {
+        setError('A work order has already been submitted for this job. Please contact your manager if you need to make changes.');
+        setSaving(false);
+        return;
+      }
+
       // Get the target phase ID based on whether there are extra charges
       const { data: phaseData, error: phaseError } = await supabase
         .from('job_phases')
@@ -431,7 +440,13 @@ const NewWorkOrder = () => {
       }
       
       if (workOrderResult.error) {
-        console.error('Error creating/updating work order:', workOrderResult.error);
+        console.error('Error creating/updating work order:', {
+          error: workOrderResult.error,
+          workOrderData,
+          existingWorkOrder,
+          jobId: job.id,
+          user: (await supabase.auth.getUser()).data.user?.id
+        });
         throw workOrderResult.error;
       }
 
@@ -1246,4 +1261,4 @@ const NewWorkOrder = () => {
   );
 };
 
-export default NewWorkOrder;
+export default withSubcontractorAccessCheck(NewWorkOrder);

@@ -10,7 +10,7 @@ import {
   FileEdit
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 import { format, parseISO, startOfDay, endOfDay, addDays, isSameDay } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useUserRole } from '../hooks/useUserRole';

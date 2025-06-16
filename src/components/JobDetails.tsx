@@ -38,7 +38,7 @@ import {
   CheckCircle2,
   X
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 import { formatDate } from '../lib/dateUtils';
 import { formatAddress, formatCurrency } from '../lib/utils/formatUtils';
 import { useJobDetails } from '../hooks/useJobDetails';
@@ -240,12 +240,13 @@ export function JobDetails() {
       if (!job?.work_order || !job?.property?.name) return;
       const workOrderNum = `WO-${String(job.work_order_num).padStart(6, '0')}`;
       const propertyName = job.property.name;
-      const folderName = workOrderNum;
-      // Find the work order folder under the property/Work Orders folder
+      // Build the full path to the work order folder
+      const fullPath = `/${propertyName}/Work Orders/${workOrderNum}`;
+      // Find the work order folder by full path
       const { data: folder, error } = await supabase
         .from('files')
         .select('id')
-        .eq('name', folderName)
+        .eq('path', fullPath)
         .eq('type', 'folder/directory')
         .maybeSingle();
       if (!error && folder && folder.id) {
@@ -862,7 +863,7 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
           y += 10;
         }
       }
-
+      
       // Convert PDF to base64 string
       const pdfBase64 = doc.output('datauristring');
       setPreviewPdfUrl(pdfBase64);
@@ -924,7 +925,6 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
       doc.text('Billing Breakdown', margin, y);
       y += 6;
       doc.setFontSize(9); // Reduced font size for line items
-      let tableY = y;
       doc.text('Description', margin, tableY);
       doc.text('Amount', margin + 120, tableY);
       tableY += 6;
@@ -1484,7 +1484,6 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
             )}
             
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-8">Work Order Details</h2>
-            
             {/* Unit Information Section */}
             <div className="mb-8">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
@@ -1493,17 +1492,21 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
               </h3>
               {job.work_order && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                  <div className={`p-3 rounded-lg border ${job.work_order.submission_date ? 'border-green-500/50 bg-gray-200' : 'border-red-500/50'}`}>
+                  <div className={`p-3 rounded-lg border ${job.work_order.submission_date ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Submission Date</span>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">{formatDate(job.work_order.submission_date)}</p>
+                    <p className={`text-lg font-bold ${job.work_order.submission_date ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>{formatDate(job.work_order.submission_date)}</p>
                   </div>
-                  <div className={`p-3 rounded-lg border ${(job.work_order.is_occupied ? 'border-green-500/50 bg-gray-200' : 'border-red-500/50')}`}>
+                  <div className={`p-3 rounded-lg border ${job.work_order.is_occupied ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Occupied Unit</span>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">{job.work_order.is_occupied ? 'Yes' : 'No'}</p>
+                    <p className={`text-lg font-bold ${job.work_order.is_occupied ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>{job.work_order.is_occupied ? 'Yes' : 'No'}</p>
                   </div>
-                  <div className={`p-3 rounded-lg border ${(job.work_order.is_full_paint ? 'border-green-500/50 bg-gray-200' : 'border-red-500/50')}`}>
+                  <div className={`p-3 rounded-lg border ${job.work_order.is_full_paint ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Full Paint</span>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">{job.work_order.is_full_paint ? 'Yes' : 'No'}</p>
+                    <p className={`text-lg font-bold ${job.work_order.is_full_paint ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>{job.work_order.is_full_paint ? 'Yes' : 'No'}</p>
+                  </div>
+                  <div className={`p-3 rounded-lg border ${job.work_order.job_category ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
+                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Job Category</span>
+                    <p className={`text-lg font-bold ${job.work_order.job_category ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>{job.work_order.job_category || 'N/A'}</p>
                   </div>
                 </div>
               )}
@@ -1516,15 +1519,15 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
                 Paint Information
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                <div className={`p-3 rounded-lg border ${job.work_order.is_full_paint !== undefined ? 'border-green-500/50' : 'border-red-500/50'}`}>
+                <div className={`p-3 rounded-lg border ${job.work_order.is_full_paint !== undefined ? (job.work_order.is_full_paint ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700') : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                   <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Full Paint</span>
-                  <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
+                  <p className={`text-lg font-bold ${job.work_order.is_full_paint ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
                     {job.work_order.is_full_paint ? 'Yes' : 'No'}
                   </p>
                 </div>
-                <div className={`p-3 rounded-lg border ${(job.work_order.job_category ? 'border-green-500/50 bg-gray-200' : 'border-red-500/50')}`}>
+                <div className={`p-3 rounded-lg border ${job.work_order.job_category ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                   <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Job Category</span>
-                  <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">{job.work_order.job_category || 'N/A'}</p>
+                  <p className={`text-lg font-bold ${job.work_order.job_category ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>{job.work_order.job_category || 'N/A'}</p>
                 </div>
               </div>
             </div>
@@ -1537,16 +1540,16 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
                   Sprinkler Information
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                  <div className={`p-3 rounded-lg border ${(job.work_order.has_sprinklers ? 'border-green-500/50 bg-gray-200' : 'border-red-500/50')}`}>
+                  <div className={`p-3 rounded-lg border ${job.work_order.has_sprinklers ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Has Sprinklers</span>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
+                    <p className={`text-lg font-bold ${job.work_order.has_sprinklers ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
                       {job.work_order.has_sprinklers ? 'Yes' : 'No'}
                     </p>
                   </div>
                   {job.work_order.has_sprinklers && (
-                    <div className={`p-3 rounded-lg border ${(job.work_order.sprinklers_painted ? 'border-green-500/50 bg-gray-200' : 'border-red-500/50')}`}>
+                    <div className={`p-3 rounded-lg border ${job.work_order.sprinklers_painted ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                       <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Sprinklers Painted</span>
-                      <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
+                      <p className={`text-lg font-bold ${job.work_order.sprinklers_painted ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
                         {job.work_order.sprinklers_painted ? 'Yes' : 'No'}
                       </p>
                     </div>
@@ -1572,9 +1575,9 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
                   Painted Areas
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                  <div className={`p-3 rounded-lg border ${(job.work_order.painted_ceilings ? 'border-green-500/50 bg-gray-200' : 'border-red-500/50')}`}>
+                  <div className={`p-3 rounded-lg border ${job.work_order.painted_ceilings ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Ceilings</span>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
+                    <p className={`text-lg font-bold ${job.work_order.painted_ceilings ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
                       {job.work_order.painted_ceilings ? (
                         <><span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
                           ({job.work_order.ceiling_rooms_count} rooms)
@@ -1582,40 +1585,39 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
                       ) : 'No'}
                     </p>
                   </div>
-                  <div className={`p-3 rounded-lg border ${(job.work_order.painted_patio ? 'border-green-500/50 bg-gray-200' : 'border-red-500/50')}`}>
+                  <div className={`p-3 rounded-lg border ${job.work_order.painted_patio ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Patio</span>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
+                    <p className={`text-lg font-bold ${job.work_order.painted_patio ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
                       {job.work_order.painted_patio ? 'Yes' : 'No'}
                     </p>
                   </div>
-                  <div className={`p-3 rounded-lg border ${(job.work_order.painted_garage ? 'border-green-500/50 bg-gray-200' : 'border-red-500/50')}`}>
+                  <div className={`p-3 rounded-lg border ${job.work_order.painted_garage ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Garage</span>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
+                    <p className={`text-lg font-bold ${job.work_order.painted_garage ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
                       {job.work_order.painted_garage ? 'Yes' : 'No'}
                     </p>
                   </div>
-                  <div className={`p-3 rounded-lg border ${(job.work_order.painted_cabinets ? 'border-green-500/50 bg-gray-200' : 'border-red-500/50')}`}>
+                  <div className={`p-3 rounded-lg border ${job.work_order.painted_cabinets ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Cabinets</span>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
+                    <p className={`text-lg font-bold ${job.work_order.painted_cabinets ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
                       {job.work_order.painted_cabinets ? 'Yes' : 'No'}
                     </p>
                   </div>
-                  <div className={`p-3 rounded-lg border ${(job.work_order.painted_crown_molding ? 'border-green-500/50 bg-gray-200' : 'border-red-500/50')}`}>
+                  <div className={`p-3 rounded-lg border ${job.work_order.painted_crown_molding ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Crown Molding</span>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
+                    <p className={`text-lg font-bold ${job.work_order.painted_crown_molding ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
                       {job.work_order.painted_crown_molding ? 'Yes' : 'No'}
                     </p>
                   </div>
-                  <div className={`p-3 rounded-lg border ${(job.work_order.painted_front_door ? 'border-green-500/50 bg-gray-200' : 'border-red-500/50')}`}>
+                  <div className={`p-3 rounded-lg border ${job.work_order.painted_front_door ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Front Door</span>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
+                    <p className={`text-lg font-bold ${job.work_order.painted_front_door ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
                       {job.work_order.painted_front_door ? 'Yes' : 'No'}
                     </p>
                   </div>
                 </div>
               </div>
             )}
-
             {/* Accent Wall Section */}
             {hasWorkOrder && job.work_order?.has_accent_wall && (
               <div className="mb-8">
@@ -1624,15 +1626,15 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
                   Accent Wall Details
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                  <div className={`p-3 rounded-lg border ${(job.work_order.accent_wall_type ? 'border-green-500/50 bg-gray-200' : 'border-red-500/50')}`}>
+                  <div className={`p-3 rounded-lg border ${job.work_order.accent_wall_type ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Type</span>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
+                    <p className={`text-lg font-bold ${job.work_order.accent_wall_type ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
                       {job.work_order.accent_wall_type || 'N/A'}
                     </p>
                   </div>
-                  <div className={`p-3 rounded-lg border ${(job.work_order.accent_wall_count > 0 ? 'border-green-500/50 bg-gray-200' : 'border-red-500/50')}`}>
+                  <div className={`p-3 rounded-lg border ${job.work_order.accent_wall_count > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Count</span>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
+                    <p className={`text-lg font-bold ${job.work_order.accent_wall_count > 0 ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
                       {job.work_order.accent_wall_count || 'N/A'}
                     </p>
                   </div>
@@ -1647,27 +1649,25 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
                   <AlertCircle className="h-5 w-5 mr-2 text-blue-500" />
                   Extra Charges
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                  <div className="p-3 rounded-lg border border-green-500/50">
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Has Extra Charges</span>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
-                      {job.work_order.has_extra_charges ? 'Yes' : 'No'}
-                    </p>
+                <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className={`p-3 rounded-lg border ${job.work_order.has_extra_charges ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
+                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Has Extra Charges</span>
+                      <p className={`text-sm font-bold ${job.work_order.has_extra_charges ? 'text-green-800 dark:text-green-200' : ''}`}>
+                        {job.work_order.has_extra_charges ? 'Yes' : 'No'}
+                      </p>
+                    </div>
+                    <div className={`p-3 rounded-lg border ${typeof job.work_order.extra_hours === 'number' && job.work_order.extra_hours > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
+                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Extra Hours</span>
+                      <p className={`text-lg font-bold ${typeof job.work_order.extra_hours === 'number' && job.work_order.extra_hours > 0 ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
+                        {typeof job.work_order.extra_hours === 'number' ? job.work_order.extra_hours : 'N/A'}
+                      </p>
+                    </div>
                   </div>
-                  {job.work_order.has_extra_charges && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {job.work_order.extra_charges_description && (
-                        <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700 md:col-span-2">
-                          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Description</span>
-                          <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">{job.work_order.extra_charges_description}</p>
-                        </div>
-                      )}
-                      <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Extra Hours</span>
-                        <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
-                          {typeof job.work_order.extra_hours === 'number' ? job.work_order.extra_hours : 'N/A'}
-                        </p>
-                      </div>
+                  {job.work_order.extra_charges_description && (
+                    <div className="p-3 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30 mt-6">
+                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Description</span>
+                      <p className="text-lg font-bold text-green-800 dark:text-green-200 mt-1">{job.work_order.extra_charges_description}</p>
                     </div>
                   )}
                 </div>

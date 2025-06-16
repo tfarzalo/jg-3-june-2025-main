@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { AlertCircle } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/utils/supabase';
 
 interface JobPhase {
   id: string;
@@ -270,4 +270,4 @@ const EditJobRequest = () => {
   );
 };
 
-export default EditJobRequest; 
+export default EditJobRequest;

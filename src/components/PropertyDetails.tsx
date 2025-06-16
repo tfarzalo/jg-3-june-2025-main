@@ -17,7 +17,7 @@ import {
   Trash2,
   ArrowLeft
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 import { PropertyMap } from './PropertyMap';
 import { formatAddress } from '../lib/utils/formatUtils';
 import { format } from 'date-fns';

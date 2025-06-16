@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/utils/supabase';
 
 interface UseUserRoleResult {
   role: string | null;

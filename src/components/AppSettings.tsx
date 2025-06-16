@@ -14,7 +14,7 @@ import {
   Bell,
   Info
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 import { useTheme } from './ui/ThemeProvider';
 import { toast } from 'sonner';
 

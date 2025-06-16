@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 interface AuthContextType {
   session: Session | null;
@@ -40,6 +41,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     let mounted = true;
@@ -185,28 +187,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     try {
       setLoading(true);
-      
-      // Clear any local storage items
       const projectRef = getSupabaseProjectRef();
       localStorage.removeItem(`sb-${projectRef}-auth-token`);
       localStorage.removeItem('gibson_token');
-      
-      // Sign out from Supabase
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-
-      // Clear all state
       setSession(null);
       setUser(null);
       setLoading(false);
       setError(null);
-
-      // Clear any cached data
       sessionStorage.clear();
-      
-      // Force reload to clear any remaining state
-      window.location.href = '/auth';
-      
+      // Removed navigate('/auth') from here. Let the caller handle navigation.
       return { success: true };
     } catch (error: any) {
       const message = error.message || 'Failed to sign out';
@@ -222,4 +213,4 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       {children}
     </AuthContext.Provider>
   );
-}; 
+};

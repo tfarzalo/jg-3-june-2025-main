@@ -18,7 +18,7 @@ import { parseISO, format, subMonths, addMonths } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import Papa from 'papaparse';
 import jsPDF from 'jspdf';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '@/utils/supabase';
 import { toast } from 'sonner';
 
 export interface Job {

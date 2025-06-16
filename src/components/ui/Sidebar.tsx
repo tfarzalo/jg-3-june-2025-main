@@ -54,6 +54,7 @@ const navigation: NavItem[] = [
 export function Sidebar() {
   const navigate = useNavigate();
   const { signOut } = useAuth();
+  const { role } = useUserRole();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
 
   const handleSignOut = async () => {
@@ -68,7 +69,8 @@ export function Sidebar() {
 
   const filteredNavigation = navigation.filter(item => {
     if (!item.roles) return true;
-    return item.roles.some(role => role === 'admin' || role === 'jg_management');
+    if (!role) return false;
+    return item.roles.includes(role);
   });
 
   return (

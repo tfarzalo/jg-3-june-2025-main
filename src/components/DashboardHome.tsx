@@ -14,7 +14,7 @@ import {
 import { Link } from 'react-router-dom';
 import { MetricTile } from './ui/MetricTile';
 import { DashboardCard } from './ui/DashboardCard';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 
 interface JobPhase {
   id: string;

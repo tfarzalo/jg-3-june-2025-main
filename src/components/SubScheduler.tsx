@@ -12,7 +12,7 @@ import {
   ChevronRight,
   CalendarDays
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '@/utils/supabase';
 import { formatDate, formatDisplayDate, isSameDayInEastern } from '../lib/dateUtils';
 import { toast } from 'sonner';
 import { format, addDays, subDays, parseISO } from 'date-fns';

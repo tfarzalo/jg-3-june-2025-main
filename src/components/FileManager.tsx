@@ -20,7 +20,7 @@ import {
   FileArchive,
   Download
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../utils/supabase';
 import { useNavigate } from 'react-router-dom';
 import Lightbox from 'yet-another-react-lightbox';
 import 'yet-another-react-lightbox/styles.css';
@@ -952,4 +952,4 @@ export function FileManager() {
       )}
     </div>
   );
-} 
+}
