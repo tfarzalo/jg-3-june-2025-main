@@ -407,12 +407,12 @@ const NewWorkOrder = () => {
         painted_crown_molding: formData.painted_crown_molding,
         painted_front_door: formData.painted_front_door,
         has_accent_wall: formData.has_accent_wall,
-        accent_wall_type: formData.accent_wall_type || null,
+        accent_wall_type: formData.accent_wall_type || "",
         accent_wall_count: formData.accent_wall_count || 0,
         has_extra_charges: formData.has_extra_charges,
-        extra_charges_description: formData.extra_charges_description || null,
+        extra_charges_description: formData.extra_charges_description || "",
         extra_hours: formData.extra_hours || 0,
-        additional_comments: formData.additional_comments || null,
+        additional_comments: formData.additional_comments || "",
         prepared_by: (await supabase.auth.getUser()).data.user?.id
       };
 
