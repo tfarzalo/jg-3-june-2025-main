@@ -12,17 +12,20 @@ export const ProtectedRoute = ({
   component: Component, 
   requiredRoles = [] 
 }: ProtectedRouteProps) => {
-  const { session, loading: isAuthLoading } = useAuth();
+  const { session, loading: isAuthLoading, error } = useAuth();
   const { role, loading: isRolesLoading } = useUserRole();
   
+  // Show loading while checking auth or roles
   if (isAuthLoading || isRolesLoading) {
     return <div className="flex items-center justify-center h-full">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
     </div>;
   }
   
-  if (!session) {
-    return <Navigate to="/auth" />;
+  // If there's an auth error or no session, redirect to login
+  if (error || !session) {
+    console.log('ProtectedRoute: Redirecting to auth - error:', error, 'session:', !!session);
+    return <Navigate to="/auth" replace />;
   }
   
   // If no specific roles are required, just check authentication
@@ -34,7 +37,8 @@ export const ProtectedRoute = ({
   const hasRequiredRole = requiredRoles.includes(role || '');
   
   if (!hasRequiredRole) {
-    return <Navigate to="/unauthorized" />;
+    console.log('ProtectedRoute: Access denied - user role:', role, 'required:', requiredRoles);
+    return <Navigate to="/unauthorized" replace />;
   }
   
   return <Component />;

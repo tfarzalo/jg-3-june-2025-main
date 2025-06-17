@@ -1,4 +1,4 @@
-import { useEffect, useState, lazy, Suspense } from 'react';
+import { useEffect, useState, lazy, Suspense, useMemo } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserRole } from '@/hooks/useUserRole';
@@ -8,6 +8,7 @@ const Auth = lazy(() => import('@/components/Auth'));
 const Dashboard = lazy(() => import('@/components/Dashboard'));
 const SubcontractorDashboard = lazy(() => import('@/components/SubcontractorDashboard'));
 const NewWorkOrder = lazy(() => import('@/components/NewWorkOrder'));
+const ApprovalPage = lazy(() => import('@/pages/ApprovalPage'));
 
 const LoadingSpinner = () => (
   <div className="min-h-screen bg-background dark:bg-background-dark flex items-center justify-center">
@@ -22,14 +23,33 @@ export function AppContent() {
   const { role, loading: roleLoading } = useUserRole();
   const [isInitialLoad, setIsInitialLoad] = useState(true);
 
+  // Check if current route is an approval page (should not require auth)
+  const isApprovalPage = useMemo(() => 
+    location.pathname.startsWith('/approval/'), 
+    [location.pathname]
+  );
+
+  // Memoize auth state to prevent unnecessary logging
+  const authState = useMemo(() => ({
+    hasSession: !!session,
+    authLoading: authLoading,
+    roleLoading: roleLoading,
+    role,
+    pathname: location.pathname,
+    isApprovalPage
+  }), [session, authLoading, roleLoading, role, location.pathname, isApprovalPage]);
+
   useEffect(() => {
-    console.log('AppContent: Effect running with state:', {
-      hasSession: !!session,
-      authLoading,
-      roleLoading,
-      role,
-      pathname: location.pathname
-    });
+    // Only log when auth state actually changes
+    console.log('AppContent: Auth state update:', authState);
+
+    const { hasSession, authLoading, roleLoading, role, isApprovalPage } = authState;
+
+    // Skip auth logic for approval pages
+    if (isApprovalPage) {
+      setIsInitialLoad(false);
+      return;
+    }
 
     // Only handle routing after initial load
     if (isInitialLoad) {
@@ -41,10 +61,10 @@ export function AppContent() {
 
     // Handle routing based on auth state
     if (!authLoading) {
-      if (!session) {
+      if (!hasSession) {
         console.log('AppContent: No session, redirecting to auth');
         navigate('/auth', { replace: true });
-      } else if (session && !roleLoading) {
+      } else if (hasSession && !roleLoading) {
         console.log('AppContent: Session exists, handling dashboard routing');
         // Only redirect to dashboard if we're on the auth page
         if (location.pathname === '/auth') {
@@ -57,15 +77,16 @@ export function AppContent() {
         }
       }
     }
-  }, [session, authLoading, roleLoading, role, navigate, location.pathname, isInitialLoad]);
+  }, [authState, navigate, isInitialLoad, location.pathname]); // Simplified dependencies
 
-  if (authLoading || roleLoading || isInitialLoad) {
+  // Don't show loading spinner for approval pages
+  if (!isApprovalPage && (authState.authLoading || authState.roleLoading || isInitialLoad)) {
     console.log('AppContent: Rendering spinner', {
-      authLoading,
-      roleLoading,
+      authLoading: authState.authLoading,
+      roleLoading: authState.roleLoading,
       isInitialLoad,
-      session,
-      role,
+      hasSession: authState.hasSession,
+      role: authState.role,
       location: location.pathname
     });
     return <LoadingSpinner />;
@@ -73,6 +94,11 @@ export function AppContent() {
 
   return (
     <Routes>
+      <Route path="/approval/:token" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <ApprovalPage />
+        </Suspense>
+      } />
       <Route path="/auth" element={
         <Suspense fallback={<LoadingSpinner />}>
           <Auth />
@@ -86,7 +112,7 @@ export function AppContent() {
       <Route path="/dashboard/*" element={
         <MainLayout>
           <Suspense fallback={<LoadingSpinner />}>
-            {role === 'subcontractor' ? <SubcontractorDashboard /> : <Dashboard />}
+            {authState.role === 'subcontractor' ? <SubcontractorDashboard /> : <Dashboard />}
           </Suspense>
         </MainLayout>
       } />

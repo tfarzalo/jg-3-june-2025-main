@@ -188,13 +188,13 @@ export function Sidebar() {
       <div className="p-4 flex items-center justify-between border-b border-gray-200 dark:border-[#1E293B]">
         {!isCollapsed ? (
           <img 
-            src="https://obpigateacucxhunpyqc.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1749521668533_jg-logo-1.png" 
+            src="https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png" 
             alt="JG Painting" 
             className="h-12 w-auto"
           />
         ) : (
           <img 
-            src="https://obpigateacucxhunpyqc.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1749521668533_jg-logo-1.png" 
+            src="https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png" 
             alt="JG Painting" 
             className="h-8 w-auto"
           />

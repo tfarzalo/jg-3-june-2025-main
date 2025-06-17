@@ -1,6 +1,6 @@
 import React, { Suspense } from 'react';
 import { Sidebar } from '../Sidebar';
-import { Topbar } from './Topbar';
+import Topbar from './Topbar';
 import { useUserRole } from '../../hooks/useUserRole';
 
 interface MainLayoutProps {

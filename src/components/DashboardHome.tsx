@@ -1,12 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   ClipboardList, 
   FileText, 
-  Star, 
   DollarSign, 
   CheckCircle,
   Plus,
-  Calendar,
   Activity,
   Clock,
   ArrowRight
@@ -20,10 +18,6 @@ interface JobPhase {
   id: string;
   job_phase_label: string;
   color_dark_mode: string;
-}
-
-interface Property {
-  name: string;
 }
 
 interface Job {
@@ -59,8 +53,6 @@ export function DashboardHome() {
   const [error, setError] = useState<string | null>(null);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
-  const [properties, setProperties] = useState<any[]>([]);
-  const [phases, setPhases] = useState<JobPhase[]>([]);
   const [phaseColors, setPhaseColors] = useState<Record<string, string>>({});
   
   useEffect(() => {
@@ -99,7 +91,6 @@ export function DashboardHome() {
         if (phasesResult.error) throw phasesResult.error;
         
         setJobs(jobsResult.data || []);
-        setProperties(propertiesResult.data || []);
         
         // Create and set a map for easy lookup of phase colors
         const colorsMap: Record<string, string> = (phasesResult.data || []).reduce((acc: Record<string, string>, phase: JobPhase) => {
@@ -122,6 +113,89 @@ export function DashboardHome() {
     };
     
     fetchData();
+
+    // Set up real-time subscriptions for automatic updates
+    const jobsSubscription = supabase
+      .channel('dashboard-jobs')
+      .on('postgres_changes', 
+        { event: 'INSERT', schema: 'public', table: 'jobs' },
+        async (payload) => {
+          console.log('New job added:', payload.new);
+          // Fetch the complete job data with relations
+          const { data: newJob, error } = await supabase
+            .from('jobs')
+            .select(`
+              id,
+              work_order_num,
+              unit_number,
+              scheduled_date,
+              property:properties(property_name),
+              job_phase:current_phase_id(job_phase_label, color_dark_mode),
+              assigned_to:profiles(full_name),
+              job_type:job_types(job_type_label),
+              total_billing_amount
+            `)
+            .eq('id', payload.new.id)
+            .single();
+          
+          if (!error && newJob) {
+            setJobs(prev => [newJob, ...prev]);
+          }
+        }
+      )
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'jobs' },
+        async (payload) => {
+          console.log('Job updated:', payload.new);
+          // Fetch the complete updated job data
+          const { data: updatedJob, error } = await supabase
+            .from('jobs')
+            .select(`
+              id,
+              work_order_num,
+              unit_number,
+              scheduled_date,
+              property:properties(property_name),
+              job_phase:current_phase_id(job_phase_label, color_dark_mode),
+              assigned_to:profiles(full_name),
+              job_type:job_types(job_type_label),
+              total_billing_amount
+            `)
+            .eq('id', payload.new.id)
+            .single();
+          
+          if (!error && updatedJob) {
+            setJobs(prev => prev.map(job => 
+              job.id === updatedJob.id ? updatedJob : job
+            ));
+          }
+        }
+      )
+      .on('postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'jobs' },
+        (payload) => {
+          console.log('Job deleted:', payload.old);
+          setJobs(prev => prev.filter(job => job.id !== payload.old.id));
+        }
+      )
+      .subscribe();
+
+    // Set up real-time subscription for activity updates
+    const activitySubscription = supabase
+      .channel('dashboard-activity')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'job_phase_changes' },
+        () => {
+          console.log('New activity detected, refreshing activities...');
+          fetchActivities();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      jobsSubscription.unsubscribe();
+      activitySubscription.unsubscribe();
+    };
   }, []);
 
   const fetchActivities = async () => {

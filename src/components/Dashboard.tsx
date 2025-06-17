@@ -18,6 +18,7 @@ const PropertyEditForm = lazy(() => import('./PropertyEditForm').then(module => 
 const PropertyGroups = lazy(() => import('./PropertyGroups').then(module => ({ default: module.PropertyGroups })));
 const PropertyGroupDetails = lazy(() => import('./PropertyGroupDetails').then(module => ({ default: module.PropertyGroupDetails })));
 const PropertyGroupForm = lazy(() => import('./PropertyGroupForm').then(module => ({ default: module.PropertyGroupForm })));
+const PropertyGroupArchives = lazy(() => import('./PropertyGroupArchives').then(module => ({ default: module.PropertyGroupArchives })));
 const PropertyArchives = lazy(() => import('./PropertyArchives').then(module => ({ default: module.PropertyArchives })));
 const FileManager = lazy(() => import('./FileManager').then(module => ({ default: module.FileManager })));
 const FileUpload = lazy(() => import('./FileUpload').then(module => ({ default: module.FileUpload })));
@@ -83,6 +84,7 @@ export function Dashboard() {
           <Route path="property-groups">
             <Route index element={<PropertyGroups />} />
             <Route path="new" element={<PropertyGroupForm />} />
+            <Route path="archives" element={<PropertyGroupArchives />} />
             <Route path=":groupId" element={<PropertyGroupDetails />} />
           </Route>
           

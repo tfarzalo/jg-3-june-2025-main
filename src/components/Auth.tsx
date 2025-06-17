@@ -90,7 +90,7 @@ export function Auth() {
          <div className="text-center">
     <div className="mx-auto h-16 w-16 flex items-center justify-center">
       <img
-        src="https://obpigateacucxhunpyqc.supabase.co/storage/v1/object/public/files//1743394383387_jg-icon.png"
+        src="https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png"
         alt="JG Portal Logo"
        className="h-16 w-auto object-contain"
 

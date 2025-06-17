@@ -7,12 +7,14 @@ import {
   MapPin, 
   Archive, 
   RefreshCw,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
+import { createClient } from '@supabase/supabase-js';
 import { formatAddress } from '../lib/utils/formatUtils';
 import { toast } from 'sonner';
-import { useAuth } from '/src/contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext';
 
 interface PropertyGroup {
   id: string;
@@ -40,6 +42,7 @@ export function PropertyGroupArchives() {
   const [error, setError] = useState<string | null>(null);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [showUnarchiveConfirm, setShowUnarchiveConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const navigate = useNavigate();
@@ -119,6 +122,47 @@ export function PropertyGroupArchives() {
     }
   };
 
+  const handleDeleteSelected = async () => {
+    if (selectedGroups.length === 0) return;
+    
+    setProcessing(true);
+    try {
+      // For deletion operations, we need admin privileges to bypass RLS
+      const adminClient = createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false
+          }
+        }
+      );
+
+      // Delete selected property groups
+      const { error: deleteError } = await adminClient
+        .from('property_management_groups')
+        .delete()
+        .in('id', selectedGroups);
+
+      if (deleteError) throw deleteError;
+
+      // Clear selection and close confirmation
+      setSelectedGroups([]);
+      setShowDeleteConfirm(false);
+      
+      toast.success(`Successfully deleted ${selectedGroups.length} ${selectedGroups.length !== 1 ? 'property groups' : 'property group'}`);
+      
+      // Refresh the property group list
+      fetchPropertyGroups();
+    } catch (err) {
+      console.error('Error deleting property groups:', err);
+      toast.error('Failed to delete property groups. Please try again.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -166,13 +210,22 @@ export function PropertyGroupArchives() {
             Refresh
           </button>
           {selectedGroups.length > 0 && (
-            <button
-              onClick={() => setShowUnarchiveConfirm(true)}
-              className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              <Archive className="h-4 w-4 mr-2" />
-              Unarchive Selected ({selectedGroups.length})
-            </button>
+            <>
+              <button
+                onClick={() => setShowUnarchiveConfirm(true)}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <Archive className="h-4 w-4 mr-2" />
+                Unarchive Selected ({selectedGroups.length})
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Selected ({selectedGroups.length})
+              </button>
+            </>
           )}
           <button
             onClick={() => navigate('/dashboard/property-groups')}
@@ -316,6 +369,33 @@ export function PropertyGroupArchives() {
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
                 {processing ? 'Unarchiving...' : 'Unarchive Groups'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Delete Selected Property Groups</h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-4">
+              Are you sure you want to delete {selectedGroups.length} selected {selectedGroups.length !== 1 ? 'property groups' : 'property group'}? This action cannot be undone.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-400 bg-gray-100 dark:bg-[#2D3B4E] rounded-lg hover:bg-gray-200 dark:hover:bg-[#374151] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={processing}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {processing ? 'Deleting...' : 'Delete Groups'}
               </button>
             </div>
           </div>

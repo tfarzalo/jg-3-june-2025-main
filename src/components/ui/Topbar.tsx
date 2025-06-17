@@ -1,12 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, memo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
   Search, 
   Plus, 
   Settings, 
-  Building2, 
-  ClipboardList, 
-  Home, 
   Sun, 
   Moon, 
   User, 
@@ -14,7 +11,8 @@ import {
   Calendar,
   Bell,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  X
 } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 import { supabase } from '@/utils/supabase';
@@ -24,21 +22,29 @@ import { useUserRole } from '../../hooks/useUserRole';
 import { SearchOverlay } from '../SearchOverlay';
 import { Button } from './Button';
 
+interface Profile {
+  id: string;
+  full_name: string;
+  avatar_url?: string;
+}
+
 interface Notification {
   id: string;
-  type: 'job_status_change' | 'new_job_request';
+  user_id: string;
   title: string;
   message: string;
+  type: 'job_phase_change' | 'work_order' | 'callback' | 'system' | 'alert' | 'approval';
+  reference_id?: string;
+  reference_type?: string;
+  is_read: boolean;
   created_at: string;
-  read: boolean;
-  job_id?: string;
 }
 
 interface TopbarProps {
   showOnlyProfile?: boolean;
 }
 
-export function Topbar({ showOnlyProfile = false }: TopbarProps) {
+function Topbar({ showOnlyProfile = false }: TopbarProps) {
   const { theme, toggleTheme } = useTheme();
   const { session, signOut } = useAuth();
   const { role } = useUserRole();
@@ -46,7 +52,6 @@ export function Topbar({ showOnlyProfile = false }: TopbarProps) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -106,7 +111,7 @@ export function Topbar({ showOnlyProfile = false }: TopbarProps) {
           {
             event: 'INSERT',
             schema: 'public',
-            table: 'notifications',
+            table: 'user_notifications',
             filter: `user_id=eq.${session.user.id}`
           },
           (payload) => {
@@ -128,7 +133,7 @@ export function Topbar({ showOnlyProfile = false }: TopbarProps) {
     if (!session?.user.id) return;
 
     const { data, error } = await supabase
-      .from('notifications')
+      .from('user_notifications')
       .select('*')
       .eq('user_id', session.user.id)
       .order('created_at', { ascending: false })
@@ -140,22 +145,22 @@ export function Topbar({ showOnlyProfile = false }: TopbarProps) {
     }
 
     setNotifications(data || []);
-    setUnreadCount(data?.filter(n => !n.read).length || 0);
+    setUnreadCount(data?.filter(n => !n.is_read).length || 0);
   };
 
   const handleNotificationClick = (notification: Notification) => {
     markNotificationAsRead(notification.id);
     setNotificationOpen(false);
     
-    if (notification.job_id) {
-      navigate(`/dashboard/jobs/${notification.job_id}`);
+    if (notification.reference_id && notification.reference_type === 'job') {
+      navigate(`/dashboard/jobs/${notification.reference_id}`);
     }
   };
 
   const markNotificationAsRead = async (notificationId: string) => {
     const { error } = await supabase
-      .from('notifications')
-      .update({ read: true })
+      .from('user_notifications')
+      .update({ is_read: true })
       .eq('id', notificationId);
 
     if (error) {
@@ -165,10 +170,30 @@ export function Topbar({ showOnlyProfile = false }: TopbarProps) {
 
     setNotifications(prev =>
       prev.map(n =>
-        n.id === notificationId ? { ...n, read: true } : n
+        n.id === notificationId ? { ...n, is_read: true } : n
       )
     );
     setUnreadCount(prev => Math.max(0, prev - 1));
+  };
+
+  const removeNotification = async (notificationId: string) => {
+    const { error } = await supabase
+      .from('user_notifications')
+      .delete()
+      .eq('id', notificationId);
+
+    if (error) {
+      console.error('Error removing notification:', error);
+      toast.error('Failed to remove notification');
+      return;
+    }
+
+    setNotifications(prev => prev.filter(n => n.id !== notificationId));
+    setUnreadCount(prev => {
+      const notification = notifications.find(n => n.id === notificationId);
+      return notification && !notification.is_read ? Math.max(0, prev - 1) : prev;
+    });
+    toast.success('Notification removed');
   };
 
   const handleSignOut = async () => {
@@ -208,7 +233,7 @@ export function Topbar({ showOnlyProfile = false }: TopbarProps) {
           {isSubcontractor && (
             <div className="flex items-center">
               <img
-                src="https://obpigateacucxhunpyqc.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1749521668533_jg-logo-1.png"
+                src="https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png"
                 alt="JG Painting"
                 className="h-8 w-auto"
               />
@@ -255,7 +280,7 @@ export function Topbar({ showOnlyProfile = false }: TopbarProps) {
           {/* Theme toggle */}
           <Button
             variant="ghost"
-            size="icon"
+            size="sm"
             onClick={toggleTheme}
             className="text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
           >
@@ -294,34 +319,61 @@ export function Topbar({ showOnlyProfile = false }: TopbarProps) {
                       </div>
                     ) : (
                       notifications.map(notification => (
-                        <button
+                        <div
                           key={notification.id}
-                          onClick={() => handleNotificationClick(notification)}
-                          className={`w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors ${
-                            !notification.read ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                          className={`relative px-4 py-3 hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors ${
+                            !notification.is_read ? 'bg-blue-50 dark:bg-blue-900/20' : 'opacity-60'
                           }`}
                         >
                           <div className="flex items-start space-x-3">
                             <div className="flex-shrink-0 mt-1">
-                              {notification.type === 'job_status_change' ? (
+                              {notification.type === 'approval' || notification.type === 'job_phase_change' ? (
                                 <CheckCircle className="h-5 w-5 text-blue-500" />
                               ) : (
                                 <AlertCircle className="h-5 w-5 text-orange-500" />
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 dark:text-white">
-                                {notification.title}
-                              </p>
-                              <p className="text-sm text-gray-500 dark:text-gray-400">
-                                {notification.message}
-                              </p>
-                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                                {new Date(notification.created_at).toLocaleString()}
-                              </p>
+                              <button
+                                onClick={() => handleNotificationClick(notification)}
+                                className="text-left w-full"
+                              >
+                                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                                  {notification.title}
+                                </p>
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                  {notification.message}
+                                </p>
+                                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                                  {new Date(notification.created_at).toLocaleString()}
+                                </p>
+                              </button>
+                              {!notification.is_read && (
+                                <div className="mt-2">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      markNotificationAsRead(notification.id);
+                                    }}
+                                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                                  >
+                                    Mark as read
+                                  </button>
+                                </div>
+                              )}
                             </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeNotification(notification.id);
+                              }}
+                              className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                              aria-label="Remove notification"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
                           </div>
-                        </button>
+                        </div>
                       ))
                     )}
                   </div>
@@ -397,11 +449,10 @@ export function Topbar({ showOnlyProfile = false }: TopbarProps) {
                   )}
                   <button
                     onClick={handleSignOut}
-                    disabled={loggingOut}
-                    className="block w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-[#2D3B4E] disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="block w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-[#2D3B4E]"
                   >
                     <LogOut className="h-4 w-4 inline-block mr-2" />
-                    {loggingOut ? 'Signing out...' : 'Sign out'}
+                    Sign out
                   </button>
                 </div>
               )}
@@ -413,3 +464,6 @@ export function Topbar({ showOnlyProfile = false }: TopbarProps) {
     </>
   );
 }
+
+// Memoize Topbar to prevent unnecessary re-renders
+export default memo(Topbar);

@@ -50,6 +50,7 @@ import { jsPDF } from 'jspdf';
 import ImageUpload from './ImageUpload';
 import { PropertyMap } from './PropertyMap';
 import { ImageGallery } from './ImageGallery';
+import ApprovalEmailModal from './ApprovalEmailModal';
 
 type Property = {
   id: string;
@@ -163,13 +164,10 @@ export function JobDetails() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<'formal' | 'professional' | 'casual' | ''>('');
   const [emailContent, setEmailContent] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [ccEmails, setCcEmails] = useState('');
   const [bccEmails, setBccEmails] = useState('');
-  const [includeJobDetails, setIncludeJobDetails] = useState(true);
-  const [includeWorkOrderDetails, setIncludeWorkOrderDetails] = useState(true);
   const [includePDF, setIncludePDF] = useState(true);
   const [showEmailPreview, setShowEmailPreview] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
@@ -643,78 +641,9 @@ export function JobDetails() {
     doc.save(`work-order-${job.work_order_num}.pdf`);
   };
 
-  const handleTemplateChange = (template: 'formal' | 'professional' | 'casual') => {
-    setSelectedTemplate(template);
-    const templates = {
-      formal: `Dear ${job?.property?.name || 'Property Manager'},
-
-I am writing to request your approval for additional charges related to Job #${job?.id}.
-
-${includeJobDetails ? `Job Details:
-- Property: ${job?.property?.name}
-- Address: ${job?.property?.address}
-- Description: ${job?.description}
-` : ''}
-
-${includeWorkOrderDetails ? `Work Order Details:
-- Extra Hours: ${job?.work_order?.extra_hours}
-- Extra Charges Description: ${job?.work_order?.extra_charges_description}
-` : ''}
-
-Please review these charges and let us know if you approve.
-
-Best regards,
-${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_name : 'Your Name'}`,
-      professional: `Hello ${job?.property?.name || 'Property Manager'},
-
-I hope this email finds you well. We need your approval for some additional charges for Job #${job?.id}.
-
-${includeJobDetails ? `Job Information:
-• Property: ${job?.property?.name}
-• Location: ${job?.property?.address}
-• Scope: ${job?.description}
-` : ''}
-
-${includeWorkOrderDetails ? `Additional Charges:
-• Extra Hours: ${job?.work_order?.extra_hours}
-• Charge Details: ${job?.work_order?.extra_charges_description}
-` : ''}
-
-Please review and approve these charges at your earliest convenience.
-
-Thank you,
-${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_name : 'Your Name'}`,
-      casual: `Hi ${job?.property?.name || 'Property Manager'},
-
-Quick note about some extra charges for Job #${job?.id} that need your approval.
-
-${includeJobDetails ? `Quick Job Info:
-- Property: ${job?.property?.name}
-- Address: ${job?.property?.address}
-- What we're doing: ${job?.description}
-` : ''}
-
-${includeWorkOrderDetails ? `Extra Charges:
-- Extra Hours: ${job?.work_order?.extra_hours}
-- Why extra charges: ${job?.work_order?.extra_charges_description}
-` : ''}
-
-Let me know if you're good with these charges!
-
-Thanks,
-${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_name : 'Your Name'}`
-    };
-    setEmailContent(templates[template]);
-  };
-
   const handleSendEmail = async () => {
     if (!recipientEmail) {
       alert('Please enter a recipient email address');
-      return;
-    }
-
-    if (!selectedTemplate) {
-      alert('Please select an email template');
       return;
     }
 
@@ -727,8 +656,6 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
         bcc: bccEmails,
         subject: `Extra Charges Approval Request - Job #${job?.id}`,
         content: emailContent,
-        includeJobDetails,
-        includeWorkOrderDetails,
         includePDF
       });
 
@@ -776,104 +703,6 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
     }
   };
 
-  const generatePreviewPdf = async () => {
-    if (!job) return;
-    
-    setShowPdfPreview(true); // Show preview immediately with loading state
-    
-    try {
-      const doc = new jsPDF();
-      
-      // Add job details if selected
-      if (includeJobDetails) {
-        doc.setFontSize(20);
-        doc.text(`Work Order: ${formatWorkOrderNumber(job.work_order_num)}`, 20, 20);
-        doc.setFontSize(12);
-        doc.text(`Property: ${job.property.name}`, 20, 35);
-        doc.text(`Unit: ${job.unit_number}`, 20, 45);
-        doc.text(`Unit Size: ${job.unit_size.label}`, 20, 55);
-        doc.text(`Job Type: ${job.job_type.label}`, 20, 65);
-        doc.text(`Scheduled Date: ${formatDate(job.scheduled_date)}`, 20, 75);
-      }
-
-      // Add work order details if selected
-      if (includeWorkOrderDetails && job.work_order) {
-        let y = includeJobDetails ? 100 : 20;
-        doc.setFontSize(16);
-        doc.text('Work Order Details', 20, y);
-        y += 15;
-
-        doc.setFontSize(12);
-        doc.text(`Submission Date: ${formatDate(job.work_order.submission_date)}`, 20, y);
-        y += 10;
-        doc.text(`Occupied: ${job.work_order.is_occupied ? 'Yes' : 'No'}`, 20, y);
-        y += 10;
-        doc.text(`Full Paint: ${job.work_order.is_full_paint ? 'Yes' : 'No'}`, 20, y);
-        y += 10;
-        doc.text(`Job Category: ${job.work_order.job_category}`, 20, y);
-        y += 10;
-
-        if (job.work_order.has_sprinklers) {
-          doc.text(`Has Sprinklers: Yes`, 20, y);
-          y += 10;
-          doc.text(`Sprinklers Painted: ${job.work_order.sprinklers_painted ? 'Yes' : 'No'}`, 20, y);
-          y += 10;
-        }
-
-        if (job.work_order.painted_ceilings) {
-          doc.text(`Painted Ceilings: Yes`, 20, y);
-          y += 10;
-          doc.text(`Ceiling Rooms: ${job.work_order.ceiling_rooms_count}`, 20, y);
-          y += 10;
-        }
-
-        if (job.work_order.painted_patio) {
-          doc.text(`Painted Patio: Yes`, 20, y);
-          y += 10;
-        }
-
-        if (job.work_order.painted_garage) {
-          doc.text(`Painted Garage: Yes`, 20, y);
-          y += 10;
-        }
-
-        if (job.work_order.painted_cabinets) {
-          doc.text(`Painted Cabinets: Yes`, 20, y);
-          y += 10;
-        }
-
-        if (job.work_order.painted_crown_molding) {
-          doc.text(`Painted Crown Molding: Yes`, 20, y);
-          y += 10;
-        }
-
-        if (job.work_order.painted_front_door) {
-          doc.text(`Painted Front Door: Yes`, 20, y);
-          y += 10;
-        }
-
-        if (job.work_order.has_extra_charges) {
-          doc.text(`Has Extra Charges: Yes`, 20, y);
-          y += 10;
-          if (job.work_order.extra_charges_description) {
-            doc.text(`Extra Charges Description: ${job.work_order.extra_charges_description}`, 20, y);
-            y += 10;
-          }
-          doc.text(`Extra Hours: ${job.work_order.extra_hours || 'N/A'}`, 20, y);
-          y += 10;
-        }
-      }
-      
-      // Convert PDF to base64 string
-      const pdfBase64 = doc.output('datauristring');
-      setPreviewPdfUrl(pdfBase64);
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      alert('Failed to generate PDF preview. Please try again.');
-      setShowPdfPreview(false);
-    }
-  };
-
   // Add this function inside JobDetails component
   const generateInvoicePDF = async () => {
     try {
@@ -884,7 +713,7 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
 
       // Add logo with timeout and error handling
       const logo = new window.Image();
-      logo.src = '/src/assets/jg-logo.png';
+      logo.src = 'https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png';
       let logoLoaded = false;
       await new Promise<void>((resolve) => {
         logo.onload = () => {
@@ -925,6 +754,7 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
       doc.text('Billing Breakdown', margin, y);
       y += 6;
       doc.setFontSize(9); // Reduced font size for line items
+      let tableY = y;
       doc.text('Description', margin, tableY);
       doc.text('Amount', margin + 120, tableY);
       tableY += 6;
@@ -1166,21 +996,23 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
             </span>
           </div>
           <div className="flex space-x-3">
-            {canChangePhase && (
+            {canChangePhase && !isPendingWorkOrder && (
               <>
-                <button
-                  onClick={() => {
-                    if (currentNavPhaseIndex > 0) handlePhaseChangeTo(navPhases[currentNavPhaseIndex - 1]);
-                  }}
-                  disabled={currentNavPhaseIndex === 0}
-                  className="inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{
-                    backgroundColor: currentNavPhaseIndex > 0 ? navPhases[currentNavPhaseIndex - 1].color_dark_mode : '#6B7280'
-                  }}
-                >
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Previous: {currentNavPhaseIndex > 0 ? navPhases[currentNavPhaseIndex - 1].job_phase_label : 'N/A'}
-                </button>
+                {!isJobRequest && (
+                  <button
+                    onClick={() => {
+                      if (currentNavPhaseIndex > 0) handlePhaseChangeTo(navPhases[currentNavPhaseIndex - 1]);
+                    }}
+                    disabled={currentNavPhaseIndex === 0}
+                    className="inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      backgroundColor: currentNavPhaseIndex > 0 ? navPhases[currentNavPhaseIndex - 1].color_dark_mode : '#6B7280'
+                    }}
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Previous: {currentNavPhaseIndex > 0 ? navPhases[currentNavPhaseIndex - 1].job_phase_label : 'N/A'}
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     if (currentNavPhaseIndex < navPhases.length - 1) handlePhaseChangeTo(navPhases[currentNavPhaseIndex + 1]);
@@ -1915,138 +1747,21 @@ ${job?.assigned_to ? subcontractors.find(s => s.id === job.assigned_to)?.full_na
 
         {/* Email Template Modal */}
         {showEmailModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                  Send Approval Request
-                </h3>
-                <button
-                  onClick={() => setShowEmailModal(false)}
-                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Recipient Email
-                  </label>
-                  <input
-                    type="email"
-                    value={recipientEmail}
-                    onChange={(e) => setRecipientEmail(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                    placeholder="Enter recipient email"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    CC (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={ccEmails}
-                    onChange={(e) => setCcEmails(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                    placeholder="Enter CC emails (comma-separated)"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    BCC (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={bccEmails}
-                    onChange={(e) => setBccEmails(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                    placeholder="Enter BCC emails (comma-separated)"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Email Template
-                  </label>
-                  <select
-                    value={selectedTemplate}
-                    onChange={(e) => handleTemplateChange(e.target.value as 'formal' | 'professional' | 'casual')}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                  >
-                    <option value="">Select an option</option>
-                    <option value="formal">Formal</option>
-                    <option value="professional">Professional</option>
-                    <option value="casual">Casual</option>
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Include in Email
-                  </label>
-                  <div className="space-y-2">
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={includeJobDetails}
-                        onChange={(e) => setIncludeJobDetails(e.target.checked)}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Job Details</span>
-                    </label>
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={includeWorkOrderDetails}
-                        onChange={(e) => setIncludeWorkOrderDetails(e.target.checked)}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Work Order Details</span>
-                    </label>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Email Content
-                  </label>
-                  <textarea
-                    value={emailContent}
-                    onChange={(e) => setEmailContent(e.target.value)}
-                    rows={10}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
-                  />
-                </div>
-
-                <div className="flex justify-end space-x-4">
-                  <button
-                    onClick={() => setShowEmailPreview(true)}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
-                  >
-                    Preview Email
-                  </button>
-                  <button
-                    onClick={() => setShowPdfPreview(true)}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
-                  >
-                    Preview PDF
-                  </button>
-                  <button
-                    onClick={handleSendEmail}
-                    disabled={sendingEmail}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {sendingEmail ? 'Sending...' : 'Send Email'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ApprovalEmailModal
+            recipientEmail={recipientEmail}
+            ccEmails={ccEmails}
+            bccEmails={bccEmails}
+            emailContent={emailContent}
+            sendingEmail={sendingEmail}
+            job={job}
+            onClose={() => setShowEmailModal(false)}
+            onSendEmail={handleSendEmail}
+            onPreviewEmail={() => setShowEmailPreview(true)}
+            onRecipientChange={setRecipientEmail}
+            onCCChange={setCcEmails}
+            onBCCChange={setBccEmails}
+            onContentChange={setEmailContent}
+          />
         )}
 
         {/* Email Preview Modal */}

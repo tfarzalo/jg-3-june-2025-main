@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
@@ -41,9 +41,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
+    if (initialized) return; // Prevent multiple initializations
+    
     let mounted = true;
 
     const initializeAuth = async () => {
@@ -121,6 +124,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error('Auth initialization error:', error);
         setError(error.message || 'Failed to initialize auth');
         setLoading(false);
+      } finally {
+        if (mounted) {
+          setInitialized(true);
+        }
       }
     };
 
@@ -139,25 +146,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem(`sb-${projectRef}-auth-token`);
         localStorage.removeItem('gibson_token');
         sessionStorage.clear();
+        // Don't navigate here - let the route protection handle it
       } else if (event === 'TOKEN_REFRESHED') {
         console.log('Token refreshed successfully');
       } else if (event === 'USER_UPDATED') {
         console.log('User updated:', session?.user);
+      } else if (event === 'SIGNED_IN') {
+        console.log('User signed in successfully');
       }
 
       setSession(session);
       setUser(session?.user ?? null);
-      setLoading(false);
+      
+      // Only set loading to false if we're not in the middle of a refresh
+      if (event !== 'TOKEN_REFRESHED') {
+        setLoading(false);
+      }
     });
+
+    // Set up periodic session refresh to prevent random logouts
+    const refreshInterval = setInterval(async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error('Session refresh error:', error);
+          return;
+        }
+        
+        if (session) {
+          // Check if session is close to expiring (within 5 minutes)
+          const expiresAt = new Date(session.expires_at! * 1000);
+          const now = new Date();
+          const timeUntilExpiry = expiresAt.getTime() - now.getTime();
+          const fiveMinutes = 5 * 60 * 1000;
+          
+          if (timeUntilExpiry < fiveMinutes && timeUntilExpiry > 0) {
+            console.log('Session close to expiring, refreshing...');
+            const { error: refreshError } = await supabase.auth.refreshSession();
+            if (refreshError) {
+              console.error('Failed to refresh session:', refreshError);
+            } else {
+              console.log('Session refreshed successfully');
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error in session refresh check:', error);
+      }
+    }, 60000); // Check every minute
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
+      clearInterval(refreshInterval);
     };
-  }, []);
+  }, [initialized]); // Only run once after initialization
 
-  // Sign in
-  const signIn = async (email: string, password: string) => {
+  // Memoize signIn to prevent recreation on every render
+  const signIn = useCallback(async (email: string, password: string) => {
     try {
       setLoading(true);
       setError(null);
@@ -181,10 +227,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       toast.error(message);
       return { success: false, error: message };
     }
-  };
+  }, []);
 
-  // Sign out
-  const signOut = async () => {
+  // Memoize signOut to prevent recreation on every render
+  const signOut = useCallback(async () => {
     try {
       setLoading(true);
       const projectRef = getSupabaseProjectRef();
@@ -206,10 +252,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       toast.error(message);
       return { success: false, error: message };
     }
-  };
+  }, []);
+
+  // Memoize context value to prevent unnecessary re-renders
+  const contextValue = useMemo(() => ({
+    session,
+    user,
+    loading,
+    error,
+    signIn,
+    signOut,
+  }), [session, user, loading, error, signIn, signOut]);
 
   return (
-    <AuthContext.Provider value={{ session, user, loading, error, signIn, signOut }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

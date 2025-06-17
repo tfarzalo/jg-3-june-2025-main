@@ -10,7 +10,8 @@ if (!root) {
 }
 
 createRoot(root).render(
-  <StrictMode>
+  // Temporarily remove StrictMode to help with re-rendering issues
+  // <StrictMode>
     <App />
-  </StrictMode>
+  // </StrictMode>
 );

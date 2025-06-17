@@ -11,7 +11,7 @@ interface Notification {
   user_id: string;
   title: string;
   message: string;
-  type: 'job_phase_change' | 'work_order' | 'callback' | 'system' | 'alert';
+  type: 'job_phase_change' | 'work_order' | 'callback' | 'system' | 'alert' | 'approval';
   reference_id?: string;
   reference_type?: string;
   is_read: boolean;
@@ -331,6 +331,8 @@ export function NotificationDropdown() {
         return <Calendar className="h-5 w-5 text-purple-500" />;
       case 'alert':
         return <AlertTriangle className="h-5 w-5 text-red-500" />;
+      case 'approval':
+        return <Check className="h-5 w-5 text-green-500" />;
       default:
         return <Bell className="h-5 w-5 text-gray-500" />;
     }

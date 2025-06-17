@@ -214,11 +214,6 @@ export function AppSettings() {
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setSettings(prev => ({ ...prev, [name]: value }));
-  };
-
   const handleThemeChange = (theme: string) => {
     setSettings(prev => ({ ...prev, theme_preference: theme }));
   };
@@ -246,7 +241,7 @@ export function AppSettings() {
         .eq('id', settings.id);
         
       if (updateError) throw updateError;
-      
+
       toast.success('Settings updated successfully');
       
       // Apply theme change immediately
@@ -326,7 +321,7 @@ export function AppSettings() {
 
   return (
     <div className="p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center space-x-3">
             <Settings className="h-8 w-8 text-gray-600 dark:text-gray-400" />

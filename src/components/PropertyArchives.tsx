@@ -8,9 +8,11 @@ import {
   Archive, 
   RefreshCw,
   ChevronDown,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
+import { createClient } from '@supabase/supabase-js';
 import { toast } from 'sonner';
 
 type Property = {
@@ -36,6 +38,7 @@ export function PropertyArchives() {
   const [error, setError] = useState<string | null>(null);
   const [selectedProperties, setSelectedProperties] = useState<string[]>([]);
   const [showUnarchiveConfirm, setShowUnarchiveConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const navigate = useNavigate();
@@ -122,6 +125,47 @@ export function PropertyArchives() {
     }
   };
 
+  const handleDeleteSelected = async () => {
+    if (selectedProperties.length === 0) return;
+    
+    setProcessing(true);
+    try {
+      // For deletion operations, we need admin privileges to bypass RLS
+      const adminClient = createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false
+          }
+        }
+      );
+
+      // Delete selected properties
+      const { error: deleteError } = await adminClient
+        .from('properties')
+        .delete()
+        .in('id', selectedProperties);
+
+      if (deleteError) throw deleteError;
+
+      // Clear selection and close confirmation
+      setSelectedProperties([]);
+      setShowDeleteConfirm(false);
+      
+      toast.success(`Successfully deleted ${selectedProperties.length} ${selectedProperties.length !== 1 ? 'properties' : 'property'}`);
+      
+      // Refresh the property list
+      fetchProperties();
+    } catch (err) {
+      console.error('Error deleting properties:', err);
+      toast.error('Failed to delete properties. Please try again.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -169,13 +213,22 @@ export function PropertyArchives() {
             Refresh
           </button>
           {selectedProperties.length > 0 && (
-            <button
-              onClick={() => setShowUnarchiveConfirm(true)}
-              className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              <Archive className="h-4 w-4 mr-2" />
-              Unarchive Selected ({selectedProperties.length})
-            </button>
+            <>
+              <button
+                onClick={() => setShowUnarchiveConfirm(true)}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <Archive className="h-4 w-4 mr-2" />
+                Unarchive Selected ({selectedProperties.length})
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Selected ({selectedProperties.length})
+              </button>
+            </>
           )}
           <button
             onClick={() => navigate('/dashboard/properties')}
@@ -314,6 +367,33 @@ export function PropertyArchives() {
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
                 {processing ? 'Unarchiving...' : 'Unarchive Properties'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Delete Selected Properties</h3>
+            <p className="text-gray-700 dark:text-gray-300 mb-4">
+              Are you sure you want to delete {selectedProperties.length} selected {selectedProperties.length !== 1 ? 'properties' : 'property'}? This action cannot be undone.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-400 bg-gray-100 dark:bg-[#2D3B4E] rounded-lg hover:bg-gray-200 dark:hover:bg-[#374151] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={processing}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {processing ? 'Deleting...' : 'Delete Properties'}
               </button>
             </div>
           </div>

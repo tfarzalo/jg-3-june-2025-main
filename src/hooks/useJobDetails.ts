@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/utils/supabase';
 import { debounce } from '../lib/utils/debounce';
 
-interface Job {
+export interface Job {
   id: string;
   work_order_num: number;
   unit_number: string;
