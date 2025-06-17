@@ -710,8 +710,9 @@ export function JobDetails() {
       const doc = new jsPDF();
       let y = 20;
       const margin = 20;
+      const pageWidth = doc.internal.pageSize.getWidth();
 
-      // Add logo with timeout and error handling
+      // Add logo with proper sizing and positioning
       const logo = new window.Image();
       logo.src = 'https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png';
       let logoLoaded = false;
@@ -725,15 +726,36 @@ export function JobDetails() {
           if (!logoLoaded) resolve();
         }, 2000);
       });
-      if (logoLoaded) {
-        doc.addImage(logo, 'PNG', margin, y, 40, 20);
-        y += 25;
-      }
 
-      // --- PAGE 1: Invoice ---
-      doc.setFontSize(22);
-      doc.text('INVOICE', margin + 50, y);
-      y += 15;
+      if (logoLoaded) {
+        // Calculate logo dimensions maintaining aspect ratio
+        const logoMaxWidth = 30;
+        const logoMaxHeight = 15;
+        const logoAspectRatio = logo.width / logo.height;
+        
+        let logoWidth, logoHeight;
+        if (logoAspectRatio > logoMaxWidth / logoMaxHeight) {
+          logoWidth = logoMaxWidth;
+          logoHeight = logoMaxWidth / logoAspectRatio;
+        } else {
+          logoHeight = logoMaxHeight;
+          logoWidth = logoMaxHeight * logoAspectRatio;
+        }
+
+        // Position logo on the left
+        doc.addImage(logo, 'PNG', margin, y, logoWidth, logoHeight);
+        
+        // Position INVOICE heading on the same row, right-aligned
+        doc.setFontSize(22);
+        doc.text('INVOICE', pageWidth - margin, y + (logoHeight / 2), { align: 'right' });
+        
+        y += logoHeight + 10;
+      } else {
+        // If logo fails to load, just add the INVOICE heading
+        doc.setFontSize(22);
+        doc.text('INVOICE', pageWidth - margin, y, { align: 'right' });
+        y += 15;
+      }
 
       doc.setFontSize(10); // Reduced font size for better formatting
       doc.text(`Date: ${formatDate(new Date().toISOString())}`, margin, y);

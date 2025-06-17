@@ -13,6 +13,7 @@ AS $$
 DECLARE
   v_token_data RECORD;
   v_job_work_order_num INTEGER;
+  v_work_order_phase_id UUID;
   v_result JSON;
 BEGIN
   -- Get the approval token data
@@ -39,9 +40,22 @@ BEGIN
   SET used_at = NOW()
   WHERE token = p_token;
   
-  -- Update job status to Work Order
+  -- Get Work Order phase ID
+  SELECT id INTO v_work_order_phase_id
+  FROM job_phases
+  WHERE job_phase_label = 'Work Order'
+  LIMIT 1;
+  
+  IF v_work_order_phase_id IS NULL THEN
+    RETURN json_build_object(
+      'success', false,
+      'error', 'Work Order phase not found'
+    );
+  END IF;
+  
+  -- Update job to Work Order phase
   UPDATE jobs
-  SET status = 'Work Order',
+  SET current_phase_id = v_work_order_phase_id,
       updated_at = NOW()
   WHERE id = v_token_data.job_id;
   
@@ -59,19 +73,18 @@ BEGIN
   SELECT 
     p.id,
     'Extra Charges Approved',
-    format('%s approved extra charges of $%.2f for Job #%s', 
-           COALESCE(v_token_data.approver_name, v_token_data.approver_email),
-           (v_token_data.extra_charges_data->>'total')::numeric,
-           v_job_work_order_num),
+    format('Extra charges for Job #%s at %s Unit %s have been approved by %s', 
+           v_job_work_order_num::text,
+           COALESCE((v_token_data.extra_charges_data->'job_details'->>'property_name'), 'Unknown Property'),
+           COALESCE((v_token_data.extra_charges_data->'job_details'->>'unit_number'), 'Unknown Unit'),
+           COALESCE(v_token_data.approver_name, v_token_data.approver_email)),
     'approval',
     v_token_data.job_id,
     'job',
     false,
     NOW()
   FROM profiles p
-  JOIN user_role_assignments ura ON ura.user_id = p.id
-  JOIN user_roles ur ON ur.id = ura.role_id
-  WHERE ur.name IN ('Admin', 'JG Management');
+  WHERE p.role IN ('admin', 'jg_management');
   
   -- Note: Activity logging removed as activity_logs table does not exist
   -- The notification above serves as an audit trail for the approval action
