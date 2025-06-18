@@ -339,7 +339,7 @@ export function DashboardHome() {
   
   // Get today's jobs
   const today = new Date().toISOString().split('T')[0];
-  const todaysJobs = jobs.filter(job => job.scheduled_date?.startsWith(today)).slice(0, 5);
+  const todaysJobs = jobs.filter(job => job.scheduled_date?.startsWith(today)).slice(0, 4);
 
   // Calculate today's job counts by type
   const allTodaysJobs = jobs.filter(job => job.scheduled_date?.startsWith(today));
@@ -502,7 +502,7 @@ export function DashboardHome() {
                   <tr className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
                     <th className="pb-2">ID</th>
                     <th className="pb-2">Property</th>
-                    <th className="pb-2">Status</th>
+                    <th className="pb-2">Unit #</th>
                   </tr>
                 </thead>
                 <tbody className="text-gray-700 dark:text-gray-300 text-sm">
@@ -523,15 +523,7 @@ export function DashboardHome() {
                       </td>
                       <td className="py-2">
                         <Link to={`/dashboard/jobs/${job.id}`} className="block">
-                          <span 
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium`}
-                            style={{
-                              backgroundColor: job.job_phase?.color_dark_mode ? `${job.job_phase.color_dark_mode}26` : 'rgba(128, 128, 128, 0.1)', // Add 10% opacity
-                              color: job.job_phase?.color_dark_mode || 'gray', 
-                            }}
-                          >
-                            {job.job_phase?.job_phase_label || 'Unknown'}
-                          </span>
+                          {job.unit_number || 'N/A'}
                         </Link>
                       </td>
                     </tr>
@@ -554,11 +546,11 @@ export function DashboardHome() {
             </Link>
           }
           titleColor="text-gray-900 dark:text-white"
-          className="min-h-[400px]"
+          className="min-h-[400px] max-h-[400px]"
         >
-          <div className="space-y-3">
-            <div className="flex items-center justify-between text-sm text-gray-700 dark:text-gray-300 mb-2">
-              <span>Today's Jobs: {todaysJobs.length} Total</span>
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-between text-sm text-gray-700 dark:text-gray-300 mb-3 flex-shrink-0">
+              <span>Today's Jobs: {allTodaysJobs.length} Total</span>
               <div className="flex space-x-4">
                 <span className="text-blue-500">Paint: {todayPaintJobs}</span>
                 <span className="text-orange-500">Callback: {todayCallbackJobs}</span>
@@ -566,42 +558,49 @@ export function DashboardHome() {
               </div>
             </div>
             
-            {todaysJobs.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+            {allTodaysJobs.length === 0 ? (
+              <div className="text-center py-8 text-gray-500 flex-1 flex items-center justify-center">
                 No jobs scheduled for today
               </div>
             ) : (
-              todaysJobs.map(job => (
-                <Link 
-                  key={job.id} 
-                  to={`/dashboard/jobs/${job.id}`}
-                  className="block"
-                >
-                  <div 
-                    className="rounded-lg p-3"
-                    style={{
-                      backgroundColor: job.job_phase?.color_dark_mode ? `${job.job_phase.color_dark_mode}1A` : 'rgba(128, 128, 128, 0.1)', // Use fetched color with 10% opacity
-                    }}
+              <div className="max-h-64 overflow-y-auto space-y-3 flex-1 pr-2">
+                {todaysJobs.map(job => (
+                  <Link 
+                    key={job.id} 
+                    to={`/dashboard/jobs/${job.id}`}
+                    className="block"
                   >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-gray-900 dark:text-white flex items-center">
-                          {job.property?.property_name || 'Unknown Property'}
-                          <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">
-                            Unit {job.unit_number}
-                          </span>
-                        </h4>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          Assigned: {job.assigned_to?.full_name || 'Unassigned'}
-                        </p>
+                    <div 
+                      className="rounded-lg p-3"
+                      style={{
+                        backgroundColor: job.job_phase?.color_dark_mode ? `${job.job_phase.color_dark_mode}1A` : 'rgba(128, 128, 128, 0.1)', // Use fetched color with 10% opacity
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-gray-900 dark:text-white flex items-center">
+                            {job.property?.property_name || 'Unknown Property'}
+                            <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">
+                              Unit {job.unit_number}
+                            </span>
+                          </h4>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            Assigned: {job.assigned_to?.full_name || 'Unassigned'}
+                          </p>
+                        </div>
+                        <span className="text-sm px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                          {job.job_type?.job_type_label || 'Unknown Type'}
+                        </span>
                       </div>
-                      <span className="text-sm px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                        {job.job_type?.job_type_label || 'Unknown Type'}
-                      </span>
                     </div>
+                  </Link>
+                ))}
+                {allTodaysJobs.length > 4 && (
+                  <div className="text-center py-2 text-sm text-gray-500 dark:text-gray-400">
+                    Showing 4 of {allTodaysJobs.length} jobs
                   </div>
-                </Link>
-              ))
+                )}
+              </div>
             )}
           </div>
         </DashboardCard>

@@ -3,6 +3,7 @@ import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserRole } from '@/hooks/useUserRole';
 import { MainLayout } from '@/components/ui/MainLayout';
+import { initializeGlobalSubscriptions } from '@/stores/globalRefresh';
 
 const Auth = lazy(() => import('@/components/Auth'));
 const Dashboard = lazy(() => import('@/components/Dashboard'));
@@ -44,6 +45,11 @@ export function AppContent() {
     console.log('AppContent: Auth state update:', authState);
 
     const { hasSession, authLoading, roleLoading, role, isApprovalPage } = authState;
+
+    // Initialize global subscriptions once when we have a session
+    if (hasSession && !authLoading && !roleLoading) {
+      initializeGlobalSubscriptions();
+    }
 
     // Skip auth logic for approval pages
     if (isApprovalPage) {

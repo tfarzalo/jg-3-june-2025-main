@@ -53,38 +53,62 @@ BEGIN
     );
   END IF;
   
-  -- Update job to Work Order phase
-  UPDATE jobs
-  SET current_phase_id = v_work_order_phase_id,
-      updated_at = NOW()
-  WHERE id = v_token_data.job_id;
+  -- Get current phase for change record
+  DECLARE
+    v_current_phase_id UUID;
+  BEGIN
+    SELECT current_phase_id INTO v_current_phase_id
+    FROM jobs 
+    WHERE id = v_token_data.job_id;
   
-  -- Create notifications for admin and management users
-  INSERT INTO user_notifications (
-    user_id,
-    title,
-    message,
-    type,
-    reference_id,
-    reference_type,
-    is_read,
-    created_at
-  )
-  SELECT 
-    p.id,
-    'Extra Charges Approved',
-    format('Extra charges for Job #%s at %s Unit %s have been approved by %s', 
-           v_job_work_order_num::text,
-           COALESCE((v_token_data.extra_charges_data->'job_details'->>'property_name'), 'Unknown Property'),
-           COALESCE((v_token_data.extra_charges_data->'job_details'->>'unit_number'), 'Unknown Unit'),
-           COALESCE(v_token_data.approver_name, v_token_data.approver_email)),
-    'approval',
-    v_token_data.job_id,
-    'job',
-    false,
-    NOW()
-  FROM profiles p
-  WHERE p.role IN ('admin', 'jg_management');
+    -- Update job to Work Order phase
+    UPDATE jobs
+    SET current_phase_id = v_work_order_phase_id,
+        updated_at = NOW()
+    WHERE id = v_token_data.job_id;
+    
+    -- Create a job phase change record to trigger normal notifications
+    INSERT INTO job_phase_changes (
+      job_id,
+      changed_by,
+      from_phase_id,
+      to_phase_id,
+      change_reason
+    ) VALUES (
+      v_token_data.job_id,
+      NULL, -- No specific user for approval actions
+      v_current_phase_id,
+      v_work_order_phase_id,
+      format('Extra charges approved by %s', COALESCE(v_token_data.approver_name, v_token_data.approver_email))
+    );
+  
+    -- Create specific approval notifications for admin and management users
+    INSERT INTO user_notifications (
+      user_id,
+      title,
+      message,
+      type,
+      reference_id,
+      reference_type,
+      is_read,
+      created_at
+    )
+    SELECT 
+      p.id,
+      'Extra Charges Approved',
+      format('Extra charges for Job #%s at %s Unit %s have been approved by %s', 
+             v_job_work_order_num::text,
+             COALESCE((v_token_data.extra_charges_data->'job_details'->>'property_name'), 'Unknown Property'),
+             COALESCE((v_token_data.extra_charges_data->'job_details'->>'unit_number'), 'Unknown Unit'),
+             COALESCE(v_token_data.approver_name, v_token_data.approver_email)),
+      'approval',
+      v_token_data.job_id,
+      'job',
+      false,
+      NOW()
+    FROM profiles p
+    WHERE p.role IN ('admin', 'jg_management');
+  END;
   
   -- Note: Activity logging removed as activity_logs table does not exist
   -- The notification above serves as an audit trail for the approval action

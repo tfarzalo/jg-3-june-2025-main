@@ -216,69 +216,25 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
-        table: 'jobs',
-        filter: `current_phase_id=in.(${phaseIds.join(',')})`
+        table: 'jobs'
       }, async (payload) => {
         if (isMountedRef.current) {
-          console.log('Job updated in phase:', payload.new);
+          console.log('Job updated:', payload);
           
-          // Check if the job still belongs to our phase filter
-          if (phaseIds.includes(payload.new.current_phase_id)) {
-            // Fetch the complete updated job data
-            const { data: updatedJob, error } = await supabase
-              .from('jobs')
-              .select(`
-                id,
-                work_order_num,
-                unit_number,
-                scheduled_date,
-                total_billing_amount,
-                property:properties (
-                  id,
-                  property_name,
-                  address,
-                  city,
-                  state
-                ),
-                unit_size:unit_sizes (
-                  unit_size_label
-                ),
-                job_type:job_types (
-                  job_type_label
-                ),
-                job_phase:current_phase_id (
-                  job_phase_label,
-                  color_light_mode,
-                  color_dark_mode
-                )
-              `)
-              .eq('id', payload.new.id)
-              .single();
-              
-            if (!error && updatedJob) {
-              // Transform the data to match the Job interface
-              const transformedJob: Job = {
-                id: updatedJob.id,
-                work_order_num: updatedJob.work_order_num,
-                unit_number: updatedJob.unit_number,
-                scheduled_date: updatedJob.scheduled_date,
-                total_billing_amount: updatedJob.total_billing_amount,
-                property: Array.isArray(updatedJob.property) ? updatedJob.property[0] : updatedJob.property,
-                unit_size: Array.isArray(updatedJob.unit_size) ? updatedJob.unit_size[0] : updatedJob.unit_size,
-                job_type: Array.isArray(updatedJob.job_type) ? updatedJob.job_type[0] : updatedJob.job_type,
-                job_phase: Array.isArray(updatedJob.job_phase) ? updatedJob.job_phase[0] : updatedJob.job_phase,
-              };
-              setJobs(prev => prev.map(job => 
-                job.id === transformedJob.id ? transformedJob : job
-              ));
-            } else {
-              // Fallback to full refetch if individual fetch fails
-              fetchJobs(true);
-            }
-          } else {
-            // Job moved to a different phase, remove it from current list
-            setJobs(prev => prev.filter(job => job.id !== payload.new.id));
-          }
+          // Always refetch to ensure consistency regardless of phase changes
+          setTimeout(() => fetchJobs(true), 500);
+        }
+      })
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'job_phase_changes'
+      }, async (payload) => {
+        if (isMountedRef.current) {
+          console.log('Job phase change detected:', payload);
+          
+          // Refetch jobs to reflect phase changes
+          setTimeout(() => fetchJobs(true), 1000);
         }
       })
       .on('postgres_changes', {

@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { format, parseISO, isToday, isYesterday, isThisWeek } from 'date-fns';
 import { toast } from 'sonner';
 import { debounce } from '../lib/utils/debounce';
+import { useNotificationManager } from '../utils/notificationManager';
 
 interface Notification {
   id: string;
@@ -42,6 +43,9 @@ export function NotificationDropdown() {
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastFetchTimeRef = useRef<number>(0);
   const MIN_FETCH_INTERVAL = 5000; // Minimum time between fetches in milliseconds
+  
+  // Use notification manager
+  const { addListener } = useNotificationManager();
 
   const fetchWithRetry = async <T,>(
     operation: () => Promise<T>,
@@ -190,6 +194,44 @@ export function NotificationDropdown() {
     fetchNotifications();
     fetchNotificationSettings();
 
+    // Add notification manager listener
+    const removeListener = addListener(() => {
+      if (isMountedRef.current) {
+        fetchNotifications();
+      }
+    });
+
+    // Listen for custom refresh events
+    const handleRefreshNotifications = () => {
+      if (isMountedRef.current) {
+        fetchNotifications();
+      }
+    };
+
+    // Listen for approval completion events
+    const handleApprovalCompleted = () => {
+      console.log('Approval completed event received, refreshing notifications...');
+      if (isMountedRef.current) {
+        // Force immediate refresh
+        setTimeout(fetchNotifications, 500);
+        setTimeout(fetchNotifications, 2000); // Backup refresh
+      }
+    };
+
+    // Listen for messages from approval page
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      
+      if (event.data?.type === 'APPROVAL_COMPLETED') {
+        console.log('Received approval completion message:', event.data);
+        handleApprovalCompleted();
+      }
+    };
+
+    window.addEventListener('refreshNotifications', handleRefreshNotifications);
+    window.addEventListener('approvalCompleted', handleApprovalCompleted);
+    window.addEventListener('message', handleMessage);
+
     // Set up real-time subscription for new notifications
     const notificationsSubscription = supabase
       .channel('notifications-changes')
@@ -199,9 +241,25 @@ export function NotificationDropdown() {
           schema: 'public', 
           table: 'user_notifications' 
         }, 
-        () => {
+        (payload) => {
+          console.log('New notification received:', payload);
           if (isMountedRef.current) {
-            debouncedFetchNotifications();
+            // Immediate fetch for new notifications
+            fetchNotifications();
+          }
+        }
+      )
+      .on('postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'job_phase_changes'
+        },
+        (payload) => {
+          console.log('Job phase change detected:', payload);
+          if (isMountedRef.current) {
+            // Delay slightly to ensure any triggered notifications are created
+            setTimeout(fetchNotifications, 1000);
           }
         }
       )
@@ -216,9 +274,10 @@ export function NotificationDropdown() {
           schema: 'public',
           table: 'user_notifications'
         },
-        () => {
+        (payload) => {
+          console.log('Notification updated:', payload);
           if (isMountedRef.current) {
-            debouncedFetchNotifications();
+            fetchNotifications();
           }
         }
       )
@@ -233,21 +292,33 @@ export function NotificationDropdown() {
     
     document.addEventListener('mousedown', handleClickOutside);
 
-    // Set up polling for notifications as a fallback
+    // Set up more aggressive polling when we suspect notifications might be missing
+    const aggressivePollingInterval = setInterval(() => {
+      if (isMountedRef.current) {
+        fetchNotifications();
+      }
+    }, 5000); // Poll every 5 seconds for more responsive updates
+
+    // Set up regular polling as fallback
     const pollingInterval = setInterval(() => {
       if (isMountedRef.current) {
         fetchNotifications();
       }
-    }, 60000); // Poll every 60 seconds
+    }, 15000); // Poll every 15 seconds for more responsive updates
 
     return () => {
       isMountedRef.current = false;
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
       }
+      removeListener();
+      window.removeEventListener('refreshNotifications', handleRefreshNotifications);
+      window.removeEventListener('approvalCompleted', handleApprovalCompleted);
+      window.removeEventListener('message', handleMessage);
       notificationsSubscription.unsubscribe();
       notificationUpdatesSubscription.unsubscribe();
       document.removeEventListener('mousedown', handleClickOutside);
+      clearInterval(aggressivePollingInterval);
       clearInterval(pollingInterval);
     };
   }, [fetchNotifications, fetchNotificationSettings, debouncedFetchNotifications]);

@@ -51,6 +51,7 @@ import ImageUpload from './ImageUpload';
 import { PropertyMap } from './PropertyMap';
 import { ImageGallery } from './ImageGallery';
 import ApprovalEmailModal from './ApprovalEmailModal';
+import NotificationEmailModal from './NotificationEmailModal';
 
 type Property = {
   id: string;
@@ -169,12 +170,13 @@ export function JobDetails() {
   const [ccEmails, setCcEmails] = useState('');
   const [bccEmails, setBccEmails] = useState('');
   const [includePDF, setIncludePDF] = useState(true);
-  const [showEmailPreview, setShowEmailPreview] = useState(false);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | undefined>(undefined);
   const [showApproveButton, setShowApproveButton] = useState(false);
   const [workOrderFolderId, setWorkOrderFolderId] = useState<string | null>(null);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [notificationType, setNotificationType] = useState<'sprinkler_paint' | 'drywall_repairs' | null>(null);
 
   // Add debug logging
   useEffect(() => {
@@ -197,6 +199,13 @@ export function JobDetails() {
       });
     }
   }, [job]);
+
+  // Initialize recipient email with property AP contact when job loads
+  useEffect(() => {
+    if (job?.property?.ap_email && !recipientEmail) {
+      setRecipientEmail(job.property.ap_email);
+    }
+  }, [job?.property?.ap_email, recipientEmail]);
 
   // Add effect to calculate and update total billing amount
   useEffect(() => {
@@ -710,9 +719,8 @@ export function JobDetails() {
       const doc = new jsPDF();
       let y = 20;
       const margin = 20;
-      const pageWidth = doc.internal.pageSize.getWidth();
 
-      // Add logo with proper sizing and positioning
+      // Add logo with timeout and error handling
       const logo = new window.Image();
       logo.src = 'https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png';
       let logoLoaded = false;
@@ -726,36 +734,17 @@ export function JobDetails() {
           if (!logoLoaded) resolve();
         }, 2000);
       });
-
       if (logoLoaded) {
-        // Calculate logo dimensions maintaining aspect ratio
-        const logoMaxWidth = 30;
-        const logoMaxHeight = 15;
-        const logoAspectRatio = logo.width / logo.height;
-        
-        let logoWidth, logoHeight;
-        if (logoAspectRatio > logoMaxWidth / logoMaxHeight) {
-          logoWidth = logoMaxWidth;
-          logoHeight = logoMaxWidth / logoAspectRatio;
-        } else {
-          logoHeight = logoMaxHeight;
-          logoWidth = logoMaxHeight * logoAspectRatio;
-        }
-
-        // Position logo on the left
-        doc.addImage(logo, 'PNG', margin, y, logoWidth, logoHeight);
-        
-        // Position INVOICE heading on the same row, right-aligned
-        doc.setFontSize(22);
-        doc.text('INVOICE', pageWidth - margin, y + (logoHeight / 2), { align: 'right' });
-        
-        y += logoHeight + 10;
-      } else {
-        // If logo fails to load, just add the INVOICE heading
-        doc.setFontSize(22);
-        doc.text('INVOICE', pageWidth - margin, y, { align: 'right' });
-        y += 15;
+        // Logo reduced by half from 34x34 to 17x17 points
+        doc.addImage(logo, 'PNG', margin, y, 17, 17);
+        y += 17 + 18; // Logo height plus 24px spacing (24px ≈ 18 points)
       }
+
+      // --- PAGE 1: Invoice ---
+      // Left-aligned "INVOICE" heading with 24px spacing from logo
+      doc.setFontSize(22);
+      doc.text('INVOICE', margin, y);
+      y += 15;
 
       doc.setFontSize(10); // Reduced font size for better formatting
       doc.text(`Date: ${formatDate(new Date().toISOString())}`, margin, y);
@@ -795,7 +784,8 @@ export function JobDetails() {
         const desc = job.work_order.extra_charges_description || 'Extra Charges';
         const hours = job.work_order.extra_hours;
         const hourlyRate = 40;
-        const extraChargesText = `Extra Charges: ${desc} (${hours} hrs @ $${hourlyRate}/hr)`;
+        // Just show description without hours and rate details
+        const extraChargesText = `Extra Charges: ${desc}`;
         const splitText = doc.splitTextToSize(extraChargesText, 110); // Split text if too long
         doc.text(splitText, margin, tableY);
         doc.text(`${formatCurrency(hours * hourlyRate)}`, margin + 120, tableY);
@@ -911,6 +901,23 @@ export function JobDetails() {
       console.error('Error generating invoice PDF:', error);
       alert('Failed to generate invoice PDF. Please try again.');
     }
+  };
+
+  // Helper functions for notification emails
+  const handleSendSprinklerPaintNotification = () => {
+    setNotificationType('sprinkler_paint');
+    setShowNotificationModal(true);
+  };
+
+  const handleSendDrywallRepairsNotification = () => {
+    setNotificationType('drywall_repairs');
+    setShowNotificationModal(true);
+  };
+
+  const handleNotificationSent = () => {
+    toast.success('Notification sent successfully');
+    setShowNotificationModal(false);
+    setNotificationType(null);
   };
 
   if (jobLoading || phasesLoading) {
@@ -1331,6 +1338,38 @@ export function JobDetails() {
                           Approve Extra Charges
                         </button>
                       )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Notification Actions - Right below extra charges approval */}
+            {hasWorkOrder && job.work_order?.has_sprinklers && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/30 text-blue-800 dark:text-blue-200 px-4 py-3 rounded-lg mb-6">
+                <div className="flex items-start">
+                  <Mail className="h-5 w-5 mr-2 text-blue-600 dark:text-blue-400 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-medium">Notification Actions</p>
+                    <p className="mt-1 text-sm">Send notification emails to property managers about work progress.</p>
+                    <div className="mt-3 flex space-x-3">
+                      <button
+                        onClick={handleSendSprinklerPaintNotification}
+                        className="inline-flex items-center px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition-colors"
+                      >
+                        <Mail className="h-4 w-4 mr-2" />
+                        Send Sprinkler Paint Notification
+                      </button>
+                      {/* Hide drywall notification for now since field isn't set up yet */}
+                      {/* 
+                      <button
+                        onClick={handleSendDrywallRepairsNotification}
+                        className="inline-flex items-center px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors"
+                      >
+                        <Mail className="h-4 w-4 mr-2" />
+                        Send Drywall Repairs Notification
+                      </button>
+                      */}
                     </div>
                   </div>
                 </div>
@@ -1778,53 +1817,11 @@ export function JobDetails() {
             job={job}
             onClose={() => setShowEmailModal(false)}
             onSendEmail={handleSendEmail}
-            onPreviewEmail={() => setShowEmailPreview(true)}
             onRecipientChange={setRecipientEmail}
             onCCChange={setCcEmails}
             onBCCChange={setBccEmails}
             onContentChange={setEmailContent}
           />
-        )}
-
-        {/* Email Preview Modal */}
-        {showEmailPreview && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[150]">
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                  Email Preview
-                </h3>
-                <button
-                  onClick={() => setShowEmailPreview(false)}
-                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">To: {recipientEmail}</p>
-                  {ccEmails && <p className="text-sm font-medium text-gray-700 dark:text-gray-300">CC: {ccEmails}</p>}
-                </div>
-
-                <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-                  <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">
-                    {emailContent}
-                  </pre>
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    onClick={() => setShowEmailPreview(false)}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
         )}
 
         {/* PDF Preview Modal */}
@@ -1923,6 +1920,20 @@ export function JobDetails() {
               Print Invoice
             </button>
           </div>
+        )}
+
+        {/* Notification Email Modal */}
+        {showNotificationModal && notificationType && (
+          <NotificationEmailModal
+            isOpen={showNotificationModal}
+            onClose={() => {
+              setShowNotificationModal(false);
+              setNotificationType(null);
+            }}
+            job={job}
+            notificationType={notificationType}
+            onSent={handleNotificationSent}
+          />
         )}
       </div>
     </div>

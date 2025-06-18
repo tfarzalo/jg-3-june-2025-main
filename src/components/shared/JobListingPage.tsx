@@ -11,10 +11,9 @@ import {
   Archive,
   RefreshCw,
   Trash2,
-  X,
-  Calendar
+  X
 } from 'lucide-react';
-import { parseISO, format, subMonths, addMonths } from 'date-fns';
+import { parseISO, format, subMonths } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import Papa from 'papaparse';
 import jsPDF from 'jspdf';
@@ -65,17 +64,6 @@ interface JobListingPageProps {
   addButtonLink?: string;
   isArchive?: boolean;
   refetch?: () => Promise<void>;
-  hideAmountColumn?: boolean;
-}
-
-interface JobPhase {
-  job_phase_label: string;
-}
-
-interface JobWithPhase {
-  id: string;
-  current_phase_id: string;
-  job_phases: JobPhase[];
 }
 
 export function formatAddress(property: Job['property']) {
@@ -112,8 +100,7 @@ export function JobListingPage({
   showAddButton = false,
   addButtonLink = '/dashboard/jobs/new',
   isArchive = false,
-  refetch,
-  hideAmountColumn = false
+  refetch
 }: JobListingPageProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -309,7 +296,6 @@ export function JobListingPage({
     });
 
     // Set up page dimensions and margins
-    const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 10;
     const startX = margin;
     const startY = 20;
@@ -923,17 +909,15 @@ export function JobListingPage({
                     <SortIcon field="scheduled_date" />
                   </button>
                 </th>
-                {!hideAmountColumn && (
-                  <th scope="col" className="px-6 py-4 text-left">
-                    <button
-                      onClick={() => handleSort('total_billing_amount')}
-                      className="group inline-flex items-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider hover:text-gray-700 dark:hover:text-white"
-                    >
-                      Amount
-                      <SortIcon field="total_billing_amount" />
-                    </button>
-                  </th>
-                )}
+                <th scope="col" className="px-6 py-4 text-left">
+                  <button
+                    onClick={() => handleSort('total_billing_amount')}
+                    className="group inline-flex items-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider hover:text-gray-700 dark:hover:text-white"
+                  >
+                    Amount
+                    <SortIcon field="total_billing_amount" />
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-[#2D3B4E]">
@@ -998,18 +982,16 @@ export function JobListingPage({
                       {formatDate(job.scheduled_date)}
                     </div>
                   </td>
-                  {!hideAmountColumn && (
-                    <td className="px-6 py-4">
-                      <div className="text-gray-600 dark:text-gray-400">
-                        {job.total_billing_amount ? `$${job.total_billing_amount.toFixed(2)}` : '$0.00'}
-                      </div>
-                    </td>
-                  )}
+                  <td className="px-6 py-4">
+                    <div className="text-gray-600 dark:text-gray-400">
+                      {job.total_billing_amount ? `$${job.total_billing_amount.toFixed(2)}` : '$0.00'}
+                    </div>
+                  </td>
                 </tr>
               ))}
               {sortedAndFilteredJobs.length === 0 && (
                 <tr>
-                  <td colSpan={hideAmountColumn ? 8 : 9} className="px-6 py-4 text-center text-gray-600 dark:text-gray-400">
+                  <td colSpan={9} className="px-6 py-4 text-center text-gray-600 dark:text-gray-400">
                     No jobs found
                   </td>
                 </tr>

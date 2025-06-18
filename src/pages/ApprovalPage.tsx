@@ -272,6 +272,26 @@ const ApprovalPage: React.FC = () => {
 
       console.log('Approval processed successfully');
       setApproved(true);
+      
+      // Force refresh notifications in the main application
+      // This will trigger a manual refresh to ensure notifications appear
+      try {
+        // Try to send a message to the parent window if this is opened in a new tab
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage({
+            type: 'APPROVAL_COMPLETED',
+            jobId: approvalData.job_id,
+            timestamp: Date.now()
+          }, window.location.origin);
+        }
+        
+        // Also dispatch a custom event
+        window.dispatchEvent(new CustomEvent('approvalCompleted', {
+          detail: { jobId: approvalData.job_id }
+        }));
+      } catch (e) {
+        console.log('Could not notify parent window:', e);
+      }
     } catch (err) {
       console.error('Error processing approval:', err);
       setError(`Failed to process approval: ${err instanceof Error ? err.message : 'Unknown error'}`);

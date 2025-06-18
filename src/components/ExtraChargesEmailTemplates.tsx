@@ -9,14 +9,14 @@ interface EmailTemplate {
   id: string;
   name: string;
   subject: string;
-  content: string;
+  body: string;
 }
 
 export function ExtraChargesEmailTemplates({ signature, onSignatureChange }: { signature: string; onSignatureChange: (sig: string) => void }) {
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [newTemplate, setNewTemplate] = useState({ name: '', subject: '', content: '' });
+  const [newTemplate, setNewTemplate] = useState({ name: '', subject: '', body: '' });
   const [signatureInput, setSignatureInput] = useState(signature);
   const [showModal, setShowModal] = useState(false);
   const [editTemplate, setEditTemplate] = useState<EmailTemplate | null>(null);
@@ -32,19 +32,19 @@ export function ExtraChargesEmailTemplates({ signature, onSignatureChange }: { s
           id: crypto.randomUUID(),
           name: 'Formal',
           subject: 'Approval Request for Job #[Job ID]',
-          content: 'Dear [Property Manager],\n\nI am writing to request your approval for additional charges related to Job #[Job ID].\n\n[Job Details]\n\n[Work Order Details]\n\nPlease review these charges and let us know if you approve.\n\nThank you,\nJG Painting Pros Inc.'
+          body: 'Dear [Property Manager],\n\nI am writing to request your approval for additional charges related to Job #[Job ID].\n\n[Job Details]\n\n[Work Order Details]\n\nPlease review these charges and let us know if you approve.\n\nThank you,\nJG Painting Pros Inc.'
         },
         {
           id: crypto.randomUUID(),
           name: 'Professional',
           subject: 'Approval Needed for Job #[Job ID]',
-          content: 'Hello [Property Manager],\n\nWe need your approval for some additional charges for Job #[Job ID].\n\n[Job Information]\n\n[Additional Charges]\n\nPlease review and approve these charges at your earliest convenience.\n\nThank you,\nJG Painting Pros Inc.'
+          body: 'Hello [Property Manager],\n\nWe need your approval for some additional charges for Job #[Job ID].\n\n[Job Information]\n\n[Additional Charges]\n\nPlease review and approve these charges at your earliest convenience.\n\nThank you,\nJG Painting Pros Inc.'
         },
         {
           id: crypto.randomUUID(),
           name: 'Casual',
           subject: 'Quick Approval Needed for Job #[Job ID]',
-          content: 'Hi [Property Manager],\n\nQuick note about some extra charges for Job #[Job ID] that need your approval.\n\n[Quick Job Info]\n\n[Extra Charges]\n\nLet me know if you\'re good with these charges!\n\nThank you,\nJG Painting Pros Inc.'
+          body: 'Hi [Property Manager],\n\nQuick note about some extra charges for Job #[Job ID] that need your approval.\n\n[Quick Job Info]\n\n[Extra Charges]\n\nLet me know if you\'re good with these charges!\n\nThank you,\nJG Painting Pros Inc.'
         }
       ];
 
@@ -84,7 +84,7 @@ export function ExtraChargesEmailTemplates({ signature, onSignatureChange }: { s
   };
 
   const handleAdd = async () => {
-    if (!newTemplate.name || !newTemplate.subject || !newTemplate.content) {
+    if (!newTemplate.name || !newTemplate.subject || !newTemplate.body) {
       toast.error('All fields are required');
       return;
     }
@@ -93,7 +93,7 @@ export function ExtraChargesEmailTemplates({ signature, onSignatureChange }: { s
       id: generatedId,
       name: newTemplate.name,
       subject: newTemplate.subject,
-      content: newTemplate.content
+      body: newTemplate.body
     };
     console.log('Generated UUID:', generatedId);
     console.log('Adding template with payload:', payload);
@@ -103,7 +103,7 @@ export function ExtraChargesEmailTemplates({ signature, onSignatureChange }: { s
       toast.error('Failed to add template');
     } else {
       toast.success('Template added');
-      setNewTemplate({ name: '', subject: '', content: '' });
+      setNewTemplate({ name: '', subject: '', body: '' });
       fetchTemplates();
     }
   };
@@ -115,20 +115,20 @@ export function ExtraChargesEmailTemplates({ signature, onSignatureChange }: { s
       setNewTemplate({ 
         name: templateToEdit.name, 
         subject: templateToEdit.subject, 
-        content: templateToEdit.content 
+        body: templateToEdit.body 
       });
     }
   };
 
   const handleSave = async (id: string, updated: Partial<EmailTemplate>) => {
-    if (!updated.name || !updated.subject || !updated.content) {
+    if (!updated.name || !updated.subject || !updated.body) {
       toast.error('All fields are required');
       return;
     }
     const payload = {
       name: updated.name,
       subject: updated.subject,
-      content: updated.content
+      body: updated.body
     };
     console.log('Updating template with ID:', id, 'Payload:', payload);
     const { error } = await supabase.from('email_templates').update(payload).eq('id', id);
@@ -175,7 +175,7 @@ export function ExtraChargesEmailTemplates({ signature, onSignatureChange }: { s
     if (template) {
       setEditTemplate(template);
     } else {
-      setNewTemplate({ name: '', subject: '', content: signature }); // Start with signature in body
+      setNewTemplate({ name: '', subject: '', body: signature }); // Start with signature in body
       setEditTemplate(null);
     }
     setShowModal(true);
@@ -184,7 +184,7 @@ export function ExtraChargesEmailTemplates({ signature, onSignatureChange }: { s
   // When signature changes, update newTemplate body if not editing
   useEffect(() => {
     if (!editTemplate && showModal) {
-      setNewTemplate(t => ({ ...t, content: signature }));
+      setNewTemplate(t => ({ ...t, body: signature }));
     }
   }, [signature]);
 
@@ -224,7 +224,7 @@ export function ExtraChargesEmailTemplates({ signature, onSignatureChange }: { s
                     <div>
                       <div className="font-semibold">{t.name}</div>
                       <div className="text-sm text-gray-700 dark:text-gray-300">Subject: {t.subject}</div>
-                      <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line" dangerouslySetInnerHTML={{__html: t.content}} />
+                      <div className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-line" dangerouslySetInnerHTML={{__html: t.body}} />
                     </div>
                     <div className="flex space-x-2">
                       <button onClick={() => openModal(t)} className="px-3 py-1 bg-yellow-500 text-white rounded hover:bg-yellow-600 text-xs flex items-center"><Edit className="h-4 w-4 mr-1" />Edit</button>
@@ -243,7 +243,7 @@ export function ExtraChargesEmailTemplates({ signature, onSignatureChange }: { s
                 <input className="w-full mb-2 p-2 rounded border border-gray-300 dark:border-[#2D3B4E]" placeholder="Name" value={editTemplate?.name || newTemplate.name} onChange={e => editTemplate ? setEditTemplate(t => t && ({ ...t, name: e.target.value })) : setNewTemplate(t => ({ ...t, name: e.target.value }))} />
                 <input className="w-full mb-2 p-2 rounded border border-gray-300 dark:border-[#2D3B4E]" placeholder="Subject" value={editTemplate?.subject || newTemplate.subject} onChange={e => editTemplate ? setEditTemplate(t => t && ({ ...t, subject: e.target.value })) : setNewTemplate(t => ({ ...t, subject: e.target.value }))} />
                 <div className="mb-2">
-                  <ReactQuill theme="snow" value={editTemplate?.content || newTemplate.content} onChange={val => editTemplate ? setEditTemplate(t => t && ({ ...t, content: val })) : setNewTemplate(t => ({ ...t, content: val }))} style={{height: 200, marginBottom: 20}} />
+                  <ReactQuill theme="snow" value={editTemplate?.body || newTemplate.body} onChange={val => editTemplate ? setEditTemplate(t => t && ({ ...t, body: val })) : setNewTemplate(t => ({ ...t, body: val }))} style={{height: 200, marginBottom: 20}} />
                 </div>
                 <div className="flex flex-row justify-end gap-2 mt-2">
                   <button onClick={closeModal} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 text-sm">Cancel</button>
@@ -259,7 +259,7 @@ export function ExtraChargesEmailTemplates({ signature, onSignatureChange }: { s
                           toast.error('Failed to update template');
                         }
                       } else {
-                        if (!newTemplate.name || !newTemplate.subject || !newTemplate.content) return;
+                        if (!newTemplate.name || !newTemplate.subject || !newTemplate.body) return;
                         const { error } = await supabase.from('email_templates').insert([{ ...newTemplate }]);
                         if (!error) {
                           toast.success('Template added');

@@ -17,6 +17,7 @@ export interface Job {
     city: string;
     state: string;
     zip: string;
+    ap_email: string | null;
   };
   unit_size: {
     id: string;
@@ -343,10 +344,30 @@ export function useJobDetails(jobId: string | undefined) {
         console.log('Work order subscription status:', status);
       });
 
+    // Subscribe to job phase changes for this specific job
+    const phaseChangeChannel = supabase
+      .channel(`phase-change-${jobId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'job_phase_changes',
+        filter: `job_id=eq.${jobId}`
+      }, (payload) => {
+        console.log('Job phase change detected for job:', payload);
+        if (isMountedRef.current) {
+          // Immediate fetch for phase changes to ensure UI updates quickly
+          fetchJob();
+        }
+      })
+      .subscribe((status) => {
+        console.log('Phase change subscription status:', status);
+      });
+
     return () => {
       isMountedRef.current = false;
       jobChannel.unsubscribe();
       workOrderChannel.unsubscribe();
+      phaseChangeChannel.unsubscribe();
     };
   }, [jobId, fetchJob, debouncedFetchJob]);
 

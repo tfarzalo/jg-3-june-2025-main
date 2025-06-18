@@ -1,4 +1,3 @@
-import React from 'react';
 import { JobListingPage } from './shared/JobListingPage';
 import { useJobFetch } from './shared/useJobFetch';
 

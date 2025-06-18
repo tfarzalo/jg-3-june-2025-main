@@ -6,7 +6,7 @@ dotenv.config();
 
 // Create Supabase client
 const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseServiceKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseServiceKey) {
   console.error('Missing Supabase environment variables');
@@ -18,7 +18,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 async function executeSql() {
   try {
     // Read the SQL file
-    const sql = fs.readFileSync('supabase/setup-job-phases.sql', 'utf8');
+    const sql = fs.readFileSync('email_template_updates.sql', 'utf8');
     
     console.log('Executing SQL script...');
     
