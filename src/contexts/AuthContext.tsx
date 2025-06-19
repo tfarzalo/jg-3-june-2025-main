@@ -157,11 +157,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setSession(session);
       setUser(session?.user ?? null);
-      
-      // Only set loading to false if we're not in the middle of a refresh
-      if (event !== 'TOKEN_REFRESHED') {
-        setLoading(false);
-      }
+      setLoading(false); // Always set loading to false after any auth state change
     });
 
     // Set up periodic session refresh to prevent random logouts

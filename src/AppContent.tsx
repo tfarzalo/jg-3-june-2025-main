@@ -3,7 +3,6 @@ import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserRole } from '@/hooks/useUserRole';
 import { MainLayout } from '@/components/ui/MainLayout';
-import { initializeGlobalSubscriptions } from '@/stores/globalRefresh';
 
 const Auth = lazy(() => import('@/components/Auth'));
 const Dashboard = lazy(() => import('@/components/Dashboard'));
@@ -23,6 +22,18 @@ export function AppContent() {
   const { session, loading: authLoading } = useAuth();
   const { role, loading: roleLoading } = useUserRole();
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
+
+  // Add timeout to prevent infinite loading
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      console.log('AppContent: Loading timeout reached, forcing completion');
+      setIsInitialLoad(false);
+      setLoadingTimeout(true);
+    }, 10000); // 10 second timeout
+
+    return () => clearTimeout(timeout);
+  }, []);
 
   // Check if current route is an approval page (should not require auth)
   const isApprovalPage = useMemo(() => 
@@ -45,11 +56,6 @@ export function AppContent() {
     console.log('AppContent: Auth state update:', authState);
 
     const { hasSession, authLoading, roleLoading, role, isApprovalPage } = authState;
-
-    // Initialize global subscriptions once when we have a session
-    if (hasSession && !authLoading && !roleLoading) {
-      initializeGlobalSubscriptions();
-    }
 
     // Skip auth logic for approval pages
     if (isApprovalPage) {
@@ -85,15 +91,16 @@ export function AppContent() {
     }
   }, [authState, navigate, isInitialLoad, location.pathname]); // Simplified dependencies
 
-  // Don't show loading spinner for approval pages
-  if (!isApprovalPage && (authState.authLoading || authState.roleLoading || isInitialLoad)) {
+  // Don't show loading spinner for approval pages or if timeout reached
+  if (!isApprovalPage && !loadingTimeout && (authState.authLoading || authState.roleLoading || isInitialLoad)) {
     console.log('AppContent: Rendering spinner', {
       authLoading: authState.authLoading,
       roleLoading: authState.roleLoading,
       isInitialLoad,
       hasSession: authState.hasSession,
       role: authState.role,
-      location: location.pathname
+      location: location.pathname,
+      loadingTimeout
     });
     return <LoadingSpinner />;
   }

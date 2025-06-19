@@ -192,6 +192,10 @@ export interface Job {
       };
     };
   };
+  invoice_sent?: boolean;
+  invoice_paid?: boolean;
+  invoice_sent_date?: string;
+  invoice_paid_date?: string;
 }
 
 // Normalization helpers
@@ -234,12 +238,35 @@ export function useJobDetails(jobId: string | undefined) {
     try {
       console.log('Fetching job details for ID:', jobId);
 
-      // Get the job details
+      // Get the job details with better error handling
       const { data, error: rpcError } = await supabase
         .rpc('get_job_details', { p_job_id: jobId });
 
       if (rpcError) {
         console.error('Supabase RPC error:', rpcError);
+        
+        // If RPC fails, try fallback query
+        if (rpcError.code === '401' || rpcError.message?.includes('401')) {
+          console.log('401 error detected, trying fallback query...');
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from('jobs')
+            .select('*')
+            .eq('id', jobId)
+            .single();
+            
+          if (fallbackError) {
+            console.error('Fallback query also failed:', fallbackError);
+            throw rpcError;
+          }
+          
+          if (fallbackData) {
+            console.log('Fallback query successful, using basic job data');
+            setJob(fallbackData as any);
+            setLoading(false);
+            return;
+          }
+        }
+        
         throw rpcError;
       }
 

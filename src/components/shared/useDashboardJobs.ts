@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/utils/supabase';
-import { parseISO, isToday } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 
 interface DashboardJob {
@@ -11,6 +10,10 @@ interface DashboardJob {
   created_at: string;
   updated_at: string;
   total_billing_amount: number;
+  invoice_sent?: boolean;
+  invoice_paid?: boolean;
+  invoice_sent_date?: string;
+  invoice_paid_date?: string;
   property: {
     property_name: string;
   }[];
@@ -21,6 +24,11 @@ interface DashboardJob {
   job_type: {
     job_type_label: string;
   }[];
+  assigned_to: {
+    full_name: string;
+  }[] | {
+    full_name: string;
+  } | null;
 }
 
 interface UseDashboardJobsResult {
@@ -60,13 +68,38 @@ export function useDashboardJobs(): UseDashboardJobsResult {
     
     try {
       setLoading(true);
+      setError(null); // Clear previous errors
       
-      // Get phase IDs
-      const { data: phases, error: phaseError } = await supabase
+      // Get phase IDs with retry logic
+      let { data: phases, error: phaseError } = await supabase
         .from('job_phases')
         .select('id, job_phase_label');
 
-      if (phaseError) throw phaseError;
+      if (phaseError) {
+        console.error('Phase fetch error:', phaseError);
+        // If 401, retry once after a short delay
+        if (phaseError.code === '401' || phaseError.message?.includes('401')) {
+          console.log('401 error detected, retrying phases query...');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          const retryResult = await supabase
+            .from('job_phases')
+            .select('id, job_phase_label');
+          
+          if (retryResult.error) {
+            console.error('Retry phases fetch failed:', retryResult.error);
+            throw phaseError;
+          }
+          
+          phases = retryResult.data;
+          console.log('Retry phases fetch successful');
+        } else {
+          throw phaseError;
+        }
+      }
+
+      if (!phases) {
+        throw new Error('No phases data received');
+      }
 
       console.log('Fetched phases:', phases);
 
@@ -76,6 +109,10 @@ export function useDashboardJobs(): UseDashboardJobsResult {
       }), {} as Record<string, string>);
       
       console.log('Phase map data:', phaseMapData);
+      console.log('Available phase names:', Object.keys(phaseMapData));
+      console.log('Looking for Invoicing phase ID:', phaseMapData['Invoicing']);
+      console.log('Looking for Invoice phase ID:', phaseMapData['Invoice']);
+      console.log('Looking for Billing phase ID:', phaseMapData['Billing']);
       
       setPhaseMap(phaseMapData);
       phaseMapRef.current = phaseMapData;
@@ -122,9 +159,13 @@ export function useDashboardJobs(): UseDashboardJobsResult {
             ),
             job_type:job_types (
               job_type_label
+            ),
+            assigned_to:profiles (
+              full_name
             )
           `)
           .eq('current_phase_id', phaseMapData['Job Request'])
+          .neq('current_phase_id', phaseMapData['Cancelled'] || 'never-match')
           .order('created_at', { ascending: false })
           .limit(4),
 
@@ -148,9 +189,13 @@ export function useDashboardJobs(): UseDashboardJobsResult {
             ),
             job_type:job_types (
               job_type_label
+            ),
+            assigned_to:profiles (
+              full_name
             )
           `)
           .eq('current_phase_id', phaseMapData['Work Order'])
+          .neq('current_phase_id', phaseMapData['Cancelled'] || 'never-match')
           .order('updated_at', { ascending: false })
           .limit(4),
           
@@ -174,9 +219,13 @@ export function useDashboardJobs(): UseDashboardJobsResult {
             ),
             job_type:job_types (
               job_type_label
+            ),
+            assigned_to:profiles (
+              full_name
             )
           `)
           .eq('current_phase_id', phaseMapData['Pending Work Order'])
+          .neq('current_phase_id', phaseMapData['Cancelled'] || 'never-match')
           .order('updated_at', { ascending: false })
           .limit(4),
 
@@ -200,9 +249,13 @@ export function useDashboardJobs(): UseDashboardJobsResult {
             ),
             job_type:job_types (
               job_type_label
+            ),
+            assigned_to:profiles (
+              full_name
             )
           `)
-          .eq('current_phase_id', phaseMapData['Invoicing'])
+          .eq('current_phase_id', phaseMapData['Invoicing'] || phaseMapData['Invoice'] || phaseMapData['Billing'])
+          .neq('current_phase_id', phaseMapData['Cancelled'] || 'never-match')
           .order('updated_at', { ascending: false })
           .limit(4),
           
@@ -226,13 +279,17 @@ export function useDashboardJobs(): UseDashboardJobsResult {
             ),
             job_type:job_types (
               job_type_label
+            ),
+            assigned_to:profiles (
+              full_name
             )
           `)
           .in('current_phase_id', [
             phaseMapData['Job Request'],
             phaseMapData['Work Order'],
             phaseMapData['Pending Work Order']
-          ])
+          ].filter(Boolean))
+          .not('current_phase_id', 'eq', phaseMapData['Cancelled'] || 'never-match')
           .gte('scheduled_date', startOfToday)
           .lte('scheduled_date', endOfToday)
           .order('scheduled_date', { ascending: true })

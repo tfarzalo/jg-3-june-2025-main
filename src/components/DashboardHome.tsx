@@ -13,6 +13,8 @@ import { Link } from 'react-router-dom';
 import { MetricTile } from './ui/MetricTile';
 import { DashboardCard } from './ui/DashboardCard';
 import { supabase } from '../utils/supabase';
+import TodaysAgendaModal from './modals/TodaysAgendaModal';
+import { useDashboardJobs } from './shared/useDashboardJobs';
 
 interface JobPhase {
   id: string;
@@ -49,11 +51,20 @@ interface ActivityItem {
 }
 
 export function DashboardHome() {
+  const [isAgendaModalOpen, setIsAgendaModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
   const [phaseColors, setPhaseColors] = useState<Record<string, string>>({});
+  
+  // Use the dedicated dashboard jobs hook for specific job categories
+  const { 
+    jobRequests, 
+    workOrders, 
+    invoicingJobs, 
+    todaysJobs, 
+    loading: dashboardJobsLoading
+  } = useDashboardJobs();
   
   useEffect(() => {
     const fetchData = async () => {
@@ -103,10 +114,8 @@ export function DashboardHome() {
         // Fetch activities
         await fetchActivities();
         
-        setError(null);
       } catch (err) {
         console.error('Error fetching dashboard data:', err);
-        setError('Failed to load dashboard data. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -136,6 +145,8 @@ export function DashboardHome() {
               total_billing_amount
             `)
             .eq('id', payload.new.id)
+            .eq('is_archived', false)
+            .eq('is_deleted', false)
             .single();
           
           if (!error && newJob) {
@@ -162,12 +173,17 @@ export function DashboardHome() {
               total_billing_amount
             `)
             .eq('id', payload.new.id)
+            .eq('is_archived', false)
+            .eq('is_deleted', false)
             .single();
           
           if (!error && updatedJob) {
             setJobs(prev => prev.map(job => 
               job.id === updatedJob.id ? updatedJob : job
             ));
+          } else if (error || !updatedJob) {
+            // If the job was archived/deleted or we can't fetch it, remove it from state
+            setJobs(prev => prev.filter(job => job.id !== payload.new.id));
           }
         }
       )
@@ -196,7 +212,7 @@ export function DashboardHome() {
       jobsSubscription.unsubscribe();
       activitySubscription.unsubscribe();
     };
-  }, []);
+  }, []); // Remove refreshKey dependency since we rely on real-time updates
 
   const fetchActivities = async () => {
     try {
@@ -295,7 +311,6 @@ export function DashboardHome() {
       setActivities(activitiesData);
     } catch (err) {
       console.error('Error fetching activities:', err);
-      setError('Failed to load activities. Please try again.');
     }
   };
 
@@ -328,25 +343,42 @@ export function DashboardHome() {
     }
   };
 
-  // Filter jobs by status
-  const jobRequests = jobs.filter(job => job.job_phase?.job_phase_label === 'Job Request').slice(0, 5);
-  const workOrders = jobs.filter(job => 
-    job.job_phase?.job_phase_label === 'Work Order' || 
-    job.job_phase?.job_phase_label === 'Pending Work Order'
-  ).slice(0, 5);
-  const invoicingJobs = jobs.filter(job => job.job_phase?.job_phase_label === 'Invoicing').slice(0, 5);
-  const completedJobs = jobs.filter(job => job.job_phase?.job_phase_label === 'Completed').slice(0, 5);
+  // Filter jobs by status  // Get today's jobs from the dedicated hook
+  const sortedTodaysJobs = todaysJobs.slice(0, 4);
   
-  // Get today's jobs
-  const today = new Date().toISOString().split('T')[0];
-  const todaysJobs = jobs.filter(job => job.scheduled_date?.startsWith(today)).slice(0, 4);
+  // Define allTodaysJobs - should be today's jobs, not all jobs
+  const allTodaysJobs = todaysJobs || [];
 
-  // Calculate today's job counts by type
-  const allTodaysJobs = jobs.filter(job => job.scheduled_date?.startsWith(today));
+  // Debug logging
+  console.log('Dashboard: todaysJobs from hook:', todaysJobs.length);
+  console.log('Dashboard: allTodaysJobs:', allTodaysJobs.length);
+  console.log('Dashboard: sortedTodaysJobs:', sortedTodaysJobs.length);
 
-  const todayPaintJobs = allTodaysJobs.filter(job => job.job_type?.job_type_label === 'Paint').length;
-  const todayCallbackJobs = allTodaysJobs.filter(job => job.job_type?.job_type_label === 'Callback').length;
-  const todayRepairJobs = allTodaysJobs.filter(job => job.job_type?.job_type_label === 'Repair').length;
+  // Helper functions to handle array/object data from useDashboardJobs
+  const getJobPhaseColor = (job: any) => {
+    const jobPhase = Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase;
+    return jobPhase?.color_dark_mode || '#6B7280';
+  };
+
+  const getPropertyName = (job: any) => {
+    const property = Array.isArray(job.property) ? job.property[0] : job.property;
+    return property?.property_name || 'Unknown Property';
+  };
+
+  const getAssignedTo = (job: any) => {
+    const assignedTo = Array.isArray(job.assigned_to) ? job.assigned_to[0] : job.assigned_to;
+    return assignedTo?.full_name || 'Unassigned';
+  };
+
+  const getJobType = (job: any) => {
+    const jobType = Array.isArray(job.job_type) ? job.job_type[0] : job.job_type;
+    return jobType?.job_type_label || 'Unknown Type';
+  };
+
+  // Get completed jobs - need to fetch from main jobs array filtered by completed phase
+  const completedJobs = jobs.filter(job => 
+    job.job_phase?.job_phase_label === 'Completed'
+  ).slice(0, 8); // Limit to 8 most recent
 
   const metrics = [
     { 
@@ -360,8 +392,7 @@ export function DashboardHome() {
       icon: FileText,
       label: 'Work Orders',
       value: jobs.filter(job => 
-        job.job_phase?.job_phase_label === 'Work Order' || 
-        job.job_phase?.job_phase_label === 'Pending Work Order'
+        job.job_phase?.job_phase_label === 'Work Order'
       ).length.toString(),
       trend: { value: 15, isPositive: true },
       color: 'orange'
@@ -369,25 +400,23 @@ export function DashboardHome() {
     {
       icon: Clock,
       label: 'Pending Work Orders',
-      value: jobs.filter(job => 
-        job.job_phase?.job_phase_label === 'Pending Work Order'
-      ).length.toString(),
-      trend: { value: 5, isPositive: false },
-      color: phaseColors['Pending Work Order'] || 'gray'
+      value: jobs.filter(job => job.job_phase?.job_phase_label === 'Pending Work Order').length.toString(),
+      trend: { value: 8, isPositive: true },
+      color: 'yellow'
     },
     {
       icon: DollarSign,
-      label: 'Jobs in Invoicing',
+      label: 'Invoicing',
       value: jobs.filter(job => job.job_phase?.job_phase_label === 'Invoicing').length.toString(),
-      trend: { value: 18, isPositive: true },
-      color: 'emerald'
+      trend: { value: 3, isPositive: false },
+      color: 'green'
     },
     {
       icon: CheckCircle,
-      label: 'Completed Jobs',
+      label: 'Completed',
       value: jobs.filter(job => job.job_phase?.job_phase_label === 'Completed').length.toString(),
-      trend: { value: 24, isPositive: true },
-      color: 'red'
+      trend: { value: 5, isPositive: true },
+      color: 'purple'
     }
   ];
 
@@ -407,8 +436,12 @@ export function DashboardHome() {
           <Link 
             key={index} 
             to={
-              metric.label === 'Pending Work Orders' 
-                ? '/dashboard/jobs/work-orders' 
+              metric.label === 'Job Requests' 
+                ? '/dashboard/jobs/job-requests'
+                : metric.label === 'Work Orders'
+                ? '/dashboard/jobs/work-orders'
+                : metric.label.includes('Jobs')
+                ? '/dashboard/jobs'
                 : `/dashboard/jobs/${metric.label.toLowerCase().replace(' ', '-')}`
             } 
             className="block"
@@ -440,10 +473,10 @@ export function DashboardHome() {
             </Link>
           }
           titleColor="text-gray-900 dark:text-white"
-          className="min-h-[400px]"
           phaseColor={phaseColors['Job Request'] || '#3B82F6'}
+          className="min-h-[400px]"
         >
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[300px] overflow-y-auto">
             {jobRequests.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 No job requests found
@@ -458,11 +491,11 @@ export function DashboardHome() {
                   </tr>
                 </thead>
                 <tbody className="text-gray-700 dark:text-gray-300 text-sm">
-                  {jobRequests.map(job => (
+                  {jobRequests.slice(0, 8).map(job => (
                     <tr key={job.id} className="cursor-pointer hover:bg-gray-50/50 dark:hover:bg-[#1E293B]/30 transition-colors">
                       <td className="py-2">
                         <Link to={`/dashboard/jobs/${job.id}`} className="block">
-                          {job.property?.property_name || 'Unknown Property'}
+                          {getPropertyName(job)}
                         </Link>
                       </td>
                       <td className="py-2">
@@ -491,7 +524,7 @@ export function DashboardHome() {
           className="min-h-[400px]"
           phaseColor={phaseColors['Work Order'] || '#F97316'}
         >
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[300px] overflow-y-auto">
             {workOrders.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 No work orders found
@@ -500,30 +533,37 @@ export function DashboardHome() {
               <table className="w-full">
                 <thead>
                   <tr className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
-                    <th className="pb-2">ID</th>
+                    <th className="pb-2">WO#</th>
                     <th className="pb-2">Property</th>
                     <th className="pb-2">Unit #</th>
+                    <th className="pb-2">Type</th>
                   </tr>
                 </thead>
                 <tbody className="text-gray-700 dark:text-gray-300 text-sm">
-                  {workOrders.map(job => (
+                  {workOrders.slice(0, 8).map(job => (
                     <tr key={job.id} className="cursor-pointer hover:bg-gray-50/50 dark:hover:bg-[#1E293B]/30 transition-colors">
                       <td className="py-2">
-                        <Link to={`/dashboard/jobs/${job.id}`} className="block">
-                          <span className="flex items-center">
-                            <span className={`w-2 h-2 rounded-full mr-2`} style={{ backgroundColor: job.job_phase?.color_dark_mode || 'gray' }}></span>
-                            {`WO-${String(job.work_order_num).padStart(6, '0')}`}
-                          </span>
+                        <Link to={`/dashboard/jobs/${job.id}`} className="flex items-center">
+                          <span 
+                            className="w-2 h-2 rounded-full mr-2 flex-shrink-0"
+                            style={{ backgroundColor: getJobPhaseColor(job) }}
+                          ></span>
+                          {formatWorkOrderNumber(job.work_order_num)}
                         </Link>
                       </td>
                       <td className="py-2">
                         <Link to={`/dashboard/jobs/${job.id}`} className="block">
-                          {job.property?.property_name || 'Unknown Property'}
+                          {getPropertyName(job)}
                         </Link>
                       </td>
                       <td className="py-2">
                         <Link to={`/dashboard/jobs/${job.id}`} className="block">
                           {job.unit_number || 'N/A'}
+                        </Link>
+                      </td>
+                      <td className="py-2">
+                        <Link to={`/dashboard/jobs/${job.id}`} className="block">
+                          {getJobType(job)}
                         </Link>
                       </td>
                     </tr>
@@ -537,59 +577,75 @@ export function DashboardHome() {
         {/* Today's Agenda */}
         <DashboardCard 
           title="Today's Agenda" 
-          actionButton={
-            <Link 
-              to="/dashboard/calendar"
-              className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors"
-            >
-              View Calendar
-            </Link>
-          }
+          viewAllLink="/dashboard/calendar"
           titleColor="text-gray-900 dark:text-white"
-          className="min-h-[400px] max-h-[400px]"
+          className="min-h-[400px]"
         >
-          <div className="flex flex-col h-full">
-            <div className="flex items-center justify-between text-sm text-gray-700 dark:text-gray-300 mb-3 flex-shrink-0">
-              <span>Today's Jobs: {allTodaysJobs.length} Total</span>
+          {/* Job Type Summary - Under the title */}
+          <div className="mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
               <div className="flex space-x-4">
-                <span className="text-blue-500">Paint: {todayPaintJobs}</span>
-                <span className="text-orange-500">Callback: {todayCallbackJobs}</span>
-                <span className="text-red-500">Repair: {todayRepairJobs}</span>
+                <span className="text-blue-500 font-medium">
+                  Paint: {sortedTodaysJobs.filter(job => getJobType(job) === 'Paint').length}
+                </span>
+                <span className="text-orange-500 font-medium">
+                  Callback: {sortedTodaysJobs.filter(job => getJobType(job) === 'Callback').length}
+                </span>
+                <span className="text-red-500 font-medium">
+                  Repair: {sortedTodaysJobs.filter(job => getJobType(job) === 'Repair').length}
+                </span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="text-gray-500">Total: {sortedTodaysJobs.length}</span>
+                {allTodaysJobs.length > 4 && (
+                  <button 
+                    onClick={() => setIsAgendaModalOpen(true)}
+                    className="text-blue-500 hover:text-blue-700 font-medium"
+                  >
+                    View Calendar
+                  </button>
+                )}
               </div>
             </div>
-            
-            {allTodaysJobs.length === 0 ? (
-              <div className="text-center py-8 text-gray-500 flex-1 flex items-center justify-center">
+          </div>
+          
+          <div className="space-y-4 max-h-[300px] overflow-y-auto">
+            {sortedTodaysJobs.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
                 No jobs scheduled for today
               </div>
             ) : (
-              <div className="max-h-64 overflow-y-auto space-y-3 flex-1 pr-2">
-                {todaysJobs.map(job => (
+              <div className="max-h-64 overflow-y-auto space-y-2 flex-1 pr-2">
+                {sortedTodaysJobs.map(job => (
                   <Link 
                     key={job.id} 
                     to={`/dashboard/jobs/${job.id}`}
                     className="block"
                   >
                     <div 
-                      className="rounded-lg p-3"
+                      className="rounded-lg p-2.5"
                       style={{
-                        backgroundColor: job.job_phase?.color_dark_mode ? `${job.job_phase.color_dark_mode}1A` : 'rgba(128, 128, 128, 0.1)', // Use fetched color with 10% opacity
+                        backgroundColor: `${getJobPhaseColor(job)}1A`,
                       }}
                     >
                       <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="text-gray-900 dark:text-white flex items-center">
-                            {job.property?.property_name || 'Unknown Property'}
-                            <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">
+                        <div className="min-w-0 flex-1">
+                          <h4 className="text-sm font-medium text-gray-900 dark:text-white flex items-center">
+                            <span 
+                              className="w-2 h-2 rounded-full mr-2 flex-shrink-0"
+                              style={{ backgroundColor: getJobPhaseColor(job) }}
+                            ></span>
+                            {getPropertyName(job)}
+                            <span className="text-xs text-gray-600 dark:text-gray-400 ml-2">
                               Unit {job.unit_number}
                             </span>
                           </h4>
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
-                            Assigned: {job.assigned_to?.full_name || 'Unassigned'}
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Assigned: {getAssignedTo(job)}
                           </p>
                         </div>
-                        <span className="text-sm px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                          {job.job_type?.job_type_label || 'Unknown Type'}
+                        <span className="text-xs px-2 py-1 rounded-full font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 ml-2">
+                          {getJobType(job)}
                         </span>
                       </div>
                     </div>
@@ -613,10 +669,10 @@ export function DashboardHome() {
           title="Invoicing" 
           viewAllLink="/dashboard/jobs/invoicing"
           titleColor="text-gray-900 dark:text-white"
-          className="min-h-[300px]"
+          className="min-h-[400px]"
           phaseColor={phaseColors['Invoicing'] || '#10B981'}
         >
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[300px] overflow-y-auto">
             {invoicingJobs.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 No jobs in invoicing
@@ -628,10 +684,12 @@ export function DashboardHome() {
                     <th className="pb-2">ID</th>
                     <th className="pb-2">Property</th>
                     <th className="pb-2">Amount</th>
+                    <th className="pb-2">Sent</th>
+                    <th className="pb-2">Paid</th>
                   </tr>
                 </thead>
                 <tbody className="text-gray-700 dark:text-gray-300 text-sm">
-                  {invoicingJobs.map(job => (
+                  {invoicingJobs.slice(0, 8).map(job => (
                     <tr key={job.id} className="cursor-pointer hover:bg-gray-50/50 dark:hover:bg-[#1E293B]/30 transition-colors">
                       <td className="py-2">
                         <Link to={`/dashboard/jobs/${job.id}`} className="block">
@@ -640,7 +698,7 @@ export function DashboardHome() {
                       </td>
                       <td className="py-2">
                         <Link to={`/dashboard/jobs/${job.id}`} className="block">
-                          {job.property?.property_name || 'Unknown Property'}
+                          {getPropertyName(job)}
                         </Link>
                       </td>
                       <td className="py-2">
@@ -649,6 +707,22 @@ export function DashboardHome() {
                             {job.total_billing_amount ? `$${job.total_billing_amount.toFixed(2)}` : '$0.00'}
                           </span>
                         </Link>
+                      </td>
+                      <td className="py-2">
+                        {/* Paper airplane icon for sent - placeholder */}
+                        <div className="flex items-center justify-center">
+                          <svg className="h-4 w-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                          </svg>
+                        </div>
+                      </td>
+                      <td className="py-2">
+                        {/* Green checkmark for paid - placeholder */}
+                        <div className="flex items-center justify-center">
+                          <svg className="h-4 w-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -663,10 +737,10 @@ export function DashboardHome() {
           title="Completed" 
           viewAllLink="/dashboard/jobs/completed"
           titleColor="text-gray-900 dark:text-white"
-          className="min-h-[300px]"
+          className="min-h-[400px]"
           phaseColor={phaseColors['Completed'] || '#EF4444'}
         >
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[300px] overflow-y-auto">
             {completedJobs.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 No completed jobs
@@ -677,7 +751,7 @@ export function DashboardHome() {
                   <tr className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
                     <th className="pb-2">ID</th>
                     <th className="pb-2">Property</th>
-                    <th className="pb-2">Date</th>
+                    <th className="pb-2">Date Modified</th>
                   </tr>
                 </thead>
                 <tbody className="text-gray-700 dark:text-gray-300 text-sm">
@@ -695,7 +769,7 @@ export function DashboardHome() {
                       </td>
                       <td className="py-2">
                         <Link to={`/dashboard/jobs/${job.id}`} className="block">
-                          {new Date(job.scheduled_date).toLocaleDateString()}
+                          {new Date(job.updated_at || job.created_at).toLocaleDateString()}
                         </Link>
                       </td>
                     </tr>
@@ -708,29 +782,15 @@ export function DashboardHome() {
 
         {/* Activity Pulse */}
         <DashboardCard 
-          title="Activity Pulse" 
+          title="Recent Activity" 
+          viewAllLink="/dashboard/activity"
           titleColor="text-gray-900 dark:text-white"
-          className="min-h-[300px]"
-          actionButton={
-            <Link 
-              to="/dashboard/activity"
-              className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors"
-            >
-              View All
-            </Link>
-          }
+          className="min-h-[400px]"
         >
-          <div className="space-y-4">
-            {error && (
-              <div className="text-red-500 dark:text-red-400 text-sm">
-                {error}
-              </div>
-            )}
-            
+          <div className="space-y-4 max-h-[300px] overflow-y-auto">
             {activities.length === 0 ? (
-              <div className="text-center py-8">
-                <Activity className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-gray-500 dark:text-gray-400">No recent activity</p>
+              <div className="text-center py-8 text-gray-500">
+                No recent activity
               </div>
             ) : (
               activities.map((activity) => (
@@ -773,6 +833,12 @@ export function DashboardHome() {
           </div>
         </DashboardCard>
       </div>
+      
+      <TodaysAgendaModal 
+        open={isAgendaModalOpen} 
+        onClose={() => setIsAgendaModalOpen(false)} 
+        jobs={allTodaysJobs} 
+      />
     </div>
   );
 }

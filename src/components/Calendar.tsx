@@ -1,11 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   ChevronLeft, 
   ChevronRight, 
   Calendar as CalendarIcon,
-  MapPin, 
-  FileText, 
   Clock,
   Filter,
   Check,
@@ -15,8 +13,7 @@ import {
 import { supabase } from '../utils/supabase';
 import { 
   startOfMonth, 
-  endOfMonth, 
-  eachDayOfInterval,
+  endOfMonth,
   format,
   isSameMonth,
   isSameDay,
@@ -57,6 +54,7 @@ interface JobPhase {
 
 export function Calendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date()); // New state for selected date
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +69,32 @@ export function Calendar() {
 
   useEffect(() => {
     fetchJobs();
+  }, [currentDate, selectedPhases]);
+
+  // Real-time subscriptions
+  useEffect(() => {
+    // Subscribe to job changes
+    const jobSubscription = supabase
+      .channel('calendar_jobs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, () => {
+        console.log('Calendar: Job change detected, refreshing...');
+        fetchJobs();
+      })
+      .subscribe();
+
+    // Subscribe to work order changes
+    const workOrderSubscription = supabase
+      .channel('calendar_work_orders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'work_orders' }, () => {
+        console.log('Calendar: Work order change detected, refreshing...');
+        fetchJobs();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(jobSubscription);
+      supabase.removeChannel(workOrderSubscription);
+    };
   }, [currentDate, selectedPhases]);
 
   const fetchPhases = async () => {
@@ -104,11 +128,11 @@ export function Calendar() {
         if (phaseError) throw phaseError;
         phaseIds = phaseData.map(p => p.id);
       } else {
-        // Default phases if none selected
+        // Default phases if none selected - include all active phases
         const { data: phaseData, error: phaseError } = await supabase
           .from('job_phases')
           .select('id')
-          .in('job_phase_label', ['Job Request', 'Work Order', 'Pending Work Order']);
+          .not('job_phase_label', 'eq', 'Cancelled'); // Exclude only cancelled jobs
 
         if (phaseError) throw phaseError;
         phaseIds = phaseData.map(p => p.id);
@@ -156,11 +180,30 @@ export function Calendar() {
 
       if (error) throw error;
       
-      // Transform the data to include assigned_to_name
-      const transformedJobs = data?.map(job => ({
-        ...job,
-        assigned_to_name: job.profiles?.full_name || null
-      })) || [];
+      // Transform the data to fix array issues and include assigned_to_name
+      const transformedJobs = data?.map(job => {
+        const transformedJob = {
+          id: job.id,
+          work_order_num: job.work_order_num,
+          unit_number: job.unit_number,
+          description: job.description,
+          scheduled_date: job.scheduled_date,
+          assigned_to: job.assigned_to,
+          property: Array.isArray(job.property) && job.property.length > 0 
+            ? job.property[0] 
+            : (job.property as unknown as { property_name: string }) || { property_name: 'Unknown Property' },
+          job_phase: Array.isArray(job.job_phase) && job.job_phase.length > 0 
+            ? job.job_phase[0] 
+            : (job.job_phase as unknown as { job_phase_label: string; color_dark_mode: string }) || { job_phase_label: 'Unknown', color_dark_mode: '#6B7280' },
+          job_type: Array.isArray(job.job_type) && job.job_type.length > 0 
+            ? job.job_type[0] 
+            : (job.job_type as unknown as { job_type_label: string }) || { job_type_label: 'Unknown' },
+          assigned_to_name: Array.isArray(job.profiles) && job.profiles.length > 0 
+            ? job.profiles[0]?.full_name || null
+            : (job.profiles as any)?.full_name || null
+        };
+        return transformedJob;
+      }) || [];
       
       setJobs(transformedJobs);
     } catch (err) {
@@ -174,7 +217,6 @@ export function Calendar() {
   // Get the days to display in the calendar grid
   const calendarDays = () => {
     const monthStart = startOfMonth(currentDate);
-    const monthEnd = endOfMonth(currentDate);
     const startDate = startOfWeek(monthStart);
     
     // Create a 6-week grid (42 days) to ensure we have enough rows
@@ -358,71 +400,181 @@ export function Calendar() {
         </div>
       )}
 
-      <div className="bg-white dark:bg-[#1E293B] rounded-lg overflow-hidden shadow">
-        {/* Day headers */}
-        <div className="grid grid-cols-7 gap-px bg-gray-200 dark:bg-[#2D3B4E]">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-            <div key={day} className="bg-white dark:bg-[#1E293B] px-4 py-3 text-center">
-              <span className="text-sm font-medium text-gray-500 dark:text-gray-400">{day}</span>
-            </div>
-          ))}
-        </div>
-        
-        {/* Calendar grid */}
-        <div className="grid grid-cols-7 gap-px bg-gray-200 dark:bg-[#2D3B4E]">
-          {calendarDays().map((date, i) => {
-            const dayJobs = getJobsForDay(date);
-            const isCurrentMonth = isSameMonth(date, currentDate);
-            const isTodays = isToday(date);
-
-            return (
-              <div
-                key={i}
-                className={`bg-white dark:bg-[#1E293B] min-h-[120px] p-2 ${
-                  !isCurrentMonth ? 'opacity-50' : ''
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className={`text-sm font-medium ${
-                    isTodays 
-                      ? 'text-blue-500' 
-                      : 'text-gray-700 dark:text-gray-400'
-                  }`}>
-                    {format(date, 'd')}
-                  </span>
-                  {dayJobs.length > 0 && (
-                    <span className="text-xs text-gray-500 dark:text-gray-500">
-                      {dayJobs.length} job{dayJobs.length !== 1 ? 's' : ''}
-                    </span>
-                  )}
+      {/* Two-column layout: Calendar on left, Day agenda on right */}
+      <div className="flex gap-6">
+        {/* Calendar Column */}
+        <div className="flex-1">
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg overflow-hidden shadow">
+            {/* Day headers */}
+            <div className="grid grid-cols-7 gap-px bg-gray-200 dark:bg-[#2D3B4E]">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                <div key={day} className="bg-white dark:bg-[#1E293B] px-4 py-3 text-center">
+                  <span className="text-sm font-medium text-gray-500 dark:text-gray-400">{day}</span>
                 </div>
-                <div className="space-y-1 overflow-y-auto max-h-[80px]">
-                  {dayJobs.map(job => (
-                    <button
+              ))}
+            </div>
+            
+            {/* Calendar grid */}
+            <div className="grid grid-cols-7 gap-px bg-gray-200 dark:bg-[#2D3B4E]">
+              {calendarDays().map((date, i) => {
+                const dayJobs = getJobsForDay(date);
+                const isCurrentMonth = isSameMonth(date, currentDate);
+                const isTodays = isToday(date);
+                const isSelected = isSameDay(date, selectedDate);
+
+                return (
+                  <div
+                    key={i}
+                    onClick={() => setSelectedDate(date)}
+                    className={`cursor-pointer min-h-[120px] p-2 transition-colors ${
+                      !isCurrentMonth 
+                        ? 'opacity-50 bg-white dark:bg-[#1E293B]' 
+                        : isTodays 
+                          ? 'bg-blue-50 dark:bg-blue-900/20' 
+                          : isSelected
+                            ? 'bg-blue-25 dark:bg-blue-900/10'
+                            : 'bg-white dark:bg-[#1E293B] hover:bg-gray-50 dark:hover:bg-[#2D3B4E]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-sm font-medium ${
+                        isTodays 
+                          ? 'text-blue-600 dark:text-blue-400' 
+                          : isSelected
+                            ? 'text-blue-500 dark:text-blue-300'
+                            : 'text-gray-700 dark:text-gray-400'
+                      }`}>
+                        {format(date, 'd')}
+                      </span>
+                      {dayJobs.length > 0 && (
+                        <span className="text-xs text-gray-500 dark:text-gray-500">
+                          {dayJobs.length} job{dayJobs.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-1 overflow-y-auto max-h-[80px]">
+                      {dayJobs.slice(0, 3).map(job => (
+                        <button
+                          key={job.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedJob(job);
+                          }}
+                          className="w-full text-left p-1 rounded text-xs hover:bg-gray-100 dark:hover:bg-[#2D3B4E] transition-colors"
+                          style={{ backgroundColor: `${job.job_phase.color_dark_mode}20` }}
+                        >
+                          <div className="font-medium text-gray-900 dark:text-white truncate flex items-center">
+                            <span 
+                              className="w-2 h-2 rounded-full mr-1 flex-shrink-0"
+                              style={{ backgroundColor: job.job_phase.color_dark_mode }}
+                            ></span>
+                            {formatWorkOrderNumber(job.work_order_num)}
+                          </div>
+                          <div className="text-gray-600 dark:text-gray-400 truncate">
+                            {job.property.property_name}
+                          </div>
+                        </button>
+                      ))}
+                      {dayJobs.length > 3 && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                          +{dayJobs.length - 3} more
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Day Agenda Column */}
+        <div className="w-80">
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow h-fit">
+            <div className="p-4 border-b border-gray-200 dark:border-[#2D3B4E]">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+                <CalendarIcon className="h-5 w-5 mr-2 text-blue-500" />
+                {isToday(selectedDate) 
+                  ? "Today's Agenda" 
+                  : format(selectedDate, 'MMM d, yyyy')
+                }
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                {getJobsForDay(selectedDate).length} job{getJobsForDay(selectedDate).length !== 1 ? 's' : ''} scheduled
+              </p>
+            </div>
+            
+            <div className="p-4">
+              {getJobsForDay(selectedDate).length === 0 ? (
+                <div className="text-center py-8">
+                  <CalendarIcon className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                  <p className="text-gray-500 dark:text-gray-400">No jobs scheduled for this day</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                  {getJobsForDay(selectedDate).map(job => (
+                    <div
                       key={job.id}
-                      onClick={() => setSelectedJob(job)}
-                      className="w-full text-left p-1 rounded text-xs hover:bg-gray-100 dark:hover:bg-[#2D3B4E] transition-colors"
-                      style={{ backgroundColor: `${job.job_phase.color_dark_mode}20` }}
+                      className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg p-3 hover:shadow-md transition-shadow"
+                      style={{
+                        backgroundColor: `${job.job_phase.color_dark_mode}0A`
+                      }}
                     >
-                      <div className="font-medium text-gray-900 dark:text-white truncate flex items-center">
-                        <span 
-                          className="w-2 h-2 rounded-full mr-1 flex-shrink-0"
-                          style={{ backgroundColor: job.job_phase.color_dark_mode }}
-                        ></span>
-                        {formatWorkOrderNumber(job.work_order_num)}
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <h4 className="font-medium text-gray-900 dark:text-white text-sm">
+                            {formatWorkOrderNumber(job.work_order_num)}
+                          </h4>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            {job.property.property_name}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-500">
+                            Unit #{job.unit_number}
+                          </p>
+                        </div>
+                        <span
+                          className="text-xs px-2 py-1 rounded-full"
+                          style={{
+                            backgroundColor: job.job_phase.color_dark_mode,
+                            color: 'white'
+                          }}
+                        >
+                          {job.job_phase.job_phase_label}
+                        </span>
                       </div>
-                      <div className="text-gray-600 dark:text-gray-400 truncate">
-                        {job.property.property_name}
+                      
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-600 dark:text-gray-400">
+                          {job.job_type.job_type_label}
+                        </span>
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => setSelectedJob(job)}
+                            className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+                          >
+                            View Details
+                          </button>
+                          <Link
+                            to={`/dashboard/jobs/${job.id}`}
+                            className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+                          >
+                            Edit Job
+                          </Link>
+                        </div>
                       </div>
-                      <div className="text-gray-600 dark:text-gray-400">
-                        Unit #{job.unit_number}
-                      </div>
-                    </button>
+                      
+                      {job.assigned_to_name && (
+                        <div className="mt-2 flex items-center text-xs text-gray-600 dark:text-gray-400">
+                          <User className="h-3 w-3 mr-1" />
+                          {job.assigned_to_name}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
-              </div>
-            );
-          })}
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
