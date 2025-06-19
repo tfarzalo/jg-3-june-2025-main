@@ -119,9 +119,16 @@ export function PropertyForm() {
     setError(null);
 
     try {
+      // Prepare form data, converting empty strings to null for UUID fields
+      const cleanedFormData = {
+        ...formData,
+        property_management_group_id: formData.property_management_group_id || null,
+        // Convert any other empty string UUID fields to null if needed
+      };
+
       const { data, error } = await supabase
         .from('properties')
-        .insert([formData])
+        .insert([cleanedFormData])
         .select()
         .single();
 
