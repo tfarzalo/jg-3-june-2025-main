@@ -2,6 +2,10 @@
   command = "npm run build"
   publish = "dist"
 
+[build.environment]
+  VITE_SUPABASE_URL = "${env:VITE_SUPABASE_URL}"
+  VITE_SUPABASE_ANON_KEY = "${env:VITE_SUPABASE_ANON_KEY}"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
