@@ -1,0 +1,1 @@
+const t=t=>[t.address,t.address_2,t.city,t.state,t.zip].filter(Boolean).join(", "),i=t=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2,maximumFractionDigits:2}).format(t);export{t as a,i as f};
