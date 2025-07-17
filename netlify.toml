@@ -10,3 +10,8 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Disable Next.js plugin in a Vite/React project
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+  disabled = true
