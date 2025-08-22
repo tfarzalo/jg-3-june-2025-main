@@ -1464,6 +1464,7 @@ const NewWorkOrder = () => {
             </div>
           </div>
         )}
+      </>
       </div>
     </div>
   );
