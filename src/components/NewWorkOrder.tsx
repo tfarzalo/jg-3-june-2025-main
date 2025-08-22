@@ -353,24 +353,17 @@ function NewWorkOrder() {
             </h1>
           </div>
           
-          {/* Language Toggle Dropdown */}
-          <div className="flex items-center space-x-3">
-            <div className="relative">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                {t.language}
-              </label>
-              <div className="flex items-center space-x-2">
-                <Globe className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                <select
-                  value={language}
-                  onChange={(e) => handleLanguageChange(e.target.value)}
-                  className="px-3 py-2 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="en">{t.english}</option>
-                  <option value="es">{t.spanish}</option>
-                </select>
-              </div>
-            </div>
+          {/* Simple Language Toggle */}
+          <div className="flex items-center space-x-2">
+            <Globe className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+            <select
+              value={language}
+              onChange={(e) => handleLanguageChange(e.target.value)}
+              className="px-3 py-2 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="en">English</option>
+              <option value="es">Español</option>
+            </select>
           </div>
         </div>
 
