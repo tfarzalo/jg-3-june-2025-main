@@ -2,8 +2,8 @@
 DO $$
 DECLARE
   user_id uuid;
-  admin_email text := 'admin@paintingbusiness.com';  -- Change this to your desired email
-  admin_password text := 'AdminPassword123!';  -- Change this to your desired password
+  admin_email text := 'YOUR_ADMIN_EMAIL@example.com';  -- CHANGE THIS
+  admin_password text := 'YOUR_SECURE_PASSWORD_HERE';  -- CHANGE THIS
 BEGIN
   -- Check if user already exists
   IF NOT EXISTS (SELECT 1 FROM auth.users WHERE email = admin_email) THEN
