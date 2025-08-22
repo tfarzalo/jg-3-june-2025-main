@@ -934,537 +934,538 @@ const NewWorkOrder = () => {
 
             {/* Job Details Section */}
             <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow-lg mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">{t.jobInformation}</h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Property
-              </label>
-              <div className="text-gray-900 dark:text-white font-medium flex items-center">
-                <Building2 className="h-4 w-4 mr-2 text-gray-500 dark:text-gray-400" />
-                {job.property?.property_name}
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Work Order #
-              </label>
-              <div className="text-gray-900 dark:text-white font-medium flex items-center">
-                <FileText className="h-4 w-4 mr-2 text-gray-500 dark:text-gray-400" />
-                {formatWorkOrderNumber(job.work_order_num)}
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Unit #
-              </label>
-              <div className="text-gray-900 dark:text-white font-medium">
-                {job.unit_number}
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Job Type
-              </label>
-              <div className="text-gray-900 dark:text-white font-medium">
-                {job.job_type?.job_type_label || 'Not specified'}
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Unit Size
-              </label>
-              <div className="text-gray-900 dark:text-white font-medium">
-                {job.unit_size?.unit_size_label}
-              </div>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Scheduled Date
-              </label>
-              <div className="text-gray-900 dark:text-white font-medium flex items-center">
-                <Calendar className="h-4 w-4 mr-2 text-gray-500 dark:text-gray-400" />
-                {formatDate(job.scheduled_date)}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Unit Information */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Unit Information</h2>
-            
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <div>
-                <label htmlFor="unit_number" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Unit # <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  id="unit_number"
-                  name="unit_number"
-                  required
-                  value={formData.unit_number}
-                  onChange={handleInputChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="job_category_id" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Job Category <span className="text-red-500">*</span>
-                </label>
-                {jobCategories.length === 0 ? (
-                  <div className="text-yellow-600 dark:text-yellow-400 mb-4">
-                    No billable categories available for this property. Please add billing details for the property first.
-                  </div>
-                ) : (
-                  <select
-                    id="job_category_id"
-                    name="job_category_id"
-                    required
-                    value={formData.job_category_id}
-                    onChange={handleInputChange}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select a job category</option>
-                    {jobCategories.map(category => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="is_occupied"
-                  name="is_occupied"
-                  checked={formData.is_occupied}
-                  onChange={(e) => setFormData(prev => ({ ...prev, is_occupied: e.target.checked }))}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="is_occupied" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                  Unit is Occupied
-                </label>
-              </div>
-            </div>
-          </div>
-
-          {/* Sprinklers */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Sprinklers</h2>
-            
-            <div className="space-y-4">
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="sprinklers"
-                  checked={formData.sprinklers}
-                  onChange={(e) => setFormData(prev => ({ 
-                    ...prev, 
-                    sprinklers: e.target.checked,
-                    has_sprinklers: e.target.checked 
-                  }))}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="sprinklers" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                  Unit Has Sprinklers
-                </label>
-              </div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">{t.jobInformation}</h2>
               
-              {formData.sprinklers && (
-                <>
-                  <div className="flex items-center mt-4">
-                    <input
-                      type="checkbox"
-                      id="sprinklers_painted"
-                      checked={formData.sprinklers_painted}
-                      onChange={e => setFormData(prev => ({ ...prev, sprinklers_painted: e.target.checked }))}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="sprinklers_painted" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                      Paint on Sprinklers
-                    </label>
-                  </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Sprinkler Images
-                    </label>
-                    <ImageUpload
-                      jobId={jobId || ''}
-                      workOrderId={existingWorkOrder?.id || ''}
-                      folder="sprinkler"
-                      onUploadComplete={handleUploadComplete}
-                      onError={handleUploadError}
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Before Images */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Before Images</h2>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Before Images
-                </label>
-                <ImageUpload
-                  jobId={jobId || ''}
-                  workOrderId={existingWorkOrder?.id || ''}
-                  folder="before"
-                  onUploadComplete={handleUploadComplete}
-                  onError={handleUploadError}
-                  onImageDelete={handleImageDelete}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Other Files */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Other Files</h2>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Additional Files (All File Types)
-                </label>
-                <ImageUpload
-                  jobId={jobId || ''}
-                  workOrderId={existingWorkOrder?.id || ''}
-                  folder="other"
-                  onUploadComplete={handleUploadComplete}
-                  onError={handleUploadError}
-                  onImageDelete={handleImageDelete}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Painted Items */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Painted Items</h2>
-            
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <div className="space-y-4">
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="painted_ceilings"
-                    name="painted_ceilings"
-                    checked={formData.painted_ceilings}
-                    onChange={(e) => setFormData(prev => ({ ...prev, painted_ceilings: e.target.checked }))}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="painted_ceilings" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                    Painted Ceilings
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    Property
                   </label>
+                  <div className="text-gray-900 dark:text-white font-medium flex items-center">
+                    <Building2 className="h-4 w-4 mr-2 text-gray-500 dark:text-gray-400" />
+                    {job.property?.property_name}
+                  </div>
                 </div>
                 
-                {formData.painted_ceilings && (
-                  <div className="ml-6">
-                    <label htmlFor="ceiling_rooms_count" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      Number of Rooms
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    Work Order #
+                  </label>
+                  <div className="text-gray-900 dark:text-white font-medium flex items-center">
+                    <FileText className="h-4 w-4 mr-2 text-gray-500 dark:text-gray-400" />
+                    {formatWorkOrderNumber(job.work_order_num)}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    Unit #
+                  </label>
+                  <div className="text-gray-900 dark:text-white font-medium">
+                    {job.unit_number}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    Job Type
+                  </label>
+                  <div className="text-gray-900 dark:text-white font-medium">
+                    {job.job_type?.job_type_label || 'Not specified'}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    Unit Size
+                  </label>
+                  <div className="text-gray-900 dark:text-white font-medium">
+                    {job.unit_size?.unit_size_label}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    Scheduled Date
+                  </label>
+                  <div className="text-gray-900 dark:text-white font-medium flex items-center">
+                    <Calendar className="h-4 w-4 mr-2 text-gray-500 dark:text-gray-400" />
+                    {formatDate(job.scheduled_date)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Unit Information */}
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Unit Information</h2>
+                
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <div>
+                    <label htmlFor="unit_number" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                      Unit # <span className="text-red-500">*</span>
                     </label>
                     <input
-                      type="number"
-                      id="ceiling_rooms_count"
-                      name="ceiling_rooms_count"
-                      min="0"
-                      value={formData.ceiling_rooms_count}
+                      type="text"
+                      id="unit_number"
+                      name="unit_number"
+                      required
+                      value={formData.unit_number}
                       onChange={handleInputChange}
                       className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
-                )}
-                
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="painted_patio"
-                    name="painted_patio"
-                    checked={formData.painted_patio}
-                    onChange={(e) => setFormData(prev => ({ ...prev, painted_patio: e.target.checked }))}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="painted_patio" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                    Painted Patio
-                  </label>
-                </div>
-                
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="painted_garage"
-                    name="painted_garage"
-                    checked={formData.painted_garage}
-                    onChange={(e) => setFormData(prev => ({ ...prev, painted_garage: e.target.checked }))}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="painted_garage" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                    Painted Garage
-                  </label>
-                </div>
-              </div>
-              
-              <div className="space-y-4">
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="painted_cabinets"
-                    name="painted_cabinets"
-                    checked={formData.painted_cabinets}
-                    onChange={(e) => setFormData(prev => ({ ...prev, painted_cabinets: e.target.checked }))}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="painted_cabinets" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                    Painted Cabinets
-                  </label>
-                </div>
-                
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="painted_crown_molding"
-                    name="painted_crown_molding"
-                    checked={formData.painted_crown_molding}
-                    onChange={(e) => setFormData(prev => ({ ...prev, painted_crown_molding: e.target.checked }))}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="painted_crown_molding" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                    Painted Crown Molding
-                  </label>
-                </div>
-                
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="painted_front_door"
-                    name="painted_front_door"
-                    checked={formData.painted_front_door}
-                    onChange={(e) => setFormData(prev => ({ ...prev, painted_front_door: e.target.checked }))}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="painted_front_door" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                    Painted Front Door
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          {/* Accent Wall */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <div className="flex items-center mb-6">
-              <input
-                type="checkbox"
-                id="has_accent_wall"
-                name="has_accent_wall"
-                checked={formData.has_accent_wall}
-                onChange={(e) => setFormData(prev => ({ ...prev, has_accent_wall: e.target.checked }))}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label htmlFor="has_accent_wall" className="ml-2 text-lg font-semibold text-gray-900 dark:text-white">
-                Accent Wall
-              </label>
-            </div>
-            
-            {formData.has_accent_wall && (
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                <div>
-                  <label htmlFor="accent_wall_type" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Accent Wall Type
-                  </label>
-                  <select
-                    id="accent_wall_type"
-                    name="accent_wall_type"
-                    required={formData.has_accent_wall}
-                    value={formData.accent_wall_type}
-                    onChange={handleInputChange}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select type</option>
-                    <option value="Custom">Custom</option>
-                    <option value="Paint Over">Paint Over</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label htmlFor="accent_wall_count" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Number of Accent Walls
-                  </label>
-                  <input
-                    type="number"
-                    id="accent_wall_count"
-                    name="accent_wall_count"
-                    min="0"
-                    required={formData.has_accent_wall}
-                    value={formData.accent_wall_count}
-                    onChange={handleInputChange}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <div>
+                    <label htmlFor="job_category_id" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                      Job Category <span className="text-red-500">*</span>
+                    </label>
+                    {jobCategories.length === 0 ? (
+                      <div className="text-yellow-600 dark:text-yellow-400 mb-4">
+                        No billable categories available for this property. Please add billing details for the property first.
+                      </div>
+                    ) : (
+                      <select
+                        id="job_category_id"
+                        name="job_category_id"
+                        required
+                        value={formData.job_category_id}
+                        onChange={handleInputChange}
+                        className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select a job category</option>
+                        {jobCategories.map(category => (
+                          <option key={category.id} value={category.id}>
+                            {category.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="is_occupied"
+                      name="is_occupied"
+                      checked={formData.is_occupied}
+                      onChange={(e) => setFormData(prev => ({ ...prev, is_occupied: e.target.checked }))}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="is_occupied" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                      Unit is Occupied
+                    </label>
+                  </div>
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* Extra Charges */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <div className="flex items-center mb-6">
-              <input
-                type="checkbox"
-                id="has_extra_charges"
-                name="has_extra_charges"
-                checked={formData.has_extra_charges}
-                onChange={(e) => setFormData(prev => ({ ...prev, has_extra_charges: e.target.checked }))}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label htmlFor="has_extra_charges" className="ml-2 text-lg font-semibold text-gray-900 dark:text-white">
-                Extra Charges
-              </label>
-            </div>
-            
-            {formData.has_extra_charges && (
-              <div className="space-y-6">
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/30 text-yellow-800 dark:text-yellow-200 px-4 py-3 rounded-lg mb-4">
-                  <div className="flex items-start">
-                    <AlertCircle className="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400 mt-0.5" />
-                    <div>
-                      <p className="font-medium">Extra Charges Require Approval</p>
-                      <p className="mt-1 text-sm">Adding extra charges will set this job to "Pending Work Order" status until the charges are approved.</p>
+              {/* Sprinklers */}
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Sprinklers</h2>
+                
+                <div className="space-y-4">
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      id="sprinklers"
+                      checked={formData.sprinklers}
+                      onChange={(e) => setFormData(prev => ({ 
+                        ...prev, 
+                        sprinklers: e.target.checked,
+                        has_sprinklers: e.target.checked 
+                      }))}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="sprinklers" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                      Unit Has Sprinklers
+                    </label>
+                  </div>
+                  
+                  {formData.sprinklers && (
+                    <>
+                      <div className="flex items-center mt-4">
+                        <input
+                          type="checkbox"
+                          id="sprinklers_painted"
+                          checked={formData.sprinklers_painted}
+                          onChange={e => setFormData(prev => ({ ...prev, sprinklers_painted: e.target.checked }))}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor="sprinklers_painted" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                          Paint on Sprinklers
+                        </label>
+                      </div>
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Sprinkler Images
+                        </label>
+                        <ImageUpload
+                          jobId={jobId || ''}
+                          workOrderId={existingWorkOrder?.id || ''}
+                          folder="sprinkler"
+                          onUploadComplete={handleUploadComplete}
+                          onError={handleUploadError}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Before Images */}
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Before Images</h2>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Before Images
+                    </label>
+                    <ImageUpload
+                      jobId={jobId || ''}
+                      workOrderId={existingWorkOrder?.id || ''}
+                      folder="before"
+                      onUploadComplete={handleUploadComplete}
+                      onError={handleUploadError}
+                      onImageDelete={handleImageDelete}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Other Files */}
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Other Files</h2>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Additional Files (All File Types)
+                    </label>
+                    <ImageUpload
+                      jobId={jobId || ''}
+                      workOrderId={existingWorkOrder?.id || ''}
+                      folder="other"
+                      onUploadComplete={handleUploadComplete}
+                      onError={handleUploadError}
+                      onImageDelete={handleImageDelete}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Painted Items */}
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Painted Items</h2>
+                
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <div className="space-y-4">
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="painted_ceilings"
+                        name="painted_ceilings"
+                        checked={formData.painted_ceilings}
+                        onChange={(e) => setFormData(prev => ({ ...prev, painted_ceilings: e.target.checked }))}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="painted_ceilings" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                        Painted Ceilings
+                      </label>
+                    </div>
+                    
+                    {formData.painted_ceilings && (
+                      <div className="ml-6">
+                        <label htmlFor="ceiling_rooms_count" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                          Number of Rooms
+                        </label>
+                        <input
+                          type="number"
+                          id="ceiling_rooms_count"
+                          name="ceiling_rooms_count"
+                          min="0"
+                          value={formData.ceiling_rooms_count}
+                          onChange={handleInputChange}
+                          className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    )}
+                    
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="painted_patio"
+                        name="painted_patio"
+                        checked={formData.painted_patio}
+                        onChange={(e) => setFormData(prev => ({ ...prev, painted_patio: e.target.checked }))}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="painted_patio" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                        Painted Patio
+                      </label>
+                    </div>
+                    
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="painted_garage"
+                        name="painted_garage"
+                        checked={formData.painted_garage}
+                        onChange={(e) => setFormData(prev => ({ ...prev, painted_garage: e.target.checked }))}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="painted_garage" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                        Painted Garage
+                      </label>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="painted_cabinets"
+                        name="painted_cabinets"
+                        checked={formData.painted_cabinets}
+                        onChange={(e) => setFormData(prev => ({ ...prev, painted_cabinets: e.target.checked }))}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="painted_cabinets" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                        Painted Cabinets
+                      </label>
+                    </div>
+                    
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="painted_crown_molding"
+                        name="painted_crown_molding"
+                        checked={formData.painted_crown_molding}
+                        onChange={(e) => setFormData(prev => ({ ...prev, painted_crown_molding: e.target.checked }))}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="painted_crown_molding" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                        Painted Crown Molding
+                      </label>
+                    </div>
+                    
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="painted_front_door"
+                        name="painted_front_door"
+                        checked={formData.painted_front_door}
+                        onChange={(e) => setFormData(prev => ({ ...prev, painted_front_door: e.target.checked }))}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="painted_front_door" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                        Painted Front Door
+                      </label>
                     </div>
                   </div>
                 </div>
-                
-                <div>
-                  <label htmlFor="extra_charges_description" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Description
-                  </label>
-                  <textarea
-                    id="extra_charges_description"
-                    name="extra_charges_description"
-                    rows={3}
-                    required={formData.has_extra_charges}
-                    value={formData.extra_charges_description}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Describe the extra charges"
+              </div>
+
+              {/* Accent Wall */}
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+                <div className="flex items-center mb-6">
+                  <input
+                    type="checkbox"
+                    id="has_accent_wall"
+                    name="has_accent_wall"
+                    checked={formData.has_accent_wall}
+                    onChange={(e) => setFormData(prev => ({ ...prev, has_accent_wall: e.target.checked }))}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
+                  <label htmlFor="has_accent_wall" className="ml-2 text-lg font-semibold text-gray-900 dark:text-white">
+                    Accent Wall
+                  </label>
                 </div>
                 
-                <div>
-                  <label htmlFor="extra_hours" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Extra Hours
-                  </label>
+                {formData.has_accent_wall && (
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    <div>
+                      <label htmlFor="accent_wall_type" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                        Accent Wall Type
+                      </label>
+                      <select
+                        id="accent_wall_type"
+                        name="accent_wall_type"
+                        required={formData.has_accent_wall}
+                        value={formData.accent_wall_type}
+                        onChange={handleInputChange}
+                        className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select type</option>
+                        <option value="Custom">Custom</option>
+                        <option value="Paint Over">Paint Over</option>
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label htmlFor="accent_wall_count" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                        Number of Accent Walls
+                      </label>
+                      <input
+                        type="number"
+                        id="accent_wall_count"
+                        name="accent_wall_count"
+                        min="0"
+                        required={formData.has_accent_wall}
+                        value={formData.accent_wall_count}
+                        onChange={handleInputChange}
+                        className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Extra Charges */}
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+                <div className="flex items-center mb-6">
                   <input
-                    type="number"
-                    id="extra_hours"
-                    name="extra_hours"
-                    min="0"
-                    required={formData.has_extra_charges}
-                    value={formData.extra_hours}
+                    type="checkbox"
+                    id="has_extra_charges"
+                    name="has_extra_charges"
+                    checked={formData.has_extra_charges}
+                    onChange={(e) => setFormData(prev => ({ ...prev, has_extra_charges: e.target.checked }))}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <label htmlFor="has_extra_charges" className="ml-2 text-lg font-semibold text-gray-900 dark:text-white">
+                    Extra Charges
+                  </label>
+                </div>
+                
+                {formData.has_extra_charges && (
+                  <div className="space-y-6">
+                    <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/30 text-yellow-800 dark:text-yellow-200 px-4 py-3 rounded-lg mb-4">
+                      <div className="flex items-start">
+                        <AlertCircle className="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400 mt-0.5" />
+                        <div>
+                          <p className="font-medium">Extra Charges Require Approval</p>
+                          <p className="mt-1 text-sm">Adding extra charges will set this job to "Pending Work Order" status until the charges are approved.</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label htmlFor="extra_charges_description" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                        Description
+                      </label>
+                      <textarea
+                        id="extra_charges_description"
+                        name="extra_charges_description"
+                        rows={3}
+                        required={formData.has_extra_charges}
+                        value={formData.extra_charges_description}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Describe the extra charges"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label htmlFor="extra_hours" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                        Extra Hours
+                      </label>
+                      <input
+                        type="number"
+                        id="extra_hours"
+                        name="extra_hours"
+                        min="0"
+                        required={formData.has_extra_charges}
+                        value={formData.extra_hours}
+                        onChange={handleInputChange}
+                        className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Additional Comments */}
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Additional Comments</h2>
+                
+                <div>
+                  <textarea
+                    id="additional_comments"
+                    name="additional_comments"
+                    rows={4}
+                    value={formData.additional_comments}
                     onChange={handleInputChange}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter any additional comments or notes"
                   />
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* Additional Comments */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Additional Comments</h2>
-            
-            <div>
-              <textarea
-                id="additional_comments"
-                name="additional_comments"
-                rows={4}
-                value={formData.additional_comments}
-                onChange={handleInputChange}
-                className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter any additional comments or notes"
-              />
-            </div>
-          </div>
-
-          {/* Submit/Cancel Buttons */}
-          <div className="flex justify-end gap-2 mt-8">
-            <button
-              type="button"
-              onClick={() => navigate('/dashboard/jobs')}
-              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-[#2D3B4E] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              Cancel
-            </button>
-            {requiredFieldsFilled && (
-              <button
-                type="submit"
-                disabled={saving}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {saving ? (
-                  <span className="flex items-center">
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Saving...
-                  </span>
-                ) : (
-                  <span className="flex items-center">
-                    <Save className="h-4 w-4 mr-2" />
-                    {isEditMode ? 'Update Work Order' : 'Create Work Order'}
-                  </span>
+              {/* Submit/Cancel Buttons */}
+              <div className="flex justify-end gap-2 mt-8">
+                <button
+                  type="button"
+                  onClick={() => navigate('/dashboard/jobs')}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-[#2D3B4E] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Cancel
+                </button>
+                {requiredFieldsFilled && (
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {saving ? (
+                      <span className="flex items-center">
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Saving...
+                      </span>
+                    ) : (
+                      <span className="flex items-center">
+                        <Save className="h-4 w-4 mr-2" />
+                        {isEditMode ? 'Update Work Order' : 'Create Work Order'}
+                      </span>
+                    )}
+                  </button>
                 )}
-              </button>
-            )}
-          </div>
-        </form>
+              </div>
+            </form>
 
-        {/* Add image upload and gallery after the form */}
-        {workOrderId && (
-          <div className="mt-8 bg-white dark:bg-[#1E293B] rounded-lg shadow-lg p-6">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              Work Order Images
-            </h2>
-            
-            <ImageGallery
-              workOrderId={workOrderId}
-              key={refreshImages}
-            />
-            
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => {
-                  if (previewUserId) {
-                    navigate(`/dashboard/subcontractor?userId=${previewUserId}`);
-                  } else {
-                    navigate('/dashboard/subcontractor');
-                  }
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Return to Dashboard
-              </button>
-            </div>
-          </div>
+            {/* Add image upload and gallery after the form */}
+            {workOrderId && (
+              <div className="mt-8 bg-white dark:bg-[#1E293B] rounded-lg shadow-lg p-6">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                  Work Order Images
+                </h2>
+                
+                <ImageGallery
+                  workOrderId={workOrderId}
+                  key={refreshImages}
+                />
+                
+                <div className="mt-6 flex justify-end">
+                  <button
+                    onClick={() => {
+                      if (previewUserId) {
+                        navigate(`/dashboard/subcontractor?userId=${previewUserId}`);
+                      } else {
+                        navigate('/dashboard/subcontractor');
+                      }
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Return to Dashboard
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
-      </>
       </div>
     </div>
   );
