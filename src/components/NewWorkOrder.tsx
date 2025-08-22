@@ -1,176 +1,305 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import NewWorkOrderSpanish from './NewWorkOrderSpanish';
 import { 
   ArrowLeft, 
+  Building2, 
+  FileText, 
+  Calendar, 
   Save, 
-  Upload, 
-  AlertCircle, 
-  CheckCircle, 
+  AlertCircle,
+  Info,
   Globe
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
-import { useAuth } from '../contexts/AuthContext';
-import { useUserRole } from '../hooks/useUserRole';
-import ImageUpload from './ImageUpload';
+import { formatDate } from '../lib/dateUtils';
 import { toast } from 'sonner';
+import ImageUpload from './ImageUpload';
+import { ImageGallery } from './ImageGallery';
+import { useSubcontractorPreview } from '../contexts/SubcontractorPreviewContext';
+import { toast as hotToast } from 'react-hot-toast';
 import { withSubcontractorAccessCheck } from './withSubcontractorAccessCheck';
+import { useUserRole } from '../contexts/UserRoleContext';
 
-// Translation object for English and Spanish
+interface Job {
+  id: string;
+  work_order_num: number;
+  unit_number: string;
+  scheduled_date: string;
+  property: {
+    id: string;
+    property_name: string;
+    address: string;
+    city: string;
+    state: string;
+  } | null;
+  unit_size: {
+    id: string;
+    unit_size_label: string;
+  } | null;
+  job_type: {
+    id: string;
+    job_type_label: string;
+  } | null;
+  job_phase: {
+    id: string;
+    job_phase_label: string;
+    color_dark_mode: string;
+  } | null;
+  work_order?: WorkOrder;
+  is_occupied: boolean;
+  is_full_paint: boolean;
+  job_category_id: string;
+  has_sprinklers: boolean;
+  sprinklers_painted: boolean;
+  painted_ceilings: boolean;
+  ceiling_rooms_count: number;
+  painted_patio: boolean;
+  painted_garage: boolean;
+  painted_cabinets: boolean;
+  painted_crown_molding: boolean;
+  painted_front_door: boolean;
+  has_accent_wall: boolean;
+  accent_wall_type: string;
+  accent_wall_count: number;
+  has_extra_charges: boolean;
+  extra_charges_description: string;
+  extra_hours: number;
+  additional_comments: string;
+  created_by: string;
+}
+
+interface UnitSize {
+  id: string;
+  unit_size_label: string;
+}
+
+interface WorkOrder {
+  id: string;
+  job_id: string;
+  prepared_by: string;
+  submission_date: string;
+  unit_number: string;
+  is_occupied: boolean;
+  is_full_paint: boolean;
+  job_type?: string;
+  job_category_id: string;
+  has_sprinklers: boolean;
+  sprinklers_painted: boolean;
+  painted_ceilings: boolean;
+  ceiling_rooms_count: number;
+  painted_patio: boolean;
+  painted_garage: boolean;
+  painted_cabinets: boolean;
+  painted_crown_molding: boolean;
+  painted_front_door: boolean;
+  has_accent_wall: boolean;
+  accent_wall_type: string;
+  accent_wall_count: number;
+  has_extra_charges: boolean;
+  extra_charges_description: string;
+  extra_hours: number;
+  additional_comments: string;
+}
+
+interface JobCategory {
+  id: string;
+  name: string;
+  description: string;
+  sort_order: number;
+}
+
 const translations = {
   en: {
-    pageTitle: 'Create Work Order',
-    backToJob: 'Back to Job',
-    workOrderForm: 'Work Order Form',
-    unitInformation: 'Unit Information',
+    // Header
+    addWorkOrder: 'Add Work Order',
+    editWorkOrder: 'Edit Work Order',
+    
+    // Job Information
+    jobInformation: 'Job Information',
+    property: 'Property',
+    workOrderNumber: 'Work Order #',
     unitNumber: 'Unit #',
-    unitNumberPlaceholder: 'Enter unit number',
-    unitOccupied: 'Unit Occupied',
-    fullPaint: 'Full Paint',
+    jobType: 'Job Type',
     unitSize: 'Unit Size',
-    selectUnitSize: 'Select unit size',
+    scheduledDate: 'Scheduled Date',
+    
+    // Unit Information
+    unitInformation: 'Unit Information',
     jobCategory: 'Job Category',
-    selectJobCategory: 'Select job category',
-    paintingDetails: 'Painting Details',
+    selectJobCategory: 'Select a job category',
+    unitIsOccupied: 'Unit is Occupied',
+    required: '*',
+    
+    // Sprinklers
     sprinklers: 'Sprinklers',
-    sprinklersPainted: 'Sprinklers Painted',
-    ceilingsPainted: 'Ceilings Painted',
-    ceilingRoomsCount: 'How many rooms?',
-    patioPainted: 'Patio Painted',
-    garagePainted: 'Garage Painted',
-    cabinetsPainted: 'Cabinets Painted',
-    crownMoldingPainted: 'Crown Molding Painted',
-    frontDoorPainted: 'Front Door Painted',
-    accentWallInfo: 'Accent Wall Information',
-    hasAccentWall: 'Has Accent Wall',
-    accentWallType: 'Accent Wall Type',
-    selectAccentWallType: 'Select accent wall type',
-    accentWallCount: 'Number of Accent Walls',
-    extraCharges: 'Extra Charges',
-    hasExtraCharges: 'Has Extra Charges',
-    extraChargesDescription: 'Extra Charges Description',
-    extraChargesPlaceholder: 'Describe additional work or charges',
-    extraHours: 'Extra Hours',
-    fileUploads: 'File Uploads',
-    beforeImages: 'Before Images',
+    unitHasSprinklers: 'Unit Has Sprinklers',
+    paintOnSprinklers: 'Paint on Sprinklers',
     sprinklerImages: 'Sprinkler Images',
+    
+    // Images
+    beforeImages: 'Before Images',
     otherFiles: 'Other Files',
-    additionalComments: 'Additional Comments',
-    additionalCommentsPlaceholder: 'Enter any additional comments or notes',
-    cancel: 'Cancel',
-    saveWorkOrder: 'Save Work Order',
-    saving: 'Saving...',
-    yes: 'Yes',
-    no: 'No',
+    additionalFiles: 'Additional Files (All File Types)',
+    
+    // Painted Items
+    paintedItems: 'Painted Items',
+    paintedCeilings: 'Painted Ceilings',
+    numberOfRooms: 'Number of Rooms',
+    paintedPatio: 'Painted Patio',
+    paintedGarage: 'Painted Garage',
+    paintedCabinets: 'Painted Cabinets',
+    paintedCrownMolding: 'Painted Crown Molding',
+    paintedFrontDoor: 'Painted Front Door',
+    
+    // Accent Wall
+    accentWall: 'Accent Wall',
+    accentWallType: 'Accent Wall Type',
+    selectType: 'Select type',
+    numberOfAccentWalls: 'Number of Accent Walls',
     custom: 'Custom',
     paintOver: 'Paint Over',
-    regularPaint: 'Regular Paint',
-    colorChange: 'Color Change',
-    studio: 'Studio',
-    oneBedroom: '1 Bedroom',
-    twoBedroom: '2 Bedroom',
-    threeBedroom: '3 Bedroom',
-    fourBedroom: '4 Bedroom',
+    
+    // Extra Charges
+    extraCharges: 'Extra Charges',
+    extraChargesRequireApproval: 'Extra Charges Require Approval',
+    extraChargesWarning: 'Adding extra charges will set this job to "Pending Work Order" status until the charges are approved.',
+    description: 'Description',
+    describeExtraCharges: 'Describe the extra charges',
+    extraHours: 'Extra Hours',
+    
+    // Additional Comments
+    additionalComments: 'Additional Comments',
+    enterComments: 'Enter any additional comments or notes',
+    
+    // Actions
+    cancel: 'Cancel',
+    saving: 'Saving...',
+    createWorkOrder: 'Create Work Order',
+    updateWorkOrder: 'Update Work Order',
+    returnToDashboard: 'Return to Dashboard',
+    
+    // Other
+    workOrderImages: 'Work Order Images',
+    notSpecified: 'Not specified',
+    noBillableCategories: 'No billable categories available for this property. Please add billing details for the property first.',
+    
+    // Language
     language: 'Language',
     english: 'English',
     spanish: 'Español'
   },
   es: {
-    pageTitle: 'Crear Orden de Trabajo',
-    backToJob: 'Volver al Trabajo',
-    workOrderForm: 'Formulario de Orden de Trabajo',
-    unitInformation: 'Información de la Unidad',
-    unitNumber: 'Número de Unidad',
-    unitNumberPlaceholder: 'Ingrese el número de unidad',
-    unitOccupied: 'Unidad Ocupada',
-    fullPaint: 'Pintura Completa',
+    // Header
+    addWorkOrder: 'Agregar Orden de Trabajo',
+    editWorkOrder: 'Editar Orden de Trabajo',
+    
+    // Job Information
+    jobInformation: 'Información del Trabajo',
+    property: 'Propiedad',
+    workOrderNumber: 'Orden de Trabajo #',
+    unitNumber: 'Unidad #',
+    jobType: 'Tipo de Trabajo',
     unitSize: 'Tamaño de Unidad',
-    selectUnitSize: 'Seleccionar tamaño de unidad',
-    jobCategory: 'Categoría de Trabajo',
-    selectJobCategory: 'Seleccionar categoría de trabajo',
-    paintingDetails: 'Detalles de Pintura',
+    scheduledDate: 'Fecha Programada',
+    
+    // Unit Information
+    unitInformation: 'Información de la Unidad',
+    jobCategory: 'Categoría del Trabajo',
+    selectJobCategory: 'Seleccionar una categoría de trabajo',
+    unitIsOccupied: 'La Unidad Está Ocupada',
+    required: '*',
+    
+    // Sprinklers
     sprinklers: 'Aspersores',
-    sprinklersPainted: 'Aspersores Pintados',
-    ceilingsPainted: 'Techos Pintados',
-    ceilingRoomsCount: '¿Cuántas habitaciones?',
-    patioPainted: 'Patio Pintado',
-    garagePainted: 'Garaje Pintado',
-    cabinetsPainted: 'Gabinetes Pintados',
-    crownMoldingPainted: 'Moldura de Corona Pintada',
-    frontDoorPainted: 'Puerta Principal Pintada',
-    accentWallInfo: 'Información de Pared de Acento',
-    hasAccentWall: 'Tiene Pared de Acento',
-    accentWallType: 'Tipo de Pared de Acento',
-    selectAccentWallType: 'Seleccionar tipo de pared de acento',
-    accentWallCount: 'Número de Paredes de Acento',
-    extraCharges: 'Cargos Adicionales',
-    hasExtraCharges: 'Tiene Cargos Adicionales',
-    extraChargesDescription: 'Descripción de Cargos Adicionales',
-    extraChargesPlaceholder: 'Describir trabajo adicional o cargos',
-    extraHours: 'Horas Adicionales',
-    fileUploads: 'Cargas de Archivos',
-    beforeImages: 'Imágenes Antes',
+    unitHasSprinklers: 'La Unidad Tiene Aspersores',
+    paintOnSprinklers: 'Pintura en Aspersores',
     sprinklerImages: 'Imágenes de Aspersores',
+    
+    // Images
+    beforeImages: 'Imágenes de Antes',
     otherFiles: 'Otros Archivos',
-    additionalComments: 'Comentarios Adicionales',
-    additionalCommentsPlaceholder: 'Ingrese comentarios o notas adicionales',
-    cancel: 'Cancelar',
-    saveWorkOrder: 'Guardar Orden de Trabajo',
-    saving: 'Guardando...',
-    yes: 'Sí',
-    no: 'No',
+    additionalFiles: 'Archivos Adicionales (Todos los Tipos de Archivo)',
+    
+    // Painted Items
+    paintedItems: 'Elementos Pintados',
+    paintedCeilings: 'Techos Pintados',
+    numberOfRooms: 'Número de Habitaciones',
+    paintedPatio: 'Patio Pintado',
+    paintedGarage: 'Garaje Pintado',
+    paintedCabinets: 'Gabinetes Pintados',
+    paintedCrownMolding: 'Moldura de Corona Pintada',
+    paintedFrontDoor: 'Puerta Principal Pintada',
+    
+    // Accent Wall
+    accentWall: 'Pared de Acento',
+    accentWallType: 'Tipo de Pared de Acento',
+    selectType: 'Seleccionar tipo',
+    numberOfAccentWalls: 'Número de Paredes de Acento',
     custom: 'Personalizado',
     paintOver: 'Pintar Encima',
-    regularPaint: 'Pintura Regular',
-    colorChange: 'Cambio de Color',
-    studio: 'Estudio',
-    oneBedroom: '1 Dormitorio',
-    twoBedroom: '2 Dormitorios',
-    threeBedroom: '3 Dormitorios',
-    fourBedroom: '4 Dormitorios',
+    
+    // Extra Charges
+    extraCharges: 'Cargos Adicionales',
+    extraChargesRequireApproval: 'Los Cargos Adicionales Requieren Aprobación',
+    extraChargesWarning: 'Agregar cargos adicionales establecerá este trabajo en estado "Orden de Trabajo Pendiente" hasta que los cargos sean aprobados.',
+    description: 'Descripción',
+    describeExtraCharges: 'Describir los cargos adicionales',
+    extraHours: 'Horas Adicionales',
+    
+    // Additional Comments
+    additionalComments: 'Comentarios Adicionales',
+    enterComments: 'Ingrese cualquier comentario o nota adicional',
+    
+    // Actions
+    cancel: 'Cancelar',
+    saving: 'Guardando...',
+    createWorkOrder: 'Crear Orden de Trabajo',
+    updateWorkOrder: 'Actualizar Orden de Trabajo',
+    returnToDashboard: 'Volver al Panel',
+    
+    // Other
+    workOrderImages: 'Imágenes de la Orden de Trabajo',
+    notSpecified: 'No especificado',
+    noBillableCategories: 'No hay categorías facturables disponibles para esta propiedad. Por favor agregue primero los detalles de facturación para la propiedad.',
+    
+    // Language
     language: 'Idioma',
     english: 'English',
     spanish: 'Español'
   }
 };
 
-function NewWorkOrder() {
-  const { jobId } = useParams();
+const NewWorkOrder = () => {
+  const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
-  const { isSubcontractor } = useUserRole();
-  
-  // Language state management
-  const [language, setLanguage] = useState('en');
-  
-  // Load language preference from localStorage on mount
-  useEffect(() => {
-    const savedLanguage = localStorage.getItem('workOrderLanguage') || 'en';
-    setLanguage(savedLanguage);
-  }, []);
-  
-  // Save language preference to localStorage when changed
-  const handleLanguageChange = (newLanguage) => {
-    setLanguage(newLanguage);
-    localStorage.setItem('workOrderLanguage', newLanguage);
-  };
-  
-  // Get current translations
+  const queryParams = new URLSearchParams(location.search);
+  const previewUserId = queryParams.get('userId');
+  const isEditMode = queryParams.get('edit') === 'true';
+  const [language, setLanguage] = useState<'en' | 'es'>('en');
+  const [loading, setLoading] = useState(true);
   const t = translations[language];
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [job, setJob] = useState<Job | null>(null);
+  const [jobPhases, setJobPhases] = useState<{ id: string; job_phase_label: string }[]>([]);
+  const [unitSizes, setUnitSizes] = useState<UnitSize[]>([]);
+  const [existingWorkOrder, setExistingWorkOrder] = useState<WorkOrder | null>(null);
+  const [workOrderId, setWorkOrderId] = useState<string | null>(null);
+  const [refreshImages, setRefreshImages] = useState(0);
+  const [jobCategories, setJobCategories] = useState<JobCategory[]>([]);
+  const [imagesToDelete, setImagesToDelete] = useState<Set<string>>(new Set());
   
-  const [loading, setLoading] = useState(false);
-  const [job, setJob] = useState(null);
-  const [jobCategories, setJobCategories] = useState([]);
-  const [unitSizes, setUnitSizes] = useState([]);
-  const [resetImageTrigger, setResetImageTrigger] = useState(0);
-  
+  // Form state
   const [formData, setFormData] = useState({
     unit_number: '',
     is_occupied: false,
     is_full_paint: false,
-    unit_size: '',
+    job_type: '',
     job_category_id: '',
     has_sprinklers: false,
+    sprinklers: false,
     sprinklers_painted: false,
     painted_ceilings: false,
     ceiling_rooms_count: 0,
@@ -188,150 +317,552 @@ function NewWorkOrder() {
     additional_comments: ''
   });
 
-  const searchParams = new URLSearchParams(location.search);
-  const previewUserId = searchParams.get('userId');
-  const isPreview = previewUserId && !isSubcontractor;
+  const { previewUserId: subcontractorPreviewUserId } = useSubcontractorPreview();
+  const { role, isAdmin, isJGManagement, isSubcontractor } = useUserRole();
 
   useEffect(() => {
-    if (jobId) {
-      fetchJobData();
-      fetchJobCategories();
-      fetchUnitSizes();
+    if (!jobId) {
+      navigate('/dashboard/subcontractor');
+      return;
     }
-  }, [jobId]);
+    
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // First fetch unit sizes since we need them for the form
+        await fetchUnitSizes();
+        // Then fetch the rest of the data
+        await Promise.all([
+          fetchJob(),
+          fetchJobPhases(),
+          fetchExistingWorkOrder()
+        ]);
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError(err instanceof Error ? err.message : 'Failed to fetch data');
+        setLoading(false);
+      }
+    };
 
-  const fetchJobData = async () => {
+    void fetchData();
+  }, [jobId, navigate]);
+  
+  useEffect(() => {
+    if (existingWorkOrder) {
+      setFormData({
+        unit_number: existingWorkOrder.unit_number || '',
+        is_occupied: existingWorkOrder.is_occupied || false,
+        is_full_paint: existingWorkOrder.is_full_paint || false,
+        job_type: existingWorkOrder.job_type || '',
+        job_category_id: existingWorkOrder.job_category_id || '',
+        has_sprinklers: existingWorkOrder.has_sprinklers || false,
+        sprinklers: existingWorkOrder.has_sprinklers || false,
+        sprinklers_painted: existingWorkOrder.sprinklers_painted || false,
+        painted_ceilings: existingWorkOrder.painted_ceilings || false,
+        ceiling_rooms_count: existingWorkOrder.ceiling_rooms_count || 0,
+        painted_patio: existingWorkOrder.painted_patio || false,
+        painted_garage: existingWorkOrder.painted_garage || false,
+        painted_cabinets: existingWorkOrder.painted_cabinets || false,
+        painted_crown_molding: existingWorkOrder.painted_crown_molding || false,
+        painted_front_door: existingWorkOrder.painted_front_door || false,
+        has_accent_wall: existingWorkOrder.has_accent_wall || false,
+        accent_wall_type: existingWorkOrder.accent_wall_type || '',
+        accent_wall_count: existingWorkOrder.accent_wall_count || 0,
+        has_extra_charges: existingWorkOrder.has_extra_charges || false,
+        extra_charges_description: existingWorkOrder.extra_charges_description || '',
+        extra_hours: existingWorkOrder.extra_hours || 0,
+        additional_comments: existingWorkOrder.additional_comments || ''
+      });
+    } else if (job) {
+      setFormData({
+        unit_number: job.unit_number || '',
+        is_occupied: job.is_occupied || false,
+        is_full_paint: job.is_full_paint || false,
+        job_type: job.job_type?.job_type_label || '',
+        job_category_id: job.job_category_id || '',
+        has_sprinklers: job.has_sprinklers || false,
+        sprinklers: job.has_sprinklers || false,
+        sprinklers_painted: job.sprinklers_painted || false,
+        painted_ceilings: job.painted_ceilings || false,
+        ceiling_rooms_count: job.ceiling_rooms_count || 0,
+        painted_patio: job.painted_patio || false,
+        painted_garage: job.painted_garage || false,
+        painted_cabinets: job.painted_cabinets || false,
+        painted_crown_molding: job.painted_crown_molding || false,
+        painted_front_door: job.painted_front_door || false,
+        has_accent_wall: job.has_accent_wall || false,
+        accent_wall_type: job.accent_wall_type || '',
+        accent_wall_count: job.accent_wall_count || 0,
+        has_extra_charges: job.has_extra_charges || false,
+        extra_charges_description: job.extra_charges_description || '',
+        extra_hours: job.extra_hours || 0,
+        additional_comments: job.additional_comments || ''
+      });
+    }
+  }, [existingWorkOrder, job]);
+  
+  const fetchJob = async () => {
     try {
       const { data, error } = await supabase
         .from('jobs')
         .select(`
-          id,
-          work_order_num,
-          unit_number,
-          property:properties (
-            property_name
-          ),
-          unit_size:unit_sizes (
-            unit_size_label
-          )
+          *,
+          property:properties(*),
+          unit_size:unit_sizes(*),
+          job_type:job_types(*),
+          job_phase:job_phases(*)
         `)
         .eq('id', jobId)
         .single();
 
-      if (error) throw error;
-      
-      setJob(data);
-      setFormData(prev => ({
-        ...prev,
-        unit_number: data.unit_number || '',
-        unit_size: data.unit_size?.unit_size_label || ''
-      }));
+      if (error) {
+        console.error('Error fetching job:', error);
+        throw error;
+      }
+
+      if (!data) {
+        console.error('No job data found');
+        throw new Error('Job not found');
+      }
+
+      // Map the job data to include all required fields
+      const mappedJob: Job = {
+        ...data,
+        is_occupied: data.is_occupied ?? false,
+        is_full_paint: data.is_full_paint ?? false,
+        job_category: data.job_category ?? 'Regular Paint',
+        has_sprinklers: data.has_sprinklers ?? false,
+        sprinklers_painted: data.sprinklers_painted ?? false,
+        painted_ceilings: data.painted_ceilings ?? false,
+        ceiling_rooms_count: data.ceiling_rooms_count ?? 0,
+        painted_patio: data.painted_patio ?? false,
+        painted_garage: data.painted_garage ?? false,
+        painted_cabinets: data.painted_cabinets ?? false,
+        painted_crown_molding: data.painted_crown_molding ?? false,
+        painted_front_door: data.painted_front_door ?? false,
+        has_accent_wall: data.has_accent_wall ?? false,
+        accent_wall_type: data.accent_wall_type ?? '',
+        accent_wall_count: data.accent_wall_count ?? 0,
+        has_extra_charges: data.has_extra_charges ?? false,
+        extra_charges_description: data.extra_charges_description ?? '',
+        extra_hours: data.extra_hours ?? 0,
+        additional_comments: data.additional_comments ?? ''
+      };
+
+      console.log('Mapped job data:', mappedJob);
+      setJob(mappedJob);
+      setLoading(false);
     } catch (error) {
-      console.error('Error fetching job data:', error);
-      toast.error('Failed to load job data');
+      console.error('Error in fetchJob:', error);
+      setError(error instanceof Error ? error.message : 'Failed to fetch job details');
+      setLoading(false);
     }
   };
-
-  const fetchJobCategories = async () => {
+  
+  const fetchJobPhases = async () => {
     try {
       const { data, error } = await supabase
-        .from('job_categories')
-        .select('*')
+        .from('job_phases')
+        .select('id, job_phase_label')
         .order('sort_order');
-
+        
       if (error) throw error;
-      setJobCategories(data || []);
-    } catch (error) {
-      console.error('Error fetching job categories:', error);
+      setJobPhases(data || []);
+    } catch (err) {
+      console.error('Error fetching job phases:', err);
     }
   };
-
+  
   const fetchUnitSizes = async () => {
     try {
       const { data, error } = await supabase
         .from('unit_sizes')
-        .select('*')
+        .select('id, unit_size_label')
         .order('unit_size_label');
-
+        
       if (error) throw error;
+      console.log('Fetched unit sizes:', data);
       setUnitSizes(data || []);
-    } catch (error) {
-      console.error('Error fetching unit sizes:', error);
+    } catch (err) {
+      console.error('Error fetching unit sizes:', err);
     }
   };
-
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!user) {
-      toast.error('You must be logged in to create a work order');
-      return;
-    }
-
-    setLoading(true);
-
+  
+  const fetchExistingWorkOrder = async () => {
     try {
+      const { data, error } = await supabase
+        .from('work_orders')
+        .select('*')
+        .eq('job_id', jobId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+        
+      if (error) {
+        console.error('Error fetching existing work order:', error);
+        return;
+      }
+      
+      if (data) {
+        setExistingWorkOrder(data as WorkOrder);
+      }
+    } catch (err) {
+      console.error('Error fetching existing work order:', err);
+    }
+  };
+  
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value, type } = e.target;
+    
+    if (type === 'checkbox') {
+      const checked = (e.target as HTMLInputElement).checked;
+      setFormData(prev => ({ ...prev, [name]: checked }));
+    } else if (type === 'number') {
+      setFormData(prev => ({ ...prev, [name]: parseFloat(value) || 0 }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
+  };
+  
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      if (!job) throw new Error('Job not found');
+
+      // Subcontractor: block insert if work order exists
+      if (isSubcontractor && existingWorkOrder) {
+        setError('A work order has already been submitted for this job. Please contact your manager if you need to make changes.');
+        setSaving(false);
+        return;
+      }
+
+      // Get the target phase ID based on whether there are extra charges
+      const { data: phaseData, error: phaseError } = await supabase
+        .from('job_phases')
+        .select('id')
+        .eq('job_phase_label', formData.has_extra_charges ? 'Pending Work Order' : 'Work Order');
+        
+      if (phaseError) {
+        console.error('Error fetching phase:', phaseError);
+        throw phaseError;
+      }
+      if (!phaseData || phaseData.length === 0) throw new Error('Target phase not found');
+      
+      const targetPhaseId = phaseData[0].id;
+      
+      // Create or update work order
       const workOrderData = {
-        job_id: jobId,
-        prepared_by: user.id,
-        submission_date: new Date().toISOString(),
+        job_id: job.id,
         unit_number: formData.unit_number,
-        is_occupied: formData.is_occupied,
-        is_full_paint: formData.is_full_paint,
-        unit_size: formData.unit_size,
+        unit_size: job.unit_size?.unit_size_label,
+        is_occupied: formData.is_occupied ?? false,
+        is_full_paint: formData.is_full_paint ?? false,
         job_category_id: formData.job_category_id,
-        has_sprinklers: formData.has_sprinklers,
-        sprinklers_painted: formData.sprinklers_painted,
-        painted_ceilings: formData.painted_ceilings,
-        ceiling_rooms_count: formData.ceiling_rooms_count,
-        painted_patio: formData.painted_patio,
-        painted_garage: formData.painted_garage,
-        painted_cabinets: formData.painted_cabinets,
-        painted_crown_molding: formData.painted_crown_molding,
-        painted_front_door: formData.painted_front_door,
-        has_accent_wall: formData.has_accent_wall,
-        accent_wall_type: formData.accent_wall_type,
-        accent_wall_count: formData.accent_wall_count,
-        has_extra_charges: formData.has_extra_charges,
-        extra_charges_description: formData.extra_charges_description,
-        extra_hours: formData.extra_hours,
-        additional_comments: formData.additional_comments,
-        is_active: true
+        has_sprinklers: formData.has_sprinklers ?? false,
+        sprinklers_painted: formData.sprinklers_painted ?? false,
+        painted_ceilings: formData.painted_ceilings ?? false,
+        ceiling_rooms_count: formData.ceiling_rooms_count || 0,
+        painted_patio: formData.painted_patio ?? false,
+        painted_garage: formData.painted_garage ?? false,
+        painted_cabinets: formData.painted_cabinets ?? false,
+        painted_crown_molding: formData.painted_crown_molding ?? false,
+        painted_front_door: formData.painted_front_door ?? false,
+        has_accent_wall: formData.has_accent_wall ?? false,
+        accent_wall_type: formData.has_accent_wall ? (formData.accent_wall_type || "") : null,
+        accent_wall_count: formData.accent_wall_count || 0,
+        has_extra_charges: formData.has_extra_charges ?? false,
+        extra_charges_description: formData.extra_charges_description || "",
+        extra_hours: formData.extra_hours || 0,
+        additional_comments: formData.additional_comments || "",
+        prepared_by: (await supabase.auth.getUser()).data.user?.id
       };
 
-      const { error } = await supabase
-        .from('work_orders')
-        .insert([workOrderData]);
+      console.log('Submitting work order data:', workOrderData);
+      
+      let workOrderResult;
+      
+      if (existingWorkOrder) {
+        // Update existing work order
+        const { data, error } = await supabase
+          .from('work_orders')
+          .update(workOrderData)
+          .eq('id', existingWorkOrder.id)
+          .select()
+          .single();
+        workOrderResult = { data, error };
+      } else {
+        // Create new work order
+        const { data, error } = await supabase
+          .from('work_orders')
+          .insert([workOrderData])
+          .select()
+          .single();
+        workOrderResult = { data, error };
+      }
+      
+      if (workOrderResult.error) {
+        console.error('Error creating/updating work order:', {
+          error: workOrderResult.error,
+          workOrderData,
+          existingWorkOrder,
+          jobId: job.id,
+          user: (await supabase.auth.getUser()).data.user?.id
+        });
+        throw workOrderResult.error;
+      }
 
-      if (error) throw error;
+      if (!workOrderResult.data) {
+        throw new Error('No data returned from work order creation/update');
+      }
+      
+      // Set the work order ID for image uploads
+      setWorkOrderId(workOrderResult.data.id);
+      
+      // Update job phase
+      const { error: jobUpdateError } = await supabase
+        .from('jobs')
+        .update({ current_phase_id: targetPhaseId })
+        .eq('id', job.id);
+        
+      if (jobUpdateError) {
+        console.error('Error updating job phase:', jobUpdateError);
+        throw jobUpdateError;
+      }
+      
+      // Create job phase change record
+      const { error: phaseChangeError } = await supabase
+        .from('job_phase_changes')
+        .insert([{
+          job_id: job.id,
+          changed_by: previewUserId || (await supabase.auth.getUser()).data.user?.id,
+          from_phase_id: job.job_phase?.id,
+          to_phase_id: targetPhaseId,
+          change_reason: formData.has_extra_charges 
+            ? 'Work order created with extra charges' 
+            : 'Work order created'
+        }]);
+        
+      if (phaseChangeError) {
+        console.error('Error creating phase change record:', phaseChangeError);
+        throw phaseChangeError;
+      }
+      
+      // Delete marked images
+      for (const filePath of imagesToDelete) {
+        // Remove from storage
+        const { error: storageError } = await supabase.storage
+          .from('work_orders')
+          .remove([filePath.replace(/^\/+/, '')]);
 
-      toast.success(language === 'en' ? 'Work order created successfully!' : '¡Orden de trabajo creada exitosamente!');
+        if (storageError) {
+          console.error('Error deleting file from storage:', storageError);
+        }
+
+        // Remove from database
+        const { error: dbError } = await supabase
+          .from('files')
+          .delete()
+          .eq('path', filePath);
+
+        if (dbError) {
+          console.error('Error deleting file record:', dbError);
+        }
+      }
       
-      // Reset image trigger to clear any uploaded images
-      setResetImageTrigger(prev => prev + 1);
+      // Clear the images to delete set after successful submission
+      setImagesToDelete(new Set());
       
-      // Navigate back to job details
-      navigate(`/dashboard/jobs/${jobId}${isPreview ? `?userId=${previewUserId}` : ''}`);
+      toast.success(existingWorkOrder ? 'Work order updated successfully' : 'Work order created successfully');
       
-    } catch (error) {
-      console.error('Error creating work order:', error);
-      toast.error(language === 'en' ? 'Failed to create work order' : 'Error al crear la orden de trabajo');
-    } finally {
-      setLoading(false);
+      // Redirect back to job details page
+      navigate(`/dashboard/jobs/${jobId}`);
+    } catch (err) {
+      console.error('Error creating/updating work order:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create/update work order');
+      setSaving(false);
+    }
+  };
+  
+  const handleImageUploadComplete = () => {
+    setRefreshImages(prev => prev + 1);
+  };
+  
+  const formatWorkOrderNumber = (num: number) => {
+    return `WO-${String(num).padStart(6, '0')}`;
+  };
+  
+  const checkPhase = async () => {
+    if (!job) {
+      return null;
+    }
+
+    try {
+      // If user is admin/manager, allow submission regardless of phase
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData?.user?.id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', userData.user.id)
+          .single();
+          
+        if (profile?.role === 'admin' || profile?.role === 'jg_management') {
+          return null; // Continue with the form
+        }
+      }
+
+      // For non-admin users, check phase restrictions
+      if (job.job_phase?.job_phase_label !== 'Job Request' && !previewUserId) {
+        // If the job is in Work Order phase but has no work order, allow submission
+        if (job.job_phase?.job_phase_label === 'Work Order' && !job.work_order) {
+          return null; // Continue with the form
+        }
+        return 'Work order already submitted';
+      }
+      return null;
+    } catch (err) {
+      console.error('Error checking phase:', err);
+      return 'Error checking job phase';
     }
   };
 
-  if (!job) {
+  // Move useEffect outside of any conditional logic
+  useEffect(() => {
+    const checkPhaseAndUpdate = async () => {
+      if (job?.job_phase) {
+        const phaseCheck = await checkPhase();
+        if (phaseCheck) {
+          setError(phaseCheck);
+        }
+      }
+    };
+    void checkPhaseAndUpdate();
+  }, [job?.job_phase]);
+
+  const handleUploadComplete = (filePath: string) => {
+    toast.success('Image uploaded successfully');
+    // Optionally refresh the images list if needed
+  };
+
+  const handleUploadError = (error: string) => {
+    toast.error(error);
+  };
+
+  const handleImageDelete = (filePath: string) => {
+    setImagesToDelete(prev => new Set([...prev, filePath]));
+  };
+
+  useEffect(() => {
+    if (job?.property?.id) {
+      fetchJobCategories();
+    }
+  }, [job?.property?.id]);
+
+  const fetchJobCategories = async () => {
+    try {
+      if (!job?.property?.id) {
+        throw new Error('Job property not found');
+      }
+
+      // Get billing categories for this property
+      const { data: billingCategories, error: billingError } = await supabase
+        .from('billing_categories')
+        .select('name')
+        .eq('property_id', job.property.id);
+
+      if (billingError) throw billingError;
+
+      if (!billingCategories || billingCategories.length === 0) {
+        setJobCategories([]);
+        return;
+      }
+
+      // Get job categories that match the billing categories
+      const { data: jobCategories, error: categoriesError } = await supabase
+        .from('job_categories')
+        .select('*')
+        .in('name', billingCategories.map(bc => bc.name))
+        .order('sort_order');
+
+      if (categoriesError) throw categoriesError;
+      setJobCategories(jobCategories || []);
+    } catch (err) {
+      console.error('Error fetching job categories:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch job categories');
+    }
+  };
+
+  // Helper to check if required fields are filled
+  const requiredFieldsFilled = Boolean(
+    formData.unit_number &&
+    formData.job_category_id
+    // Add more required fields here if needed
+  );
+
+  if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center h-full">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+  
+  if (error || !job) {
+    return (
+      <div className="p-6 bg-gray-100 dark:bg-[#0F172A]">
+        <div className="bg-red-50 dark:bg-red-900/50 border border-red-200 dark:border-red-500/50 text-red-700 dark:text-red-200 px-4 py-3 rounded">
+          <h3 className="font-medium mb-2">Error Loading Work Order</h3>
+          <p className="mb-4">{error || 'Job not found'}</p>
+          <div className="space-y-2">
+            <button
+              onClick={() => {
+                if (previewUserId) {
+                  navigate(`/dashboard/subcontractor?userId=${previewUserId}`);
+                } else {
+                  navigate('/dashboard/subcontractor');
+                }
+              }}
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Return to Dashboard
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Add null check for job.unit_size
+  if (!job?.unit_size) {
+    return (
+      <div className="p-6 bg-gray-100 dark:bg-[#0F172A]">
+        <div className="bg-red-50 dark:bg-red-900/50 border border-red-200 dark:border-red-500/50 text-red-700 dark:text-red-200 px-4 py-3 rounded">
+          <h3 className="font-medium mb-2">Error Loading Work Order</h3>
+          <p className="mb-4">Unit size information is missing for this job.</p>
+          <div className="space-y-2">
+            <button
+              onClick={() => {
+                if (previewUserId) {
+                  navigate(`/dashboard/subcontractor?userId=${previewUserId}`);
+                } else {
+                  navigate('/dashboard/subcontractor');
+                }
+              }}
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Return to Dashboard
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -339,473 +870,603 @@ function NewWorkOrder() {
   return (
     <div className="p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
       <div className="max-w-7xl mx-auto">
-        {/* Header with Language Toggle */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center space-x-3">
             <button
-              onClick={() => navigate(`/dashboard/jobs/${jobId}${isPreview ? `?userId=${previewUserId}` : ''}`)}
+              onClick={() => {
+                if (previewUserId) {
+                  navigate(`/dashboard/subcontractor?userId=${previewUserId}`);
+                } else {
+                  navigate('/dashboard/jobs');
+                }
+              }}
               className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
             >
               <ArrowLeft className="h-6 w-6" />
             </button>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {t.pageTitle}
+              {isEditMode ? t.editWorkOrder : t.addWorkOrder}
             </h1>
           </div>
           
-          {/* Simple Language Toggle */}
-          <div className="flex items-center space-x-2">
-            <Globe className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+          {/* Language Toggle */}
+          <div className="flex items-center space-x-3">
+            <Globe className="h-5 w-5 text-gray-600 dark:text-gray-400" />
             <select
               value={language}
-              onChange={(e) => handleLanguageChange(e.target.value)}
+              onChange={(e) => setLanguage(e.target.value as 'en' | 'es')}
               className="px-3 py-2 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="en">English</option>
-              <option value="es">Español</option>
+              <option value="en">{t.english}</option>
+              <option value="es">{t.spanish}</option>
             </select>
           </div>
         </div>
 
-        {isPreview && (
-          <div className="mb-6 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/30 text-yellow-800 dark:text-yellow-200 px-4 py-3 rounded-lg">
-            <p className="flex items-center font-medium">
-              <AlertCircle className="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400" />
-              You are creating a work order as {isSubcontractor ? 'a subcontractor' : 'an administrator'}
-            </p>
+        {/* Conditional rendering for Spanish version */}
+        {language === 'es' ? (
+          <NewWorkOrderSpanish 
+            job={job}
+            loading={loading}
+            error={error}
+            saving={saving}
+            formData={formData}
+            handleInputChange={handleInputChange}
+            handleSubmit={handleSubmit}
+            handleUploadComplete={handleUploadComplete}
+            handleUploadError={handleUploadError}
+            handleImageDelete={handleImageDelete}
+            jobCategories={jobCategories}
+            existingWorkOrder={existingWorkOrder}
+            workOrderId={workOrderId}
+            refreshImages={refreshImages}
+            navigate={navigate}
+            previewUserId={previewUserId}
+            isEditMode={isEditMode}
+          />
+        ) : (
+          <>
+            {error && (
+              <div className="mb-6 bg-red-50 dark:bg-red-900/50 border border-red-200 dark:border-red-500/50 text-red-700 dark:text-red-200 px-4 py-3 rounded-lg">
+                {error}
+              </div>
+            )}
+
+            {/* Job Details Section */}
+            <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow-lg mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">{t.jobInformation}</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Property
+              </label>
+              <div className="text-gray-900 dark:text-white font-medium flex items-center">
+                <Building2 className="h-4 w-4 mr-2 text-gray-500 dark:text-gray-400" />
+                {job.property?.property_name}
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Work Order #
+              </label>
+              <div className="text-gray-900 dark:text-white font-medium flex items-center">
+                <FileText className="h-4 w-4 mr-2 text-gray-500 dark:text-gray-400" />
+                {formatWorkOrderNumber(job.work_order_num)}
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Unit #
+              </label>
+              <div className="text-gray-900 dark:text-white font-medium">
+                {job.unit_number}
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Job Type
+              </label>
+              <div className="text-gray-900 dark:text-white font-medium">
+                {job.job_type?.job_type_label || 'Not specified'}
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Unit Size
+              </label>
+              <div className="text-gray-900 dark:text-white font-medium">
+                {job.unit_size?.unit_size_label}
+              </div>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Scheduled Date
+              </label>
+              <div className="text-gray-900 dark:text-white font-medium flex items-center">
+                <Calendar className="h-4 w-4 mr-2 text-gray-500 dark:text-gray-400" />
+                {formatDate(job.scheduled_date)}
+              </div>
+            </div>
           </div>
-        )}
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Unit Information */}
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-              {t.unitInformation}
-            </h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Unit Information</h2>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  {t.unitNumber}
+                <label htmlFor="unit_number" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                  Unit # <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  value={formData.unit_number}
-                  onChange={(e) => handleInputChange('unit_number', e.target.value)}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder={t.unitNumberPlaceholder}
+                  id="unit_number"
+                  name="unit_number"
                   required
+                  value={formData.unit_number}
+                  onChange={handleInputChange}
+                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
-              <div className="space-y-4">
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="is_occupied"
-                    checked={formData.is_occupied}
-                    onChange={(e) => handleInputChange('is_occupied', e.target.checked)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="is_occupied" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                    {t.unitOccupied}
-                  </label>
-                </div>
-
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="is_full_paint"
-                    checked={formData.is_full_paint}
-                    onChange={(e) => handleInputChange('is_full_paint', e.target.checked)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="is_full_paint" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                    {t.fullPaint}
-                  </label>
-                </div>
+              <div>
+                <label htmlFor="job_category_id" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                  Job Category <span className="text-red-500">*</span>
+                </label>
+                {jobCategories.length === 0 ? (
+                  <div className="text-yellow-600 dark:text-yellow-400 mb-4">
+                    No billable categories available for this property. Please add billing details for the property first.
+                  </div>
+                ) : (
+                  <select
+                    id="job_category_id"
+                    name="job_category_id"
+                    required
+                    value={formData.job_category_id}
+                    onChange={handleInputChange}
+                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select a job category</option>
+                    {jobCategories.map(category => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  {t.unitSize}
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="is_occupied"
+                  name="is_occupied"
+                  checked={formData.is_occupied}
+                  onChange={(e) => setFormData(prev => ({ ...prev, is_occupied: e.target.checked }))}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="is_occupied" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                  Unit is Occupied
                 </label>
-                <select
-                  value={formData.unit_size}
-                  onChange={(e) => handleInputChange('unit_size', e.target.value)}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                >
-                  <option value="">{t.selectUnitSize}</option>
-                  <option value="Studio">{t.studio}</option>
-                  <option value="1 Bedroom">{t.oneBedroom}</option>
-                  <option value="2 Bedroom">{t.twoBedroom}</option>
-                  <option value="3 Bedroom">{t.threeBedroom}</option>
-                  <option value="4 Bedroom">{t.fourBedroom}</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  {t.jobCategory}
-                </label>
-                <select
-                  value={formData.job_category_id}
-                  onChange={(e) => handleInputChange('job_category_id', e.target.value)}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                >
-                  <option value="">{t.selectJobCategory}</option>
-                  {jobCategories.map(category => (
-                    <option key={category.id} value={category.id}>
-                      {category.name === 'Regular Paint' ? t.regularPaint : 
-                       category.name === 'Color Change' ? t.colorChange : 
-                       category.name}
-                    </option>
-                  ))}
-                </select>
               </div>
             </div>
           </div>
 
-          {/* Painting Details */}
+          {/* Sprinklers */}
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-              {t.paintingDetails}
-            </h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Sprinklers</h2>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Sprinklers */}
-              <div className="space-y-4">
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    id="has_sprinklers"
-                    checked={formData.has_sprinklers}
-                    onChange={(e) => handleInputChange('has_sprinklers', e.target.checked)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="has_sprinklers" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                    {t.sprinklers}
-                  </label>
-                </div>
-
-                {formData.has_sprinklers && (
-                  <div className="flex items-center ml-6">
+            <div className="space-y-4">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="sprinklers"
+                  checked={formData.sprinklers}
+                  onChange={(e) => setFormData(prev => ({ 
+                    ...prev, 
+                    sprinklers: e.target.checked,
+                    has_sprinklers: e.target.checked 
+                  }))}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="sprinklers" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                  Unit Has Sprinklers
+                </label>
+              </div>
+              
+              {formData.sprinklers && (
+                <>
+                  <div className="flex items-center mt-4">
                     <input
                       type="checkbox"
                       id="sprinklers_painted"
                       checked={formData.sprinklers_painted}
-                      onChange={(e) => handleInputChange('sprinklers_painted', e.target.checked)}
+                      onChange={e => setFormData(prev => ({ ...prev, sprinklers_painted: e.target.checked }))}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
-                    <label htmlFor="sprinklers_painted" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                      {t.sprinklersPainted}
+                    <label htmlFor="sprinklers_painted" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                      Paint on Sprinklers
                     </label>
                   </div>
-                )}
-              </div>
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Sprinkler Images
+                    </label>
+                    <ImageUpload
+                      jobId={jobId || ''}
+                      workOrderId={existingWorkOrder?.id || ''}
+                      folder="sprinkler"
+                      onUploadComplete={handleUploadComplete}
+                      onError={handleUploadError}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
 
-              {/* Ceilings */}
+          {/* Before Images */}
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Before Images</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Before Images
+                </label>
+                <ImageUpload
+                  jobId={jobId || ''}
+                  workOrderId={existingWorkOrder?.id || ''}
+                  folder="before"
+                  onUploadComplete={handleUploadComplete}
+                  onError={handleUploadError}
+                  onImageDelete={handleImageDelete}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Other Files */}
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Other Files</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Additional Files (All File Types)
+                </label>
+                <ImageUpload
+                  jobId={jobId || ''}
+                  workOrderId={existingWorkOrder?.id || ''}
+                  folder="other"
+                  onUploadComplete={handleUploadComplete}
+                  onError={handleUploadError}
+                  onImageDelete={handleImageDelete}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Painted Items */}
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Painted Items</h2>
+            
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div className="space-y-4">
                 <div className="flex items-center">
                   <input
                     type="checkbox"
                     id="painted_ceilings"
+                    name="painted_ceilings"
                     checked={formData.painted_ceilings}
-                    onChange={(e) => handleInputChange('painted_ceilings', e.target.checked)}
+                    onChange={(e) => setFormData(prev => ({ ...prev, painted_ceilings: e.target.checked }))}
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
-                  <label htmlFor="painted_ceilings" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                    {t.ceilingsPainted}
+                  <label htmlFor="painted_ceilings" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                    Painted Ceilings
                   </label>
                 </div>
-
+                
                 {formData.painted_ceilings && (
                   <div className="ml-6">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      {t.ceilingRoomsCount}
+                    <label htmlFor="ceiling_rooms_count" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                      Number of Rooms
                     </label>
                     <input
                       type="number"
+                      id="ceiling_rooms_count"
+                      name="ceiling_rooms_count"
                       min="0"
                       value={formData.ceiling_rooms_count}
-                      onChange={(e) => handleInputChange('ceiling_rooms_count', parseInt(e.target.value) || 0)}
-                      className="w-24 h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      onChange={handleInputChange}
+                      className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 )}
-              </div>
-
-              {/* Other painted items */}
-              <div className="space-y-4">
+                
                 <div className="flex items-center">
                   <input
                     type="checkbox"
                     id="painted_patio"
+                    name="painted_patio"
                     checked={formData.painted_patio}
-                    onChange={(e) => handleInputChange('painted_patio', e.target.checked)}
+                    onChange={(e) => setFormData(prev => ({ ...prev, painted_patio: e.target.checked }))}
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
-                  <label htmlFor="painted_patio" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                    {t.patioPainted}
+                  <label htmlFor="painted_patio" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                    Painted Patio
                   </label>
                 </div>
-
+                
                 <div className="flex items-center">
                   <input
                     type="checkbox"
                     id="painted_garage"
+                    name="painted_garage"
                     checked={formData.painted_garage}
-                    onChange={(e) => handleInputChange('painted_garage', e.target.checked)}
+                    onChange={(e) => setFormData(prev => ({ ...prev, painted_garage: e.target.checked }))}
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
-                  <label htmlFor="painted_garage" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                    {t.garagePainted}
+                  <label htmlFor="painted_garage" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                    Painted Garage
                   </label>
                 </div>
-
+              </div>
+              
+              <div className="space-y-4">
                 <div className="flex items-center">
                   <input
                     type="checkbox"
                     id="painted_cabinets"
+                    name="painted_cabinets"
                     checked={formData.painted_cabinets}
-                    onChange={(e) => handleInputChange('painted_cabinets', e.target.checked)}
+                    onChange={(e) => setFormData(prev => ({ ...prev, painted_cabinets: e.target.checked }))}
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
-                  <label htmlFor="painted_cabinets" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                    {t.cabinetsPainted}
+                  <label htmlFor="painted_cabinets" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                    Painted Cabinets
                   </label>
                 </div>
-
+                
                 <div className="flex items-center">
                   <input
                     type="checkbox"
                     id="painted_crown_molding"
+                    name="painted_crown_molding"
                     checked={formData.painted_crown_molding}
-                    onChange={(e) => handleInputChange('painted_crown_molding', e.target.checked)}
+                    onChange={(e) => setFormData(prev => ({ ...prev, painted_crown_molding: e.target.checked }))}
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
-                  <label htmlFor="painted_crown_molding" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                    {t.crownMoldingPainted}
+                  <label htmlFor="painted_crown_molding" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                    Painted Crown Molding
                   </label>
                 </div>
-
+                
                 <div className="flex items-center">
                   <input
                     type="checkbox"
                     id="painted_front_door"
+                    name="painted_front_door"
                     checked={formData.painted_front_door}
-                    onChange={(e) => handleInputChange('painted_front_door', e.target.checked)}
+                    onChange={(e) => setFormData(prev => ({ ...prev, painted_front_door: e.target.checked }))}
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
-                  <label htmlFor="painted_front_door" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                    {t.frontDoorPainted}
+                  <label htmlFor="painted_front_door" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                    Painted Front Door
                   </label>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Accent Wall Information */}
+          {/* Accent Wall */}
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-              {t.accentWallInfo}
-            </h2>
-            
-            <div className="space-y-6">
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="has_accent_wall"
-                  checked={formData.has_accent_wall}
-                  onChange={(e) => handleInputChange('has_accent_wall', e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="has_accent_wall" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                  {t.hasAccentWall}
-                </label>
-              </div>
-
-              {formData.has_accent_wall && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 ml-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      {t.accentWallType}
-                    </label>
-                    <select
-                      value={formData.accent_wall_type}
-                      onChange={(e) => handleInputChange('accent_wall_type', e.target.value)}
-                      className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required={formData.has_accent_wall}
-                    >
-                      <option value="">{t.selectAccentWallType}</option>
-                      <option value="Custom">{t.custom}</option>
-                      <option value="Paint Over">{t.paintOver}</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      {t.accentWallCount}
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={formData.accent_wall_count}
-                      onChange={(e) => handleInputChange('accent_wall_count', parseInt(e.target.value) || 0)}
-                      className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-              )}
+            <div className="flex items-center mb-6">
+              <input
+                type="checkbox"
+                id="has_accent_wall"
+                name="has_accent_wall"
+                checked={formData.has_accent_wall}
+                onChange={(e) => setFormData(prev => ({ ...prev, has_accent_wall: e.target.checked }))}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="has_accent_wall" className="ml-2 text-lg font-semibold text-gray-900 dark:text-white">
+                Accent Wall
+              </label>
             </div>
+            
+            {formData.has_accent_wall && (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                <div>
+                  <label htmlFor="accent_wall_type" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                    Accent Wall Type
+                  </label>
+                  <select
+                    id="accent_wall_type"
+                    name="accent_wall_type"
+                    required={formData.has_accent_wall}
+                    value={formData.accent_wall_type}
+                    onChange={handleInputChange}
+                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select type</option>
+                    <option value="Custom">Custom</option>
+                    <option value="Paint Over">Paint Over</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label htmlFor="accent_wall_count" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                    Number of Accent Walls
+                  </label>
+                  <input
+                    type="number"
+                    id="accent_wall_count"
+                    name="accent_wall_count"
+                    min="0"
+                    required={formData.has_accent_wall}
+                    value={formData.accent_wall_count}
+                    onChange={handleInputChange}
+                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Extra Charges */}
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-              {t.extraCharges}
-            </h2>
+            <div className="flex items-center mb-6">
+              <input
+                type="checkbox"
+                id="has_extra_charges"
+                name="has_extra_charges"
+                checked={formData.has_extra_charges}
+                onChange={(e) => setFormData(prev => ({ ...prev, has_extra_charges: e.target.checked }))}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="has_extra_charges" className="ml-2 text-lg font-semibold text-gray-900 dark:text-white">
+                Extra Charges
+              </label>
+            </div>
             
-            <div className="space-y-6">
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="has_extra_charges"
-                  checked={formData.has_extra_charges}
-                  onChange={(e) => handleInputChange('has_extra_charges', e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="has_extra_charges" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                  {t.hasExtraCharges}
-                </label>
-              </div>
-
-              {formData.has_extra_charges && (
-                <div className="space-y-6 ml-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      {t.extraChargesDescription}
-                    </label>
-                    <textarea
-                      value={formData.extra_charges_description}
-                      onChange={(e) => handleInputChange('extra_charges_description', e.target.value)}
-                      rows={3}
-                      className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder={t.extraChargesPlaceholder}
-                      required={formData.has_extra_charges}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      {t.extraHours}
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      value={formData.extra_hours}
-                      onChange={(e) => handleInputChange('extra_hours', parseFloat(e.target.value) || 0)}
-                      className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+            {formData.has_extra_charges && (
+              <div className="space-y-6">
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/30 text-yellow-800 dark:text-yellow-200 px-4 py-3 rounded-lg mb-4">
+                  <div className="flex items-start">
+                    <AlertCircle className="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400 mt-0.5" />
+                    <div>
+                      <p className="font-medium">Extra Charges Require Approval</p>
+                      <p className="mt-1 text-sm">Adding extra charges will set this job to "Pending Work Order" status until the charges are approved.</p>
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* File Uploads */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-              {t.fileUploads}
-            </h2>
-            
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-md font-medium text-gray-900 dark:text-white mb-4">
-                  {t.beforeImages}
-                </h3>
-                <ImageUpload
-                  jobId={jobId}
-                  folder="before"
-                  resetTrigger={resetImageTrigger}
-                />
-              </div>
-
-              {formData.has_sprinklers && (
+                
                 <div>
-                  <h3 className="text-md font-medium text-gray-900 dark:text-white mb-4">
-                    {t.sprinklerImages}
-                  </h3>
-                  <ImageUpload
-                    jobId={jobId}
-                    folder="sprinkler"
-                    resetTrigger={resetImageTrigger}
+                  <label htmlFor="extra_charges_description" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                    Description
+                  </label>
+                  <textarea
+                    id="extra_charges_description"
+                    name="extra_charges_description"
+                    rows={3}
+                    required={formData.has_extra_charges}
+                    value={formData.extra_charges_description}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Describe the extra charges"
                   />
                 </div>
-              )}
-
-              <div>
-                <h3 className="text-md font-medium text-gray-900 dark:text-white mb-4">
-                  {t.otherFiles}
-                </h3>
-                <ImageUpload
-                  jobId={jobId}
-                  folder="other"
-                  resetTrigger={resetImageTrigger}
-                />
+                
+                <div>
+                  <label htmlFor="extra_hours" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                    Extra Hours
+                  </label>
+                  <input
+                    type="number"
+                    id="extra_hours"
+                    name="extra_hours"
+                    min="0"
+                    required={formData.has_extra_charges}
+                    value={formData.extra_hours}
+                    onChange={handleInputChange}
+                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Additional Comments */}
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-              {t.additionalComments}
-            </h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Additional Comments</h2>
             
-            <textarea
-              value={formData.additional_comments}
-              onChange={(e) => handleInputChange('additional_comments', e.target.value)}
-              rows={4}
-              className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder={t.additionalCommentsPlaceholder}
-            />
+            <div>
+              <textarea
+                id="additional_comments"
+                name="additional_comments"
+                rows={4}
+                value={formData.additional_comments}
+                onChange={handleInputChange}
+                className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter any additional comments or notes"
+              />
+            </div>
           </div>
 
-          {/* Form Actions */}
-          <div className="flex justify-end space-x-3">
+          {/* Submit/Cancel Buttons */}
+          <div className="flex justify-end gap-2 mt-8">
             <button
               type="button"
-              onClick={() => navigate(`/dashboard/jobs/${jobId}${isPreview ? `?userId=${previewUserId}` : ''}`)}
-              className="px-6 py-2 text-sm font-medium text-gray-700 dark:text-gray-400 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors"
+              onClick={() => navigate('/dashboard/jobs')}
+              className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-[#2D3B4E] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
-              {t.cancel}
+              Cancel
             </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="inline-flex items-center px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-            >
-              {loading ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
-                  {t.saving}
-                </>
-              ) : (
-                <>
-                  <Save className="h-4 w-4 mr-2" />
-                  {t.saveWorkOrder}
-                </>
-              )}
-            </button>
+            {requiredFieldsFilled && (
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? (
+                  <span className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving...
+                  </span>
+                ) : (
+                  <span className="flex items-center">
+                    <Save className="h-4 w-4 mr-2" />
+                    {isEditMode ? 'Update Work Order' : 'Create Work Order'}
+                  </span>
+                )}
+              </button>
+            )}
           </div>
         </form>
+
+        {/* Add image upload and gallery after the form */}
+        {workOrderId && (
+          <div className="mt-8 bg-white dark:bg-[#1E293B] rounded-lg shadow-lg p-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Work Order Images
+            </h2>
+            
+            <ImageGallery
+              workOrderId={workOrderId}
+              key={refreshImages}
+            />
+            
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => {
+                  if (previewUserId) {
+                    navigate(`/dashboard/subcontractor?userId=${previewUserId}`);
+                  } else {
+                    navigate('/dashboard/subcontractor');
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Return to Dashboard
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
-}
+};
 
 export default withSubcontractorAccessCheck(NewWorkOrder);
