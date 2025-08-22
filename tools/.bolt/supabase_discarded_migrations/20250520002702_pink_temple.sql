@@ -68,10 +68,12 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- Now create an admin user
--- Replace 'admin@example.com' and 'your-secure-password' with your desired credentials
+-- IMPORTANT: Replace the email and password below with your actual credentials before running
 DO $$
 DECLARE
   user_id uuid;
+  admin_email text := 'YOUR_ADMIN_EMAIL@example.com';  -- CHANGE THIS
+  admin_password text := 'YOUR_SECURE_PASSWORD_HERE';  -- CHANGE THIS
 BEGIN
   -- Create the user in auth.users
   INSERT INTO auth.users (
@@ -90,8 +92,8 @@ BEGIN
   VALUES (
     '00000000-0000-0000-0000-000000000000',
     uuid_generate_v4(),
-    'admin@example.com',  -- Replace with your email
-    crypt('your-secure-password', gen_salt('bf')),  -- Replace with your password
+    admin_email,
+    crypt(admin_password, gen_salt('bf')),
     now(),
     now(),
     now(),
@@ -111,7 +113,7 @@ BEGIN
   )
   VALUES (
     user_id,
-    'admin@example.com',  -- Replace with your email
+    admin_email,  -- Using the variable defined above
     'Admin User',
     'admin'
   );

@@ -3,8 +3,8 @@
 DO $$
 DECLARE
   user_id uuid;
-  admin_email text := 'admin@paintingbusiness.com';  -- Change this to your desired email
-  admin_password text := 'AdminPassword123!';  -- Change this to your desired password
+  admin_email text := 'YOUR_ADMIN_EMAIL@example.com';  -- CHANGE THIS
+  admin_password text := 'YOUR_SECURE_PASSWORD_HERE';  -- CHANGE THIS
 BEGIN
   -- First ensure the profiles table exists
   CREATE TABLE IF NOT EXISTS profiles (
