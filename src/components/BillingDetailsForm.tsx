@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Plus, X, DollarSign, Save, Trash2, ArrowLeft } from 'lucide-react';
+import { toast } from 'sonner';
 import { supabase } from '../utils/supabase';
 
 interface JobCategory {
@@ -60,9 +61,9 @@ export function BillingDetailsForm() {
   const [hasChanges, setHasChanges] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [categoryLineItems, setCategoryLineItems] = useState<CategoryLineItems>({});
-  const [showAddBillingItemModal, setShowAddBillingItemModal] = useState(false);
-  const [selectedJobCategoryId, setSelectedJobCategoryId] = useState<string>('');
-  const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+  const [selectedMasterCategoryId, setSelectedMasterCategoryId] = useState<string>('');
+  const [isCreatingNewCategory, setIsCreatingNewCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryDescription, setNewCategoryDescription] = useState('');
   const [propertyName, setPropertyName] = useState<string>('');
@@ -261,75 +262,156 @@ export function BillingDetailsForm() {
   };
 
   const handleAddBillingItem = () => {
-    setShowAddBillingItemModal(true);
-    setSelectedJobCategoryId('');
+    setShowAddCategoryModal(true);
+    setSelectedMasterCategoryId('');
+    setIsCreatingNewCategory(false);
+    setNewCategoryName('');
+    setNewCategoryDescription('');
   };
 
-  const handleCategorySelect = async (jobCategoryId: string) => {
-    if (!jobCategoryId || !propertyId) return;
+  const handleConfirmAddCategory = async () => {
+    if (!propertyId) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const selectedCategory = jobCategories.find(cat => cat.id === jobCategoryId);
-      if (!selectedCategory) {
-        throw new Error('Selected category not found');
+      if (isCreatingNewCategory) {
+        // Creating a new master category
+        if (!newCategoryName.trim()) {
+          toast.error('Please enter a category name');
+          setLoading(false);
+          return;
+        }
+
+        // Check if category name already exists in master categories
+        const existingMasterCategory = jobCategories.find(cat => 
+          cat.name.toLowerCase() === newCategoryName.trim().toLowerCase()
+        );
+
+        if (existingMasterCategory) {
+          toast.error('This category already exists in the master list. Please select it from the dropdown or choose a different name.');
+          setLoading(false);
+          return;
+        }
+
+        // Create new master category first
+        const { data: newJobCategory, error: jobCategoryError } = await supabase
+          .from('job_categories')
+          .insert([
+            {
+              name: newCategoryName.trim(),
+              description: newCategoryDescription.trim(),
+              sort_order: jobCategories.length + 1
+            }
+          ])
+          .select()
+          .single();
+
+        if (jobCategoryError) throw jobCategoryError;
+
+        // Then create the property billing category
+        const { data: newPropertyBillingCategory, error: billingCategoryError } = await supabase
+          .from('billing_categories')
+          .insert([
+            {
+              property_id: propertyId,
+              name: newCategoryName.trim(),
+              description: newCategoryDescription.trim(),
+              sort_order: jobCategories.length + 1
+            }
+          ])
+          .select()
+          .single();
+
+        if (billingCategoryError) throw billingCategoryError;
+
+        // Add line item for the new category
+        setCategoryLineItems(prev => ({
+          ...prev,
+          [newPropertyBillingCategory.id]: [{
+            id: crypto.randomUUID(),
+            unitSizeId: '',
+            billAmount: '',
+            subPayAmount: '',
+            isHourly: false
+          }]
+        }));
+
+        // Refresh data
+        await fetchJobCategories();
+        await fetchPropertyBillingData();
+        
+        toast.success('New category created and added to property successfully');
+      } else {
+        // Selecting an existing master category
+        if (!selectedMasterCategoryId) {
+          toast.error('Please select a category from the dropdown');
+          setLoading(false);
+          return;
+        }
+
+        const selectedCategory = jobCategories.find(cat => cat.id === selectedMasterCategoryId);
+        if (!selectedCategory) {
+          throw new Error('Selected category not found');
+        }
+
+        // Check if this category already exists for the property
+        const existingPropertyBillingCategory = propertyBillingCategories.find(pbc => 
+          pbc.name.toLowerCase() === selectedCategory.name.toLowerCase()
+        );
+
+        if (existingPropertyBillingCategory) {
+          toast.error('This category is already added to this property');
+          setLoading(false);
+          return;
+        }
+
+        // Create new property billing category
+        const { data: newPropertyBillingCategory, error: insertPBCError } = await supabase
+          .from('billing_categories')
+          .insert([
+            { 
+              property_id: propertyId, 
+              name: selectedCategory.name,
+              description: selectedCategory.description,
+              sort_order: selectedCategory.sort_order
+            }
+          ])
+          .select('id')
+          .single();
+
+        if (insertPBCError) throw insertPBCError;
+
+        // Add line item for the new category
+        setCategoryLineItems(prev => ({
+          ...prev,
+          [newPropertyBillingCategory.id]: [{
+            id: crypto.randomUUID(),
+            unitSizeId: '',
+            billAmount: '',
+            subPayAmount: '',
+            isHourly: false
+          }]
+        }));
+
+        await fetchPropertyBillingData();
+        
+        toast.success('Category added to property successfully');
       }
 
-      // Check if this category already exists for the property
-      const { data: existingPropertyBillingCategory, error: fetchPBCError } = await supabase
-        .from('billing_categories')
-        .select('id')
-        .eq('property_id', propertyId)
-        .eq('name', selectedCategory.name)
-        .single();
-
-      if (fetchPBCError && fetchPBCError.code !== 'PGRST116') {
-        throw fetchPBCError;
-      }
-
-      if (existingPropertyBillingCategory) {
-        setError('This category already exists for this property');
-        setLoading(false);
-        return;
-      }
-
-      // Create new property billing category
-      const { data: newPropertyBillingCategory, error: insertPBCError } = await supabase
-        .from('billing_categories')
-        .insert([
-          { 
-            property_id: propertyId, 
-            name: selectedCategory.name,
-            description: selectedCategory.description,
-            sort_order: selectedCategory.sort_order
-          }
-        ])
-        .select('id')
-        .single();
-
-      if (insertPBCError) throw insertPBCError;
-
-      // Add a new line item for the new category
-      setCategoryLineItems(prev => ({
-        ...prev,
-        [newPropertyBillingCategory.id]: [{
-          id: crypto.randomUUID(),
-          unitSizeId: '',
-          billAmount: '',
-          subPayAmount: '',
-          isHourly: false
-        }]
-      }));
-
-      await fetchPropertyBillingData();
-      setShowAddBillingItemModal(false);
+      // Close modal and reset form
+      setShowAddCategoryModal(false);
+      setSelectedMasterCategoryId('');
+      setIsCreatingNewCategory(false);
+      setNewCategoryName('');
+      setNewCategoryDescription('');
       setHasChanges(true);
 
     } catch (err) {
-      console.error('Error in handleCategorySelect:', err);
-      setError(err instanceof Error ? err.message : 'Failed to add billing category.');
+      console.error('Error adding category:', err);
+      setError(err instanceof Error ? err.message : 'Failed to add category.');
+      toast.error(err instanceof Error ? err.message : 'Failed to add category.');
     } finally {
       setLoading(false);
     }
@@ -505,73 +587,6 @@ export function BillingDetailsForm() {
     setHasChanges(true);
   };
 
-  const handleAddNewCategory = async (name: string, description: string) => {
-    if (!propertyId) return;
-    
-    setLoading(true);
-    setError(null);
-
-    try {
-      // First, create the job category
-      const { data: newJobCategory, error: jobCategoryError } = await supabase
-        .from('job_categories')
-        .insert([
-          {
-            name,
-            description,
-            sort_order: jobCategories.length + 1
-          }
-        ])
-        .select()
-        .single();
-
-      if (jobCategoryError) throw jobCategoryError;
-
-      // Then create the property billing category
-      const { data: newPropertyBillingCategory, error: billingCategoryError } = await supabase
-        .from('billing_categories')
-        .insert([
-          {
-            property_id: propertyId,
-            name: name,
-            description: description,
-            sort_order: jobCategories.length + 1
-          }
-        ])
-        .select()
-        .single();
-
-      if (billingCategoryError) throw billingCategoryError;
-
-      // Add a new line item for the new category
-      setCategoryLineItems(prev => ({
-        ...prev,
-        [newPropertyBillingCategory.id]: [{
-          id: crypto.randomUUID(),
-          unitSizeId: '',
-          billAmount: '',
-          subPayAmount: '',
-          isHourly: false
-        }]
-      }));
-
-      // Refresh the data
-      await fetchJobCategories();
-      await fetchPropertyBillingData();
-      
-      setShowNewCategoryModal(false);
-      setNewCategoryName('');
-      setNewCategoryDescription('');
-      setHasChanges(true);
-
-    } catch (err) {
-      console.error('Error in handleAddNewCategory:', err);
-      setError(err instanceof Error ? err.message : 'Failed to add new category.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -593,7 +608,13 @@ export function BillingDetailsForm() {
           </div>
           <div className="flex space-x-3">
             <button
-              onClick={() => setShowNewCategoryModal(true)}
+              onClick={() => {
+                setShowAddCategoryModal(true);
+                setIsCreatingNewCategory(true);
+                setSelectedMasterCategoryId('');
+                setNewCategoryName('');
+                setNewCategoryDescription('');
+              }}
               className="inline-flex items-center px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
               <Plus className="h-4 w-4 mr-2" />
@@ -604,7 +625,7 @@ export function BillingDetailsForm() {
               className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
               <Plus className="h-4 w-4 mr-2" />
-              Add Billing Item
+              Add Existing Category
             </button>
             <button
               onClick={handleSaveAll}
@@ -742,47 +763,134 @@ export function BillingDetailsForm() {
           </div>
         </div>
 
-        {showAddBillingItemModal && (
+        {showAddCategoryModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
             <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 w-full max-w-md">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Billing Item</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Category to Property</h3>
               
               <div className="space-y-4">
-                <div>
-                  <label htmlFor="jobCategorySelect" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Select Job Category
-                  </label>
-                  <select
-                    id="jobCategorySelect"
-                    value={selectedJobCategoryId}
-                    onChange={(e) => setSelectedJobCategoryId(e.target.value)}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                {/* Toggle between existing and new category */}
+                <div className="flex items-center justify-center space-x-4 mb-6">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingNewCategory(false)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      !isCreatingNewCategory 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                    }`}
                   >
-                    <option value="">Select a category</option>
-                    {jobCategories.map(category => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
+                    Select Existing
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingNewCategory(true)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      isCreatingNewCategory 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
+                    }`}
+                  >
+                    Create New
+                  </button>
                 </div>
+
+                {!isCreatingNewCategory ? (
+                  // Select from existing categories
+                  <div>
+                    <label htmlFor="masterCategorySelect" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                      Select Existing Category
+                    </label>
+                    <select
+                      id="masterCategorySelect"
+                      value={selectedMasterCategoryId}
+                      onChange={(e) => setSelectedMasterCategoryId(e.target.value)}
+                      className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select a category</option>
+                      {jobCategories
+                        .filter(category => {
+                          // Only show categories that aren't already added to this property
+                          return !propertyBillingCategories.some(pbc => 
+                            pbc.name.toLowerCase() === category.name.toLowerCase()
+                          );
+                        })
+                        .map(category => (
+                          <option key={category.id} value={category.id}>
+                            {category.name}
+                          </option>
+                        ))}
+                    </select>
+                    {jobCategories.filter(category => 
+                      !propertyBillingCategories.some(pbc => 
+                        pbc.name.toLowerCase() === category.name.toLowerCase()
+                      )
+                    ).length === 0 && (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                        All existing categories have been added to this property. Create a new category instead.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  // Create new category
+                  <>
+                    <div>
+                      <label htmlFor="newCategoryName" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                        Category Name *
+                      </label>
+                      <input
+                        type="text"
+                        id="newCategoryName"
+                        value={newCategoryName}
+                        onChange={(e) => setNewCategoryName(e.target.value)}
+                        className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Enter new category name"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="newCategoryDescription" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                        Description (Optional)
+                      </label>
+                      <textarea
+                        id="newCategoryDescription"
+                        value={newCategoryDescription}
+                        onChange={(e) => setNewCategoryDescription(e.target.value)}
+                        className="w-full px-4 py-2 bg-gray-50 dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Enter category description"
+                        rows={3}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="mt-6 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddBillingItemModal(false)}
+                  onClick={() => {
+                    setShowAddCategoryModal(false);
+                    setSelectedMasterCategoryId('');
+                    setIsCreatingNewCategory(false);
+                    setNewCategoryName('');
+                    setNewCategoryDescription('');
+                  }}
                   className="px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleCategorySelect(selectedJobCategoryId)}
-                  disabled={!selectedJobCategoryId}
+                  onClick={handleConfirmAddCategory}
+                  disabled={
+                    loading || 
+                    (!isCreatingNewCategory && !selectedMasterCategoryId) ||
+                    (isCreatingNewCategory && !newCategoryName.trim())
+                  }
                   className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Add Selected Category
+                  {loading ? 'Adding...' : (isCreatingNewCategory ? 'Create & Add Category' : 'Add Selected Category')}
                 </button>
               </div>
             </div>
@@ -816,66 +924,6 @@ export function BillingDetailsForm() {
           </div>
         )}
 
-        {showNewCategoryModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 w-full max-w-md">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add New Category</h3>
-              
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="newCategoryName" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Category Name *
-                  </label>
-                  <input
-                    type="text"
-                    id="newCategoryName"
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter new category name"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="newCategoryDescription" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Description (Optional)
-                  </label>
-                  <textarea
-                    id="newCategoryDescription"
-                    value={newCategoryDescription}
-                    onChange={(e) => setNewCategoryDescription(e.target.value)}
-                    className="w-full px-4 py-2 bg-gray-50 dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter category description"
-                    rows={3}
-                  />
-                </div>
-              </div>
-
-              <div className="mt-6 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNewCategoryModal(false);
-                    setNewCategoryName('');
-                    setNewCategoryDescription('');
-                  }}
-                  className="px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-500"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAddNewCategory(newCategoryName, newCategoryDescription)}
-                  disabled={!newCategoryName.trim() || loading}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? 'Adding...' : 'Add Category'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
