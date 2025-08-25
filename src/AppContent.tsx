@@ -4,11 +4,22 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useUserRole } from '@/hooks/useUserRole';
 import { MainLayout } from '@/components/ui/MainLayout';
 
-const Auth = lazy(() => import('@/components/Auth'));
-const Dashboard = lazy(() => import('@/components/Dashboard'));
-const SubcontractorDashboard = lazy(() => import('@/components/SubcontractorDashboard'));
-const NewWorkOrder = lazy(() => import('@/components/NewWorkOrder'));
-const ApprovalPage = lazy(() => import('@/pages/ApprovalPage'));
+// Use safer lazy loading with error handling
+const Auth = lazy(() => 
+  import('@/components/Auth').catch(() => ({ default: () => <div>Error loading Auth component</div> }))
+);
+const Dashboard = lazy(() => 
+  import('@/components/Dashboard').catch(() => ({ default: () => <div>Error loading Dashboard component</div> }))
+);
+const SubcontractorDashboard = lazy(() => 
+  import('@/components/SubcontractorDashboard').catch(() => ({ default: () => <div>Error loading SubcontractorDashboard component</div> }))
+);
+const NewWorkOrder = lazy(() => 
+  import('@/components/NewWorkOrder').catch(() => ({ default: () => <div>Error loading NewWorkOrder component</div> }))
+);
+const ApprovalPage = lazy(() => 
+  import('@/pages/ApprovalPage').catch(() => ({ default: () => <div>Error loading ApprovalPage component</div> }))
+);
 
 const LoadingSpinner = () => (
   <div className="min-h-screen bg-background dark:bg-background-dark flex items-center justify-center">
@@ -23,6 +34,7 @@ export function AppContent() {
   const { role, loading: roleLoading } = useUserRole();
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [loadingTimeout, setLoadingTimeout] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Add timeout to prevent infinite loading
   useEffect(() => {
@@ -52,6 +64,7 @@ export function AppContent() {
   }), [session, authLoading, roleLoading, role, location.pathname, isApprovalPage]);
 
   useEffect(() => {
+    try {
     // Only log when auth state actually changes
     console.log('AppContent: Auth state update:', authState);
 
@@ -75,32 +88,65 @@ export function AppContent() {
     if (!authLoading) {
       if (!hasSession) {
         console.log('AppContent: No session, redirecting to auth');
-        navigate('/auth', { replace: true });
+        try {
+          navigate('/auth', { replace: true });
+        } catch (navError) {
+          console.error('Navigation error:', navError);
+          setError('Navigation failed');
+        }
       } else if (hasSession && !roleLoading) {
         console.log('AppContent: Session exists, handling dashboard routing');
         // Only redirect to dashboard if we're on the auth page
         if (location.pathname === '/auth') {
           // Redirect based on user role
-          if (role === 'subcontractor') {
-            navigate('/dashboard/subcontractor', { replace: true });
-          } else {
-            navigate('/dashboard', { replace: true });
+          try {
+            if (role === 'subcontractor') {
+              navigate('/dashboard/subcontractor', { replace: true });
+            } else {
+              navigate('/dashboard', { replace: true });
+            }
+          } catch (navError) {
+            console.error('Navigation error:', navError);
+            setError('Navigation failed');
           }
         }
       }
     }
+    } catch (err) {
+      console.error('AppContent: Error in useEffect:', err);
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
   }, [authState, navigate, isInitialLoad, location.pathname]); // Simplified dependencies
+
+  // Show error state if there's an error
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background dark:bg-background-dark flex items-center justify-center">
+        <div className="text-center p-8">
+          <h2 className="text-xl font-bold text-red-600 mb-4">Application Error</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button 
+            onClick={() => {
+              setError(null);
+              window.location.reload();
+            }} 
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Reload Application
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Don't show loading spinner for approval pages or if timeout reached
   if (!isApprovalPage && !loadingTimeout && (authState.authLoading || authState.roleLoading || isInitialLoad)) {
     console.log('AppContent: Rendering spinner', {
-      authLoading: authState.authLoading,
       roleLoading: authState.roleLoading,
       isInitialLoad,
       hasSession: authState.hasSession,
       role: authState.role,
       location: location.pathname,
-      loadingTimeout
     });
     return <LoadingSpinner />;
   }

@@ -4,10 +4,21 @@ import { resolve } from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    port: 5173,
+    host: '0.0.0.0',
+    strictPort: true,
+    hmr: {
+      overlay: false
+    }
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
     },
+  },
+  define: {
+    global: 'globalThis',
   },
   build: {
     rollupOptions: {
@@ -43,9 +54,4 @@ export default defineConfig({
       'jspdf'
     ]
   },
-  server: {
-    hmr: {
-      overlay: false
-    }
-  }
 });

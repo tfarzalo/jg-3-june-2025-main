@@ -9,6 +9,17 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
     <title>Paint Manager Pro</title>
+    <script>
+      // Prevent common errors during development
+      window.addEventListener('error', function(e) {
+        console.error('Window error:', e.error);
+      });
+      
+      window.addEventListener('unhandledrejection', function(e) {
+        console.error('Unhandled promise rejection:', e.reason);
+        e.preventDefault();
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
