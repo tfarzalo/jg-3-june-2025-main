@@ -65,58 +65,58 @@ export function AppContent() {
 
   useEffect(() => {
     try {
-    // Only log when auth state actually changes
-    console.log('AppContent: Auth state update:', authState);
+      // Only log when auth state actually changes
+      console.log('AppContent: Auth state update:', authState);
 
-    const { hasSession, authLoading, roleLoading, role, isApprovalPage } = authState;
+      const { hasSession, authLoading, roleLoading, role, isApprovalPage } = authState;
 
-    // Skip auth logic for approval pages
-    if (isApprovalPage) {
-      setIsInitialLoad(false);
-      return;
-    }
-
-    // Only handle routing after initial load
-    if (isInitialLoad) {
-      if (!authLoading && !roleLoading) {
+      // Skip auth logic for approval pages
+      if (isApprovalPage) {
         setIsInitialLoad(false);
+        return;
       }
-      return;
-    }
 
-    // Handle routing based on auth state
-    if (!authLoading) {
-      if (!hasSession) {
-        console.log('AppContent: No session, redirecting to auth');
-        try {
-          navigate('/auth', { replace: true });
-        } catch (navError) {
-          console.error('Navigation error:', navError);
-          setError('Navigation failed');
+      // Only handle routing after initial load
+      if (isInitialLoad) {
+        if (!authLoading && !roleLoading) {
+          setIsInitialLoad(false);
         }
-      } else if (hasSession && !roleLoading) {
-        console.log('AppContent: Session exists, handling dashboard routing');
-        // Only redirect to dashboard if we're on the auth page
-        if (location.pathname === '/auth') {
-          // Redirect based on user role
+        return;
+      }
+
+      // Handle routing based on auth state
+      if (!authLoading) {
+        if (!hasSession) {
+          console.log('AppContent: No session, redirecting to auth');
           try {
-            if (role === 'subcontractor') {
-              navigate('/dashboard/subcontractor', { replace: true });
-            } else {
-              navigate('/dashboard', { replace: true });
-            }
+            navigate('/auth', { replace: true });
           } catch (navError) {
             console.error('Navigation error:', navError);
             setError('Navigation failed');
           }
+        } else if (hasSession && !roleLoading) {
+          console.log('AppContent: Session exists, handling dashboard routing');
+          // Only redirect to dashboard if we're on the auth page
+          if (location.pathname === '/auth') {
+            // Redirect based on user role
+            try {
+              if (role === 'subcontractor') {
+                navigate('/dashboard/subcontractor', { replace: true });
+              } else {
+                navigate('/dashboard', { replace: true });
+              }
+            } catch (navError) {
+              console.error('Navigation error:', navError);
+              setError('Navigation failed');
+            }
+          }
         }
       }
-    }
     } catch (err) {
       console.error('AppContent: Error in useEffect:', err);
       setError(err instanceof Error ? err.message : 'Unknown error');
     }
-  }, [authState, navigate, isInitialLoad, location.pathname]); // Simplified dependencies
+  }, [authState, navigate, isInitialLoad, location.pathname]);
 
   // Show error state if there's an error
   if (error) {
