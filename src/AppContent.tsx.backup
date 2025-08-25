@@ -42,7 +42,7 @@ export function AppContent() {
       console.log('AppContent: Loading timeout reached, forcing completion');
       setIsInitialLoad(false);
       setLoadingTimeout(true);
-    }, 10000);
+    }, 10000); // 10 second timeout
 
     return () => clearTimeout(timeout);
   }, []);
@@ -65,6 +65,7 @@ export function AppContent() {
 
   useEffect(() => {
     try {
+      // Only log when auth state actually changes
       console.log('AppContent: Auth state update:', authState);
 
       const { hasSession, authLoading, roleLoading, role, isApprovalPage } = authState;
@@ -95,7 +96,9 @@ export function AppContent() {
           }
         } else if (hasSession && !roleLoading) {
           console.log('AppContent: Session exists, handling dashboard routing');
+          // Only redirect to dashboard if we're on the auth page
           if (location.pathname === '/auth') {
+            // Redirect based on user role
             try {
               if (role === 'subcontractor') {
                 navigate('/dashboard/subcontractor', { replace: true });
