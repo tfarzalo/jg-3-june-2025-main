@@ -9,6 +9,7 @@ import {
   FileText,
   Upload,
   Globe
+  Globe
 } from 'lucide-react';
 import { supabase } from '@/utils/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -56,6 +57,50 @@ const NewWorkOrder: React.FC = () => {
   const searchParams = new URLSearchParams(location.search);
   const previewUserId = searchParams.get('userId');
   
+  // Language state
+  const [language, setLanguage] = useState<'en' | 'es'>('en');
+  const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
+
+  // Translations
+  const t = {
+    en: {
+      title: 'Add Work Order',
+      jobInfo: 'Job Information',
+      workOrderDetails: 'Work Order Details', 
+      unitInfo: 'Unit Information',
+      paintedItems: 'Painted Items',
+      accentWall: 'Accent Wall Information',
+      extraCharges: 'Extra Charges & Additional Work',
+      additionalComments: 'Additional Comments',
+      beforeImages: 'Before Images',
+      sprinklerImages: 'Sprinkler Images', 
+      otherFiles: 'Other Files',
+      submit: 'Submit Work Order',
+      cancel: 'Cancel',
+      yes: 'Yes',
+      no: 'No',
+      select: 'Select an option'
+    },
+    es: {
+      title: 'Agregar Orden de Trabajo',
+      jobInfo: 'Información del Trabajo',
+      workOrderDetails: 'Detalles de la Orden de Trabajo',
+      unitInfo: 'Información de la Unidad', 
+      paintedItems: 'Elementos Pintados',
+      accentWall: 'Información de Pared de Acento',
+      extraCharges: 'Cargos Adicionales y Trabajo Extra',
+      additionalComments: 'Comentarios Adicionales',
+      beforeImages: 'Imágenes de Antes',
+      sprinklerImages: 'Imágenes de Rociadores',
+      otherFiles: 'Otros Archivos', 
+      submit: 'Enviar Orden de Trabajo',
+      cancel: 'Cancelar',
+      yes: 'Sí',
+      no: 'No',
+      select: 'Seleccionar una opción'
+    }
+  };
+
   // Language toggle state
   const [language, setLanguage] = useState<'en' | 'es'>('en');
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
@@ -433,54 +478,51 @@ const NewWorkOrder: React.FC = () => {
             <button
               onClick={() => navigate(`/dashboard/jobs/${jobId}${previewUserId ? `?userId=${previewUserId}` : ''}`)}
               className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-              title={t('backButton')}
             >
               <ArrowLeft className="h-6 w-6" />
             </button>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {t('pageTitle')}
+              {t[language].title}
             </h1>
           </div>
           
-          {/* Language Toggle */}
+          {/* Language Selector */}
           <div className="relative">
             <button
               onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
-              className="flex items-center space-x-2 px-4 py-2 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors"
+              className="flex items-center space-x-2 px-3 py-2 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors"
             >
               <Globe className="h-4 w-4" />
-              <span className="text-sm font-medium">
-                {language === 'en' ? t('english') : t('spanish')}
-              </span>
+              <span className="text-sm">{language === 'en' ? 'EN' : 'ES'}</span>
             </button>
             
             {showLanguageDropdown && (
-              <div className="absolute right-0 mt-2 w-40 bg-white dark:bg-[#1E293B] rounded-lg shadow-lg z-10 border border-gray-200 dark:border-[#2D3B4E]">
+              <div className="absolute right-0 mt-2 w-32 bg-white dark:bg-[#1E293B] rounded-lg shadow-lg z-10 border border-gray-200 dark:border-[#2D3B4E]">
                 <button
                   onClick={() => {
                     setLanguage('en');
                     setShowLanguageDropdown(false);
                   }}
-                  className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors ${
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors ${
                     language === 'en' 
                       ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300' 
                       : 'text-gray-700 dark:text-gray-300'
                   }`}
                 >
-                  🇺🇸 {translations.en.english}
+                  🇺🇸 English
                 </button>
                 <button
                   onClick={() => {
                     setLanguage('es');
                     setShowLanguageDropdown(false);
                   }}
-                  className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors ${
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors ${
                     language === 'es' 
                       ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300' 
                       : 'text-gray-700 dark:text-gray-300'
                   }`}
                 >
-                  🇪🇸 {translations.es.spanish}
+                  🇪🇸 Español
                 </button>
               </div>
             )}
@@ -498,7 +540,7 @@ const NewWorkOrder: React.FC = () => {
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
               <FileText className="h-5 w-5 mr-2 text-blue-500" />
-              {t('jobInfoSection')}
+              {t[language].jobInfo}
             </h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -562,7 +604,7 @@ const NewWorkOrder: React.FC = () => {
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
               <Calendar className="h-5 w-5 mr-2 text-orange-500" />
-              {t('workOrderDetailsSection')}
+              {t[language].workOrderDetails}
             </h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -586,9 +628,9 @@ const NewWorkOrder: React.FC = () => {
                   className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 >
-                  <option value="">{t('selectOption')}</option>
-                  <option value="true">{t('yes')}</option>
-                  <option value="false">{t('no')}</option>
+                  <option value="">{t[language].select}</option>
+                  <option value="true">{t[language].yes}</option>
+                  <option value="false">{t[language].no}</option>
                 </select>
               </div>
               
@@ -603,9 +645,9 @@ const NewWorkOrder: React.FC = () => {
                   className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 >
-                  <option value="">{t('selectOption')}</option>
-                  <option value="true">{t('yes')}</option>
-                  <option value="false">{t('no')}</option>
+                  <option value="">{t[language].select}</option>
+                  <option value="true">{t[language].yes}</option>
+                  <option value="false">{t[language].no}</option>
                 </select>
               </div>
               
@@ -635,7 +677,7 @@ const NewWorkOrder: React.FC = () => {
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
               <Building2 className="h-5 w-5 mr-2 text-green-500" />
-              {t('unitInfoSection')}
+              {t[language].unitInfo}
             </h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -650,9 +692,9 @@ const NewWorkOrder: React.FC = () => {
                   className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 >
-                  <option value="">{t('selectOption')}</option>
-                  <option value="true">{t('yes')}</option>
-                  <option value="false">{t('no')}</option>
+                  <option value="">{t[language].select}</option>
+                  <option value="true">{t[language].yes}</option>
+                  <option value="false">{t[language].no}</option>
                 </select>
               </div>
               
@@ -668,9 +710,9 @@ const NewWorkOrder: React.FC = () => {
                     className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   >
-                    <option value="">{t('selectOption')}</option>
-                    <option value="true">{t('yes')}</option>
-                    <option value="false">{t('no')}</option>
+                    <option value="">{t[language].select}</option>
+                    <option value="true">{t[language].yes}</option>
+                    <option value="false">{t[language].no}</option>
                   </select>
                 </div>
               )}
@@ -681,7 +723,7 @@ const NewWorkOrder: React.FC = () => {
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
               <User className="h-5 w-5 mr-2 text-purple-500" />
-              {t('paintedItemsSection')}
+              {t[language].paintedItems}
             </h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -695,9 +737,9 @@ const NewWorkOrder: React.FC = () => {
                   onChange={(e) => setFormData(prev => ({ ...prev, painted_ceilings: e.target.value === 'true' }))}
                   className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">{t('selectOption')}</option>
-                  <option value="true">{t('yes')}</option>
-                  <option value="false">{t('no')}</option>
+                  <option value="">{t[language].select}</option>
+                  <option value="true">{t[language].yes}</option>
+                  <option value="false">{t[language].no}</option>
                 </select>
               </div>
               
@@ -727,9 +769,9 @@ const NewWorkOrder: React.FC = () => {
                   onChange={(e) => setFormData(prev => ({ ...prev, painted_patio: e.target.value === 'true' }))}
                   className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">{t('selectOption')}</option>
-                  <option value="true">{t('yes')}</option>
-                  <option value="false">{t('no')}</option>
+                  <option value="">{t[language].select}</option>
+                  <option value="true">{t[language].yes}</option>
+                  <option value="false">{t[language].no}</option>
                 </select>
               </div>
               
@@ -801,8 +843,9 @@ const NewWorkOrder: React.FC = () => {
 
           {/* Accent Wall Information */}
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-              {t('accentWallSection')}
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
+              <Building2 className="h-5 w-5 mr-2 text-yellow-500" />
+              {t[language].accentWall}
             </h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -816,9 +859,9 @@ const NewWorkOrder: React.FC = () => {
                   onChange={(e) => setFormData(prev => ({ ...prev, has_accent_wall: e.target.value === 'true' }))}
                   className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">{t('selectOption')}</option>
-                  <option value="true">{t('yes')}</option>
-                  <option value="false">{t('no')}</option>
+                  <option value="">{t[language].select}</option>
+                  <option value="true">{t[language].yes}</option>
+                  <option value="false">{t[language].no}</option>
                 </select>
               </div>
               
@@ -835,9 +878,9 @@ const NewWorkOrder: React.FC = () => {
                       className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       required
                     >
-                      <option value="">{t('selectType')}</option>
-                      <option value="Custom">{t('custom')}</option>
-                      <option value="Paint Over">{t('paintOver')}</option>
+                      <option value="">{t[language].select}</option>
+                      <option value="Custom">Custom</option>
+                      <option value="Paint Over">Paint Over</option>
                     </select>
                   </div>
                   
@@ -861,8 +904,9 @@ const NewWorkOrder: React.FC = () => {
 
           {/* Extra Charges */}
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-              {t('extraChargesSection')}
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
+              <FileText className="h-5 w-5 mr-2 text-red-500" />
+              {t[language].extraCharges}
             </h2>
             
             <div className="space-y-6">
@@ -876,9 +920,9 @@ const NewWorkOrder: React.FC = () => {
                   onChange={(e) => setFormData(prev => ({ ...prev, has_extra_charges: e.target.value === 'true' }))}
                   className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">{t('selectOption')}</option>
-                  <option value="true">{t('yes')}</option>
-                  <option value="false">{t('no')}</option>
+                  <option value="">{t[language].select}</option>
+                  <option value="true">{t[language].yes}</option>
+                  <option value="false">{t[language].no}</option>
                 </select>
               </div>
               
@@ -918,8 +962,9 @@ const NewWorkOrder: React.FC = () => {
 
           {/* Additional Comments */}
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-              {t('additionalCommentsSection')}
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
+              <FileText className="h-5 w-5 mr-2 text-gray-500" />
+              {t[language].additionalComments}
             </h2>
             
             <div>
@@ -940,11 +985,8 @@ const NewWorkOrder: React.FC = () => {
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
               <Upload className="h-5 w-5 mr-2 text-blue-500" />
-              {t('beforeImagesSection')}
+              {t[language].beforeImages}
             </h2>
-            <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
-              {t('beforeImagesDesc')}
-            </p>
             <ImageUpload
               jobId={jobId!}
               folder="before"
@@ -957,11 +999,8 @@ const NewWorkOrder: React.FC = () => {
             <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
                 <Upload className="h-5 w-5 mr-2 text-green-500" />
-                {t('sprinklerImagesSection')}
+                {t[language].sprinklerImages}
               </h2>
-              <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
-                {t('sprinklerImagesDesc')}
-              </p>
               <ImageUpload
                 jobId={jobId!}
                 folder="sprinkler"
@@ -974,11 +1013,8 @@ const NewWorkOrder: React.FC = () => {
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
               <Upload className="h-5 w-5 mr-2 text-purple-500" />
-              {t('otherFilesSection')}
+              {t[language].otherFiles}
             </h2>
-            <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
-              {t('otherFilesDesc')}
-            </p>
             <ImageUpload
               jobId={jobId!}
               folder="other"
@@ -993,7 +1029,7 @@ const NewWorkOrder: React.FC = () => {
               onClick={() => navigate(`/dashboard/jobs/${jobId}${previewUserId ? `?userId=${previewUserId}` : ''}`)}
               className="px-6 py-2 text-sm font-medium text-gray-700 dark:text-gray-400 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors"
             >
-              {t('cancelButton')}
+              {t[language].cancel}
             </button>
             <button
               type="submit"
@@ -1008,7 +1044,7 @@ const NewWorkOrder: React.FC = () => {
               ) : (
                 <>
                   <Save className="h-4 w-4 mr-2" />
-                  {t('submitButton')}
+                  {t[language].submit}
                 </>
               )}
             </button>
