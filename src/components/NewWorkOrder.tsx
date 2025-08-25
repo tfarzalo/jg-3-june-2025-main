@@ -9,7 +9,6 @@ import {
   FileText,
   Upload,
   Globe
-  Globe
 } from 'lucide-react';
 import { supabase } from '@/utils/supabase';
 import { useAuth } from '@/contexts/AuthContext';
