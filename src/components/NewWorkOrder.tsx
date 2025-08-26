@@ -52,10 +52,6 @@ const NewWorkOrder: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
-  const searchParams = new URLSearchParams(location.search);
-  const previewUserId = searchParams.get('userId');
-  
   // Language state
   const [language, setLanguage] = useState<'en' | 'es'>('en');
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
@@ -266,11 +262,6 @@ const NewWorkOrder: React.FC = () => {
       english: 'Inglés',
       spanish: 'Español'
     }
-  };
-
-  // Translation helper
-  const t = (key: keyof typeof translations.en): string => {
-    return translations[language][key];
   };
 
   const [loading, setLoading] = useState(false);

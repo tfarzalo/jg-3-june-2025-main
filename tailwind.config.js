@@ -1,10 +1,10 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: [
-    './index.html', 
-    './src/**/*.{js,ts,jsx,tsx}',
-    './src/**/*.{vue,svelte}', // Future-proofing
-    '!./src/**/*.{spec,test}.{js,ts,jsx,tsx}' // Exclude test files
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  safelist: [
+    /^bg-\w+-\d+$/,
+    /^text-\w+-\d+$/,
+    /^border-\w+-\d+$/,
   ],
   darkMode: 'class',
   theme: {
@@ -120,21 +120,5 @@ export default {
   future: {
     hoverOnlyWhenSupported: true
   },
-  plugins: [],
-  // Purge unused styles in production
-  purge: {
-    enabled: process.env.NODE_ENV === 'production',
-    content: [
-      './index.html',
-      './src/**/*.{js,ts,jsx,tsx}'
-    ],
-    options: {
-      safelist: [
-        // Keep dynamic classes that might be generated
-        /^bg-\w+-\d+$/,
-        /^text-\w+-\d+$/,
-        /^border-\w+-\d+$/,
-      ]
-    }
-  }
+  plugins: []
 };
