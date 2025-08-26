@@ -62,7 +62,7 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-// Create router with future flags
+// Create router with correct configuration for SPA
 const router = createBrowserRouter(
   createRoutesFromElements(
     <Route path="*" element={
@@ -76,10 +76,15 @@ const router = createBrowserRouter(
     } />
   ),
   {
+    // Ensure correct basename for Bolt.new hosting
+    basename: '/',
     future: {
-      v7_relativeSplatPath: true
-    },
-    basename: '/'
+      v7_relativeSplatPath: true,
+      v7_fetcherPersist: true,
+      v7_normalizeFormMethod: true,
+      v7_partialHydration: true,
+      v7_skipActionErrorRevalidation: true
+    }
   }
 );
 

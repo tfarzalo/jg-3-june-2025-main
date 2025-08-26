@@ -7,9 +7,9 @@ export default defineConfig({
   server: {
     port: 5173,
     host: '0.0.0.0',
-    strictPort: true,
+    strictPort: false, // Allow fallback ports
     hmr: {
-      overlay: false
+      overlay: true // Show errors in overlay for better debugging
     }
   },
   resolve: {
@@ -21,6 +21,9 @@ export default defineConfig({
     global: 'globalThis',
   },
   build: {
+    // Development-friendly build settings
+    sourcemap: true, // Enable sourcemaps for debugging
+    minify: false, // Disable minification for faster builds
     rollupOptions: {
       output: {
         manualChunks: {
@@ -33,15 +36,6 @@ export default defineConfig({
       }
     },
     chunkSizeWarningLimit: 1000,
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: true,
-        drop_debugger: true,
-        pure_funcs: ['console.log', 'console.info', 'console.debug']
-      }
-    },
-    sourcemap: false,
     target: 'esnext'
   },
   optimizeDeps: {
@@ -54,4 +48,9 @@ export default defineConfig({
       'jspdf'
     ]
   },
+  // Ensure proper SPA fallback
+  preview: {
+    port: 4173,
+    strictPort: false
+  }
 });
