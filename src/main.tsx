@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './index.css';
+import { unregisterOldServiceWorkers, clearOldCaches } from './utils/sw-cleanup';
 
 const root = document.getElementById('root');
 
@@ -9,6 +10,22 @@ if (!root) {
   throw new Error('Root element not found');
 }
 
+// Clean up old service workers and caches before app start
+Promise.all([
+  unregisterOldServiceWorkers(),
+  clearOldCaches()
+]).then(() => {
+  console.log('✅ Cleanup completed, starting app...');
+}).catch(error => {
+  console.warn('⚠️ Cleanup failed, but continuing:', error);
+}).finally(() => {
+  // Start the app regardless of cleanup results
+  createRoot(root).render(
+    <StrictMode>
+      <App />
+    </StrictMode>
+  );
+});
 // Add error boundary for better error handling
 function ErrorFallback({ error }: { error: Error }) {
   return (

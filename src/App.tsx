@@ -8,10 +8,15 @@ import {
 import { ThemeProvider } from './components/ui/ThemeProvider';
 import { Toaster } from 'sonner';
 import { AuthProvider } from './contexts/AuthContext';
+import { unregisterOldServiceWorkers } from './utils/sw-cleanup';
 
+// Lazy load main components for better code splitting
 const AppContent = lazy(() => import('./AppContent').then(module => ({ 
   default: module.AppContent 
 })));
+
+const NotFound = lazy(() => import('./pages/NotFound'));
+const Health = lazy(() => import('./pages/Health'));
 
 // Loading spinner component
 const LoadingSpinner = () => (
@@ -62,22 +67,41 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-// Create router with correct configuration for SPA
+// Create router with SPA fallback handling
 const router = createBrowserRouter(
   createRoutesFromElements(
-    <Route path="*" element={
-      <Suspense fallback={<LoadingSpinner />}>
-        <ErrorBoundary>
-          <AuthProvider>
-            <AppContent />
-          </AuthProvider>
-        </ErrorBoundary>
-      </Suspense>
-    } />
+    <>
+      {/* Health check endpoint */}
+      <Route path="/healthz" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <Health />
+        </Suspense>
+      } />
+      
+      {/* NotFound catch-all route */}
+      <Route path="/404" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <NotFound />
+        </Suspense>
+      } />
+      
+      {/* Main app routes */}
+      <Route path="*" element={
+        <Suspense fallback={<LoadingSpinner />}>
+          <ErrorBoundary>
+            <AuthProvider>
+              <AppContent />
+            </AuthProvider>
+          </ErrorBoundary>
+        </Suspense>
+      } />
+    </>
   ),
   {
-    // Ensure correct basename for Bolt.new hosting
-    basename: '/',
+    // Use basename from environment for subpath deployments
+    basename: import.meta.env.VITE_BASE_PATH || '/',
+    
+    // Future flags for React Router v7 compatibility
     future: {
       v7_relativeSplatPath: true,
       v7_fetcherPersist: true,
@@ -89,6 +113,11 @@ const router = createBrowserRouter(
 );
 
 function App() {
+  // Clean up old service workers and caches on app start
+  React.useEffect(() => {
+    unregisterOldServiceWorkers();
+  }, []);
+
   return (
     <ErrorBoundary>
       <ThemeProvider>

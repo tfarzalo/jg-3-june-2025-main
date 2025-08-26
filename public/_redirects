@@ -1,1 +1,12 @@
+# SPA fallback - serve index.html for all routes
 /* /index.html 200
+
+# Optional: Add headers for better caching of static assets
+/assets/* 
+  Cache-Control: public, max-age=31536000, immutable
+
+# Optional: Security headers
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

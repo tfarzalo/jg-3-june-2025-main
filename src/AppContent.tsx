@@ -17,9 +17,8 @@ const SubcontractorDashboard = lazy(() =>
 const NewWorkOrder = lazy(() => 
   import('@/components/NewWorkOrder').catch(() => ({ default: () => <div>Error loading NewWorkOrder component</div> }))
 );
-const ApprovalPage = lazy(() => 
-  import('@/pages/ApprovalPage').catch(() => ({ default: () => <div>Error loading ApprovalPage component</div> }))
-);
+const ApprovalPage = lazy(() => import('@/pages/ApprovalPage'));
+const NotFound = lazy(() => import('@/pages/NotFound'));
 
 const LoadingSpinner = () => (
   <div className="min-h-screen bg-background dark:bg-background-dark flex items-center justify-center">
@@ -174,7 +173,7 @@ export function AppContent() {
       } />
       <Route path="*" element={
         <Suspense fallback={<LoadingSpinner />}>
-          <Auth />
+          <NotFound />
         </Suspense>
       } />
     </Routes>
