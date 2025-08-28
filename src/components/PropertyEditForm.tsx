@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Building2, ArrowLeft, MapPin } from 'lucide-react';
+import { Building2, ArrowLeft, MapPin, Plus, ZoomIn } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { useLeafletMap } from '../hooks/useLeafletMap';
+import { PaintColorsEditor } from './properties/PaintColorsEditor';
+import { PaintScheme } from '../lib/types';
+import { Lightbox } from './Lightbox';
+import { UnitMapUpload } from './ui/UnitMapUpload';
+import { toast } from 'sonner';
 
 interface PropertyManagementGroup {
   id: string;
@@ -17,6 +22,8 @@ export function PropertyEditForm() {
   const [error, setError] = useState<string | null>(null);
   const [propertyGroups, setPropertyGroups] = useState<PropertyManagementGroup[]>([]);
   const [previewAddress, setPreviewAddress] = useState('');
+  const [paintSchemes, setPaintSchemes] = useState<PaintScheme[]>([]);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   
   const [formData, setFormData] = useState({
     property_name: '',
@@ -54,13 +61,9 @@ export function PropertyEditForm() {
     extra_charges_notes: '',
     occupied_regular_paint_fees: '',
     quickbooks_number: '',
+    unit_map_file_path: '',
 
-    // Paint Colors
-    color_walls: '',
-    color_trim: '',
-    color_regular_unit: '',
-    color_kitchen_bathroom: '',
-    color_ceilings: '',
+    // Paint Colors - will be handled by PaintColorsEditor
     paint_location: '',
 
     // Compliance Information
@@ -87,7 +90,8 @@ export function PropertyEditForm() {
     }
     Promise.all([
       fetchProperty(),
-      fetchPropertyGroups()
+      fetchPropertyGroups(),
+      fetchPaintSchemes()
     ]);
   }, [propertyId, navigate]);
 
@@ -148,11 +152,13 @@ export function PropertyEditForm() {
         extra_charges_notes: data.extra_charges_notes || '',
         occupied_regular_paint_fees: data.occupied_regular_paint_fees || '',
         quickbooks_number: data.quickbooks_number || '',
-        color_walls: data.color_walls || '',
-        color_trim: data.color_trim || '',
-        color_regular_unit: data.color_regular_unit || '',
-        color_kitchen_bathroom: data.color_kitchen_bathroom || '',
-        color_ceilings: data.color_ceilings || '',
+        unit_map_file_path: data.unit_map_file_path || '',
+        // The following fields are now managed by PaintColorsEditor
+        // color_walls: data.color_walls || '',
+        // color_trim: data.color_trim || '',
+        // color_regular_unit: data.color_regular_unit || '',
+        // color_kitchen_bathroom: data.color_kitchen_bathroom || '',
+        // color_ceilings: data.color_ceilings || '',
         paint_location: data.paint_location || '',
         compliance_bid_approved: data.compliance_bid_approved || '',
         compliance_coi_address: data.compliance_coi_address || '',
@@ -187,18 +193,64 @@ export function PropertyEditForm() {
     }
   };
 
+  const fetchPaintSchemes = async () => {
+    if (!propertyId) return;
+    
+    try {
+      console.log('=== PAINT SCHEMES DEBUG ===');
+      console.log('Property ID:', propertyId);
+      console.log('Fetching paint schemes for property:', propertyId);
+      
+      const { getPaintSchemesByProperty } = await import('../lib/paintColors');
+      console.log('Import successful, calling getPaintSchemesByProperty...');
+      
+      const schemes = await getPaintSchemesByProperty(propertyId);
+      console.log('Raw result from getPaintSchemesByProperty:', schemes);
+      console.log('Type of schemes:', typeof schemes);
+      console.log('Is array?', Array.isArray(schemes));
+      console.log('Length:', schemes?.length);
+      console.log('Setting paint schemes state to:', schemes);
+      
+      setPaintSchemes(schemes || []);
+      console.log('State set, current paintSchemes state:', schemes);
+      console.log('=== END DEBUG ===');
+    } catch (err) {
+      console.error('Failed to fetch paint schemes:', err);
+      console.error('Error details:', err);
+      // Don't show error to user, just log it
+      setPaintSchemes([]); // Set empty array as fallback
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
     try {
+      // Remove unit_map_file_path from form data as it's handled by the file upload system
+      const { unit_map_file_path, ...updateData } = formData;
+      
       const { error } = await supabase
         .from('properties')
-        .update(formData)
+        .update(updateData)
         .eq('id', propertyId);
 
       if (error) throw error;
+
+      // Save paint schemes (including empty arrays to clear existing schemes)
+      if (propertyId) {
+        try {
+          console.log('Saving paint schemes for property:', propertyId, paintSchemes);
+          const { savePaintSchemes } = await import('../lib/paintColors');
+          await savePaintSchemes(propertyId, paintSchemes);
+          console.log('Paint schemes saved successfully');
+        } catch (paintError) {
+          console.error('Error saving paint schemes:', paintError);
+          // Continue with navigation even if paint schemes fail to save
+        }
+      }
+
       navigate(`/dashboard/properties/${propertyId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update property');
@@ -542,95 +594,87 @@ export function PropertyEditForm() {
             </div>
           </div>
 
-          {/* Paint Colors */}
+          {/* Property Unit Map */}
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Property Unit Map</h2>
+            
+            {propertyId ? (
+              // Show the upload component for existing properties
+              <UnitMapUpload
+                propertyId={propertyId}
+                propertyName={formData.property_name}
+                currentFilePath={formData.unit_map_file_path}
+                onUploadSuccess={(filePath) => {
+                  setFormData(prev => ({ ...prev, unit_map_file_path: filePath }));
+                  toast.success('Unit map uploaded successfully');
+                }}
+                onUploadError={(error) => {
+                  toast.error(`Upload failed: ${error}`);
+                }}
+                onDeleteSuccess={() => {
+                  setFormData(prev => ({ ...prev, unit_map_file_path: '' }));
+                  toast.success('Unit map deleted successfully');
+                }}
+                onDeleteError={(error) => {
+                  toast.error(`Delete failed: ${error}`);
+                }}
+                disabled={loading}
+              />
+            ) : (
+              // Show loading state while property data is being fetched
+              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Loading property data...</p>
+              </div>
+            )}
+          </div>
+
+          {/* Manage Billing Details */}
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Billing Management</h2>
+              <button
+                type="button"
+                onClick={() => navigate(`/dashboard/properties/${propertyId}/billing`)}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Manage Billing Details
+              </button>
+            </div>
+            <p className="text-gray-600 dark:text-gray-400 text-sm">
+              Property billing details are managed on a dedicated page. Click the Manage button to view and edit.
+            </p>
+          </div>
+
+                    {/* Paint Colors */}
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Paint Colors</h2>
             
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-              <div>
-                <label htmlFor="color_walls" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Walls
-                </label>
-                <input
-                  type="text"
-                  id="color_walls"
-                  name="color_walls"
-                  value={formData.color_walls}
-                  onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="color_trim" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Trim
-                </label>
-                <input
-                  type="text"
-                  id="color_trim"
-                  name="color_trim"
-                  value={formData.color_trim}
-                  onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="color_regular_unit" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Regular Unit
-                </label>
-                <input
-                  type="text"
-                  id="color_regular_unit"
-                  name="color_regular_unit"
-                  value={formData.color_regular_unit}
-                  onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="color_kitchen_bathroom" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Kitchen/Bathroom
-                </label>
-                <input
-                  type="text"
-                  id="color_kitchen_bathroom"
-                  name="color_kitchen_bathroom"
-                  value={formData.color_kitchen_bathroom}
-                  onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="color_ceilings" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Ceilings
-                </label>
-                <input
-                  type="text"
-                  id="color_ceilings"
-                  name="color_ceilings"
-                  value={formData.color_ceilings}
-                  onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="paint_location" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Paint Location
-                </label>
-                <input
-                  type="text"
-                  id="paint_location"
-                  name="paint_location"
-                  value={formData.paint_location}
-                  onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+            {/* Paint Location Field */}
+            <div className="mb-6">
+              <label htmlFor="paint_location" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                Paint Storage Location
+              </label>
+              <input
+                type="text"
+                id="paint_location"
+                name="paint_location"
+                value={formData.paint_location}
+                onChange={handleChange}
+                className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g., Maintenance office, Storage room, Garage, etc."
+              />
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Specify where paint is physically stored on the premises (e.g., Maintenance office, Storage room, Garage, etc.)
+              </p>
             </div>
+            
+            <PaintColorsEditor
+              propertyId={propertyId}
+              initial={paintSchemes}
+              onChange={setPaintSchemes}
+            />
           </div>
 
           {/* Compliance Information */}
@@ -923,6 +967,14 @@ export function PropertyEditForm() {
           </div>
         </form>
       </div>
+      
+      {/* Lightbox for Unit Map Preview */}
+      <Lightbox
+        isOpen={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+        imageUrl={formData.unit_map_file_path}
+        imageAlt="Unit Map Preview"
+      />
     </div>
   );
 }

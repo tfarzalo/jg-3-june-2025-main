@@ -17,6 +17,8 @@ import { Link } from 'react-router-dom';
 import { parseISO, subDays } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { supabase } from '../utils/supabase';
+import { WorkOrderLink } from './shared/WorkOrderLink';
+import { PropertyLink } from './shared/PropertyLink';
 
 interface ActivityItem {
   id: string;
@@ -33,6 +35,7 @@ interface ActivityItem {
   job_work_order_num: number;
   job_unit_number: string;
   property_name: string;
+  property_id: string;
   user_full_name: string | null;
 }
 
@@ -147,6 +150,7 @@ export function Activity() {
           id,
           work_order_num,
           unit_number,
+          property_id,
           property:properties(
             property_name
           )
@@ -160,10 +164,11 @@ export function Activity() {
         acc[job.id] = {
           work_order_num: job.work_order_num,
           unit_number: job.unit_number,
+          property_id: job.property_id,
           property_name: job.property?.property_name || 'Unknown Property'
         };
         return acc;
-      }, {} as Record<string, { work_order_num: number, unit_number: string, property_name: string }>);
+      }, {} as Record<string, { work_order_num: number, unit_number: string, property_id: string, property_name: string }>);
 
       // Fetch all users
       const { data: usersData, error: usersError } = await supabase
@@ -184,6 +189,7 @@ export function Activity() {
         const job = jobMap[change.job_id] || { 
           work_order_num: 0, 
           unit_number: 'Unknown', 
+          property_id: 'unknown',
           property_name: 'Unknown Property' 
         };
         
@@ -205,6 +211,7 @@ export function Activity() {
           job_work_order_num: job.work_order_num,
           job_unit_number: job.unit_number,
           property_name: job.property_name,
+          property_id: job.property_id,
           user_full_name: userMap[change.changed_by] || 'Unknown User'
         };
       });
@@ -548,15 +555,17 @@ export function Activity() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-1">
                       <div className="flex items-center">
-                        <Link 
-                          to={`/dashboard/jobs/${activity.job_id}`}
-                          className="text-lg font-medium text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400"
-                        >
-                          {formatWorkOrderNumber(activity.job_work_order_num)}
-                        </Link>
+                        <WorkOrderLink 
+                          jobId={activity.job_id}
+                          workOrderNum={activity.job_work_order_num}
+                          className="text-lg font-medium"
+                        />
                         <span className="mx-2 text-gray-500 dark:text-gray-400">•</span>
                         <span className="text-gray-700 dark:text-gray-300">
-                          {activity.property_name} - Unit {activity.job_unit_number}
+                          <PropertyLink 
+                            propertyId={activity.property_id}
+                            propertyName={activity.property_name}
+                          /> - Unit {activity.job_unit_number}
                         </span>
                       </div>
                       <span className="text-sm text-gray-500 dark:text-gray-400">

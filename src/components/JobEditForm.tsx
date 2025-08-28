@@ -4,6 +4,8 @@ import { ClipboardList, ArrowLeft, Trash2 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { formatDateForInput } from '../lib/dateUtils';
 import { JobType } from '../lib/types';
+import { WorkOrderLink } from './shared/WorkOrderLink';
+import { PropertyLink } from './shared/PropertyLink';
 
 interface Property {
   id: string;
@@ -30,12 +32,20 @@ interface JobPhase {
   created_at: string;
 }
 
+interface JobCategory {
+  id: string;
+  name: string;
+  description: string | null;
+  sort_order: number;
+}
+
 interface Job {
   id: string;
   property_id: string;
   unit_number: string;
   unit_size_id: string;
   job_type_id: string;
+  job_category_id: string | null;
   description: string;
   scheduled_date: string;
   job_phase: JobPhase;
@@ -52,10 +62,12 @@ export function JobEditForm() {
   const [unitSizes, setUnitSizes] = useState<UnitSize[]>([]);
   const [jobTypes, setJobTypes] = useState<JobType[]>([]);
   const [jobPhases, setJobPhases] = useState<JobPhase[]>([]);
+  const [jobCategories, setJobCategories] = useState<JobCategory[]>([]);
   const [formData, setFormData] = useState({
     property_id: '',
     unit_number: '',
     unit_size_id: '',
+    job_category_id: '',
     job_type_id: '',
     description: '',
     scheduled_date: ''
@@ -75,6 +87,15 @@ export function JobEditForm() {
     ]);
   }, [jobId, navigate]);
 
+  // Fetch job categories when property changes
+  useEffect(() => {
+    if (formData.property_id) {
+      fetchPropertyJobCategories(formData.property_id);
+    } else {
+      setJobCategories([]);
+    }
+  }, [formData.property_id]);
+
   const fetchJob = async () => {
     try {
       const { data, error } = await supabase
@@ -85,6 +106,7 @@ export function JobEditForm() {
           unit_number,
           unit_size_id,
           job_type_id,
+          job_category_id,
           description,
           scheduled_date,
           job_phase:current_phase_id (
@@ -98,30 +120,25 @@ export function JobEditForm() {
           )
         `)
         .eq('id', jobId)
-        .single() as { data: Job | null; error: any };
+        .single();
 
       if (error) throw error;
       if (!data) throw new Error('Job not found');
-
-      // Only allow editing if job is in "Job Request" phase
-      if (data.job_phase?.job_phase_label !== 'Job Request') {
-        throw new Error('This job can no longer be edited as it has progressed beyond the Job Request phase.');
-      }
-
-      // Format the date for the input field (YYYY-MM-DD)
-      const formattedDate = formatDateForInput(data.scheduled_date);
 
       setFormData({
         property_id: data.property_id,
         unit_number: data.unit_number,
         unit_size_id: data.unit_size_id,
+        job_category_id: data.job_category_id || '',
         job_type_id: data.job_type_id,
         description: data.description || '',
-        scheduled_date: formattedDate
+        scheduled_date: formatDateForInput(data.scheduled_date)
       });
+
+      setLoadingJob(false);
     } catch (err) {
+      console.error('Error fetching job:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch job');
-    } finally {
       setLoadingJob(false);
     }
   };
@@ -183,6 +200,58 @@ export function JobEditForm() {
     }
   };
 
+  const fetchJobCategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('job_categories')
+        .select('*')
+        .order('sort_order, name');
+
+      if (error) throw error;
+      setJobCategories(data || []);
+    } catch (err) {
+      console.error('Error fetching job categories:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch job categories');
+    }
+  };
+
+  const fetchPropertyJobCategories = async (propertyId: string) => {
+    try {
+      // Get the job categories that exist in the property's billing categories
+      const { data, error } = await supabase
+        .from('billing_categories')
+        .select(`
+          name,
+          description,
+          sort_order
+        `)
+        .eq('property_id', propertyId)
+        .order('sort_order, name');
+
+      if (error) throw error;
+      
+      // Get the corresponding job_categories IDs for these names
+      if (data && data.length > 0) {
+        const categoryNames = data.map(cat => cat.name);
+        
+        const { data: jobCategoriesData, error: jobCategoriesError } = await supabase
+          .from('job_categories')
+          .select('id, name, description, sort_order')
+          .in('name', categoryNames)
+          .order('sort_order, name');
+          
+        if (jobCategoriesError) throw jobCategoriesError;
+        
+        setJobCategories(jobCategoriesData || []);
+      } else {
+        setJobCategories([]);
+      }
+    } catch (err) {
+      console.error('Error fetching property job categories:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch property job categories');
+    }
+  };
+
   const formatPropertyAddress = (property: Property) => {
     const parts = [
       property.address,
@@ -202,14 +271,23 @@ export function JobEditForm() {
     try {
       const { error } = await supabase
         .from('jobs')
-        .update(formData)
+        .update({
+          property_id: formData.property_id,
+          unit_number: formData.unit_number,
+          unit_size_id: formData.unit_size_id,
+          job_category_id: formData.job_category_id || null,
+          job_type_id: formData.job_type_id,
+          description: formData.description,
+          scheduled_date: formData.scheduled_date
+        })
         .eq('id', jobId);
 
       if (error) throw error;
+
       navigate(`/dashboard/jobs/${jobId}`);
     } catch (err) {
+      console.error('Error updating job:', err);
       setError(err instanceof Error ? err.message : 'Failed to update job');
-    } finally {
       setLoading(false);
     }
   };
@@ -365,8 +443,29 @@ export function JobEditForm() {
               </div>
 
               <div>
+                <label htmlFor="job_category_id" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                  Job Category
+                </label>
+                <select
+                  id="job_category_id"
+                  name="job_category_id"
+                  required
+                  value={formData.job_category_id}
+                  onChange={handleChange}
+                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a job category</option>
+                  {jobCategories.map(category => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <label htmlFor="job_type_id" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Job Type
+                  Job Type (Scheduling Reference)
                 </label>
                 <select
                   id="job_type_id"

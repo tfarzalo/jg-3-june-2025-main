@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthProvider';
 import { toast } from 'sonner';
+import { supabase } from '../utils/supabase';
 
 export function Auth() {
   const navigate = useNavigate();
-  const { signIn, session, loading: authLoading } = useAuth();
+  const { signIn, session, initializing: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -21,8 +22,8 @@ export function Auth() {
     
     // Only redirect if we have a valid session and we're not already loading
     if (session && !authLoading) {
-      console.log('Auth: Session found, navigating to dashboard');
-      navigate('/dashboard');
+      console.log('Auth: Session found, checking user role for redirect');
+      checkUserRoleAndRedirect();
     }
     
     return () => {
@@ -32,7 +33,44 @@ export function Auth() {
         window.clearTimeout(loadingTimeoutRef.current);
       }
     };
-  }, [session, navigate, authLoading]);
+  }, [session, authLoading]); // Include dependencies to handle auth state changes properly
+
+  const checkUserRoleAndRedirect = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        navigate('/dashboard');
+        return;
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) {
+        console.error('Error fetching profile:', profileError);
+        navigate('/dashboard');
+        return;
+      }
+
+      // Redirect based on user role
+      if (profile?.role === 'subcontractor') {
+        console.log('Auth: Redirecting subcontractor to subcontractor dashboard');
+        navigate('/dashboard/subcontractor');
+      } else if (profile?.role === 'admin' || profile?.role === 'jg_management') {
+        console.log('Auth: Redirecting admin/management to main dashboard');
+        navigate('/dashboard');
+      } else {
+        console.log('Auth: Redirecting other users to main dashboard');
+        navigate('/dashboard');
+      }
+    } catch (error) {
+      console.error('Error checking user role:', error);
+      navigate('/dashboard');
+    }
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();

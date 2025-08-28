@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Building2, Pencil, MapPin, Phone, Mail, User, Building } from 'lucide-react';
 import { supabase, type PropertyManagementGroup } from '../utils/supabase';
+import { WorkOrderLink } from './shared/WorkOrderLink';
+import { PropertyLink } from './shared/PropertyLink';
 
 interface PropertyGroupWithProperties extends PropertyManagementGroup {
   properties: {
@@ -158,12 +160,11 @@ export function PropertyGroupDetails() {
                 <div key={property.id} className="flex items-start">
                   <Building className="h-5 w-5 text-gray-500 dark:text-gray-400 mt-1 mr-3" />
                   <div>
-                    <Link
-                      to={`/dashboard/properties/${property.id}`}
+                    <PropertyLink 
+                      propertyId={property.id}
+                      propertyName={property.property_name}
                       className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 block"
-                    >
-                      {property.property_name}
-                    </Link>
+                    />
                     <p className="text-gray-600 dark:text-gray-400 text-sm">
                       {property.address}, {property.city}, {property.state}
                     </p>

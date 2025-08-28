@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Upload, X } from 'lucide-react';
 import { supabase } from '../utils/supabase';
+import { WorkOrderLink } from './shared/WorkOrderLink';
+import { PropertyLink } from './shared/PropertyLink';
 
 interface Property {
   id: string;

@@ -14,6 +14,8 @@ import {
 import { supabase } from '../utils/supabase';
 import { createClient } from '@supabase/supabase-js';
 import { toast } from 'sonner';
+import { WorkOrderLink } from './shared/WorkOrderLink';
+import { PropertyLink } from './shared/PropertyLink';
 
 type Property = {
   id: string;
@@ -311,12 +313,11 @@ export function PropertyArchives() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <Link
-                        to={`/dashboard/properties/${property.id}`}
+                      <PropertyLink 
+                        propertyId={property.id}
+                        propertyName={property.property_name}
                         className="text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 font-medium"
-                      >
-                        {property.property_name}
-                      </Link>
+                      />
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-start">

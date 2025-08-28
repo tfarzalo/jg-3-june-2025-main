@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import NewWorkOrderSpanish from './NewWorkOrderSpanish';
 import { 
@@ -20,6 +20,7 @@ import { useSubcontractorPreview } from '../contexts/SubcontractorPreviewContext
 import { toast as hotToast } from 'react-hot-toast';
 import { withSubcontractorAccessCheck } from './withSubcontractorAccessCheck';
 import { useUserRole } from '../contexts/UserRoleContext';
+import { formatCurrency } from '../lib/utils/formatUtils';
 
 interface Job {
   id: string;
@@ -54,6 +55,7 @@ interface Job {
   sprinklers_painted: boolean;
   painted_ceilings: boolean;
   ceiling_rooms_count: number;
+  individual_ceiling_count?: number | null; // New field for individual ceiling count
   painted_patio: boolean;
   painted_garage: boolean;
   painted_cabinets: boolean;
@@ -88,6 +90,7 @@ interface WorkOrder {
   sprinklers_painted: boolean;
   painted_ceilings: boolean;
   ceiling_rooms_count: number;
+  individual_ceiling_count?: number | null; // New field for individual ceiling count
   painted_patio: boolean;
   painted_garage: boolean;
   painted_cabinets: boolean;
@@ -108,6 +111,507 @@ interface JobCategory {
   description: string;
   sort_order: number;
 }
+
+// Database-safe work order payload interface
+interface WorkOrderDBPayload {
+  job_id: string;
+  unit_number: string;
+  unit_size: string; // UUID from unit_sizes table
+  is_occupied: boolean;
+  is_full_paint: boolean;
+  job_category_id: string;
+  has_sprinklers: boolean;
+  sprinklers_painted: boolean;
+  painted_ceilings: boolean;
+  ceiling_rooms_count: number;
+  individual_ceiling_count?: number | null; // New field for individual ceiling count
+  ceiling_display_label?: string | null; // Display label for ceiling option
+  painted_patio: boolean;
+  painted_garage: boolean;
+  painted_cabinets: boolean;
+  painted_crown_molding: boolean;
+  painted_front_door: boolean;
+  has_accent_wall: boolean;
+  accent_wall_type: 'Custom' | 'Paint Over' | null;
+  accent_wall_count: number;
+  has_extra_charges: boolean;
+  extra_charges_description: string;
+  extra_hours: number;
+  additional_comments: string;
+  prepared_by: string;
+  ceiling_billing_detail_id?: string | null;
+  accent_wall_billing_detail_id?: string | null;
+  bill_amount?: number | null;
+  sub_pay_amount?: number | null;
+  profit_amount?: number | null;
+  is_hourly?: boolean;
+}
+
+// Billing detail interface for ceilings and accent walls
+interface BillingDetailPayload {
+  property_id: string;
+  category_id: string;
+  unit_size_id: string;
+  bill_amount: number;
+  sub_pay_amount: number;
+  profit_amount: number | null;
+  is_hourly: boolean;
+}
+
+// Validation result interface
+interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+// Helper functions for data transformation
+const toDbNumber = (value: any): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const num = Number(value);
+  return isNaN(num) ? null : num;
+};
+
+// Helper function to get display label for ceiling options
+const getCeilingDisplayLabel = (ceilingValue: string | number, ceilingOptions: any[]): string => {
+  if (ceilingValue === 'individual') {
+    return 'Paint Individual Ceiling';
+  }
+  
+  if (typeof ceilingValue === 'string' && ceilingValue !== '') {
+    // Find the billing detail option
+    const option = ceilingOptions.find(opt => opt.id === ceilingValue);
+    if (option) {
+      const unitSizeLabel = option.unit_sizes?.[0]?.unit_size_label;
+      if (unitSizeLabel) {
+        return unitSizeLabel;
+      }
+    }
+  }
+  
+  return 'Select ceiling option';
+};
+
+const sanitizeAccentType = (type: any): 'Custom' | 'Paint Over' | null => {
+  if (!type || typeof type !== 'string') return null;
+  const cleanType = type.trim();
+  if (cleanType === 'Custom' || cleanType === 'Paint Over') return cleanType;
+  return null;
+};
+
+const toDbUnitSize = (unitSize: any): string => {
+  if (!unitSize) return '';
+  
+  // Prefer .unit_size_label if available (this is what the database constraint expects)
+  if (unitSize.unit_size_label && typeof unitSize.unit_size_label === 'string') {
+    return unitSize.unit_size_label;
+  }
+  
+  // Fall back to .code if available
+  if (unitSize.code && typeof unitSize.code === 'string') {
+    return unitSize.code;
+  }
+  
+  // Fall back to .name or .label
+  if (unitSize.name && typeof unitSize.name === 'string') {
+    return unitSize.name;
+  }
+  
+  // Last resort: convert to string
+  if (unitSize.id && typeof unitSize.id === 'string') {
+    return unitSize.id;
+  }
+  
+  return String(unitSize);
+};
+
+// Build a whitelisted dbPayload (snake_case only; strip undefined)
+const buildWhitelistedPayload = (payload: any): Record<string, any> => {
+  const result: Record<string, any> = {};
+  
+  for (const [key, value] of Object.entries(payload)) {
+    if (value !== undefined) {
+      // Convert camelCase to snake_case
+      const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+      result[snakeKey] = value;
+    }
+  }
+  
+  return result;
+};
+
+// Utility functions for building and validating DB payloads
+const buildWorkOrderPayload = (
+  formData: any, 
+  job: Job, 
+  ceilingBillingDetailId?: string, 
+  accentWallBillingDetailId?: string,
+  ceilingPaintOptions: any[] = []
+): WorkOrderDBPayload => {
+  // Build the base payload with proper type casting using helper functions
+  const payload: WorkOrderDBPayload = {
+    job_id: job.id,
+    unit_number: formData.unit_number,
+    unit_size: toDbUnitSize(job.unit_size), // Use helper function
+    is_occupied: formData.is_occupied ?? false,
+    is_full_paint: formData.is_full_paint ?? false,
+    job_category_id: formData.job_category_id,
+    has_sprinklers: formData.has_sprinklers ?? false,
+    sprinklers_painted: formData.sprinklers_painted ?? false,
+    painted_ceilings: formData.painted_ceilings ?? false,
+    ceiling_rooms_count: (() => {
+      // Always set to 0 for both service-based and individual ceiling painting
+      // The actual pricing/counting is handled by billing_detail_id and individual_ceiling_count
+      return 0;
+    })(),
+    individual_ceiling_count: toDbNumber(formData.individual_ceiling_count),
+    ceiling_display_label: (() => {
+      if (formData.ceiling_rooms_count === 'individual') {
+        return 'Paint Individual Ceiling';
+      }
+      if (formData.ceiling_rooms_count && typeof formData.ceiling_rooms_count === 'string') {
+        // Find the billing detail option to get the display label
+        const option = ceilingPaintOptions.find(opt => opt.id === formData.ceiling_rooms_count);
+        if (option) {
+          const unitSizeLabel = option.unit_sizes?.[0]?.unit_size_label;
+          if (unitSizeLabel) {
+            return unitSizeLabel;
+          }
+        }
+      }
+      return null;
+    })(),
+    painted_patio: formData.painted_patio ?? false,
+    painted_garage: formData.painted_garage ?? false,
+    painted_cabinets: formData.painted_cabinets ?? false,
+    painted_crown_molding: formData.painted_crown_molding ?? false,
+    painted_front_door: formData.painted_front_door ?? false,
+    has_accent_wall: formData.has_accent_wall ?? false,
+    accent_wall_type: (() => {
+      // Always set to null for both service-based and individual accent wall painting
+      // The actual pricing/counting is handled by billing_detail_id and accent_wall_count
+      return null;
+    })(),
+    accent_wall_count: (() => {
+      if (formData.has_accent_wall && formData.accent_wall_type === 'individual' && formData.accent_wall_count) {
+        // Individual accent wall - use the count provided by user
+        return toDbNumber(formData.accent_wall_count) || 0;
+      }
+      // For service-based accent walls, count is not applicable
+      return 0;
+    })(),
+    has_extra_charges: formData.has_extra_charges ?? false,
+    extra_charges_description: formData.extra_charges_description || '',
+    extra_hours: toDbNumber(formData.extra_hours) || 0,
+    additional_comments: formData.additional_comments || '',
+    prepared_by: '', // Will be set during submission - this gets overridden
+    ceiling_billing_detail_id: ceilingBillingDetailId || null,
+    accent_wall_billing_detail_id: accentWallBillingDetailId || null,
+  };
+
+  // === FINAL PAYLOAD LOGGING ===
+  console.log('=== FINAL WORK ORDER PAYLOAD LOGGING ===');
+  console.log('📋 Complete payload to be sent to work_orders table:');
+  console.log('   - job_id:', payload.job_id);
+  console.log('   - unit_number:', payload.unit_number);
+  console.log('   - unit_size:', payload.unit_size);
+  console.log('   - painted_ceilings:', payload.painted_ceilings);
+  console.log('   - ceiling_rooms_count:', payload.ceiling_rooms_count);
+  console.log('   - ceiling_billing_detail_id:', payload.ceiling_billing_detail_id);
+  console.log('   - individual_ceiling_count:', payload.individual_ceiling_count);
+  console.log('   - ceiling_display_label:', payload.ceiling_display_label);
+  console.log('   - has_accent_wall:', payload.has_accent_wall);
+  console.log('   - accent_wall_type:', payload.accent_wall_type);
+  console.log('   - accent_wall_billing_detail_id:', payload.accent_wall_billing_detail_id);
+  console.log('   - accent_wall_count:', payload.accent_wall_count);
+  console.log('   - has_extra_charges:', payload.has_extra_charges);
+  console.log('   - extra_hours:', payload.extra_hours);
+  console.log('   - job_category_id:', payload.job_category_id);
+  console.log('   - prepared_by:', payload.prepared_by);
+  console.log('=== END FINAL PAYLOAD LOGGING ===');
+
+  // Log payload for debugging
+  console.log('Built work order payload:', payload);
+  console.log('Payload keys and types:', Object.entries(payload).map(([key, value]) => 
+    `${key}: ${typeof value} = ${value}`
+  ));
+
+  return payload;
+};
+
+const validateWorkOrderPayload = (payload: WorkOrderDBPayload): ValidationResult => {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Validate required fields
+  if (!payload.job_id) errors.push('Job ID is required');
+  if (!payload.unit_number) errors.push('Unit number is required');
+  if (!payload.unit_size) errors.push('Unit size is required');
+  if (!payload.job_category_id || payload.job_category_id === '') errors.push('Job category is required');
+  if (!payload.prepared_by) errors.push('Prepared by is required');
+
+  // Validate accent wall type constraint
+  if (payload.accent_wall_type && !['Custom', 'Paint Over'].includes(payload.accent_wall_type)) {
+    errors.push(`Invalid accent wall type: ${payload.accent_wall_type}. Must be 'Custom', 'Paint Over', or null`);
+  }
+
+  // Validate billing amount constraints
+  if (payload.bill_amount !== undefined || payload.sub_pay_amount !== undefined || payload.profit_amount !== undefined) {
+    if (payload.is_hourly) {
+      // Hourly case: profit_amount must be null
+      if (payload.profit_amount !== null) {
+        errors.push('For hourly rates, profit_amount must be null');
+      }
+      // If either bill_amount or sub_pay_amount is provided, both must be provided
+      if ((payload.bill_amount !== undefined) !== (payload.sub_pay_amount !== undefined)) {
+        errors.push('For hourly rates, both bill_amount and sub_pay_amount must be provided together');
+      }
+    } else {
+      // Non-hourly case: all three must be provided and profit_amount = bill_amount - sub_pay_amount
+      if (payload.bill_amount === undefined || payload.sub_pay_amount === undefined || payload.profit_amount === undefined) {
+        errors.push('For non-hourly rates, all three billing amounts must be provided');
+      } else if (payload.profit_amount !== null && payload.bill_amount !== null && payload.sub_pay_amount !== null && 
+                 payload.profit_amount !== (payload.bill_amount - payload.sub_pay_amount)) {
+        errors.push(`For non-hourly rates, profit_amount (${payload.profit_amount}) must equal bill_amount (${payload.bill_amount}) - sub_pay_amount (${payload.sub_pay_amount})`);
+      }
+    }
+  }
+
+  // Validate ceiling and accent wall billing detail IDs
+  // For service-based ceiling painting, we need either a billing detail ID or individual ceiling count
+  if (payload.painted_ceilings && !payload.ceiling_billing_detail_id && !payload.individual_ceiling_count) {
+    warnings.push('Ceiling painting is enabled but no billing detail ID or individual ceiling count is set');
+  }
+  
+  // Only validate individual ceiling count if it's actually provided and greater than 0
+  if (payload.individual_ceiling_count !== null && payload.individual_ceiling_count !== undefined && payload.individual_ceiling_count > 0) {
+    if (payload.individual_ceiling_count > 20) {
+      errors.push('Individual ceiling count cannot exceed 20');
+    }
+  }
+  if (payload.has_accent_wall && payload.accent_wall_count > 0 && !payload.accent_wall_billing_detail_id) {
+    warnings.push('Accent wall is enabled but no billing detail ID is set');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    warnings
+  };
+};
+
+const createOrUpdateBillingDetail = async (
+  billingDetail: BillingDetailPayload,
+  existingId?: string
+): Promise<string> => {
+  try {
+    if (existingId) {
+      // Update existing billing detail
+      const { data, error } = await supabase
+        .from('billing_details')
+        .update(billingDetail)
+        .eq('id', existingId)
+        .select('id')
+        .single();
+
+      if (error) throw error;
+      return data.id;
+    } else {
+      // Create new billing detail
+      const { data, error } = await supabase
+        .from('billing_details')
+        .insert([billingDetail])
+        .select('id')
+        .single();
+
+      if (error) throw error;
+      return data.id;
+    }
+  } catch (error) {
+    console.error('Error creating/updating billing detail:', error);
+    throw error;
+  }
+};
+
+// Helper function to create billing details and return IDs
+const createBillingDetailsForWorkOrder = async (
+  propertyId: string,
+  formData: any,
+  ceilingPaintOptions: any[],
+  accentWallOptions: any[]
+): Promise<{ ceilingBillingDetailId: string | null; accentWallBillingDetailId: string | null }> => {
+  let ceilingBillingDetailId: string | null = null;
+  let accentWallBillingDetailId: string | null = null;
+
+  try {
+    // === PAINTED CEILINGS LOGGING ===
+    console.log('=== PAINTED CEILINGS LOGGING ===');
+    console.log('Form Data - painted_ceilings:', formData.painted_ceilings);
+    console.log('Form Data - ceiling_rooms_count:', formData.ceiling_rooms_count);
+    console.log('Form Data - individual_ceiling_count:', formData.individual_ceiling_count);
+    console.log('Form Data - ceiling_rooms_count type:', typeof formData.ceiling_rooms_count);
+    
+    if (formData.painted_ceilings && formData.ceiling_rooms_count) {
+      if (typeof formData.ceiling_rooms_count === 'string' && formData.ceiling_rooms_count !== 'individual') {
+        // User selected an existing billing option - use that ID directly
+        ceilingBillingDetailId = formData.ceiling_rooms_count;
+        console.log('✅ Service-based ceiling selected');
+        console.log('📊 Data to be stored in work_orders table:');
+        console.log('   - painted_ceilings: true');
+        console.log('   - ceiling_rooms_count: 0 (always 0 for service-based)');
+        console.log('   - ceiling_billing_detail_id:', ceilingBillingDetailId);
+        console.log('   - individual_ceiling_count: null');
+      } else if (formData.ceiling_rooms_count === 'individual' && formData.individual_ceiling_count) {
+        // User selected individual ceiling painting - find existing billing detail
+        console.log('✅ Individual ceiling painting selected');
+        console.log('📊 Data to be stored in work_orders table:');
+        console.log('   - painted_ceilings: true');
+        console.log('   - ceiling_rooms_count: 0 (always 0 for individual)');
+        console.log('   - individual_ceiling_count:', formData.individual_ceiling_count);
+        
+        // Find existing "Paint Individual Ceiling" billing detail for this property
+        const individualCeilingOption = ceilingPaintOptions.find(option => 
+          option.unit_sizes?.[0]?.unit_size_label === 'Paint Individual Ceiling' ||
+          option.unit_sizes?.[0]?.unit_size_label === 'Individual Ceiling'
+        );
+
+        if (individualCeilingOption) {
+          // Use existing billing detail
+          ceilingBillingDetailId = individualCeilingOption.id;
+          console.log('   - ceiling_billing_detail_id:', ceilingBillingDetailId);
+          console.log('✅ Using existing individual ceiling billing detail');
+        } else {
+          console.log('   - ceiling_billing_detail_id: null (NOT FOUND)');
+          console.log('❌ No existing individual ceiling billing detail found');
+        }
+      }
+    } else {
+      console.log('❌ No ceiling painting selected');
+      console.log('📊 Data to be stored in work_orders table:');
+      console.log('   - painted_ceilings: false');
+      console.log('   - ceiling_rooms_count: 0');
+      console.log('   - ceiling_billing_detail_id: null');
+      console.log('   - individual_ceiling_count: null');
+    }
+    console.log('=== END PAINTED CEILINGS LOGGING ===');
+
+    // === ACCENT WALL LOGGING ===
+    console.log('=== ACCENT WALL LOGGING ===');
+    console.log('Form Data - has_accent_wall:', formData.has_accent_wall);
+    console.log('Form Data - accent_wall_type:', formData.accent_wall_type);
+    console.log('Form Data - accent_wall_count:', formData.accent_wall_count);
+    console.log('Form Data - accent_wall_type type:', typeof formData.accent_wall_type);
+    
+    if (formData.has_accent_wall && formData.accent_wall_type) {
+      if (typeof formData.accent_wall_type === 'string' && formData.accent_wall_type !== 'individual') {
+        // User selected an existing accent wall option - use that ID directly
+        accentWallBillingDetailId = formData.accent_wall_type;
+        console.log('✅ Service-based accent wall selected');
+        console.log('📊 Data to be stored in work_orders table:');
+        console.log('   - has_accent_wall: true');
+        console.log('   - accent_wall_type: null (always null for service-based)');
+        console.log('   - accent_wall_billing_detail_id:', accentWallBillingDetailId);
+        console.log('   - accent_wall_count: 0 (not applicable for service-based)');
+      } else if (formData.accent_wall_type === 'individual' && formData.accent_wall_count) {
+        // User selected individual accent wall - find existing billing detail
+        console.log('✅ Individual accent wall selected');
+        console.log('📊 Data to be stored in work_orders table:');
+        console.log('   - has_accent_wall: true');
+        console.log('   - accent_wall_type: null (always null for individual)');
+        console.log('   - accent_wall_count:', formData.accent_wall_count);
+        
+        // Find existing "Individual Accent Wall" billing detail for this property
+        const individualAccentOption = accentWallOptions.find(option => 
+          option.unit_sizes?.[0]?.unit_size_label === 'Individual Accent Wall' ||
+          option.unit_sizes?.[0]?.unit_size_label === 'Custom Accent Wall'
+        );
+
+        if (individualAccentOption) {
+          // Use existing billing detail
+          accentWallBillingDetailId = individualAccentOption.id;
+          console.log('   - accent_wall_billing_detail_id:', accentWallBillingDetailId);
+          console.log('✅ Using existing individual accent wall billing detail');
+        } else {
+          console.log('   - accent_wall_billing_detail_id: null (NOT FOUND)');
+          console.log('❌ No existing individual accent wall billing detail found');
+        }
+      }
+    } else {
+      console.log('❌ No accent wall selected');
+      console.log('📊 Data to be stored in work_orders table:');
+      console.log('   - has_accent_wall: false');
+      console.log('   - accent_wall_type: null');
+      console.log('   - accent_wall_billing_detail_id: null');
+      console.log('   - accent_wall_count: 0');
+    }
+    console.log('=== END ACCENT WALL LOGGING ===');
+
+    return { ceilingBillingDetailId, accentWallBillingDetailId };
+  } catch (error) {
+    console.error('Error creating billing details:', error);
+    throw error;
+  }
+};
+
+const getBillingDetailForCeiling = async (
+  propertyId: string,
+  ceilingBillingDetailId: string
+): Promise<BillingDetailPayload | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('billing_details')
+      .select('*')
+      .eq('id', ceilingBillingDetailId)
+      .eq('property_id', propertyId)
+      .single();
+
+    if (error) throw error;
+    if (!data) return null;
+
+    return {
+      property_id: data.property_id,
+      category_id: data.category_id,
+      unit_size_id: data.unit_size_id,
+      bill_amount: data.bill_amount,
+      sub_pay_amount: data.sub_pay_amount,
+      profit_amount: data.profit_amount,
+      is_hourly: data.is_hourly
+    };
+  } catch (error) {
+    console.error('Error fetching ceiling billing detail:', error);
+    return null;
+  }
+};
+
+const getBillingDetailForAccentWall = async (
+  propertyId: string,
+  accentWallBillingDetailId: string
+): Promise<BillingDetailPayload | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('billing_details')
+      .select('*')
+      .eq('id', accentWallBillingDetailId)
+      .eq('property_id', propertyId)
+      .single();
+
+    if (error) throw error;
+    if (!data) return null;
+
+    return {
+      property_id: data.property_id,
+      category_id: data.category_id,
+      unit_size_id: data.unit_size_id,
+      bill_amount: data.bill_amount,
+      sub_pay_amount: data.sub_pay_amount,
+      profit_amount: data.profit_amount,
+      is_hourly: data.is_hourly
+    };
+  } catch (error) {
+    console.error('Error fetching accent wall billing detail:', error);
+    return null;
+  }
+};
 
 const translations = {
   en: {
@@ -302,7 +806,8 @@ const NewWorkOrder = () => {
     sprinklers: false,
     sprinklers_painted: false,
     painted_ceilings: false,
-    ceiling_rooms_count: 0,
+    ceiling_rooms_count: '' as string | number,
+    individual_ceiling_count: null as number | null, // New field for individual ceiling count
     painted_patio: false,
     painted_garage: false,
     painted_cabinets: false,
@@ -319,6 +824,27 @@ const NewWorkOrder = () => {
 
   const { previewUserId: subcontractorPreviewUserId } = useSubcontractorPreview();
   const { role, isAdmin, isJGManagement, isSubcontractor } = useUserRole();
+
+  // State for dynamic billing options
+  const [ceilingPaintOptions, setCeilingPaintOptions] = useState<Array<{
+    id: string, 
+    unit_size_id: string, 
+    bill_amount: number, 
+    sub_pay_amount: number,
+    unit_sizes: { unit_size_label: string }[]
+  }>>([]);
+  const [accentWallOptions, setAccentWallOptions] = useState<Array<{
+    id: string, 
+    unit_size_id: string, 
+    bill_amount: number, 
+    sub_pay_amount: number,
+    unit_sizes: { unit_size_label: string }[]
+  }>>([]);
+  const [billingOptionsLoading, setBillingOptionsLoading] = useState(false);
+  
+  // State for selected billing details
+  const [selectedCeilingBillingDetailId, setSelectedCeilingBillingDetailId] = useState<string | null>(null);
+  const [selectedAccentWallBillingDetailId, setSelectedAccentWallBillingDetailId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!jobId) {
@@ -360,7 +886,8 @@ const NewWorkOrder = () => {
         sprinklers: existingWorkOrder.has_sprinklers || false,
         sprinklers_painted: existingWorkOrder.sprinklers_painted || false,
         painted_ceilings: existingWorkOrder.painted_ceilings || false,
-        ceiling_rooms_count: existingWorkOrder.ceiling_rooms_count || 0,
+        ceiling_rooms_count: existingWorkOrder.ceiling_rooms_count || '',
+        individual_ceiling_count: existingWorkOrder.individual_ceiling_count || null,
         painted_patio: existingWorkOrder.painted_patio || false,
         painted_garage: existingWorkOrder.painted_garage || false,
         painted_cabinets: existingWorkOrder.painted_cabinets || false,
@@ -385,7 +912,8 @@ const NewWorkOrder = () => {
         sprinklers: job.has_sprinklers || false,
         sprinklers_painted: job.sprinklers_painted || false,
         painted_ceilings: job.painted_ceilings || false,
-        ceiling_rooms_count: job.ceiling_rooms_count || 0,
+        ceiling_rooms_count: job.ceiling_rooms_count || '',
+        individual_ceiling_count: job.individual_ceiling_count || null,
         painted_patio: job.painted_patio || false,
         painted_garage: job.painted_garage || false,
         painted_cabinets: job.painted_cabinets || false,
@@ -401,7 +929,7 @@ const NewWorkOrder = () => {
       });
     }
   }, [existingWorkOrder, job]);
-  
+
   const fetchJob = async () => {
     try {
       const { data, error } = await supabase
@@ -524,11 +1052,255 @@ const NewWorkOrder = () => {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
   };
+
+  // Fetch property billing options for dynamic dropdowns
+  const fetchPropertyBillingOptions = async () => {
+    if (!job?.property?.id) return;
+    
+    console.log('Fetching billing options for property:', job.property.id);
+    
+    setBillingOptionsLoading(true);
+    try {
+      // Get billing categories for this property
+      const { data: billingCategories, error: billingError } = await supabase
+        .from('billing_categories')
+        .select('id, name')
+        .eq('property_id', job.property.id);
+
+      if (billingError) throw billingError;
+
+      if (!billingCategories || billingCategories.length === 0) {
+        console.log('No billing categories found for this property');
+        setCeilingPaintOptions([]);
+        setAccentWallOptions([]);
+        return;
+      }
+
+      console.log('Available billing categories:', billingCategories);
+      console.log('Category names:', billingCategories.map(cat => cat.name));
+
+      // Find ceiling paint and accent wall category IDs using exact names
+      const ceilingCategory = billingCategories.find(cat => 
+        cat.name === 'Painted Ceilings'
+      );
+      const accentCategory = billingCategories.find(cat => 
+        cat.name === 'Accent Walls'
+      );
+
+      console.log('Ceiling category found:', ceilingCategory);
+      console.log('Accent category found:', accentCategory);
+      console.log('Job unit size:', job?.unit_size);
+      console.log('Unit size ID:', job?.unit_size?.id);
+
+      // Fetch ceiling paint options if category exists
+      // Note: Painted Ceilings pricing is based on service complexity, not unit size
+      if (ceilingCategory) {
+        // First get the billing details
+        const { data: ceilingData, error: ceilingError } = await supabase
+          .from('billing_details')
+          .select(`
+            id, 
+            unit_size_id, 
+            bill_amount, 
+            sub_pay_amount
+          `)
+          .eq('property_id', job.property.id)
+          .eq('category_id', ceilingCategory.id)
+          .eq('is_hourly', false)
+          .order('bill_amount', { ascending: true });
+
+        if (ceilingError) {
+          console.error('Error fetching ceiling paint options:', ceilingError);
+        } else {
+          console.log('Ceiling paint options found:', ceilingData);
+          
+          // Then get the unit size labels for each billing detail
+          if (ceilingData && ceilingData.length > 0) {
+            const unitSizeIds = ceilingData.map(item => item.unit_size_id);
+            const { data: unitSizeData, error: unitSizeError } = await supabase
+              .from('unit_sizes')
+              .select('id, unit_size_label')
+              .in('id', unitSizeIds);
+
+            if (!unitSizeError && unitSizeData) {
+              // Merge the unit size labels with the billing details
+              const enrichedData = ceilingData.map(billingItem => {
+                const unitSize = unitSizeData.find(us => us.id === billingItem.unit_size_id);
+                return {
+                  ...billingItem,
+                  unit_sizes: unitSize ? [{ unit_size_label: unitSize.unit_size_label }] : []
+                };
+              });
+              
+              // Sort the data manually to ensure correct order
+              const sortedData = enrichedData.sort((a, b) => {
+                // First sort by unit size label in the desired order
+                const unitSizeOrder = ['Studio', '1 Bedroom', '2 Bedroom', '3+ Bedroom'];
+                const aIndex = unitSizeOrder.indexOf(a.unit_sizes?.[0]?.unit_size_label || '');
+                const bIndex = unitSizeOrder.indexOf(b.unit_sizes?.[0]?.unit_size_label || '');
+                
+                if (aIndex !== -1 && bIndex !== -1) {
+                  return aIndex - bIndex;
+                }
+                
+                // Fallback to bill amount if unit size not in predefined order
+                return (a.bill_amount || 0) - (b.bill_amount || 0);
+              });
+              
+              console.log('Ceiling paint options with unit sizes:', enrichedData);
+              console.log('Ceiling paint options sorted data:', sortedData.map(opt => ({
+                id: opt.id,
+                unit_size_label: opt.unit_sizes?.[0]?.unit_size_label,
+                bill_amount: opt.bill_amount
+              })));
+              setCeilingPaintOptions(sortedData);
+            } else {
+              console.error('Error fetching unit sizes:', unitSizeError);
+              // Add empty unit_sizes array to maintain compatibility
+              const enrichedData = ceilingData.map(item => ({
+                ...item,
+                unit_sizes: []
+              }));
+              setCeilingPaintOptions(enrichedData);
+            }
+          } else {
+            // Add empty unit_sizes array to maintain compatibility
+            const enrichedData = (ceilingData || []).map(item => ({
+              ...item,
+              unit_sizes: []
+            }));
+            setCeilingPaintOptions(enrichedData);
+          }
+        }
+      } else {
+        console.log('No ceiling paint category found');
+        setCeilingPaintOptions([]);
+      }
+
+      // Fetch accent wall options if category exists
+      // Note: Accent Walls pricing is based on service complexity, not unit size
+      if (accentCategory) {
+        const { data: accentData, error: accentError } = await supabase
+          .from('billing_details')
+          .select(`
+            id, 
+            unit_size_id, 
+            bill_amount, 
+            sub_pay_amount
+          `)
+          .eq('property_id', job.property.id)
+          .eq('category_id', accentCategory.id)
+          .eq('is_hourly', false)
+          .order('bill_amount', { ascending: true });
+
+        if (accentError) {
+          console.error('Error fetching accent wall options:', accentError);
+        } else {
+          console.log('Accent wall options found:', accentData);
+          
+          // Then get the unit size labels for each billing detail
+          if (accentData && accentData.length > 0) {
+            const unitSizeIds = accentData.map(item => item.unit_size_id);
+            const { data: unitSizeData, error: unitSizeError } = await supabase
+              .from('unit_sizes')
+              .select('id, unit_size_label')
+              .in('id', unitSizeIds);
+
+            if (!unitSizeError && unitSizeData) {
+              // Merge the unit size labels with the billing details
+              const enrichedData = accentData.map(billingItem => {
+                const unitSize = unitSizeData.find(us => us.id === billingItem.unit_size_id);
+                return {
+                  ...billingItem,
+                  unit_sizes: unitSize ? [{ unit_size_label: unitSize.unit_size_label }] : []
+                };
+              });
+              
+              // Sort the data manually to ensure correct order
+              const sortedData = enrichedData.sort((a, b) => {
+                // First sort by unit size label in the desired order
+                const unitSizeOrder = ['1 Bedroom', '2+ Bedroom'];
+                const aIndex = unitSizeOrder.indexOf(a.unit_sizes?.[0]?.unit_size_label || '');
+                const bIndex = unitSizeOrder.indexOf(b.unit_sizes?.[0]?.unit_size_label || '');
+                
+                if (aIndex !== -1 && bIndex !== -1) {
+                  return aIndex - bIndex;
+                }
+                
+                // Fallback to bill amount if unit size not in predefined order
+                return (a.bill_amount || 0) - (b.bill_amount || 0);
+              });
+              
+              console.log('Accent wall options with unit sizes:', enrichedData);
+              console.log('Accent wall options sorted data:', sortedData.map(opt => ({
+                id: opt.id,
+                unit_size_label: opt.unit_sizes?.[0]?.unit_size_label,
+                bill_amount: opt.bill_amount
+              })));
+              setAccentWallOptions(sortedData);
+            } else {
+              console.error('Error fetching unit sizes:', unitSizeError);
+              // Add empty unit_sizes array to maintain compatibility
+              const enrichedData = accentData.map(item => ({
+                ...item,
+                unit_sizes: []
+              }));
+              setAccentWallOptions(enrichedData);
+            }
+          } else {
+            // Add empty unit_sizes array to maintain compatibility
+            const enrichedData = (accentData || []).map(item => ({
+              ...item,
+              unit_sizes: []
+            }));
+            setAccentWallOptions(enrichedData);
+          }
+        }
+      } else {
+        console.log('No accent wall category found');
+        setAccentWallOptions([]);
+      }
+
+    } catch (err) {
+      console.error('Error fetching billing options:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch billing options');
+    } finally {
+      setBillingOptionsLoading(false);
+    }
+  };
+
+  // Fetch billing options when job changes - following the same pattern as fetchJobCategories
+  useEffect(() => {
+    if (job?.property?.id) {
+      console.log('Property loaded, fetching billing options...');
+      fetchPropertyBillingOptions();
+    }
+  }, [job?.property?.id]);
+
+  // Monitor state changes for debugging
+  useEffect(() => {
+    console.log('ceilingPaintOptions state changed:', ceilingPaintOptions);
+    console.log('ceilingPaintOptions details:', ceilingPaintOptions.map(opt => ({
+      id: opt.id,
+      bill_amount: opt.bill_amount,
+      unit_size_label: opt.unit_sizes?.[0]?.unit_size_label || 'Unknown'
+    })));
+  }, [ceilingPaintOptions]);
+
+  useEffect(() => {
+    console.log('accentWallOptions state changed:', accentWallOptions);
+    console.log('accentWallOptions details:', accentWallOptions.map(opt => ({
+      id: opt.id,
+      bill_amount: opt.bill_amount,
+      unit_size_label: opt.unit_sizes?.[0]?.unit_size_label || 'Unknown'
+    })));
+  }, [accentWallOptions]);
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setError(null);
+    
     try {
       if (!job) throw new Error('Job not found');
 
@@ -552,43 +1324,143 @@ const NewWorkOrder = () => {
       if (!phaseData || phaseData.length === 0) throw new Error('Target phase not found');
       
       const targetPhaseId = phaseData[0].id;
-      
-      // Create or update work order
-      const workOrderData = {
-        job_id: job.id,
-        unit_number: formData.unit_number,
-        unit_size: job.unit_size?.unit_size_label,
-        is_occupied: formData.is_occupied ?? false,
-        is_full_paint: formData.is_full_paint ?? false,
-        job_category_id: formData.job_category_id,
-        has_sprinklers: formData.has_sprinklers ?? false,
-        sprinklers_painted: formData.sprinklers_painted ?? false,
-        painted_ceilings: formData.painted_ceilings ?? false,
-        ceiling_rooms_count: formData.ceiling_rooms_count || 0,
-        painted_patio: formData.painted_patio ?? false,
-        painted_garage: formData.painted_garage ?? false,
-        painted_cabinets: formData.painted_cabinets ?? false,
-        painted_crown_molding: formData.painted_crown_molding ?? false,
-        painted_front_door: formData.painted_front_door ?? false,
-        has_accent_wall: formData.has_accent_wall ?? false,
-        accent_wall_type: formData.has_accent_wall ? (formData.accent_wall_type || "") : null,
-        accent_wall_count: formData.accent_wall_count || 0,
-        has_extra_charges: formData.has_extra_charges ?? false,
-        extra_charges_description: formData.extra_charges_description || "",
-        extra_hours: formData.extra_hours || 0,
-        additional_comments: formData.additional_comments || "",
-        prepared_by: (await supabase.auth.getUser()).data.user?.id
-      };
 
-      console.log('Submitting work order data:', workOrderData);
+      // Get current user ID
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user?.id) throw new Error('User not authenticated');
       
+      // Extract billing detail IDs from form data
+      let ceilingBillingDetailId: string | null = null;
+      let accentWallBillingDetailId: string | null = null;
+      
+      // For ceiling billing detail
+      if (formData.painted_ceilings && formData.ceiling_rooms_count) {
+        if (typeof formData.ceiling_rooms_count === 'string' && formData.ceiling_rooms_count !== 'individual') {
+          // User selected an existing billing option - use that ID directly
+          ceilingBillingDetailId = formData.ceiling_rooms_count;
+          console.log('Using existing ceiling billing detail ID:', ceilingBillingDetailId);
+        } else if (formData.ceiling_rooms_count === 'individual' && formData.individual_ceiling_count) {
+          // User selected individual ceiling painting - find existing billing detail
+          console.log('Looking for existing individual ceiling billing detail');
+          
+          if (job.property?.id) {
+            try {
+              const billingDetails = await createBillingDetailsForWorkOrder(
+                job.property.id,
+                formData,
+                ceilingPaintOptions,
+                accentWallOptions
+              );
+              ceilingBillingDetailId = billingDetails.ceilingBillingDetailId;
+              accentWallBillingDetailId = billingDetails.accentWallBillingDetailId;
+            } catch (error) {
+              console.error('Error creating billing details:', error);
+              // Continue with work order creation even if billing details fail
+            }
+          }
+        }
+      }
+      
+      // For accent wall billing detail
+      if (formData.has_accent_wall && formData.accent_wall_type && 
+          typeof formData.accent_wall_type === 'string' && 
+          formData.accent_wall_type !== 'Custom' && formData.accent_wall_type !== 'Paint Over') {
+        // User selected an existing billing option - use that ID directly
+        accentWallBillingDetailId = formData.accent_wall_type;
+        console.log('Using existing accent wall billing detail ID:', accentWallBillingDetailId);
+      }
+
+      // Debug logging for form data before building payload
+      console.log('=== FORM DATA DEBUG INFO ===');
+      console.log('Form data:', formData);
+      console.log('Job data:', job);
+      console.log('Job category ID from job:', job?.job_category_id);
+      console.log('Job category ID from form:', formData.job_category_id);
+      console.log('Ceiling billing detail ID:', ceilingBillingDetailId);
+      console.log('Accent wall billing detail ID:', accentWallBillingDetailId);
+      console.log('=== END FORM DATA DEBUG ===');
+
+      // Build the DB-safe payload
+      const workOrderPayload = buildWorkOrderPayload(
+        formData, 
+        job, 
+        ceilingBillingDetailId || undefined, 
+        accentWallBillingDetailId || undefined,
+        ceilingPaintOptions
+      );
+      
+      // Set the prepared_by field
+      console.log('Setting prepared_by - userData.user.id:', userData.user.id);
+      console.log('Setting prepared_by - userData.user:', userData.user);
+      workOrderPayload.prepared_by = userData.user.id;
+      console.log('After setting prepared_by - workOrderPayload.prepared_by:', workOrderPayload.prepared_by);
+
+      // Debug logging for ceiling-related fields
+      console.log('=== CEILING DEBUG INFO ===');
+      console.log('Form data ceiling_rooms_count:', formData.ceiling_rooms_count);
+      console.log('Form data individual_ceiling_count:', formData.individual_ceiling_count);
+      console.log('Payload ceiling_rooms_count:', workOrderPayload.ceiling_rooms_count);
+      console.log('Payload individual_ceiling_count:', workOrderPayload.individual_ceiling_count);
+      console.log('Ceiling billing detail ID:', ceilingBillingDetailId);
+      console.log('=== END CEILING DEBUG ===');
+
+      // Validate the payload before submission
+      const validation = validateWorkOrderPayload(workOrderPayload);
+      if (!validation.isValid) {
+        const errorMessage = `Validation failed: ${validation.errors.join(', ')}`;
+        console.error(errorMessage);
+        setError(errorMessage);
+        setSaving(false);
+        return;
+      }
+
+      // Log warnings if any
+      if (validation.warnings.length > 0) {
+        console.warn('Validation warnings:', validation.warnings);
+      }
+
+      // Enforce hourly vs non-hourly math/NULL rules before submit
+      if (workOrderPayload.bill_amount !== undefined || workOrderPayload.sub_pay_amount !== undefined || workOrderPayload.profit_amount !== undefined) {
+        if (workOrderPayload.is_hourly) {
+          // Hourly case: profit_amount must be NULL
+          workOrderPayload.profit_amount = null;
+          // If either bill_amount or sub_pay_amount is provided, both must be provided
+          if ((workOrderPayload.bill_amount !== undefined) !== (workOrderPayload.sub_pay_amount !== undefined)) {
+            throw new Error('For hourly rates, both bill_amount and sub_pay_amount must be provided together');
+          }
+        } else {
+          // Non-hourly case: all three must be provided and profit_amount = bill_amount - sub_pay_amount
+          if (workOrderPayload.bill_amount === undefined || workOrderPayload.sub_pay_amount === undefined) {
+            throw new Error('For non-hourly rates, all three billing amounts must be provided');
+          }
+          if (workOrderPayload.profit_amount === undefined || workOrderPayload.profit_amount === null) {
+            workOrderPayload.profit_amount = (workOrderPayload.bill_amount || 0) - (workOrderPayload.sub_pay_amount || 0);
+          }
+        }
+      }
+
+      // Build whitelisted payload (snake_case only; strip undefined)
+      const dbPayload = buildWhitelistedPayload(workOrderPayload);
+
+      // Log error.message, details, hint, code and a console.table of payload key→type/value right before submit
+      console.log('=== WORK ORDER SUBMISSION DEBUG ===');
+      console.log('Original payload:', workOrderPayload);
+      console.log('Database payload:', dbPayload);
+      console.table(Object.entries(dbPayload).map(([key, value]) => ({
+        key,
+        type: typeof value,
+        value: value
+      })));
+      console.log('=== END DEBUG ===');
+
+      // Submit the work order
       let workOrderResult;
       
       if (existingWorkOrder) {
         // Update existing work order
         const { data, error } = await supabase
           .from('work_orders')
-          .update(workOrderData)
+          .update(dbPayload)
           .eq('id', existingWorkOrder.id)
           .select()
           .single();
@@ -597,7 +1469,7 @@ const NewWorkOrder = () => {
         // Create new work order
         const { data, error } = await supabase
           .from('work_orders')
-          .insert([workOrderData])
+          .insert([dbPayload])
           .select()
           .single();
         workOrderResult = { data, error };
@@ -606,11 +1478,24 @@ const NewWorkOrder = () => {
       if (workOrderResult.error) {
         console.error('Error creating/updating work order:', {
           error: workOrderResult.error,
-          workOrderData,
+          workOrderPayload,
+          dbPayload,
           existingWorkOrder,
           jobId: job.id,
-          user: (await supabase.auth.getUser()).data.user?.id
+          user: userData.user.id
         });
+        
+        // Log detailed error information
+        if (workOrderResult.error.code) {
+          console.error('Error code:', workOrderResult.error.code);
+        }
+        if (workOrderResult.error.details) {
+          console.error('Error details:', workOrderResult.error.details);
+        }
+        if (workOrderResult.error.hint) {
+          console.error('Error hint:', workOrderResult.error.hint);
+        }
+        
         throw workOrderResult.error;
       }
 
@@ -637,7 +1522,7 @@ const NewWorkOrder = () => {
         .from('job_phase_changes')
         .insert([{
           job_id: job.id,
-          changed_by: previewUserId || (await supabase.auth.getUser()).data.user?.id,
+          changed_by: previewUserId || userData.user.id,
           from_phase_id: job.job_phase?.id,
           to_phase_id: targetPhaseId,
           change_reason: formData.has_extra_charges 
@@ -681,6 +1566,18 @@ const NewWorkOrder = () => {
       navigate(`/dashboard/jobs/${jobId}`);
     } catch (err) {
       console.error('Error creating/updating work order:', err);
+      
+      // Enhanced error logging for Supabase errors
+      if (err && typeof err === 'object' && 'code' in err) {
+        const supabaseError = err as any;
+        console.error('Supabase error details:', {
+          message: supabaseError.message,
+          details: supabaseError.details,
+          hint: supabaseError.hint,
+          code: supabaseError.code
+        });
+      }
+      
       setError(err instanceof Error ? err.message : 'Failed to create/update work order');
       setSaving(false);
     }
@@ -905,25 +1802,30 @@ const NewWorkOrder = () => {
 
         {/* Conditional rendering for Spanish version */}
         {language === 'es' ? (
-          <NewWorkOrderSpanish 
-            job={job}
-            loading={loading}
-            error={error}
-            saving={saving}
-            formData={formData}
-            handleInputChange={handleInputChange}
-            handleSubmit={handleSubmit}
-            handleUploadComplete={handleUploadComplete}
-            handleUploadError={handleUploadError}
-            handleImageDelete={handleImageDelete}
-            jobCategories={jobCategories}
-            existingWorkOrder={existingWorkOrder}
-            workOrderId={workOrderId}
-            refreshImages={refreshImages}
-            navigate={navigate}
-            previewUserId={previewUserId}
-            isEditMode={isEditMode}
-          />
+                        <NewWorkOrderSpanish 
+                job={job}
+                loading={loading}
+                error={error}
+                saving={saving}
+                formData={formData}
+                handleInputChange={handleInputChange}
+                handleSubmit={handleSubmit}
+                handleUploadComplete={handleUploadComplete}
+                handleUploadError={handleUploadError}
+                handleImageDelete={handleImageDelete}
+                jobCategories={jobCategories}
+                existingWorkOrder={existingWorkOrder}
+                workOrderId={workOrderId}
+                refreshImages={refreshImages}
+                navigate={navigate}
+                previewUserId={previewUserId}
+                isEditMode={isEditMode}
+                isSubcontractor={isSubcontractor}
+                sprinklerImagesUploaded={false}
+                ceilingPaintOptions={ceilingPaintOptions}
+                accentWallOptions={accentWallOptions}
+                billingOptionsLoading={billingOptionsLoading}
+              />
         ) : (
           <>
             {error && (
@@ -1178,17 +2080,87 @@ const NewWorkOrder = () => {
                     {formData.painted_ceilings && (
                       <div className="ml-6">
                         <label htmlFor="ceiling_rooms_count" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                          Number of Rooms
+                          Ceiling Paint Option <span className="text-red-500">*</span>
                         </label>
-                        <input
-                          type="number"
-                          id="ceiling_rooms_count"
-                          name="ceiling_rooms_count"
-                          min="0"
-                          value={formData.ceiling_rooms_count}
-                          onChange={handleInputChange}
-                          className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
+                        
+                        {billingOptionsLoading ? (
+                          <div className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg flex items-center justify-center">
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent"></div>
+                            <span className="ml-2 text-sm text-gray-500">Loading options...</span>
+                          </div>
+                        ) : ceilingPaintOptions.length > 0 ? (
+                          <>
+                            <select
+                              id="ceiling_rooms_count"
+                              name="ceiling_rooms_count"
+                              value={formData.ceiling_rooms_count || ''}
+                              onChange={handleInputChange}
+                              required
+                              className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
+                            >
+                                                        <option value="">Select ceiling option</option>
+                          {ceilingPaintOptions
+                            .filter(option => {
+                              const unitSizeLabel = option.unit_sizes?.[0]?.unit_size_label || '';
+                              // Filter out "Paint Individual Ceiling" and "Individual Ceiling" options
+                              return !unitSizeLabel.includes('Individual Ceiling') && !unitSizeLabel.includes('Paint Individual Ceiling');
+                            })
+                            .map((option) => {
+                              const unitSizeLabel = option.unit_sizes?.[0]?.unit_size_label || 
+                                                   (option.unit_size_id ? `Unit Size ${option.unit_size_id}` : 'Service');
+                              return (
+                                <option key={option.id} value={option.id}>
+                                  {unitSizeLabel}
+                                </option>
+                              );
+                            })}
+                          {/* Only show individual option if it exists in this property's billing details */}
+                          {ceilingPaintOptions.some(option => 
+                            option.unit_sizes?.[0]?.unit_size_label === 'Paint Individual Ceiling' ||
+                            option.unit_sizes?.[0]?.unit_size_label === 'Individual Ceiling'
+                          ) && (
+                            <option value="individual">Paint Individual Ceiling</option>
+                          )}
+                            </select>
+                            
+                            {/* Display the selected ceiling option */}
+                            {formData.ceiling_rooms_count && (
+                              <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/30 rounded-lg">
+                                <p className="text-sm text-blue-800 dark:text-blue-200">
+                                  <strong>Selected:</strong> {getCeilingDisplayLabel(formData.ceiling_rooms_count, ceilingPaintOptions)}
+                                </p>
+                              </div>
+                            )}
+                            
+                            {/* Show individual ceiling count input when "Paint Individual Ceiling" is selected */}
+                            {formData.ceiling_rooms_count === 'individual' && (
+                              <div className="mt-3">
+                                <label htmlFor="individual_ceiling_count" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                                  Number of Individual Ceilings <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                  type="number"
+                                  id="individual_ceiling_count"
+                                  name="individual_ceiling_count"
+                                  min="1"
+                                  max="20"
+                                  value={formData.individual_ceiling_count || ''}
+                                  onChange={handleInputChange}
+                                  required
+                                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  placeholder="Enter number of ceilings"
+                                />
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="w-full p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/30 rounded-lg">
+                            <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                              ⚠️ No ceiling paint billing options found for this property. 
+                              Please contact management to set up billing rates for Painted Ceilings.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
                     
@@ -1287,20 +2259,42 @@ const NewWorkOrder = () => {
                   <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                     <div>
                       <label htmlFor="accent_wall_type" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                        Accent Wall Type
+                        Accent Wall Type <span className="text-red-500">*</span>
                       </label>
-                      <select
-                        id="accent_wall_type"
-                        name="accent_wall_type"
-                        required={formData.has_accent_wall}
-                        value={formData.accent_wall_type}
-                        onChange={handleInputChange}
-                        className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">Select type</option>
-                        <option value="Custom">Custom</option>
-                        <option value="Paint Over">Paint Over</option>
-                      </select>
+                      
+                      {billingOptionsLoading ? (
+                        <div className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg flex items-center justify-center">
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent"></div>
+                          <span className="ml-2 text-sm text-gray-500">Loading options...</span>
+                        </div>
+                      ) : accentWallOptions.length > 0 ? (
+                        <select
+                          id="accent_wall_type"
+                          name="accent_wall_type"
+                          required={formData.has_accent_wall}
+                          value={formData.accent_wall_type}
+                          onChange={handleInputChange}
+                          className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Select type</option>
+                          {accentWallOptions.map((option) => {
+                            const unitSizeLabel = option.unit_sizes?.[0]?.unit_size_label || 
+                                                 (option.unit_size_id ? `Unit Size ${option.unit_size_id}` : 'Service');
+                            return (
+                              <option key={option.id} value={option.id}>
+                                {unitSizeLabel}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      ) : (
+                        <div className="w-full p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/30 rounded-lg">
+                                                      <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                              ⚠️ No accent wall billing options found for this property. 
+                              Please contact management to set up billing rates for Accent Walls.
+                            </p>
+                        </div>
+                      )}
                     </div>
                     
                     <div>
@@ -1445,6 +2439,7 @@ const NewWorkOrder = () => {
                 
                 <ImageGallery
                   workOrderId={workOrderId}
+                  folder="before"
                   key={refreshImages}
                 />
                 

@@ -144,6 +144,7 @@ BEGIN
         LEFT JOIN unit_sizes us ON us.id = bd.unit_size_id
         WHERE bd.property_id = v_property_id
         AND bd.category_id = v_hourly_billing_category_id
+        AND bd.unit_size_id = v_unit_size_id
         AND bd.is_hourly = true
         ORDER BY bd.created_at DESC
         LIMIT 1;

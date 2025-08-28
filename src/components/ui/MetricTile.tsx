@@ -65,17 +65,41 @@ export function MetricTile({ icon: Icon, label, value, trend, color = 'blue' }: 
   const bgProps = getBgStyle(); // Get either className or style
 
   return (
-    <div className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg transition-all duration-200 hover:shadow-xl">
-      <div className={`w-12 h-12 rounded-lg flex items-center justify-center mb-4 ${bgProps.className || ''}`} style={bgProps.style}>
-        <Icon className={`h-6 w-6 ${getIconColorClass()}`} />
+    <div className="bg-white dark:bg-[#1E293B] rounded-xl p-4 shadow-lg transition-all duration-200 hover:shadow-xl relative overflow-hidden group">
+      {/* Subtle background pattern */}
+      <div className="absolute inset-0 opacity-5">
+        <div className="absolute top-0 right-0 w-16 h-16 rounded-full bg-gradient-to-br from-current to-transparent transform translate-x-8 -translate-y-8"></div>
+        <div className="absolute bottom-0 left-0 w-12 h-12 rounded-full bg-gradient-to-tr from-current to-transparent transform -translate-x-6 translate-y-6"></div>
       </div>
-      <div>
-        <p className="text-gray-600 dark:text-gray-400 text-sm mb-1">{label}</p>
-        <p className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">{value}</p>
-        <p className={`text-sm ${trend.isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-          {trend.isPositive ? '+' : '-'}{trend.value}% vs previous 30 days
-        </p>
+      
+      {/* Top row with icon and value */}
+      <div className="flex items-center justify-between mb-3">
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${bgProps.className || ''}`} style={bgProps.style}>
+          <Icon className={`h-5 w-5 ${getIconColorClass()}`} />
+        </div>
+        <div className="text-right">
+          <p className="text-2xl font-bold text-gray-900 dark:text-white leading-none">{value}</p>
+        </div>
       </div>
+      
+      {/* Bottom section with label and trend */}
+      <div className="space-y-2">
+        <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">{label}</p>
+        
+        {/* Trend indicator with mini chart */}
+        <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1">
+            <div className={`w-2 h-2 rounded-full ${trend.isPositive ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            <span className={`text-xs font-medium ${trend.isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+              {trend.isPositive ? '+' : '-'}{trend.value}%
+            </span>
+          </div>
+          <span className="text-xs text-gray-500 dark:text-gray-400">vs last 30d</span>
+        </div>
+      </div>
+      
+      {/* Subtle accent line */}
+      <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-current to-transparent opacity-20"></div>
     </div>
   );
 }

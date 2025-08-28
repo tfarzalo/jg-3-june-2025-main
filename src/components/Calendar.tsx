@@ -25,11 +25,14 @@ import {
   addDays
 } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
+import { WorkOrderLink } from './shared/WorkOrderLink';
+import { PropertyLink } from './shared/PropertyLink';
 
 interface Job {
   id: string;
   work_order_num: number;
   property: {
+    id: string;
     property_name: string;
   };
   unit_number: string;
@@ -468,10 +471,16 @@ export function Calendar() {
                               className="w-2 h-2 rounded-full mr-1 flex-shrink-0"
                               style={{ backgroundColor: job.job_phase.color_dark_mode }}
                             ></span>
-                            {formatWorkOrderNumber(job.work_order_num)}
+                            <WorkOrderLink 
+                              jobId={job.id}
+                              workOrderNum={job.work_order_num}
+                            />
                           </div>
                           <div className="text-gray-600 dark:text-gray-400 truncate">
-                            {job.property.property_name}
+                            <PropertyLink 
+                              propertyId={job.property.id}
+                              propertyName={job.property.property_name}
+                            />
                           </div>
                         </button>
                       ))}
@@ -523,10 +532,16 @@ export function Calendar() {
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex-1">
                           <h4 className="font-medium text-gray-900 dark:text-white text-sm">
-                            {formatWorkOrderNumber(job.work_order_num)}
+                            <WorkOrderLink 
+                              jobId={job.id}
+                              workOrderNum={job.work_order_num}
+                            />
                           </h4>
                           <p className="text-sm text-gray-600 dark:text-gray-400">
-                            {job.property.property_name}
+                            <PropertyLink 
+                              propertyId={job.property.id}
+                              propertyName={job.property.property_name}
+                            />
                           </p>
                           <p className="text-xs text-gray-500 dark:text-gray-500">
                             Unit #{job.unit_number}
@@ -585,10 +600,16 @@ export function Calendar() {
             <div className="flex justify-between items-start mb-4">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {formatWorkOrderNumber(selectedJob.work_order_num)}
+                  <WorkOrderLink 
+                    jobId={selectedJob.id}
+                    workOrderNum={selectedJob.work_order_num}
+                  />
                 </h3>
                 <p className="text-gray-600 dark:text-gray-400">
-                  {selectedJob.property.property_name} • Unit #{selectedJob.unit_number}
+                  <PropertyLink 
+                    propertyId={selectedJob.property.id}
+                    propertyName={selectedJob.property.property_name}
+                  /> • Unit #{selectedJob.unit_number}
                 </p>
               </div>
               <span

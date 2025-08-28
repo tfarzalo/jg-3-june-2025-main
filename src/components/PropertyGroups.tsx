@@ -4,6 +4,8 @@ import { Search, Plus, ArrowUpDown, Building2, MapPin, Archive } from 'lucide-re
 import { supabase } from '@/utils/supabase';
 import { formatAddress } from '../lib/utils/formatUtils';
 import { toast } from 'sonner';
+import { WorkOrderLink } from './shared/WorkOrderLink';
+import { PropertyLink } from './shared/PropertyLink';
 
 interface PropertyGroup {
   id: string;
@@ -243,13 +245,12 @@ export function PropertyGroups() {
                     <div className="space-y-1">
                       {group.properties && group.properties.length > 0 ? (
                         group.properties.map(property => (
-                          <Link
+                          <PropertyLink 
                             key={property.id}
-                            to={`/dashboard/properties/${property.id}`}
+                            propertyId={property.id}
+                            propertyName={property.property_name}
                             className="block text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm"
-                          >
-                            {property.property_name}
-                          </Link>
+                          />
                         ))
                       ) : (
                         <span className="text-gray-500 italic text-sm">No properties</span>

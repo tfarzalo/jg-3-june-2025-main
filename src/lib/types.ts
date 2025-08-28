@@ -15,6 +15,27 @@ export interface Property {
   updated_at: string;
 }
 
+export interface Job {
+  id: string;
+  property_id: string;
+  unit_number: string;
+  unit_size_id: string;
+  job_type_id: string;
+  job_category_id?: string; // Use job_category_id to match database structure
+  description?: string;
+  scheduled_date: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  // ... other fields ...
+  job_category?: { // Use job_category to match existing patterns
+    id: string;
+    name: string;
+    description: string | null;
+  };
+  // ... other fields ...
+}
+
 export interface JobRequest {
   id: string;
   property_id: string;
@@ -64,4 +85,14 @@ export interface File {
 export interface AuthResponse {
   user: User;
   token: string;
+}
+
+export interface PaintRoom {
+  room: string;
+  color: string;
+}
+
+export interface PaintScheme {
+  paint_type: string;
+  rooms: PaintRoom[];
 } 

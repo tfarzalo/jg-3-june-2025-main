@@ -7,136 +7,18 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-// Retry configuration
-const RETRY_COUNT = 5;
-const INITIAL_RETRY_DELAY = 1000;
-const MAX_RETRY_DELAY = 30000;
-const TIMEOUT = 30000;
-
-// Create a custom fetch function with retry logic
-const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  let attempt = 0;
-  let delay = INITIAL_RETRY_DELAY;
-
-  while (attempt < RETRY_COUNT) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
-
-      const response = await fetch(input, {
-        ...init,
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      // If we get a rate limit or server error, retry
-      if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      return response;
-    } catch (error) {
-      attempt++;
-
-      // Don't retry if we've reached the limit or if it's a client error
-      if (attempt >= RETRY_COUNT) {
-        throw error;
-      }
-
-      // Add jitter to prevent thundering herd
-      const jitter = Math.random() * 1000;
-      delay = Math.min(delay * 2 + jitter, MAX_RETRY_DELAY);
-
-      console.warn(`Retrying fetch (${attempt}/${RETRY_COUNT}) after ${delay}ms...`, error);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-
-  throw new Error('Max retry attempts reached');
-};
-
-// Create Supabase client with retry configuration
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    flowType: 'pkce',
-    storage: {
-      getItem: (key) => {
-        try {
-          // Check if we're accessing the session
-          if (key.includes('supabase.auth.token')) {
-            const value = localStorage.getItem(key);
-            if (!value) {
-              console.log('No session found in localStorage for key:', key);
-              return null;
-            }
-            
-            try {
-              const parsed = JSON.parse(value);
-              // Check if the token is expired
-              if (parsed.expires_at && parsed.expires_at * 1000 < Date.now()) {
-                console.log('Session token expired, removing from localStorage');
-                localStorage.removeItem(key);
-                return null;
-              }
-              console.log('Found valid session in localStorage');
-              return parsed;
-            } catch (e) {
-              console.error('Error parsing session:', e);
-              localStorage.removeItem(key);
-              return null;
-            }
-          }
-          
-          // For other keys, just return the value
-          const value = localStorage.getItem(key);
-          return value ? JSON.parse(value) : null;
-        } catch (error) {
-          console.error('Error reading from localStorage:', error);
-          return null;
-        }
-      },
-      setItem: (key, value) => {
-        try {
-          if (key.includes('supabase.auth.token')) {
-            console.log('Storing session in localStorage');
-          }
-          localStorage.setItem(key, JSON.stringify(value));
-        } catch (error) {
-          console.error('Error writing to localStorage:', error);
-        }
-      },
-      removeItem: (key) => {
-        try {
-          if (key.includes('supabase.auth.token')) {
-            console.log('Removing session from localStorage');
-          }
-          localStorage.removeItem(key);
-        } catch (error) {
-          console.error('Error removing from localStorage:', error);
-        }
-      }
-    }
+    storage: window.localStorage, // Use native localStorage
   },
   global: {
-    headers: {
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
-    },
-    fetch: customFetch
+    fetch: (url, options) => fetch(url, {
+      ...(options ?? {})
+    }),
   },
-  realtime: {
-    params: {
-      eventsPerSecond: 10
-    }
-  },
-  db: {
-    schema: 'public'
-  }
 });
 
 // Export types

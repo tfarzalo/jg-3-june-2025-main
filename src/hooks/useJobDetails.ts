@@ -9,6 +9,11 @@ export interface Job {
   description: string;
   scheduled_date: string;
   assigned_to: string | null;
+  job_category?: {
+    id: string;
+    name: string;
+    description: string | null;
+  };
   property: {
     id: string;
     name: string;
@@ -45,6 +50,9 @@ export interface Job {
     sprinklers_painted: boolean;
     painted_ceilings: boolean;
     ceiling_rooms_count: number;
+    individual_ceiling_count?: number | null;
+    ceiling_display_label?: string | null;
+    ceiling_billing_detail_id?: string | null;
     painted_patio: boolean;
     painted_garage: boolean;
     painted_cabinets: boolean;
@@ -53,6 +61,7 @@ export interface Job {
     has_accent_wall: boolean;
     accent_wall_type: string | null;
     accent_wall_count: number;
+    accent_wall_billing_detail_id?: string | null;
     has_extra_charges: boolean;
     extra_charges_description: string | null;
     extra_hours: number;
@@ -118,20 +127,19 @@ export interface Job {
   extra_charges_details?: {
     description: string;
     hours: number;
-    hourly_rate: number;
-    sub_pay_rate: number;
-    bill_amount: number;
-    sub_pay_amount: number;
-    profit_amount: number;
-    is_hourly: boolean;
+    amount: number;
     display_order: number;
     section_name: string;
     debug: {
-      hourly_bill_amount: number;
-      hourly_sub_pay_amount: number;
-      extra_hours: number;
-      has_hourly_billing: boolean;
-      raw_hourly_record: any;
+      property_id: string;
+      billing_category_id: string;
+      billing_category_name: string;
+      unit_size_id: string;
+      job_category_name: string;
+      bill_amount: number;
+      sub_pay_amount: number;
+      raw_record: any;
+      record_count: number;
       billing_category_exists: boolean;
       unit_size_exists: boolean;
       matching_billing_categories: any[];

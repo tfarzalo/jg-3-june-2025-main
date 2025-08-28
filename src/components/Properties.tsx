@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Search, Plus, ArrowUpDown, Building2, Archive } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
+import { WorkOrderLink } from './shared/WorkOrderLink';
+import { PropertyLink } from './shared/PropertyLink';
 
 type Property = {
   id: string;
@@ -243,7 +245,10 @@ export function Properties() {
                   </td>
                   <td className="px-6 py-4">
                     <div className="text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 font-medium">
-                      {property.property_name}
+                      <PropertyLink 
+                        propertyId={property.id}
+                        propertyName={property.property_name}
+                      />
                     </div>
                   </td>
                   <td className="px-6 py-4">

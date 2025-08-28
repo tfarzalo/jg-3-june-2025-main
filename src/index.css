@@ -29,3 +29,42 @@
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+.smooth-scroll {
+  scroll-behavior: smooth;
+}
+
+/* Ensure grid items are evenly distributed */
+.grid-auto-fit {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+/* Smooth scrolling for anchor links */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Focus states for navigation buttons */
+.nav-button:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+
+
+/* Ensure smooth scrolling works consistently */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 80px; /* Account for header offset */
+}
+
+body {
+  scroll-behavior: smooth;
+}
+
+/* Ensure smooth scrolling works on all devices */
+@media (prefers-reduced-motion: no-preference) {
+  .smooth-scroll {
+    scroll-behavior: smooth;
+  }
+}

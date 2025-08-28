@@ -16,9 +16,9 @@ import {
   ArrowRight, 
   AlertCircle,
   DollarSign,
-  FileEdit,
+
   Download,
-  Printer,
+
   Share2,
   MoreHorizontal,
   ChevronDown,
@@ -27,7 +27,7 @@ import {
   Clipboard,
   ClipboardCheck,
   ClipboardList,
-  Paintbrush,
+
   Layers,
   Droplets,
   Palette,
@@ -36,15 +36,21 @@ import {
   Paintbrush2,
   Mail,
   CheckCircle2,
-  X
+  X,
+  AlertTriangle,
+  Eye,
+  Minus,
+  FileImage,
+  FolderOpen,
+  Bell
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
-import { formatDate } from '../lib/dateUtils';
+import { formatDate, formatDisplayDate } from '../lib/dateUtils';
 import { formatAddress, formatCurrency } from '../lib/utils/formatUtils';
 import { useJobDetails } from '../hooks/useJobDetails';
 import { useJobPhaseChanges } from '../hooks/useJobPhaseChanges';
 import { usePhases } from '../hooks/usePhases';
-import { useUserRole } from '../hooks/useUserRole';
+import { useUserRole } from '../contexts/UserRoleContext';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import ImageUpload from './ImageUpload';
@@ -52,6 +58,9 @@ import { PropertyMap } from './PropertyMap';
 import { ImageGallery } from './ImageGallery';
 import ApprovalEmailModal from './ApprovalEmailModal';
 import NotificationEmailModal from './NotificationEmailModal';
+import { WorkOrderLink } from './shared/WorkOrderLink';
+import { PropertyLink } from './shared/PropertyLink';
+import { getBackNavigationPath } from '../lib/utils';
 
 type Property = {
   id: string;
@@ -97,6 +106,8 @@ interface WorkOrder {
   sprinklers_painted: boolean;
   painted_ceilings: boolean;
   ceiling_rooms_count: number;
+  individual_ceiling_count?: number | null;
+  ceiling_display_label?: string | null;
   painted_patio: boolean;
   painted_garage: boolean;
   painted_cabinets: boolean;
@@ -124,6 +135,11 @@ interface Job {
     id: string;
     label: string;
   };
+  job_category?: {
+    id: string;
+    name: string;
+    description: string | null;
+  };
   scheduled_date: string;
   job_phase: {
     id: string;
@@ -135,7 +151,38 @@ interface Job {
   assigned_to_name?: string;
   billing_details?: BillingDetails;
   hourly_billing_details?: BillingDetails;
-  extra_charges_details?: BillingDetails;
+  extra_charges_details?: {
+    description: string;
+    hours: number;
+    bill_amount: number;
+    sub_pay_amount: number;
+    profit_amount: number;
+    hourly_rate: number;
+    sub_pay_rate: number;
+    is_hourly: boolean;
+    display_order: number;
+    section_name: string;
+    debug: {
+      property_id: string;
+      billing_category_id: string;
+      billing_category_name: string;
+      unit_size_id: string;
+      job_category_name: string;
+      bill_amount: number;
+      sub_pay_amount: number;
+      raw_record: any;
+      record_count: number;
+      billing_category_exists: boolean;
+      unit_size_exists: boolean;
+      matching_billing_categories: any[];
+      query_params: {
+        property_id: string;
+        billing_category_id: string;
+        unit_size_id: string;
+        is_hourly: boolean;
+      };
+    };
+  };
   work_order?: WorkOrder;
 }
 
@@ -150,7 +197,7 @@ export function JobDetails() {
   const { job, loading: jobLoading, error: jobError, refetch: refetchJob } = useJobDetails(jobId);
   const { phaseChanges, loading: phaseChangesLoading, error: phaseChangesError, refetch: refetchPhaseChanges } = useJobPhaseChanges(jobId);
   const { phases, loading: phasesLoading } = usePhases();
-  const { isAdmin, isJGManagement } = useUserRole();
+  const { isAdmin, isJGManagement, isSubcontractor } = useUserRole();
   
   const [showPhaseChangeModal, setShowPhaseChangeModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -190,12 +237,9 @@ export function JobDetails() {
           extraHoursValue: job.work_order?.extra_hours
         },
         billingDetails: job.billing_details,
-        extraCharges: {
-          hasExtraCharges: job.work_order?.has_extra_charges,
-          extraHours: job.work_order?.extra_hours,
-          extraHoursType: typeof job.work_order?.extra_hours,
-          extraHoursValue: job.work_order?.extra_hours
-        }
+        extraChargesDetails: job.extra_charges_details,
+        hourlyBillingDetails: job.hourly_billing_details,
+        debugBillingJoins: job.debug_billing_joins
       });
     }
   }, [job]);
@@ -212,11 +256,51 @@ export function JobDetails() {
     const calculateAndUpdateTotalBilling = async () => {
       if (!job || !jobId) return;
 
+      // Get base billing amount from the job's billing category
       const standardBillAmount = job.billing_details?.bill_amount ?? 0;
-      const extraChargesBillAmount = job.work_order?.has_extra_charges && job.work_order?.extra_hours 
-        ? job.work_order.extra_hours * 40 
-        : 0;
+      
+      // Get extra charges amount from the calculated extra_charges_details
+      const extraChargesBillAmount = job.extra_charges_details?.bill_amount ?? 0;
+      
+      // Calculate total billing amount
       const totalBillingAmount = standardBillAmount + extraChargesBillAmount;
+
+      console.log('Billing calculation:', {
+        standardBillAmount,
+        extraChargesBillAmount,
+        totalBillingAmount,
+        extraChargesDetails: job.extra_charges_details,
+        workOrderExtraCharges: job.work_order?.has_extra_charges,
+        workOrderExtraHours: job.work_order?.extra_hours,
+        hourlyBillingDetails: job.hourly_billing_details,
+        debugBillingJoins: job.debug_billing_joins
+      });
+
+      // Validate that extra charges are being calculated correctly
+      if (job.work_order?.has_extra_charges && job.work_order?.extra_hours && job.work_order.extra_hours > 0) {
+        if (!job.extra_charges_details) {
+          console.warn('Extra charges are enabled but extra_charges_details is missing. This may indicate:');
+          console.warn('1. The "Extra Charges" billing category does not exist for this property');
+          console.warn('2. The billing details for "Extra Charges" are missing');
+          console.warn('3. The database function is not finding the correct billing data');
+          
+          // Additional debugging information
+          console.log('Debug info:', {
+            propertyId: job.property?.id,
+            unitSizeId: job.unit_size?.id,
+            unitSizeLabel: job.unit_size?.label,
+            jobCategoryName: job.work_order?.job_category,
+            hourlyBillingDetails: job.hourly_billing_details,
+            debugBillingJoins: job.debug_billing_joins
+          });
+        } else {
+          console.log('Extra charges calculation successful:', {
+            hours: job.work_order.extra_hours,
+            calculatedAmount: job.extra_charges_details.bill_amount,
+            expectedAmount: job.work_order.extra_hours * (job.hourly_billing_details?.bill_amount || 0)
+          });
+        }
+      }
 
       try {
         // Update the total_billing_amount in the jobs table
@@ -364,7 +448,7 @@ export function JobDetails() {
       if (jobError) throw jobError;
       
       toast.success('Job deleted successfully');
-      navigate('/dashboard/jobs');
+      navigate(getBackNavigationPath('/dashboard/jobs', isSubcontractor));
     } catch (err) {
       console.error('Error deleting job:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to delete job');
@@ -472,7 +556,11 @@ export function JobDetails() {
       if (job.work_order.painted_ceilings) {
         doc.text(`Painted Ceilings: Yes`, margin, y);
         y += 10;
-        doc.text(`Ceiling Rooms: ${job.work_order.ceiling_rooms_count}`, margin, y);
+        doc.text(`Ceiling Rooms: ${job.work_order.ceiling_display_label || 
+          (job.work_order.ceiling_rooms_count === 999 ? 'All' : 
+           job.work_order.individual_ceiling_count ? 
+           `${job.work_order.individual_ceiling_count} Individual Ceilings` : 
+           job.work_order.ceiling_rooms_count)}`, margin, y);
         y += 10;
       }
       
@@ -567,14 +655,10 @@ export function JobDetails() {
         y += 10;
         doc.text(`Hours: ${job.extra_charges_details.hours || 0}`, margin, y);
         y += 10;
-        doc.text(`Bill Amount: ${formatCurrency(job.extra_charges_details.bill_amount)}`, margin, y);
+        doc.text(`Amount: ${formatCurrency(job.extra_charges_details.amount)}`, margin, y);
         y += 10;
-        doc.text(`Subcontractor Pay: ${formatCurrency(job.extra_charges_details.sub_pay_amount)}`, margin, y);
+        doc.text(`Description: ${job.extra_charges_details.description || 'N/A'}`, margin, y);
         y += 10;
-        if (job.extra_charges_details.profit_amount !== null) {
-          doc.text(`Profit: ${formatCurrency(job.extra_charges_details.profit_amount)}`, margin, y);
-          y += 10;
-        }
       }
     }
     
@@ -850,7 +934,7 @@ export function JobDetails() {
         if (job.work_order.painted_ceilings) {
           doc.text(`Painted Ceilings: Yes`, margin, y2);
           y2 += 6;
-          doc.text(`Ceiling Rooms: ${job.work_order.ceiling_rooms_count}`, margin, y2);
+          doc.text(`Ceiling Rooms: ${job.work_order.ceiling_rooms_count === 999 ? 'All' : job.work_order.ceiling_rooms_count}`, margin, y2);
           y2 += 6;
         }
         if (job.work_order.painted_patio) {
@@ -956,9 +1040,7 @@ export function JobDetails() {
     : null;
 
   // Use extra charges details from the job data
-  const extraChargesBillAmount = job.extra_charges_details?.bill_amount ?? 0;
-  const extraChargesSubPayAmount = job.extra_charges_details?.sub_pay_amount ?? 0;
-  const extraChargesProfitAmount = job.extra_charges_details?.profit_amount ?? 0;
+  const extraChargesAmount = job.extra_charges_details?.bill_amount ?? 0;
   const extraHours = job.extra_charges_details?.hours ?? 0;
   const extraChargesDescription = job.extra_charges_details?.description ?? '';
 
@@ -1006,7 +1088,7 @@ export function JobDetails() {
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center space-x-3">
             <button
-              onClick={() => navigate('/dashboard/jobs')}
+              onClick={() => navigate(getBackNavigationPath('/dashboard/jobs', isSubcontractor))}
               className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
             >
               <ArrowLeft className="h-6 w-6" />
@@ -1065,16 +1147,6 @@ export function JobDetails() {
                 <Edit className="h-4 w-4 mr-2" />
                 Edit Job
               </button>
-            )}
-            {hasWorkOrder && (
-              <Link
-                to={`/dashboard/jobs/${jobId}/new-work-order?edit=true`}
-                className="inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors"
-                style={{ backgroundColor: job.job_phase.color_dark_mode }}
-              >
-                <FileEdit className="h-4 w-4 mr-2" />
-                {isAdmin || isJGManagement ? 'Edit Work Order' : 'View Work Order'}
-              </Link>
             )}
             {canDeleteJob && (
               <button
@@ -1177,26 +1249,6 @@ export function JobDetails() {
               <PropertyMap 
                 address={`${job.property.address}${job.property.address_2 ? `, ${job.property.address_2}` : ''}, ${job.property.city}, ${job.property.state} ${job.property.zip}`}
                 className="w-full h-[300px]"
-                onMapClick={() => {
-                  const mapElement = document.querySelector('.leaflet-container');
-                  if (mapElement) {
-                    mapElement.classList.add('map-active');
-                  }
-                }}
-                onMapLoad={(map) => {
-                  // Disable scroll wheel zoom by default
-                  map.scrollWheelZoom.disable();
-                  
-                  // Add click handler to enable scroll wheel zoom
-                  map.on('click', () => {
-                    map.scrollWheelZoom.enable();
-                  });
-                  
-                  // Disable scroll wheel zoom when mouse leaves the map
-                  map.on('mouseout', () => {
-                    map.scrollWheelZoom.disable();
-                  });
-                }}
               />
             </div>
             
@@ -1214,7 +1266,7 @@ export function JobDetails() {
                   to={`/dashboard/jobs/${jobId}/new-work-order`}
                   className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
                 >
-                  <FileEdit className="h-4 w-4 mr-2" />
+                  <Edit className="h-4 w-4 mr-2" />
                   Add Work Order
                 </Link>
               )}
@@ -1225,7 +1277,7 @@ export function JobDetails() {
                   to={`/dashboard/jobs/${jobId}/new-work-order`}
                   className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
                 >
-                  <FileEdit className="h-4 w-4 mr-2" />
+                  <Edit className="h-4 w-4 mr-2" />
                   Work Order
                 </Link>
               )}
@@ -1405,25 +1457,7 @@ export function JobDetails() {
               )}
             </div>
 
-            {/* Paint Information Section */}
-            <div className="mb-8">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                <Paintbrush className="h-5 w-5 mr-2 text-blue-500" />
-                Paint Information
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                <div className={`p-3 rounded-lg border ${job.work_order.is_full_paint !== undefined ? (job.work_order.is_full_paint ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700') : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                  <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Full Paint</span>
-                  <p className={`text-lg font-bold ${job.work_order.is_full_paint ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
-                    {job.work_order.is_full_paint ? 'Yes' : 'No'}
-                  </p>
-                </div>
-                <div className={`p-3 rounded-lg border ${job.work_order.job_category ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                  <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Job Category</span>
-                  <p className={`text-lg font-bold ${job.work_order.job_category ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>{job.work_order.job_category || 'N/A'}</p>
-                </div>
-              </div>
-            </div>
+            {/* Paint Information Section - Removed redundant section */}
 
             {/* Sprinkler Information Section */}
             {hasWorkOrder && job.work_order?.has_sprinklers && (
@@ -1473,7 +1507,11 @@ export function JobDetails() {
                     <p className={`text-lg font-bold ${job.work_order.painted_ceilings ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
                       {job.work_order.painted_ceilings ? (
                         <><span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
-                          ({job.work_order.ceiling_rooms_count} rooms)
+                          {job.work_order.ceiling_display_label || 
+                           (job.work_order.ceiling_rooms_count === 999 ? 'All' : 
+                            job.work_order.individual_ceiling_count ? 
+                            `${job.work_order.individual_ceiling_count} Individual Ceilings` : 
+                            job.work_order.ceiling_rooms_count)} ceilings
                         </span></>
                       ) : 'No'}
                     </p>
@@ -1619,7 +1657,9 @@ export function JobDetails() {
             {/* Add Unit Size and Job Category here */}
             <div className="mb-6 text-gray-700 dark:text-gray-300">
               <p className="text-lg">Unit Size: <span className="font-semibold text-gray-900 dark:text-white">{job.unit_size.label}</span></p>
-              <p className="text-lg mt-1">Job Category: <span className="font-semibold text-gray-900 dark:text-white">{job.work_order?.job_category || 'N/A'}</span></p>
+              <p className="text-lg mt-1">Job Category: <span className="font-semibold text-gray-900 dark:text-white">
+                {job.job_category?.name || job.work_order?.job_category || 'N/A'}
+              </span></p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
@@ -1654,22 +1694,36 @@ export function JobDetails() {
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Extra Charges Breakdown</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
                   <div className="p-3 rounded-lg border border-green-500/50">
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Bill Amount</span>
+                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Amount</span>
                     <p className="text-lg font-semibold text-green-600 dark:text-green-400 mt-1">
-                      {formatCurrency(extraChargesBillAmount)}
+                      {formatCurrency(extraChargesAmount)}
                     </p>
                   </div>
                   <div className="p-3 rounded-lg border border-blue-500/50">
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Sub Pay Amount</span>
+                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Hours</span>
                     <p className="text-lg font-semibold text-blue-600 dark:text-blue-400 mt-1">
-                      {formatCurrency(extraChargesSubPayAmount)}
+                      {extraHours}
                     </p>
                   </div>
                   <div className="p-3 rounded-lg border border-purple-500/50">
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Profit</span>
-                    <p className={`text-lg font-semibold ${extraChargesProfitAmount >= 0 ? 'text-purple-600 dark:text-purple-400' : 'text-red-600 dark:text-red-400'} mt-1`}>
-                      {formatCurrency(extraChargesProfitAmount)}
+                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Description</span>
+                    <p className="text-lg font-semibold text-purple-600 dark:text-purple-400 mt-1">
+                      {extraChargesDescription || 'N/A'}
                     </p>
+                  </div>
+                </div>
+
+                {/* Hourly Rate Information */}
+                <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg">
+                  <div className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                    <div className="flex justify-between">
+                      <span>Hourly Rate:</span>
+                      <span className="font-medium">{formatCurrency(job.hourly_billing_details?.bill_amount || 0)}/hour</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Subcontractor Rate:</span>
+                      <span className="font-medium">{formatCurrency(job.hourly_billing_details?.sub_pay_amount || 0)}/hour</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1680,10 +1734,12 @@ export function JobDetails() {
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Total to Invoice</h3>
               <span className="text-xl font-bold text-green-600 dark:text-green-400">
                 {formatCurrency(
-                  (job.billing_details?.bill_amount ?? 0) + extraChargesBillAmount
+                  (job.billing_details?.bill_amount ?? 0) + extraChargesAmount
                 )}
               </span>
             </div>
+
+
 
             {/* Additional Total Rows */}
             {job.billing_details && (
@@ -1692,7 +1748,7 @@ export function JobDetails() {
                   <span className="text-base font-medium text-gray-700 dark:text-gray-300">Total Billing</span>
                   <span className="text-base font-semibold text-gray-900 dark:text-white">
                     {formatCurrency(
-                      (job.billing_details?.bill_amount ?? 0) + extraChargesBillAmount
+                      (job.billing_details?.bill_amount ?? 0) + extraChargesAmount
                     )}
                   </span>
                 </div>
@@ -1700,7 +1756,7 @@ export function JobDetails() {
                   <span className="text-base font-medium text-gray-700 dark:text-gray-300">Total Subcontractor Pay</span>
                   <span className="text-base font-semibold text-gray-900 dark:text-white">
                     {formatCurrency(
-                      (job.billing_details?.sub_pay_amount ?? 0) + extraChargesSubPayAmount
+                      (job.billing_details?.sub_pay_amount ?? 0) + (job.extra_charges_details?.sub_pay_amount ?? 0)
                     )}
                   </span>
                 </div>
@@ -1708,10 +1764,21 @@ export function JobDetails() {
                   <span className="text-base font-medium text-gray-700 dark:text-gray-300">Total Profit</span>
                   <span className={`text-base font-semibold ${profitAmount !== null ? (profitAmount >= 0 ? 'text-purple-600 dark:text-purple-400' : 'text-red-600 dark:text-red-400') : 'text-gray-900 dark:text-white'}`}>
                     {formatCurrency(
-                      ((job.billing_details?.bill_amount ?? 0) - (job.billing_details?.sub_pay_amount ?? 0)) + extraChargesProfitAmount
+                      ((job.billing_details?.bill_amount ?? 0) - (job.billing_details?.sub_pay_amount ?? 0)) + 
+                      ((job.extra_charges_details?.bill_amount ?? 0) - (job.extra_charges_details?.sub_pay_amount ?? 0))
                     )}
                   </span>
                 </div>
+                
+                {/* Calculation Breakdown */}
+                {extraChargesAmount > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400">
+                    <div className="space-y-1">
+                      <div>Base: {formatCurrency(job.billing_details?.bill_amount || 0)} - {formatCurrency(job.billing_details?.sub_pay_amount || 0)} = {formatCurrency((job.billing_details?.bill_amount || 0) - (job.billing_details?.sub_pay_amount || 0))}</div>
+                      <div>Extra: {formatCurrency(job.extra_charges_details?.bill_amount || 0)} - {formatCurrency(job.extra_charges_details?.sub_pay_amount || 0)} = {formatCurrency((job.extra_charges_details?.bill_amount || 0) - (job.extra_charges_details?.sub_pay_amount || 0))}</div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1883,7 +1950,7 @@ export function JobDetails() {
                     className="inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors"
                     style={{ backgroundColor: job.job_phase.color_dark_mode }}
                   >
-                    <FileEdit className="h-4 w-4 mr-2" />
+                    <Edit className="h-4 w-4 mr-2" />
                     {isAdmin || isJGManagement ? 'Edit Work Order' : 'View Work Order'}
                   </Link>
                 )}
@@ -1896,31 +1963,21 @@ export function JobDetails() {
                   <Download className="h-4 w-4 mr-2" />
                   Download PDF
                 </button>
-                
-                <button
-                  onClick={() => window.print()}
-                  className="inline-flex items-center px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm font-medium rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                >
-                  <Printer className="h-4 w-4 mr-2" />
-                  Print
-                </button>
+                {isInvoicing && (
+                  <button
+                    onClick={generateInvoicePDF}
+                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Invoice
+                  </button>
+                )}
               </div>
             </div>
           </div>
         )}
 
-        {/* Add the Print Invoice button at the bottom, only if in Invoicing phase */}
-        {isInvoicing && (
-          <div className="flex justify-end mb-6">
-            <button
-              onClick={generateInvoicePDF}
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Printer className="h-4 w-4 mr-2" />
-              Print Invoice
-            </button>
-          </div>
-        )}
+
 
         {/* Notification Email Modal */}
         {showNotificationModal && notificationType && (

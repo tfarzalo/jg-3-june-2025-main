@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from '@/utils/supabase';
+import { supabase } from '../../utils/supabase';
 import { formatInTimeZone } from 'date-fns-tz';
 
 interface DashboardJob {
@@ -55,8 +55,9 @@ export function useDashboardJobs(): UseDashboardJobsResult {
   const isMountedRef = useRef(true);
   const lastFetchTimeRef = useRef<number>(0);
   const MIN_FETCH_INTERVAL = 5000; // Minimum time between fetches in milliseconds
+  const initialLoadDoneRef = useRef<boolean>(false);
 
-  const fetchJobs = useCallback(async () => {
+  const fetchJobs = useCallback(async (options?: { silent?: boolean }) => {
     if (!isMountedRef.current) return;
     
     // Prevent fetching too frequently
@@ -67,7 +68,10 @@ export function useDashboardJobs(): UseDashboardJobsResult {
     lastFetchTimeRef.current = now;
     
     try {
-      setLoading(true);
+      // Only show loading during the very first load (no flicker afterwards)
+      if (!initialLoadDoneRef.current && !options?.silent) {
+        setLoading(true);
+      }
       setError(null); // Clear previous errors
       
       // Get phase IDs with retry logic
@@ -333,6 +337,10 @@ export function useDashboardJobs(): UseDashboardJobsResult {
       }
     } finally {
       if (isMountedRef.current) {
+        // Mark initial load as done to avoid future loading flickers
+        if (!initialLoadDoneRef.current) {
+          initialLoadDoneRef.current = true;
+        }
         setLoading(false);
       }
     }
@@ -351,33 +359,195 @@ export function useDashboardJobs(): UseDashboardJobsResult {
       debounceTimeout = setTimeout(() => {
         if (isMountedRef.current) {
           console.log('Jobs table changed, refreshing data...');
-          fetchJobs();
+          // Silent refresh to avoid UI flicker
+          fetchJobs({ silent: true });
         }
       }, 1000); // 1 second debounce
     };
 
-    // Set up real-time subscriptions
+    // Set up comprehensive real-time subscriptions with optimistic updates
     const jobsSubscription = supabase
-      .channel('jobs-changes')
+      .channel('dashboard-jobs-changes')
       .on('postgres_changes', 
         { 
-          event: '*', 
+          event: 'INSERT', 
           schema: 'public', 
           table: 'jobs' 
         }, 
-        handleChange
+        async (payload) => {
+          console.log('New job added:', payload.new);
+          // Optimistic update - add new job immediately
+          if (isMountedRef.current) {
+            // Fetch complete job data in background
+            const { data: newJob, error } = await supabase
+              .from('jobs')
+              .select(`
+                id,
+                work_order_num,
+                unit_number,
+                scheduled_date,
+                created_at,
+                updated_at,
+                total_billing_amount,
+                property:properties (property_name),
+                job_phase:current_phase_id (job_phase_label, color_dark_mode),
+                job_type:job_types (job_type_label),
+                assigned_to:profiles (full_name)
+              `)
+              .eq('id', payload.new.id)
+              .single();
+            
+            if (!error && newJob) {
+              // Update relevant state based on job phase
+              const phaseLabel = newJob.job_phase?.[0]?.job_phase_label;
+              if (phaseLabel === 'Job Request') {
+                setJobRequests(prev => [newJob, ...prev].slice(0, 4));
+              } else if (phaseLabel === 'Work Order' || phaseLabel === 'Pending Work Order') {
+                setWorkOrders(prev => [newJob, ...prev].slice(0, 4));
+              } else if (phaseLabel === 'Invoicing') {
+                setInvoicingJobs(prev => [newJob, ...prev].slice(0, 4));
+              }
+              
+              // Update today's jobs if scheduled for today
+              const today = new Date();
+              const jobDate = new Date(newJob.scheduled_date);
+              if (jobDate.toDateString() === today.toDateString()) {
+                setTodaysJobs(prev => [newJob, ...prev].slice(0, 4));
+              }
+            }
+          }
+        }
+      )
+      .on('postgres_changes',
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'jobs' 
+        }, 
+        async (payload) => {
+          console.log('Job updated:', payload.new);
+          if (isMountedRef.current) {
+            // Fetch complete updated job data
+            const { data: updatedJob, error } = await supabase
+              .from('jobs')
+              .select(`
+                id,
+                work_order_num,
+                unit_number,
+                scheduled_date,
+                created_at,
+                updated_at,
+                total_billing_amount,
+                property:properties (property_name),
+                job_phase:current_phase_id (job_phase_label, color_dark_mode),
+                job_type:job_types (job_type_label),
+                assigned_to:profiles (full_name)
+              `)
+              .eq('id', payload.new.id)
+              .single();
+            
+            if (!error && updatedJob) {
+              const phaseLabel = updatedJob.job_phase?.[0]?.job_phase_label;
+              
+              // Update job requests
+              setJobRequests(prev => 
+                prev.map(job => job.id === updatedJob.id ? updatedJob : job)
+              );
+              
+              // Update work orders
+              setWorkOrders(prev => 
+                prev.map(job => job.id === updatedJob.id ? updatedJob : job)
+              );
+              
+              // Update invoicing jobs
+              setInvoicingJobs(prev => 
+                prev.map(job => job.id === updatedJob.id ? updatedJob : job)
+              );
+              
+              // Update today's jobs
+              setTodaysJobs(prev => 
+                prev.map(job => job.id === updatedJob.id ? updatedJob : job)
+              );
+            }
+          }
+        }
+      )
+      .on('postgres_changes',
+        { 
+          event: 'DELETE', 
+          schema: 'public', 
+          table: 'jobs' 
+        }, 
+        (payload) => {
+          console.log('Job deleted:', payload.old);
+          if (isMountedRef.current) {
+            const deletedJobId = payload.old.id;
+            
+            // Remove from all state arrays
+            setJobRequests(prev => prev.filter(job => job.id !== deletedJobId));
+            setWorkOrders(prev => prev.filter(job => job.id !== deletedJobId));
+            setInvoicingJobs(prev => prev.filter(job => job.id !== deletedJobId));
+            setTodaysJobs(prev => prev.filter(job => job.id !== deletedJobId));
+          }
+        }
       )
       .subscribe();
 
     const phaseChangesSubscription = supabase
-      .channel('phase-changes')
+      .channel('dashboard-phase-changes')
       .on('postgres_changes', 
         { 
           event: 'INSERT', 
           schema: 'public', 
           table: 'job_phase_changes' 
         }, 
-        handleChange
+        async (payload) => {
+          console.log('Phase change detected:', payload.new);
+          if (isMountedRef.current) {
+            // Fetch the updated job to see its new phase
+            const { data: updatedJob, error } = await supabase
+              .from('jobs')
+              .select(`
+                id,
+                work_order_num,
+                unit_number,
+                scheduled_date,
+                created_at,
+                updated_at,
+                total_billing_amount,
+                property:properties (property_name),
+                job_phase:current_phase_id (job_phase_label, color_dark_mode),
+                job_type:job_types (job_type_label),
+                assigned_to:profiles (full_name)
+              `)
+              .eq('id', payload.new.job_id)
+              .single();
+            
+            if (!error && updatedJob) {
+              const newPhaseLabel = updatedJob.job_phase?.[0]?.job_phase_label;
+              const oldPhaseLabel = payload.new.from_phase_id ? 
+                (await supabase.from('job_phases').select('job_phase_label').eq('id', payload.new.from_phase_id).single())?.data?.job_phase_label : null;
+              
+              // Remove job from old phase arrays
+              if (oldPhaseLabel === 'Job Request') {
+                setJobRequests(prev => prev.filter(job => job.id !== updatedJob.id));
+              } else if (oldPhaseLabel === 'Work Order' || oldPhaseLabel === 'Pending Work Order') {
+                setWorkOrders(prev => prev.filter(job => job.id !== updatedJob.id));
+              } else if (oldPhaseLabel === 'Invoicing') {
+                setInvoicingJobs(prev => prev.filter(job => job.id !== updatedJob.id));
+              }
+              
+              // Add job to new phase arrays
+              if (newPhaseLabel === 'Job Request') {
+                setJobRequests(prev => [updatedJob, ...prev].slice(0, 4));
+              } else if (newPhaseLabel === 'Work Order' || newPhaseLabel === 'Pending Work Order') {
+                setWorkOrders(prev => [updatedJob, ...prev].slice(0, 4));
+              } else if (newPhaseLabel === 'Invoicing') {
+                setInvoicingJobs(prev => [updatedJob, ...prev].slice(0, 4));
+              }
+            }
+          }
+        }
       )
       .subscribe();
 
@@ -398,6 +568,6 @@ export function useDashboardJobs(): UseDashboardJobsResult {
     todaysJobs,
     loading, 
     error,
-    refreshJobs: fetchJobs
+    refreshJobs: () => fetchJobs({ silent: true })
   };
 }

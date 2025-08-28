@@ -1,8 +1,9 @@
-import React, { lazy, Suspense } from 'react';
+import React, { Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { DashboardHome } from './DashboardHome';
+import { RouteGuard, SubcontractorRouteGuard, AdminRouteGuard } from './RouteGuard';
 
-// Lazy load components
+// Lazy load components - using correct pattern for each export type
+const DashboardHome = lazy(() => import('./DashboardHome').then(module => ({ default: module.DashboardHome })));
 const Jobs = lazy(() => import('./Jobs').then(module => ({ default: module.Jobs })));
 const JobRequests = lazy(() => import('./JobRequests').then(module => ({ default: module.JobRequests })));
 const WorkOrders = lazy(() => import('./WorkOrders').then(module => ({ default: module.WorkOrders })));
@@ -11,10 +12,17 @@ const Completed = lazy(() => import('./Completed').then(module => ({ default: mo
 const CancelledJobs = lazy(() => import('./CancelledJobs').then(module => ({ default: module.CancelledJobs })));
 const Archives = lazy(() => import('./Archives').then(module => ({ default: module.Archives })));
 const JobDetails = lazy(() => import('./JobDetails').then(module => ({ default: module.JobDetails })));
+const JobEditForm = lazy(() => import('./JobEditForm').then(module => ({ default: module.JobEditForm })));
+const WorkOrderForm = lazy(() => import('./WorkOrderForm').then(module => ({ default: module.WorkOrderForm })));
+const WorkOrderEditForm = lazy(() => import('./WorkOrderEditForm').then(module => ({ default: module.WorkOrderEditForm })));
+const WorkingOrdersBilling = lazy(() => import('./WorkingOrdersBilling').then(module => ({ default: module.WorkingOrdersBilling })));
+const NewWorkOrder = lazy(() => import('./NewWorkOrder'));
+const JobRequestForm = lazy(() => import('./JobRequestForm').then(module => ({ default: module.JobRequestForm })));
 const Properties = lazy(() => import('./Properties').then(module => ({ default: module.Properties })));
-const PropertyDetails = lazy(() => import('./PropertyDetails').then(module => ({ default: module.PropertyDetails })));
 const PropertyForm = lazy(() => import('./PropertyForm').then(module => ({ default: module.PropertyForm })));
+const PropertyDetails = lazy(() => import('./PropertyDetails').then(module => ({ default: module.PropertyDetails })));
 const PropertyEditForm = lazy(() => import('./PropertyEditForm').then(module => ({ default: module.PropertyEditForm })));
+const BillingDetailsForm = lazy(() => import('./BillingDetailsForm').then(module => ({ default: module.BillingDetailsForm })));
 const PropertyGroups = lazy(() => import('./PropertyGroups').then(module => ({ default: module.PropertyGroups })));
 const PropertyGroupDetails = lazy(() => import('./PropertyGroupDetails').then(module => ({ default: module.PropertyGroupDetails })));
 const PropertyGroupForm = lazy(() => import('./PropertyGroupForm').then(module => ({ default: module.PropertyGroupForm })));
@@ -28,14 +36,7 @@ const Users = lazy(() => import('./Users').then(module => ({ default: module.Use
 const AppSettings = lazy(() => import('./AppSettings').then(module => ({ default: module.AppSettings })));
 const UserProfile = lazy(() => import('./UserProfile').then(module => ({ default: module.UserProfile })));
 const SubScheduler = lazy(() => import('./SubScheduler'));
-const JobRequestForm = lazy(() => import('./JobRequestForm').then(module => ({ default: module.JobRequestForm })));
-const JobEditForm = lazy(() => import('./JobEditForm').then(module => ({ default: module.JobEditForm })));
-const WorkOrderForm = lazy(() => import('./WorkOrderForm').then(module => ({ default: module.WorkOrderForm })));
-const WorkOrderEditForm = lazy(() => import('./WorkOrderEditForm').then(module => ({ default: module.WorkOrderEditForm })));
-const BillingDetailsForm = lazy(() => import('./BillingDetailsForm').then(module => ({ default: module.BillingDetailsForm })));
-const NewWorkOrder = lazy(() => import('./NewWorkOrder'));
-const TempWorkOrderForm = lazy(() => import('./TempWorkOrderForm'));
-const WorkingOrdersBilling = lazy(() => import('./WorkingOrdersBilling').then(module => ({ default: module.WorkingOrdersBilling })));
+const SubcontractorDashboard = lazy(() => import('./SubcontractorDashboard').then(module => ({ default: module.SubcontractorDashboard })));
 
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center h-full">
@@ -50,58 +51,111 @@ export function Dashboard() {
         <Routes>
           <Route index element={<DashboardHome />} />
           
-          {/* Jobs Routes */}
-          <Route path="jobs">
-            <Route index element={<Jobs />} />
-            <Route path="requests" element={<JobRequests />} />
-            <Route path="work-orders" element={<WorkOrders />} />
-            <Route path="invoicing" element={<Invoicing />} />
-            <Route path="completed" element={<Completed />} />
-            <Route path="cancelled" element={<CancelledJobs />} />
-            <Route path="archives" element={<Archives />} />
-            <Route path=":jobId" element={<JobDetails />} />
-            <Route path=":jobId/edit" element={<JobEditForm />} />
-            <Route path=":jobId/work-order" element={<WorkOrderForm />} />
-            <Route path=":jobId/work-order/edit" element={<WorkOrderEditForm />} />
-            <Route path=":jobId/billing" element={<WorkingOrdersBilling />} />
-            <Route path=":jobId/new-work-order" element={<NewWorkOrder />} />
-            <Route path="new" element={<JobRequestForm />} />
-          </Route>
+          {/* Subcontractor Dashboard Route - Only accessible by subcontractors */}
+          <Route path="subcontractor" element={
+            <SubcontractorRouteGuard>
+              <SubcontractorDashboard />
+            </SubcontractorRouteGuard>
+          } />
           
-          {/* Properties Routes */}
-          <Route path="properties">
-            <Route index element={<Properties />} />
-            <Route path="new" element={<PropertyForm />} />
-            <Route path="archives" element={<PropertyArchives />} />
-            <Route path=":propertyId">
-              <Route index element={<PropertyDetails />} />
-              <Route path="edit" element={<PropertyEditForm />} />
-              <Route path="billing" element={<BillingDetailsForm />} />
-            </Route>
-          </Route>
+          {/* Jobs Routes - Protected for admin/management only */}
+          <Route path="jobs/*" element={
+            <RouteGuard>
+              <Routes>
+                <Route index element={<Jobs />} />
+                <Route path="requests" element={<JobRequests />} />
+                <Route path="work-orders" element={<WorkOrders />} />
+                <Route path="invoicing" element={<Invoicing />} />
+                <Route path="completed" element={<Completed />} />
+                <Route path="cancelled" element={<CancelledJobs />} />
+                <Route path="archives" element={<Archives />} />
+                <Route path=":jobId" element={<JobDetails />} />
+                <Route path=":jobId/edit" element={<JobEditForm />} />
+                <Route path=":jobId/work-order" element={<WorkOrderForm />} />
+                <Route path=":jobId/work-order/edit" element={<WorkOrderEditForm />} />
+                <Route path=":jobId/billing" element={<WorkingOrdersBilling />} />
+                <Route path="new" element={<JobRequestForm />} />
+              </Routes>
+            </RouteGuard>
+          } />
           
-          {/* Property Groups Routes */}
-          <Route path="property-groups">
-            <Route index element={<PropertyGroups />} />
-            <Route path="new" element={<PropertyGroupForm />} />
-            <Route path="archives" element={<PropertyGroupArchives />} />
-            <Route path=":groupId" element={<PropertyGroupDetails />} />
-          </Route>
+          {/* Work Order Route - Accessible by subcontractors for their assigned jobs */}
+          <Route path="jobs/:jobId/new-work-order" element={<NewWorkOrder />} />
           
-          {/* Files Routes */}
-          <Route path="files">
-            <Route index element={<FileManager />} />
-            <Route path="upload" element={<FileUpload />} />
-          </Route>
+          {/* Properties Routes - Protected for admin/management only */}
+          <Route path="properties/*" element={
+            <RouteGuard>
+              <Routes>
+                <Route index element={<Properties />} />
+                <Route path="new" element={<PropertyForm />} />
+                <Route path="archives" element={<PropertyArchives />} />
+                <Route path=":propertyId">
+                  <Route index element={<PropertyDetails />} />
+                  <Route path="edit" element={<PropertyEditForm />} />
+                  <Route path="billing" element={<BillingDetailsForm />} />
+                </Route>
+              </Routes>
+            </RouteGuard>
+          } />
           
-          {/* Other Routes */}
-          <Route path="calendar" element={<Calendar />} />
-          <Route path="activity" element={<Activity />} />
-          <Route path="users" element={<Users />} />
-          <Route path="settings" element={<AppSettings />} />
-          <Route path="profile" element={<UserProfile />} />
-          <Route path="sub-scheduler" element={<SubScheduler />} />
-          <Route path="job-request" element={<JobRequestForm />} />
+          {/* Property Groups Routes - Protected for admin/management only */}
+          <Route path="property-groups/*" element={
+            <RouteGuard>
+              <Routes>
+                <Route index element={<PropertyGroups />} />
+                <Route path="new" element={<PropertyGroupForm />} />
+                <Route path="archives" element={<PropertyGroupArchives />} />
+                <Route path=":groupId" element={<PropertyGroupDetails />} />
+              </Routes>
+            </RouteGuard>
+          } />
+          
+          {/* Files Routes - Protected for admin/management only */}
+          <Route path="files/*" element={
+            <RouteGuard>
+              <Routes>
+                <Route index element={<FileManager />} />
+                <Route path="upload" element={<FileUpload />} />
+              </Routes>
+            </RouteGuard>
+          } />
+          
+          {/* Other Routes - Protected for admin/management only */}
+          <Route path="calendar" element={
+            <RouteGuard>
+              <Calendar />
+            </RouteGuard>
+          } />
+          <Route path="activity" element={
+            <RouteGuard>
+              <Activity />
+            </RouteGuard>
+          } />
+          <Route path="users" element={
+            <RouteGuard>
+              <Users />
+            </RouteGuard>
+          } />
+          <Route path="settings" element={
+            <RouteGuard>
+              <AppSettings />
+            </RouteGuard>
+          } />
+          <Route path="profile" element={
+            <RouteGuard>
+              <UserProfile />
+            </RouteGuard>
+          } />
+          <Route path="sub-scheduler" element={
+            <RouteGuard>
+              <SubScheduler />
+            </RouteGuard>
+          } />
+          <Route path="job-request" element={
+            <RouteGuard>
+              <JobRequestForm />
+            </RouteGuard>
+          } />
         </Routes>
       </Suspense>
     </main>

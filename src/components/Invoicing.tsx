@@ -1,8 +1,8 @@
 import { JobListingPage } from './shared/JobListingPage';
-import { useJobFetch } from './shared/useJobFetch';
+import { useJobDataHook } from './shared/useJobDataHook';
 
 export function Invoicing() {
-  const { jobs, loading, error } = useJobFetch({ phaseLabel: 'Invoicing' });
+  const { jobs, loading, error } = useJobDataHook('Invoicing');
 
   return (
     <JobListingPage

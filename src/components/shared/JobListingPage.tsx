@@ -125,7 +125,7 @@ export function JobListingPage({
   });
   const [sortConfig, setSortConfig] = useState<SortConfig>({
     field: 'scheduled_date',
-    direction: 'asc'
+    direction: 'desc'
   });
   const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
@@ -576,7 +576,7 @@ export function JobListingPage({
         .select(`
           id,
           current_phase_id,
-          job_phases!current_phase_id (
+          job_phases (
             job_phase_label
           )
         `)

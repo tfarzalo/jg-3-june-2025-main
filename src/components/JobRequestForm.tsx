@@ -4,7 +4,9 @@ import { ClipboardList, ArrowLeft } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { getCurrentDateInEastern, formatDateForInput } from '../lib/dateUtils';
 import { JobType } from '../lib/types';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthProvider';
+import { WorkOrderLink } from './shared/WorkOrderLink';
+import { PropertyLink } from './shared/PropertyLink';
 
 interface Property {
   id: string;
@@ -21,6 +23,13 @@ interface UnitSize {
   unit_size_label: string;
 }
 
+interface JobCategory {
+  id: string;
+  name: string;
+  description: string | null;
+  sort_order: number;
+}
+
 export function JobRequestForm() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -29,23 +38,27 @@ export function JobRequestForm() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [unitSizes, setUnitSizes] = useState<UnitSize[]>([]);
   const [jobTypes, setJobTypes] = useState<JobType[]>([]);
+  const [jobCategories, setJobCategories] = useState<JobCategory[]>([]);
   
   const [debugInfo, setDebugInfo] = useState<{
     supabaseConnected: boolean;
     propertiesLoaded: boolean;
     unitSizesLoaded: boolean;
     jobTypesLoaded: boolean;
+    jobCategoriesLoaded: boolean;
   }>({
     supabaseConnected: false,
     propertiesLoaded: false,
     unitSizesLoaded: false,
-    jobTypesLoaded: false
+    jobTypesLoaded: false,
+    jobCategoriesLoaded: false
   });
 
   const [formData, setFormData] = useState({
     property_id: '',
     unit_number: '',
     unit_size_id: '',
+    job_category_id: '',
     job_type_id: '',
     description: '',
     scheduled_date: getCurrentDateInEastern(),
@@ -67,8 +80,18 @@ export function JobRequestForm() {
       fetchProperties(),
       fetchUnitSizes(),
       fetchJobTypes(),
+      fetchJobCategories()
     ]);
   }, []);
+
+  // Fetch job categories when property changes
+  useEffect(() => {
+    if (formData.property_id) {
+      fetchPropertyJobCategories(formData.property_id);
+    } else {
+      setJobCategories([]);
+    }
+  }, [formData.property_id]);
 
   const fetchProperties = async () => {
     try {
@@ -119,6 +142,59 @@ export function JobRequestForm() {
     }
   };
 
+  const fetchJobCategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('job_categories')
+        .select('*')
+        .order('sort_order, name');
+
+      if (error) throw error;
+      setJobCategories(data || []);
+      setDebugInfo(prev => ({ ...prev, jobCategoriesLoaded: true }));
+    } catch (err) {
+      console.error('Error fetching job categories:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch job categories');
+    }
+  };
+
+  const fetchPropertyJobCategories = async (propertyId: string) => {
+    try {
+      // Get the job categories that exist in the property's billing categories
+      const { data, error } = await supabase
+        .from('billing_categories')
+        .select(`
+          name,
+          description,
+          sort_order
+        `)
+        .eq('property_id', propertyId)
+        .order('sort_order, name');
+
+      if (error) throw error;
+      
+      // Get the corresponding job_categories IDs for these names
+      if (data && data.length > 0) {
+        const categoryNames = data.map(cat => cat.name);
+        
+        const { data: jobCategoriesData, error: jobCategoriesError } = await supabase
+          .from('job_categories')
+          .select('id, name, description, sort_order')
+          .in('name', categoryNames)
+          .order('sort_order, name');
+          
+        if (jobCategoriesError) throw jobCategoriesError;
+        
+        setJobCategories(jobCategoriesData || []);
+      } else {
+        setJobCategories([]);
+      }
+    } catch (err) {
+      console.error('Error fetching property job categories:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch property job categories');
+    }
+  };
+
   const formatPropertyAddress = (property: Property) => {
     const parts = [
       property.address,
@@ -150,14 +226,15 @@ export function JobRequestForm() {
       console.log('Formatted date:', formattedDate);
       console.log('User:', user);
 
-      const { data, error } = await supabase.rpc('create_job', {
-        p_property_id: formData.property_id,
-        p_unit_number: formData.unit_number,
-        p_unit_size_id: formData.unit_size_id,
-        p_job_type_id: formData.job_type_id,
-        p_description: formData.description || '', // Ensure description is not null
-        p_scheduled_date: formattedDate
-      });
+      const { data, error } = await supabase.rpc('create_job', [
+        formData.property_id,
+        formData.unit_number,
+        formData.unit_size_id,
+        formData.job_type_id,
+        formData.description || '', // Ensure description is not null
+        formattedDate,
+        formData.job_category_id
+      ]);
 
       if (error) {
         console.error('Supabase error:', error);
@@ -288,8 +365,29 @@ export function JobRequestForm() {
               </div>
 
               <div>
+                <label htmlFor="job_category_id" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                  Job Category
+                </label>
+                <select
+                  id="job_category_id"
+                  name="job_category_id"
+                  required
+                  value={formData.job_category_id}
+                  onChange={handleChange}
+                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a job category</option>
+                  {jobCategories.map(category => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <label htmlFor="job_type_id" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Job Type
+                  Job Type (Scheduling Reference)
                 </label>
                 <select
                   id="job_type_id"

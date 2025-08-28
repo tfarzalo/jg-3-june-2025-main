@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   ClipboardList, 
   FileText, 
@@ -15,6 +16,7 @@ import { DashboardCard } from './ui/DashboardCard';
 import { supabase } from '../utils/supabase';
 import TodaysAgendaModal from './modals/TodaysAgendaModal';
 import { useDashboardJobs } from './shared/useDashboardJobs';
+import { useUserRole } from '../contexts/UserRoleContext';
 
 interface JobPhase {
   id: string;
@@ -51,6 +53,8 @@ interface ActivityItem {
 }
 
 export function DashboardHome() {
+  const navigate = useNavigate();
+  const { isSubcontractor, loading: roleLoading } = useUserRole();
   const [isAgendaModalOpen, setIsAgendaModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
@@ -66,7 +70,20 @@ export function DashboardHome() {
     loading: dashboardJobsLoading
   } = useDashboardJobs();
   
+  // Redirect subcontractors to their dashboard
   useEffect(() => {
+    if (!roleLoading && isSubcontractor) {
+      navigate('/dashboard/subcontractor', { replace: true });
+    }
+  }, [isSubcontractor, roleLoading, navigate]);
+  
+  // Main data fetching effect - must be called before conditional return
+  useEffect(() => {
+    // Only fetch data if not a subcontractor (admin and jg_management should see data)
+    if (roleLoading || isSubcontractor) {
+      return;
+    }
+    
     const fetchData = async () => {
       try {
         setLoading(true);
@@ -212,7 +229,18 @@ export function DashboardHome() {
       jobsSubscription.unsubscribe();
       activitySubscription.unsubscribe();
     };
-  }, []); // Remove refreshKey dependency since we rely on real-time updates
+  }, [roleLoading, isSubcontractor]); // Add dependencies for the conditional logic
+  
+  // Early return for subcontractors - but AFTER all hooks have been called
+  if (roleLoading || isSubcontractor) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+  
+
 
   const fetchActivities = async () => {
     try {
@@ -409,14 +437,14 @@ export function DashboardHome() {
       label: 'Invoicing',
       value: jobs.filter(job => job.job_phase?.job_phase_label === 'Invoicing').length.toString(),
       trend: { value: 3, isPositive: false },
-      color: 'green'
+      color: phaseColors['Invoicing'] || '#166534'
     },
     {
       icon: CheckCircle,
       label: 'Completed',
       value: jobs.filter(job => job.job_phase?.job_phase_label === 'Completed').length.toString(),
       trend: { value: 5, isPositive: true },
-      color: 'purple'
+      color: phaseColors['Completed'] || '#1E40AF'
     }
   ];
 

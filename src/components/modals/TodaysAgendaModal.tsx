@@ -1,7 +1,9 @@
 import React from 'react';
 import { X, CalendarDays } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useUserRole } from '../../hooks/useUserRole';
+import { useUserRole } from '../../contexts/UserRoleContext';
+import { WorkOrderLink } from '../shared/WorkOrderLink';
+import { PropertyLink } from '../shared/PropertyLink';
 
 interface TodaysAgendaModalProps {
   open: boolean;
@@ -133,7 +135,12 @@ export const TodaysAgendaModal: React.FC<TodaysAgendaModalProps> = ({ open, onCl
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-2">
                               <h4 className="text-base font-medium text-gray-900 dark:text-white">
-                                {property?.property_name || 'Unknown Property'}
+                                {property ? (
+                                  <PropertyLink 
+                                    propertyId={property.id}
+                                    propertyName={property.property_name}
+                                  />
+                                ) : 'Unknown Property'}
                                 <span className="text-sm text-gray-600 dark:text-gray-400 ml-2 font-normal">
                                   Unit {job.unit_number}
                                 </span>
@@ -156,7 +163,10 @@ export const TodaysAgendaModal: React.FC<TodaysAgendaModalProps> = ({ open, onCl
                             <div className="flex items-center justify-between text-sm">
                               <div className="flex items-center gap-4">
                                 <span className="text-gray-600 dark:text-gray-400">
-                                  <span className="font-medium">WO:</span> {formatWorkOrderNumber(job.work_order_num)}
+                                  <span className="font-medium">WO:</span> <WorkOrderLink 
+                                    jobId={job.id}
+                                    workOrderNum={job.work_order_num}
+                                  />
                                 </span>
                                 <span className="text-gray-600 dark:text-gray-400">
                                   <span className="font-medium">Assigned:</span>{' '}

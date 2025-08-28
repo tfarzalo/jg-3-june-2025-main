@@ -15,7 +15,6 @@ import {
   ChevronRight,
   Users,
   FolderOpen,
-  Upload,
   Calendar as CalendarIcon,
   Activity,
   ChevronsLeft,
@@ -27,8 +26,59 @@ import {
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { useTheme } from './ui/ThemeProvider';
-import { useUserRole } from '../hooks/useUserRole';
+import { useUserRole } from '../contexts/UserRoleContext';
 import { toast } from 'sonner';
+import { useEffect } from 'react';
+
+// Lightweight live connection indicator state
+function LiveStatusBadge() {
+  const [status, setStatus] = useState<'connected' | 'connecting' | 'offline'>('connecting');
+
+  useEffect(() => {
+    let mounted = true;
+    // Basic online/offline awareness
+    const updateOnline = () => mounted && setStatus((prev) => (navigator.onLine ? prev : 'offline'));
+    window.addEventListener('online', updateOnline);
+    window.addEventListener('offline', updateOnline);
+
+    // Try a very light channel to confirm realtime connectivity
+    const channel = supabase
+      .channel('sidebar-live-status', { config: { broadcast: { self: true } } })
+      .subscribe((state) => {
+        if (!mounted) return;
+        if (!navigator.onLine) {
+          setStatus('offline');
+        } else if (state === 'SUBSCRIBED') {
+          setStatus('connected');
+        } else if (state === 'CHANNEL_ERROR') {
+          setStatus('offline');
+        } else {
+          setStatus('connecting');
+        }
+      });
+
+    return () => {
+      mounted = false;
+      supabase.removeChannel(channel);
+      window.removeEventListener('online', updateOnline);
+      window.removeEventListener('offline', updateOnline);
+    };
+  }, []);
+
+  // Only show when connected, make it very subtle
+  if (status !== 'connected') {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 rounded-full px-2 py-1 text-xs font-medium border border-green-200 dark:border-green-800/30 w-fit"
+      title="Real-time data updates active"
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5" />
+      <span>Data is Live</span>
+    </div>
+  );
+}
 
 interface NavItem {
   icon: React.ElementType;
@@ -48,16 +98,63 @@ export function Sidebar() {
   const { isAdmin, isJGManagement, isSubcontractor } = useUserRole();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    DASHBOARD: true,
-    'JOB MANAGEMENT': true,
-    PROPERTIES: true,
-    'FILE MANAGEMENT': true,
-    'JG USERS': true,
-    CALENDAR: true,
-    ACTIVITY: true,
-    SETTINGS: true
-  });
+
+
+  // Function to get icon color based on unified color palette
+  const getIconColor = (label: string) => {
+    switch (label) {
+      // DASHBOARD
+      case 'Dashboard':
+        return '#276EF1'; // Blue (same as Job Request for consistency)
+      
+      // JOB MANAGEMENT
+      case 'All Jobs':
+        return '#8A9BA8'; // Neutral Gray-Blue (not a phase, muted supportive tone)
+      case 'Job Requests':
+        return '#276EF1'; // Blue
+      case 'Work Orders':
+        return '#E95420'; // Orange-Red
+      case 'Invoicing':
+        return '#00A878'; // Green
+      case 'Completed':
+        return '#F47C7C'; // Light Red/Pink
+      case 'Cancelled':
+        return '#6C6C6C'; // Gray
+      case 'Archives':
+        return '#5A5A5A'; // Neutral Slate Gray (distinct from Cancelled)
+      case 'Sub Scheduler':
+        return '#8C4BFF'; // Accent Purple (new supportive accent)
+      
+      // PROPERTIES
+      case 'Properties':
+        return '#009688'; // Teal Green
+      case 'Property Mgmt Groups':
+        return '#009688'; // Teal Green (same group, consistent shade)
+      
+      // FILE MANAGEMENT
+      case 'File Manager':
+        return '#D64527'; // Red-Orange (slightly muted)
+      
+      // JG USERS
+      case 'Users':
+        return '#A0522D'; // Copper Brown (unique earthy tone)
+      
+      // CALENDAR
+      case 'Calendar':
+        return '#E91E63'; // Magenta/Pink (contrasts nicely with others)
+      
+      // ACTIVITY
+      case 'Activity Log':
+        return '#3F51B5'; // Slate Blue (cool neutral accent, distinct from Job Request)
+      
+      // SETTINGS
+      case 'Settings':
+        return '#9E9E9E'; // Neutral Gray
+      
+      default:
+        return '#9E9E9E'; // Default neutral gray
+    }
+  };
 
   // Define navigation items based on user role
   const getNavGroups = (): NavGroup[] => {
@@ -73,7 +170,6 @@ export function Sidebar() {
         {
           title: 'SETTINGS',
           items: [
-            { icon: UserCog, label: 'Profile', to: '/dashboard/profile' },
             { icon: Settings, label: 'Settings', to: '/dashboard/settings' },
           ]
         }
@@ -105,14 +201,13 @@ export function Sidebar() {
         title: 'PROPERTIES',
         items: [
           { icon: Building2, label: 'Properties', to: '/dashboard/properties', dataTutorial: 'properties' },
-          { icon: Building2, label: 'Property Groups', to: '/dashboard/property-groups' },
+          { icon: Building2, label: 'Property Mgmt Groups', to: '/dashboard/property-groups' },
         ]
       },
       {
         title: 'FILE MANAGEMENT',
         items: [
-          { icon: FolderOpen, label: 'Files', to: '/dashboard/files', dataTutorial: 'files' },
-          { icon: Upload, label: 'Upload File', to: '/dashboard/files/upload' },
+          { icon: FolderOpen, label: 'File Manager', to: '/dashboard/files', dataTutorial: 'files' },
         ]
       },
       {
@@ -136,7 +231,6 @@ export function Sidebar() {
       {
         title: 'SETTINGS',
         items: [
-          { icon: UserCog, label: 'Profile', to: '/dashboard/profile' },
           { icon: Settings, label: 'Settings', to: '/dashboard/settings', dataTutorial: 'settings' },
         ]
       }
@@ -145,12 +239,7 @@ export function Sidebar() {
 
   const navGroups = getNavGroups();
 
-  const toggleSection = (title: string) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [title]: !prev[title]
-    }));
-  };
+
 
   const handleLogout = async () => {
     if (loggingOut) return; // Prevent multiple clicks
@@ -213,41 +302,29 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-3 py-2">
         {navGroups.map((group) => (
           <div key={group.title} className="mb-2">
-            {!isCollapsed && (
-              <button
-                onClick={() => toggleSection(group.title)}
-                className="w-full px-3 py-2 flex items-center justify-between text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider hover:text-gray-900 dark:hover:text-white"
-              >
-                <span>{group.title}</span>
-                {expandedSections[group.title] ? (
-                  <ChevronDown className="h-4 w-4" />
-                ) : (
-                  <ChevronRight className="h-4 w-4" />
-                )}
-              </button>
-            )}
-            {(!isCollapsed && expandedSections[group.title] || isCollapsed) && (
-              <div className="mt-1 space-y-1">
-                {group.items.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    className={({ isActive }) =>
-                      `flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                        isActive
-                          ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
-                          : 'text-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1E293B] hover:text-gray-900 dark:hover:text-white'
-                      }`
-                    }
-                    title={isCollapsed ? item.label : undefined}
-                    data-tutorial={item.dataTutorial}
-                  >
-                    <item.icon className={`${isCollapsed ? 'h-6 w-6' : 'h-5 w-5 mr-3'}`} />
-                    {!isCollapsed && item.label}
-                  </NavLink>
-                ))}
-              </div>
-            )}
+            <div className="mt-1 space-y-1">
+              {group.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    `flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                      isActive
+                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
+                        : 'text-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1E293B] hover:text-gray-900 dark:hover:text-white'
+                    }`
+                  }
+                  title={isCollapsed ? item.label : undefined}
+                  data-tutorial={item.dataTutorial}
+                >
+                  <item.icon 
+                    className={`${isCollapsed ? 'h-6 w-6' : 'h-5 w-5 mr-3'}`}
+                    style={{ color: getIconColor(item.label) }}
+                  />
+                  {!isCollapsed && item.label}
+                </NavLink>
+              ))}
+            </div>
           </div>
         ))}
       </nav>
@@ -260,6 +337,9 @@ export function Sidebar() {
           <LogOut className={`${isCollapsed ? 'h-6 w-6' : 'h-5 w-5 mr-3'}`} />
           {!isCollapsed && (loggingOut ? 'Logging out...' : 'Logout')}
         </button>
+        <div className="mt-3">
+          <LiveStatusBadge />
+        </div>
         {!isCollapsed && (
           <div className="mt-4 text-xs text-gray-500 dark:text-gray-600">
             Copyright 2025 JG Portal V2.0

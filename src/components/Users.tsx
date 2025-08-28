@@ -2,12 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Users as UsersIcon, 
   Search, 
-  Plus, 
   Edit, 
   Trash2, 
-  CheckCircle, 
   XCircle,
-  Mail,
   Key,
   UserPlus,
   RefreshCw,
@@ -22,6 +19,10 @@ import {
 import { supabase } from '@/utils/supabase';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
+import { usePresence } from '../hooks/usePresence';
+import { useLastSeen } from '../hooks/useLastSeen';
+import { UserChip } from './UserChip';
+import { formatDistanceToNow } from 'date-fns';
 
 interface User {
   id: string;
@@ -48,7 +49,10 @@ export function Users() {
   const [showFilters, setShowFilters] = useState(false);
   const [roleFilter, setRoleFilter] = useState<string[]>([]);
   const [changingPassword, setChangingPassword] = useState(false);
-  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+  
+  // Use the new presence hooks
+  const { isOnline } = usePresence();
+  const { touchLastSeen } = useLastSeen();
   
   // Form state for adding/editing users
   const [formData, setFormData] = useState({
@@ -66,29 +70,15 @@ export function Users() {
   });
 
   const fetchUsers = useCallback(async () => {
-    let channel: any = null;
     try {
       setLoading(true);
       
       // Get current user first
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser || !currentUser.id) throw new Error('No current user found or user id missing');
-      console.log('Updating last_seen for user id:', currentUser.id);
+      
       // Update current user's last_seen immediately
-      const now = new Date().toISOString();
-      const updatePayload = { 
-        last_seen: now,
-        updated_at: now
-      };
-      console.log('PATCH payload for last_seen:', updatePayload, 'user id:', currentUser.id);
-      const { error: updateError, data: updateData } = await supabase
-        .from('profiles')
-        .update(updatePayload)
-        .eq('id', currentUser.id);
-      console.log('Supabase update response:', { updateError, updateData });
-      if (updateError) {
-        console.error('Error updating last_seen:', updateError, 'for user id:', currentUser.id);
-      }
+      await touchLastSeen();
 
       const { data, error } = await supabase
         .from('profiles')
@@ -100,81 +90,11 @@ export function Users() {
       // Ensure all users have a last_seen value
       const usersWithLastSeen = data?.map(user => ({
         ...user,
-        last_seen: user.id === currentUser.id ? now : (user.last_seen || user.updated_at || user.created_at)
+        last_seen: user.last_seen || user.updated_at || user.created_at
       })) || [];
       
       setUsers(usersWithLastSeen);
       setFilteredUsers(usersWithLastSeen);
-
-      // Subscribe to online status changes
-      channel = supabase.channel('online_users', {
-        config: {
-          broadcast: { self: true }
-        }
-      })
-        .on('presence', { event: 'sync' }, () => {
-          const presenceState = channel.presenceState();
-          const onlineUserIds = new Set(Object.keys(presenceState));
-          // Always include current user in online users
-          onlineUserIds.add(currentUser.id);
-          setOnlineUsers(onlineUserIds);
-
-          // Update last_seen for online users
-          const currentTime = new Date().toISOString();
-          onlineUserIds.forEach(async (userId) => {
-            await supabase
-              .from('profiles')
-              .update({ 
-                last_seen: currentTime,
-                updated_at: currentTime
-              })
-              .eq('id', userId);
-          });
-        })
-        .subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-            await channel.track({ 
-              user_id: currentUser.id,
-              last_seen: new Date().toISOString()
-            });
-          }
-        });
-
-      // Set up interval to update current user's last_seen more frequently
-      const interval = setInterval(async () => {
-        const currentTime = new Date().toISOString();
-        await supabase
-          .from('profiles')
-          .update({ 
-            last_seen: currentTime,
-            updated_at: currentTime
-          })
-          .eq('id', currentUser.id);
-
-        // Also update the local state to reflect the change
-        setUsers(prevUsers => 
-          prevUsers.map(user => 
-            user.id === currentUser.id 
-              ? { ...user, last_seen: currentTime }
-              : user
-          )
-        );
-        setFilteredUsers(prevUsers => 
-          prevUsers.map(user => 
-            user.id === currentUser.id 
-              ? { ...user, last_seen: currentTime }
-              : user
-          )
-        );
-      }, 15000); // Update every 15 seconds
-
-      // Return cleanup function
-      return () => {
-        clearInterval(interval);
-        if (channel) {
-          channel.unsubscribe();
-        }
-      };
 
     } catch (err) {
       console.error('Error fetching users:', err);
@@ -182,20 +102,10 @@ export function Users() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [touchLastSeen]);
 
   useEffect(() => {
-    let cleanup: (() => void) | undefined;
-    
-    const setup = async () => {
-      cleanup = await fetchUsers();
-    };
-    
-    setup();
-    
-    return () => {
-      if (cleanup) cleanup();
-    };
+    fetchUsers();
   }, [fetchUsers]);
 
   useEffect(() => {
@@ -444,30 +354,16 @@ export function Users() {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  };
+
 
   const formatLastSeen = (lastSeen: string | null) => {
     if (!lastSeen) return 'Never';
     
-    const lastSeenDate = new Date(lastSeen);
-    const now = new Date();
-    const diffInMinutes = Math.floor((now.getTime() - lastSeenDate.getTime()) / (1000 * 60));
-    const diffInHours = Math.floor(diffInMinutes / 60);
-    const diffInDays = Math.floor(diffInHours / 24);
-    
-    if (diffInMinutes < 1) return 'Currently Online';
-    if (diffInMinutes < 60) return `${diffInMinutes} minute${diffInMinutes === 1 ? '' : 's'} ago`;
-    if (diffInHours < 24) return `${diffInHours} hour${diffInHours === 1 ? '' : 's'} ago`;
-    if (diffInDays < 7) return `${diffInDays} day${diffInDays === 1 ? '' : 's'} ago`;
-    if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} week${Math.floor(diffInDays / 7) === 1 ? '' : 's'} ago`;
-    if (diffInDays < 365) return `${Math.floor(diffInDays / 30)} month${Math.floor(diffInDays / 30) === 1 ? '' : 's'} ago`;
-    return `${Math.floor(diffInDays / 365)} year${Math.floor(diffInDays / 365) === 1 ? '' : 's'} ago`;
+    try {
+      return formatDistanceToNow(new Date(lastSeen), { addSuffix: true });
+    } catch {
+      return 'Recently';
+    }
   };
 
   if (loading && !refreshing) {
@@ -671,34 +567,11 @@ export function Users() {
                 filteredUsers.map((user) => (
                   <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-10 w-10 relative">
-                          {user.avatar_url ? (
-                            <img 
-                              src={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/avatars/${user.avatar_url}`}
-                              alt={user.full_name || 'User'} 
-                              className="h-10 w-10 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                              <span className="text-blue-800 dark:text-blue-300 font-medium">
-                                {user.full_name ? user.full_name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
-                              </span>
-                            </div>
-                          )}
-                          <div 
-                            className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white dark:border-[#1E293B] ${
-                              onlineUsers.has(user.id) ? 'bg-green-500' : 'bg-red-500'
-                            }`}
-                            title={onlineUsers.has(user.id) ? 'Online' : 'Offline'}
-                          />
-                        </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">
-                            {user.full_name || 'Unnamed User'}
-                          </div>
-                        </div>
-                      </div>
+                      <UserChip 
+                        user={user}
+                        isOnline={isOnline(user.id)}
+                        size="md"
+                      />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900 dark:text-white">{user.email}</div>
@@ -712,7 +585,7 @@ export function Users() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       <div className="flex items-center">
                         <div className={`w-2 h-2 rounded-full mr-2 ${
-                          onlineUsers.has(user.id) ? 'bg-green-500' : 'bg-red-500'
+                          isOnline(user.id) ? 'bg-green-500' : 'bg-gray-400'
                         }`} />
                         <span>{formatLastSeen(user.last_seen)}</span>
                       </div>

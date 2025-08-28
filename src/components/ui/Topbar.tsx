@@ -17,8 +17,8 @@ import {
 import { useTheme } from './ThemeProvider';
 import { supabase } from '@/utils/supabase';
 import { toast } from 'sonner';
-import { useAuth } from '../../contexts/AuthContext';
-import { useUserRole } from '../../hooks/useUserRole';
+import { useAuth } from '../../contexts/AuthProvider';
+import { useUserRole } from '../../contexts/UserRoleContext';
 import { SearchOverlay } from '../SearchOverlay';
 import { Button } from './Button';
 

@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useEffect, useId } from 'react';
 import { supabase } from '../utils/supabase';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/AuthProvider';
+import { WorkOrderLink } from './shared/WorkOrderLink';
+import { PropertyLink } from './shared/PropertyLink';
 
 interface ImageUploadProps {
   jobId: string;
@@ -9,6 +11,7 @@ interface ImageUploadProps {
   onUploadComplete?: (filePath: string) => void;
   onError?: (error: string) => void;
   readOnly?: boolean;
+  required?: boolean;
   /**
    * Optional. When this value changes, the component will reset its local state and re-fetch from DB.
    * Use this to clear previews after a successful work order submission.
@@ -49,6 +52,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   onUploadComplete,
   onError,
   readOnly = false,
+  required = false,
   resetTrigger,
   onImageDelete
 }) => {
@@ -58,7 +62,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [selectedImage, setSelectedImage] = useState<UploadedFile | null>(null);
   const [filesToDelete, setFilesToDelete] = useState<Set<string>>(new Set());
-  const { user, loading: authLoading } = useAuth();
+  const { user, initializing: authLoading } = useAuth();
   const fileInputId = useId();
  
   // Add debug logging for auth state
@@ -442,6 +446,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
   return (
     <div className="w-full">
+      {required && (
+        <div className="mb-2">
+          <span className="text-red-500 text-sm">* Required</span>
+        </div>
+      )}
       {!readOnly && (
         <div
           className={`border-2 border-dashed rounded-lg p-6 text-center ${

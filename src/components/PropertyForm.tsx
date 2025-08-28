@@ -1,8 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, ArrowLeft, MapPin } from 'lucide-react';
+import { Building2, ArrowLeft, MapPin, ZoomIn, Upload } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { useLeafletMap } from '../hooks/useLeafletMap';
+import { PaintColorsEditor } from './properties/PaintColorsEditor';
+import { PaintScheme } from '../lib/types';
+import { Lightbox } from './Lightbox';
+import { UnitMapUpload } from './ui/UnitMapUpload';
+import { toast } from 'sonner';
+import { uploadPropertyUnitMap } from '../lib/utils/fileUpload';
 
 interface PropertyManagementGroup {
   id: string;
@@ -16,6 +22,10 @@ export function PropertyForm() {
   const [error, setError] = useState<string | null>(null);
   const [propertyGroups, setPropertyGroups] = useState<PropertyManagementGroup[]>([]);
   const [previewAddress, setPreviewAddress] = useState('');
+  const [paintSchemes, setPaintSchemes] = useState<PaintScheme[]>([]);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [pendingUnitMapFile, setPendingUnitMapFile] = useState<File | null>(null);
+  const [createdPropertyId, setCreatedPropertyId] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     property_name: '',
@@ -30,6 +40,8 @@ export function PropertyForm() {
     supplies_paint: '',
     unit_layout: '',
     property_management_group_id: '',
+    
+    // Paint Colors - will be handled by PaintColorsEditor
     
     // Contact Information
     community_manager_name: '',
@@ -53,13 +65,9 @@ export function PropertyForm() {
     extra_charges_notes: '',
     occupied_regular_paint_fees: '',
     quickbooks_number: '',
+    unit_map_file_path: '',
 
-    // Paint Colors
-    color_walls: '',
-    color_trim: '',
-    color_regular_unit: '',
-    color_kitchen_bathroom: '',
-    color_ceilings: '',
+    // Paint Colors - will be handled by PaintColorsEditor
     paint_location: '',
 
     // Compliance Information
@@ -123,6 +131,8 @@ export function PropertyForm() {
       const cleanedFormData = {
         ...formData,
         property_management_group_id: formData.property_management_group_id || null,
+        // Remove unit_map_file_path from form data as it's handled by the file upload system
+        unit_map_file_path: undefined,
         // Convert any other empty string UUID fields to null if needed
       };
 
@@ -133,6 +143,43 @@ export function PropertyForm() {
         .single();
 
       if (error) throw error;
+
+      // Store the created property ID for file upload
+      setCreatedPropertyId(data.id);
+
+      // Save paint schemes (including empty arrays)
+      try {
+        console.log('Saving paint schemes for new property:', data.id, paintSchemes);
+        const { savePaintSchemes } = await import('../lib/paintColors');
+        await savePaintSchemes(data.id, paintSchemes);
+        console.log('Paint schemes saved successfully for new property');
+      } catch (paintError) {
+        console.error('Error saving paint schemes:', paintError);
+        // Continue with navigation even if paint schemes fail to save
+      }
+
+      // If there's a pending unit map file, upload it now
+      if (pendingUnitMapFile) {
+        try {
+          const uploadResult = await uploadPropertyUnitMap(
+            pendingUnitMapFile, 
+            data.id, 
+            formData.property_name
+          );
+          
+          if (uploadResult.success) {
+            toast.success('Property created and unit map uploaded successfully!');
+          } else {
+            toast.warning('Property created but unit map upload failed: ' + uploadResult.error);
+          }
+        } catch (uploadError) {
+          console.error('Unit map upload error:', uploadError);
+          toast.warning('Property created but unit map upload failed');
+        }
+      } else {
+        toast.success('Property created successfully!');
+      }
+
       navigate(`/dashboard/properties/${data.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create property');
@@ -477,95 +524,117 @@ export function PropertyForm() {
             </div>
           </div>
 
+          {/* Property Unit Map */}
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Property Unit Map</h2>
+            
+            {createdPropertyId ? (
+              // Show the upload component after property is created
+              <UnitMapUpload
+                propertyId={createdPropertyId}
+                propertyName={formData.property_name}
+                currentFilePath={formData.unit_map_file_path}
+                onUploadSuccess={(filePath) => {
+                  setFormData(prev => ({ ...prev, unit_map_file_path: filePath }));
+                  toast.success('Unit map uploaded successfully');
+                }}
+                onUploadError={(error) => {
+                  toast.error(`Upload failed: ${error}`);
+                }}
+                onDeleteSuccess={() => {
+                  setFormData(prev => ({ ...prev, unit_map_file_path: '' }));
+                  toast.success('Unit map deleted successfully');
+                }}
+                onDeleteError={(error) => {
+                  toast.error(`Delete failed: ${error}`);
+                }}
+                disabled={loading}
+              />
+            ) : (
+              // Show file selection before property creation
+              <div className="space-y-4">
+                <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center">
+                  <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      Select Unit Map Image
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      PNG, JPG, GIF up to 10MB
+                    </p>
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setPendingUnitMapFile(e.target.files[0]);
+                        toast.success('Unit map selected. It will be uploaded after the property is created.');
+                      }
+                    }}
+                    className="mt-4 block w-full text-sm text-gray-500 dark:text-gray-400
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded-full file:border-0
+                      file:text-sm file:font-semibold
+                      file:bg-blue-50 file:text-blue-700
+                      hover:file:bg-blue-100
+                      dark:file:bg-blue-900/20 dark:file:text-blue-300
+                      dark:hover:file:bg-blue-900/30"
+                  />
+                </div>
+                {pendingUnitMapFile && (
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                      <strong>Selected:</strong> {pendingUnitMapFile.name}
+                    </p>
+                    <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                      This file will be uploaded after the property is created.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Manage Billing Details */}
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Billing Management</h2>
+              <div className="text-gray-600 dark:text-gray-400 text-sm">
+                Billing details can be configured after the property is created.
+              </div>
+            </div>
+            <p className="text-gray-600 dark:text-gray-400 text-sm">
+              Property billing details are managed on a dedicated page. Click the Manage button to view and edit.
+            </p>
+          </div>
+
           {/* Paint Colors */}
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Paint Colors</h2>
             
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-              <div>
-                <label htmlFor="color_walls" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Walls
-                </label>
-                <input
-                  type="text"
-                  id="color_walls"
-                  name="color_walls"
-                  value={formData.color_walls}
-                  onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="color_trim" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Trim
-                </label>
-                <input
-                  type="text"
-                  id="color_trim"
-                  name="color_trim"
-                  value={formData.color_trim}
-                  onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="color_regular_unit" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Regular Unit
-                </label>
-                <input
-                  type="text"
-                  id="color_regular_unit"
-                  name="color_regular_unit"
-                  value={formData.color_regular_unit}
-                  onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="color_kitchen_bathroom" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Kitchen/Bathroom
-                </label>
-                <input
-                  type="text"
-                  id="color_kitchen_bathroom"
-                  name="color_kitchen_bathroom"
-                  value={formData.color_kitchen_bathroom}
-                  onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="color_ceilings" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Ceilings
-                </label>
-                <input
-                  type="text"
-                  id="color_ceilings"
-                  name="color_ceilings"
-                  value={formData.color_ceilings}
-                  onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="paint_location" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Paint Location
-                </label>
-                <input
-                  type="text"
-                  id="paint_location"
-                  name="paint_location"
-                  value={formData.paint_location}
-                  onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+            {/* Paint Location Field */}
+            <div className="mb-6">
+              <label htmlFor="paint_location" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                Paint Storage Location
+              </label>
+              <input
+                type="text"
+                id="paint_location"
+                name="paint_location"
+                value={formData.paint_location}
+                onChange={handleChange}
+                className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g., Maintenance office, Storage room, Garage, etc."
+              />
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Specify where paint is physically stored on the premises (e.g., Maintenance office, Storage room, Garage, etc.)
+              </p>
             </div>
+            
+            <PaintColorsEditor
+              onChange={setPaintSchemes}
+            />
           </div>
 
           {/* Compliance Information */}
@@ -858,6 +927,14 @@ export function PropertyForm() {
           </div>
         </form>
       </div>
+      
+      {/* Lightbox for Unit Map Preview */}
+      <Lightbox
+        isOpen={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+        imageUrl={formData.unit_map_file_path}
+        imageAlt="Unit Map Preview"
+      />
     </div>
   );
 }

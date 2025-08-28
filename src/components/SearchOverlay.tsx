@@ -21,12 +21,14 @@ import { Link } from 'react-router-dom';
 import { supabase } from '@/utils/supabase';
 import { format, parseISO, subDays, isAfter } from 'date-fns';
 import { debounce } from '../lib/utils/debounce';
+import { WorkOrderLink } from './shared/WorkOrderLink';
+import { PropertyLink } from './shared/PropertyLink';
 
 interface SearchResult {
   id: string;
   type: 'job' | 'property' | 'file' | 'user';
-  title: string;
-  subtitle: string;
+  title: string | React.ReactNode;
+  subtitle: string | React.ReactNode;
   description?: string;
   date?: string;
   tags?: string[];
@@ -208,12 +210,23 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             console.error('Error searching jobs:', error);
           } else if (jobs) {
             jobs.forEach(job => {
-              const workOrderNum = formatWorkOrderNumber(job.work_order_num);
               searchResults.push({
                 id: job.id,
                 type: 'job',
-                title: `${workOrderNum} - Unit ${job.unit_number}`,
-                subtitle: job.property?.property_name || 'Unknown Property',
+                title: (
+                  <span>
+                    <WorkOrderLink 
+                      jobId={job.id}
+                      workOrderNum={job.work_order_num}
+                    /> - Unit {job.unit_number}
+                  </span>
+                ),
+                subtitle: job.property ? (
+                  <PropertyLink 
+                    propertyId={job.property.id}
+                    propertyName={job.property.property_name}
+                  />
+                ) : 'Unknown Property',
                 description: job.description || '',
                 date: format(parseISO(job.created_at), 'MMM d, yyyy'),
                 tags: [job.job_phase?.job_phase_label || 'Unknown Phase', job.job_type?.job_type_label || 'Unknown Type'],
@@ -256,7 +269,12 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               searchResults.push({
                 id: property.id,
                 type: 'property',
-                title: property.property_name,
+                title: (
+                  <PropertyLink 
+                    propertyId={property.id}
+                    propertyName={property.property_name}
+                  />
+                ),
                 subtitle: address,
                 description: property.property_management_group?.company_name || 'No Management Group',
                 date: property.created_at ? format(parseISO(property.created_at), 'MMM d, yyyy') : '',
@@ -279,9 +297,11 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               size,
               created_at,
               property:properties (
+                id,
                 property_name
               ),
               job:jobs (
+                id,
                 work_order_num,
                 unit_number
               )
@@ -299,11 +319,25 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             console.error('Error searching files:', error);
           } else if (files) {
             files.forEach(file => {
-              let subtitle = 'General File';
+              let subtitle: React.ReactNode = 'General File';
               if (file.property) {
-                subtitle = `Property: ${file.property.property_name}`;
+                subtitle = (
+                  <span>
+                    Property: <PropertyLink 
+                      propertyId={file.property.id}
+                      propertyName={file.property.property_name}
+                    />
+                  </span>
+                );
               } else if (file.job) {
-                subtitle = `Job: ${formatWorkOrderNumber(file.job.work_order_num)} - Unit ${file.job.unit_number}`;
+                subtitle = (
+                  <span>
+                    Job: <WorkOrderLink 
+                      jobId={file.job.id}
+                      workOrderNum={file.job.work_order_num}
+                    /> - Unit {file.job.unit_number}
+                  </span>
+                );
               }
 
               searchResults.push({

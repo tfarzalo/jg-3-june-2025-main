@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, X, DollarSign, Save, Trash2, ArrowLeft } from 'lucide-react';
+import { Plus, X, DollarSign, Save, Trash2, ArrowLeft, GripVertical } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../utils/supabase';
 
@@ -67,6 +67,10 @@ export function BillingDetailsForm() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryDescription, setNewCategoryDescription] = useState('');
   const [propertyName, setPropertyName] = useState<string>('');
+
+  // Drag and drop state
+  const [draggedCategoryId, setDraggedCategoryId] = useState<string | null>(null);
+  const [dragOverCategoryId, setDragOverCategoryId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!propertyId) {
@@ -587,6 +591,116 @@ export function BillingDetailsForm() {
     setHasChanges(true);
   };
 
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, categoryId: string) => {
+    setDraggedCategoryId(categoryId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, categoryId: string) => {
+    e.preventDefault();
+    if (draggedCategoryId && draggedCategoryId !== categoryId) {
+      setDragOverCategoryId(categoryId);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverCategoryId(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetCategoryId: string) => {
+    e.preventDefault();
+    
+    if (!draggedCategoryId || draggedCategoryId === targetCategoryId) {
+      setDraggedCategoryId(null);
+      setDragOverCategoryId(null);
+      return;
+    }
+
+    try {
+      // Get current categories and their sort orders
+      const currentCategories = [...propertyBillingCategories];
+      console.log('Current categories before reordering:', currentCategories);
+      
+      const draggedCategory = currentCategories.find(cat => cat.id === draggedCategoryId);
+      const targetCategory = currentCategories.find(cat => cat.id === targetCategoryId);
+      
+      console.log('Dragged category:', draggedCategory);
+      console.log('Target category:', targetCategory);
+      
+      if (!draggedCategory || !targetCategory) {
+        console.error('Could not find dragged or target category');
+        return;
+      }
+
+      // Find indices
+      const draggedIndex = currentCategories.findIndex(cat => cat.id === draggedCategoryId);
+      const targetIndex = currentCategories.findIndex(cat => cat.id === targetCategoryId);
+
+      // Remove dragged category from its current position
+      currentCategories.splice(draggedIndex, 1);
+
+      // Insert dragged category at target position
+      currentCategories.splice(targetIndex, 0, draggedCategory);
+
+      // Update sort orders
+      const updatedCategories = currentCategories.map((cat, index) => ({
+        ...cat,
+        sort_order: index + 1
+      }));
+
+      // Update state immediately for responsive UI
+      setPropertyBillingCategories(updatedCategories);
+      setHasChanges(true);
+
+      // Update database - include all required fields
+      const updates = updatedCategories.map(cat => ({
+        id: cat.id,
+        property_id: propertyId,
+        name: cat.name,
+        description: cat.description,
+        sort_order: cat.sort_order
+      }));
+
+      console.log('Updated categories array:', updatedCategories);
+      console.log('Updates to send to database:', updates);
+
+      const { data: updateResult, error: updateError } = await supabase
+        .from('billing_categories')
+        .upsert(updates, { onConflict: 'id' });
+
+      if (updateError) {
+        console.error('Error updating category order:', updateError);
+        console.error('Error details:', {
+          message: updateError.message,
+          details: updateError.details,
+          hint: updateError.hint,
+          code: updateError.code
+        });
+        toast.error(`Failed to update category order: ${updateError.message}`);
+        // Revert state on error
+        await fetchPropertyBillingData();
+      } else {
+        console.log('Successfully updated billing categories:', updateResult);
+        toast.success('Category order updated successfully');
+      }
+
+    } catch (err) {
+      console.error('Error reordering categories:', err);
+      toast.error('Failed to update category order');
+      // Revert state on error
+      await fetchPropertyBillingData();
+    } finally {
+      setDraggedCategoryId(null);
+      setDragOverCategoryId(null);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedCategoryId(null);
+    setDragOverCategoryId(null);
+  };
+
   return (
     <div className="p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -650,19 +764,52 @@ export function BillingDetailsForm() {
           </div>
         )}
 
+        {/* Drag and Drop Instructions */}
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+          <div className="flex items-center space-x-3">
+            <GripVertical className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            <div>
+              <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                Drag and Drop Categories
+              </p>
+              <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                Use the grip handle to drag categories and rearrange their order. The order will be saved automatically.
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
           <div className="space-y-4">
             {propertyBillingCategories.map(pbc => {
               const propertyBillingCategoryId = pbc.id;
 
               return (
-                <div key={propertyBillingCategoryId} className="bg-gray-50 dark:bg-[#0F172A] rounded-lg p-4">
+                <div 
+                  key={propertyBillingCategoryId} 
+                  className={`bg-gray-50 dark:bg-[#0F172A] rounded-lg p-4 transition-all duration-200 ${
+                    draggedCategoryId === propertyBillingCategoryId ? 'opacity-50 scale-95' : ''
+                  } ${
+                    dragOverCategoryId === propertyBillingCategoryId ? 'ring-2 ring-blue-500 ring-opacity-50' : ''
+                  }`}
+                  draggable={true}
+                  onDragStart={(e) => handleDragStart(e, propertyBillingCategoryId)}
+                  onDragOver={(e) => handleDragOver(e, propertyBillingCategoryId)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, propertyBillingCategoryId)}
+                  onDragEnd={handleDragEnd}
+                >
                   <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="text-gray-900 dark:text-white font-medium">{pbc.name}</h3>
-                      {pbc.description && (
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{pbc.description}</p>
-                      )}
+                    <div className="flex items-center space-x-3">
+                      <div className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <GripVertical className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-gray-900 dark:text-white font-medium">{pbc.name}</h3>
+                        {pbc.description && (
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{pbc.description}</p>
+                        )}
+                      </div>
                     </div>
                     <button
                       onClick={() => setShowDeleteConfirm(propertyBillingCategoryId)}

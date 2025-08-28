@@ -1,47 +1,62 @@
-# 🧪 Email Approval System Test Plan
+# Test Approval System
 
-## ✅ **COMPLETED IMPLEMENTATION**
+## Overview
+This document outlines the testing approach for the approval system and related features.
 
-### **Step 1: Database Table ✅**
-- `approval_tokens` table created by user
-- Contains: job_id, token, approval_type, extra_charges_data, approver_email, etc.
+## Phase Counts Implementation Testing
 
-### **Step 2: Public Approval Page ✅**
-- Route: `/approval/:token` 
-- File: `src/pages/ApprovalPage.tsx`
-- Features:
-  - Token validation and expiration check
-  - Professional approval interface
-  - Job details display
-  - One-click approval button
-  - Success confirmation
+### What Was Implemented
+1. **New Hook**: `usePropertyPhaseCounts` in `src/hooks/usePropertyPhaseCounts.ts`
+2. **New Component**: `StatCard` in `src/components/ui/StatCard.tsx`
+3. **Updated PropertyDetails**: Replaced old Quick Stats with phase-based job counts
 
-### **Step 3: Enhanced ApprovalEmailModal ✅**
-- File: `src/components/ApprovalEmailModal.tsx`
-- Features:
-  - Automatic token generation
-  - Approval button HTML generation
-  - Integration with email templates
-  - Secure approval URLs
-  - 7-day expiration
+### Test Cases
 
-### **Step 4: Notification Integration ✅**
-- Enhanced: `src/components/NotificationDropdown.tsx`
-- Enhanced: `src/pages/ApprovalPage.tsx`
-- Features:
-  - Creates notifications for admin/management users
-  - New "approval" notification type with green check icon
-  - Real-time notification system
+#### 1. Basic Functionality
+- [ ] Navigate to a property details page
+- [ ] Verify that the Quick Stats section shows 4 cards:
+  - Job Requests
+  - Work Orders  
+  - Completed Jobs
+  - Cancelled Jobs
+- [ ] Verify each card shows the correct count for jobs in that phase
+- [ ] Verify colors match the phase colors from `job_phases` table
 
-### **Step 5: Phase Update Logic ✅**
-- File: `src/pages/ApprovalPage.tsx`
-- Features:
-  - Updates job status to "Work Order" 
-  - Creates activity log entries
-  - Marks approval token as used
-  - Comprehensive error handling
+#### 2. Phase Label Matching
+- [ ] Verify "Job Request" phase is matched (case-insensitive)
+- [ ] Verify "Work Order" phase is matched (case-insensitive)
+- [ ] Verify "Completed" phase is matched (case-insensitive)
+- [ ] Verify "Cancelled/Canceled" phases are matched (handles both spellings)
 
-## 🚀 **TESTING CHECKLIST**
+#### 3. Real-time Updates
+- [ ] Create a new job for the property
+- [ ] Verify Job Requests count increases
+- [ ] Change job phase to "Work Order"
+- [ ] Verify Job Requests count decreases and Work Orders count increases
+- [ ] Verify changes happen in real-time without page refresh
+
+#### 4. Edge Cases
+- [ ] Property with no jobs shows all counts as 0
+- [ ] Property with jobs in only some phases shows correct counts
+- [ ] Missing phase labels fall back to neutral colors
+- [ ] Loading state shows "—" placeholder
+
+#### 5. Color Integration
+- [ ] Verify phase colors are used consistently
+- [ ] Verify text contrast is readable on all background colors
+- [ ] Verify colors match the app's existing phase color scheme
+
+### Database Requirements
+- `jobs` table must have `property_id` and `current_phase_id` columns
+- `job_phases` table must have `job_phase_label`, `color_dark_mode`, and `color_light_mode` columns
+- Phase labels must include: "Job Request", "Work Order", "Completed", "Cancelled"
+
+### Files Modified
+- `src/hooks/usePropertyPhaseCounts.ts` - New hook for fetching phase counts
+- `src/components/ui/StatCard.tsx` - New component for displaying stats
+- `src/components/PropertyDetails.tsx` - Updated to use new hook and component
+
+## Original Approval System Tests
 
 ### **Test 1: Token Generation**
 - [ ] Navigate to a job with extra charges

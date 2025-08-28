@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/utils/supabase';
+import { useAuth } from '@/contexts/AuthProvider';
 
 interface UseUserRoleResult {
   role: string | null;
@@ -15,6 +16,7 @@ interface UseUserRoleResult {
  * Hook to get and check user roles and permissions
  */
 export function useUserRole(): UseUserRoleResult {
+  const { session } = useAuth();
   const [state, setState] = useState({
     role: null as string | null,
     permissions: [] as {resource: string, action: string}[],
@@ -24,10 +26,6 @@ export function useUserRole(): UseUserRoleResult {
 
   const fetchUserRole = useCallback(async () => {
     try {
-      // First check if we have a session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) throw sessionError;
       if (!session) {
         setState(prev => ({
           ...prev,
@@ -64,7 +62,7 @@ export function useUserRole(): UseUserRoleResult {
         loading: false
       }));
     }
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     let mounted = true;
@@ -77,26 +75,8 @@ export function useUserRole(): UseUserRoleResult {
 
     initializeRole();
 
-    // Subscribe to auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (mounted) {
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          await fetchUserRole();
-        } else if (event === 'SIGNED_OUT') {
-          setState(prev => ({
-            ...prev,
-            role: null,
-            permissions: [],
-            error: null,
-            loading: false
-          }));
-        }
-      }
-    });
-
     return () => {
       mounted = false;
-      subscription.unsubscribe();
     };
   }, [fetchUserRole]);
 
