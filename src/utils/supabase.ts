@@ -1,25 +1,32 @@
 import { createClient } from '@supabase/supabase-js';
+import { config, validateEnvironment, isSupabaseConfigured } from '../config/environment';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Validate environment variables
+validateEnvironment();
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
+// Create client with proper error handling
+export const supabase = createClient(
+  config.supabase.url || 'https://placeholder.supabase.co',
+  config.supabase.anonKey || 'placeholder-key',
+  {
+    auth: {
+      persistSession: config.isBrowser,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storage: config.isBrowser ? window.localStorage : undefined,
+    },
+    global: {
+      fetch: (url, options) => fetch(url, {
+        ...(options ?? {})
+      }),
+    },
+  }
+);
+
+// Add error handling for missing configuration
+if (!isSupabaseConfigured()) {
+  console.warn('Supabase is not properly configured. Authentication and database features may not work.');
 }
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    storage: window.localStorage, // Use native localStorage
-  },
-  global: {
-    fetch: (url, options) => fetch(url, {
-      ...(options ?? {})
-    }),
-  },
-});
 
 // Export types
 export type Profile = {

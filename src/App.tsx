@@ -15,6 +15,8 @@ import { UserRoleProvider } from './contexts/UserRoleContext';
 import { SubcontractorPreviewProvider } from './contexts/SubcontractorPreviewContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { MainLayout } from './components/ui/MainLayout';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { DebugInfo } from './components/DebugInfo';
 
 const Auth = lazy(() => import('./components/Auth'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -31,9 +33,10 @@ const LoadingSpinner = () => (
 
 // Root layout
 const RootLayout = () => (
-  <>
+  <ErrorBoundary>
+    <DebugInfo />
     <Outlet />
-  </>
+  </ErrorBoundary>
 );
 
 // Auth layout wrapper

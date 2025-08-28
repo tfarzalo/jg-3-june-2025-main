@@ -5,6 +5,7 @@ import { useUserRole } from '../../contexts/UserRoleContext';
 import { usePresence } from '../../hooks/usePresence';
 import { useLastSeen } from '../../hooks/useLastSeen';
 import { UserLoginAlertManager } from '../UserLoginAlertManager';
+import { HealthCheck } from '../HealthCheck';
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -33,6 +34,9 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#0F172A]">
+      {/* Health Check */}
+      <HealthCheck />
+      
       {/* User Login Alerts */}
       <UserLoginAlertManager />
       
