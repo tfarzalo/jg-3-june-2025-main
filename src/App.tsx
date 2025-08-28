@@ -17,6 +17,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { MainLayout } from './components/ui/MainLayout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { DebugInfo } from './components/DebugInfo';
+import { ProductionHealthCheck } from './components/ProductionHealthCheck';
 
 const Auth = lazy(() => import('./components/Auth'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -34,7 +35,7 @@ const LoadingSpinner = () => (
 // Root layout
 const RootLayout = () => (
   <ErrorBoundary>
-    <DebugInfo />
+    {import.meta.env.PROD ? <ProductionHealthCheck /> : <DebugInfo />}
     <Outlet />
   </ErrorBoundary>
 );

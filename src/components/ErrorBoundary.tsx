@@ -23,10 +23,24 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Error caught by boundary:', error, errorInfo);
+    // Always log errors, even in production (for Netlify debugging)
+    console.error('🚨 ErrorBoundary caught error:', error.name, error.message);
+    console.error('Stack trace:', error.stack);
+    console.error('Component stack:', errorInfo.componentStack);
+    
+    // Store additional debugging info
     this.setState({
       error,
       errorInfo
+    });
+    
+    // Report to console with environment info for debugging
+    console.error('Environment info:', {
+      NODE_ENV: import.meta.env.NODE_ENV,
+      MODE: import.meta.env.MODE,
+      PROD: import.meta.env.PROD,
+      VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL ? 'SET' : 'MISSING',
+      VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY ? 'SET' : 'MISSING'
     });
   }
 
