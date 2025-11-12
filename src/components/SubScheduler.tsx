@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Calendar, 
   Users, 
@@ -114,7 +114,7 @@ export default function SubScheduler() {
   // Listen for avatar updates to refresh subcontractor avatars
   useEffect(() => {
     const cleanup = setupAvatarRefreshListener((event) => {
-      const { userId, avatarUrl } = event.detail;
+      const { userId } = event.detail;
       
       // Refresh subcontractors if the updated avatar belongs to one of them
       if (subcontractors.some(sub => sub.id === userId)) {
@@ -377,34 +377,35 @@ export default function SubScheduler() {
   }
 
   return (
-    <div className="p-6 bg-gray-100 dark:bg-[#0F172A] h-screen overflow-hidden">
-      <div className="flex items-center justify-between mb-8">
+    <div className="p-3 sm:p-6 bg-gray-100 dark:bg-[#0F172A] h-screen overflow-hidden">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-8 gap-3">
         <div className="flex items-center space-x-3">
-          <Calendar className="h-8 w-8 text-gray-600 dark:text-gray-400" />
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Sub Scheduler</h1>
+          <Calendar className="h-6 w-6 sm:h-8 sm:w-8 text-gray-600 dark:text-gray-400" />
+          <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white">Sub Scheduler</h1>
         </div>
-        <div className="flex space-x-3">
+        <div className="flex space-x-2 sm:space-x-3 w-full sm:w-auto">
           <button
             onClick={() => setRefreshKey(prev => prev + 1)}
-            className="inline-flex items-center px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm font-medium rounded-lg transition-colors hover:bg-gray-300 dark:hover:bg-gray-600"
+            className="inline-flex items-center justify-center px-3 sm:px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs sm:text-sm font-medium rounded-lg transition-colors hover:bg-gray-300 dark:hover:bg-gray-600 flex-1 sm:flex-initial"
             disabled={saving}
           >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
+            <RefreshCw className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Refresh</span>
           </button>
           <button
             onClick={handleSaveAssignments}
-            className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+            className="inline-flex items-center justify-center px-3 sm:px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs sm:text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex-1 sm:flex-initial"
             disabled={!hasChanges || saving}
           >
-            <Save className="h-4 w-4 mr-2" />
-            {saving ? 'Saving...' : 'Confirm Schedule'}
+            <Save className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">{saving ? 'Saving...' : 'Confirm Schedule'}</span>
+            <span className="sm:hidden">{saving ? 'Saving...' : 'Save'}</span>
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="mb-6 bg-red-50 dark:bg-red-900/50 border border-red-200 dark:border-red-500/50 text-red-700 dark:text-red-200 px-4 py-3 rounded-lg">
+        <div className="mb-3 sm:mb-6 bg-red-50 dark:bg-red-900/50 border border-red-200 dark:border-red-500/50 text-red-700 dark:text-red-200 px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-sm">
           {error}
         </div>
       )}
@@ -434,14 +435,14 @@ export default function SubScheduler() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-280px)]">
-          {/* Unassigned Jobs Column - Reduced width */}
-          <div className="lg:w-1/3 bg-white dark:bg-[#1E293B] rounded-lg shadow-lg overflow-hidden">
-            <div className="p-4 border-b border-gray-200 dark:border-[#2D3B4E] bg-gray-50 dark:bg-[#0F172A]">
+        <div className="flex flex-col gap-3 sm:gap-6 h-[calc(100vh-180px)] sm:h-[calc(100vh-280px)]">
+          {/* Unassigned Jobs Column */}
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow-lg overflow-hidden flex-shrink-0">
+            <div className="p-3 sm:p-4 border-b border-gray-200 dark:border-[#2D3B4E] bg-gray-50 dark:bg-[#0F172A]">
               {/* First line: Unassigned Jobs heading and count */}
-              <div className="flex items-center justify-center mb-3">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
-                  <Clock className="h-5 w-5 mr-2 text-blue-500" />
+              <div className="flex items-center justify-center mb-2 sm:mb-3">
+                <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+                  <Clock className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-blue-500" />
                   Unassigned Jobs
                   <span className="ml-2 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 text-xs rounded-full">
                     {unassignedJobs.length}
@@ -453,19 +454,20 @@ export default function SubScheduler() {
               <div className="flex items-center justify-center space-x-2 w-full">
                 <button
                   onClick={goToPreviousDay}
-                  className="p-1.5 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors rounded-md hover:bg-gray-200 dark:hover:bg-[#1E293B]"
+                  className="p-1.5 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors rounded-md hover:bg-gray-200 dark:hover:bg-[#1E293B] flex-shrink-0"
+                  aria-label="Previous day"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
                 
-                <div className="relative">
+                <div className="relative flex-1 min-w-0">
                   <button
                     onClick={() => setShowDatePicker(!showDatePicker)}
-                    className="flex items-center px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors text-sm whitespace-nowrap"
+                    className="flex items-center justify-center px-2 sm:px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors text-xs sm:text-sm w-full"
                   >
-                    <CalendarDays className="h-4 w-4 mr-1.5" />
-                    <span className="font-medium">{formatSelectedDate()}</span>
-                    <ChevronRight className="h-3 w-3 ml-1.5" />
+                    <CalendarDays className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-1.5 flex-shrink-0" />
+                    <span className="font-medium truncate">{formatSelectedDate()}</span>
+                    <ChevronRight className="h-3 w-3 ml-1 sm:ml-1.5 flex-shrink-0" />
                   </button>
                   
                   {showDatePicker && (
@@ -506,7 +508,8 @@ export default function SubScheduler() {
                 
                 <button
                   onClick={goToNextDay}
-                  className="p-1.5 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors rounded-md hover:bg-gray-200 dark:hover:bg-[#1E293B]"
+                  className="p-1.5 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors rounded-md hover:bg-gray-200 dark:hover:bg-[#1E293B] flex-shrink-0"
+                  aria-label="Next day"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
@@ -514,41 +517,41 @@ export default function SubScheduler() {
             </div>
             
             <div 
-              className="p-4 h-[calc(100vh-360px)] overflow-y-auto"
+              className="p-3 sm:p-4 h-[250px] sm:h-[300px] overflow-y-auto"
               onDragOver={handleDragOver}
             >
               {unassignedJobs.length === 0 ? (
-                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                  <CheckSquare className="h-12 w-12 mx-auto mb-2 text-green-500" />
-                  <p>All jobs have been assigned</p>
+                <div className="text-center py-6 sm:py-8 text-gray-500 dark:text-gray-400">
+                  <CheckSquare className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-2 text-green-500" />
+                  <p className="text-sm">All jobs have been assigned</p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2 sm:space-y-3">
                   {unassignedJobs.map(job => (
                     <div 
                       key={job.id}
-                      className="bg-gray-50 dark:bg-[#0F172A] rounded-lg p-3 border-l-4 cursor-grab"
+                      className="bg-gray-50 dark:bg-[#0F172A] rounded-lg p-2 sm:p-3 border-l-4 cursor-grab active:cursor-grabbing"
                       style={{ borderLeftColor: job.job_phase?.color_dark_mode || '#4B5563' }}
                       draggable
                       onDragStart={() => handleDragStart(job)}
                     >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h4 className="text-sm font-medium text-gray-900 dark:text-white">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <h4 className="text-xs sm:text-sm font-medium text-gray-900 dark:text-white">
                             {formatWorkOrderNumber(job.work_order_num)}
                           </h4>
-                          <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                          <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 truncate">
                             {job.property.property_name} - Unit {job.unit_number}
                           </p>
                           <div className="flex items-center mt-1">
-                            <Clock className="h-3 w-3 text-gray-500 dark:text-gray-400 mr-1" />
+                            <Clock className="h-3 w-3 text-gray-500 dark:text-gray-400 mr-1 flex-shrink-0" />
                             <p className="text-xs text-gray-500 dark:text-gray-500">
                               {formatDate(job.scheduled_date)}
                             </p>
                           </div>
                         </div>
                         <span 
-                          className="text-xs px-2 py-0.5 rounded-full"
+                          className="text-xs px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0"
                           style={{ 
                             backgroundColor: `${job.job_phase?.color_dark_mode || '#4B5563'}20`,
                             color: job.job_phase?.color_dark_mode || '#4B5563'
@@ -564,8 +567,8 @@ export default function SubScheduler() {
             </div>
           </div>
           
-          {/* Subcontractors Grid - Increased width */}
-          <div className="lg:w-2/3 overflow-y-auto">
+          {/* Subcontractors Grid */}
+          <div className="flex-1 overflow-y-auto">
             {subcontractors.length === 0 ? (
               <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow-lg p-8 text-center">
                 <Users className="h-12 w-12 mx-auto mb-4 text-gray-400 dark:text-gray-600" />
@@ -577,7 +580,7 @@ export default function SubScheduler() {
             ) : (
               <div>
                 {/* Available Subcontractors */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
                   {subcontractors
                     .filter(subcontractor => isAvailableOnDate(subcontractor.working_days, selectedDate))
                     .map(subcontractor => {
@@ -586,27 +589,27 @@ export default function SubScheduler() {
                       return (
                         <div 
                           key={subcontractor.id}
-                          className="bg-green-50 dark:bg-green-900/20 rounded-lg shadow-lg overflow-hidden h-[180px] flex flex-col border border-green-200 dark:border-green-700"
+                          className="bg-green-50 dark:bg-green-900/20 rounded-lg shadow-lg overflow-hidden min-h-[160px] sm:h-[180px] flex flex-col border border-green-200 dark:border-green-700"
                         >
-                          <div className="p-3 border-b border-green-200 dark:border-green-700 bg-green-100 dark:bg-green-800/30">
+                          <div className="p-2 sm:p-3 border-b border-green-200 dark:border-green-700 bg-green-100 dark:bg-green-800/30">
                             <div className="flex items-center">
                               <div className="flex-shrink-0 mr-2">
                                 {subcontractor.avatar_url ? (
                                   <img 
                                     src={getAvatarUrl(subcontractor.avatar_url)} 
                                     alt={subcontractor.full_name}
-                                    className="h-8 w-8 rounded-full object-cover"
+                                    className="h-7 w-7 sm:h-8 sm:w-8 rounded-full object-cover"
                                   />
                                 ) : (
-                                  <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                                    <span className="text-purple-800 dark:text-purple-300 font-medium">
+                                  <div className="h-7 w-7 sm:h-8 sm:w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                                    <span className="text-xs sm:text-sm text-purple-800 dark:text-purple-300 font-medium">
                                       {subcontractor.full_name.charAt(0)}
                                     </span>
                                   </div>
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <h2 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                                <h2 className="text-xs sm:text-sm font-semibold text-gray-900 dark:text-white truncate">
                                   {subcontractor.full_name}
                                 </h2>
                                 <p className="text-xs text-green-600 dark:text-green-400 truncate">
@@ -623,20 +626,20 @@ export default function SubScheduler() {
                             onDrop={() => handleDrop(subcontractor.id)}
                           >
                             {assignedJobs.length === 0 ? (
-                              <div className="text-center py-3">
+                              <div className="text-center py-2 sm:py-3">
                                 <div className="text-green-500 dark:text-green-400 mb-1">
-                                  <ArrowRight className="h-5 w-5 mx-auto" />
+                                  <ArrowRight className="h-4 w-4 sm:h-5 sm:w-5 mx-auto" />
                                 </div>
                                 <p className="text-xs text-green-600 dark:text-green-500 font-medium">Drop jobs here</p>
                               </div>
                             ) : (
-                              <div className="space-y-2">
+                              <div className="space-y-1.5 sm:space-y-2">
                                 {assignedJobs.map(job => (
                                   <div 
                                     key={job.id}
-                                    className="bg-white dark:bg-gray-800 rounded-lg p-2 border border-green-200 dark:border-green-600"
+                                    className="bg-white dark:bg-gray-800 rounded-lg p-1.5 sm:p-2 border border-green-200 dark:border-green-600"
                                   >
-                                    <div className="flex justify-between items-start">
+                                    <div className="flex justify-between items-start gap-1">
                                       <div className="min-w-0 flex-1">
                                         <h4 className="text-xs font-medium text-gray-900 dark:text-white truncate">
                                           {formatWorkOrderNumber(job.work_order_num)}
@@ -647,7 +650,8 @@ export default function SubScheduler() {
                                       </div>
                                       <button
                                         onClick={() => handleRemoveAssignment(job.id)}
-                                        className="ml-1 p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                                        className="ml-1 p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors flex-shrink-0"
+                                        aria-label="Remove assignment"
                                       >
                                         <X className="h-3 w-3" />
                                       </button>
@@ -665,21 +669,21 @@ export default function SubScheduler() {
                 {/* Unavailable Subcontractors */}
                 {subcontractors.some(subcontractor => !isAvailableOnDate(subcontractor.working_days, selectedDate)) && (
                   <>
-                    <div className="border-t border-gray-200 dark:border-gray-700 my-8">
-                      <div className="text-center">
-                        <span className="bg-gray-100 dark:bg-gray-800 px-4 py-2 text-sm text-gray-500 dark:text-gray-400 rounded-full">
+                    <div className="border-t border-gray-200 dark:border-gray-700 my-6 sm:my-8">
+                      <div className="text-center -mt-3">
+                        <span className="bg-gray-100 dark:bg-gray-800 px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm text-gray-500 dark:text-gray-400 rounded-full">
                           Unavailable Subcontractors
                         </span>
                       </div>
                     </div>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                       {subcontractors
                         .filter(subcontractor => !isAvailableOnDate(subcontractor.working_days, selectedDate))
                         .map(subcontractor => (
                                                      <div 
                              key={subcontractor.id}
-                             className="bg-red-50 dark:bg-red-900/20 rounded-lg shadow-lg overflow-hidden h-[100px] flex flex-col border border-red-200 dark:border-red-700 opacity-60"
+                             className="bg-red-50 dark:bg-red-900/20 rounded-lg shadow-lg overflow-hidden min-h-[80px] sm:h-[100px] flex flex-col border border-red-200 dark:border-red-700 opacity-60"
                            >
                              {/* Subcontractor Header Only */}
                              <div className="p-2 bg-red-100 dark:bg-red-800/30">
@@ -689,18 +693,18 @@ export default function SubScheduler() {
                                     <img 
                                       src={getAvatarUrl(subcontractor.avatar_url)} 
                                       alt={subcontractor.full_name}
-                                      className="h-8 w-8 rounded-full object-cover"
+                                      className="h-7 w-7 sm:h-8 sm:w-8 rounded-full object-cover"
                                     />
                                   ) : (
-                                    <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                                      <span className="text-purple-800 dark:text-purple-300 font-medium">
+                                    <div className="h-7 w-7 sm:h-8 sm:w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                                      <span className="text-xs sm:text-sm text-purple-800 dark:text-purple-300 font-medium">
                                         {subcontractor.full_name.charAt(0)}
                                       </span>
                                     </div>
                                   )}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <h2 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                                  <h2 className="text-xs sm:text-sm font-semibold text-gray-900 dark:text-white truncate">
                                     {subcontractor.full_name}
                                   </h2>
                                   <p className="text-xs text-red-600 dark:text-red-400 truncate">
