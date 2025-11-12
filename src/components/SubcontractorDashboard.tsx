@@ -557,9 +557,9 @@ export function SubcontractorDashboard() {
         </div>
       )}
       
-      <div className="max-w-full mx-auto px-4">
-        {/* Mobile-optimized header - full width */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8">
+      <div className="max-w-4xl mx-auto">
+        {/* Mobile-optimized header with 2-column layout on larger screens */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 sm:mb-8">
           <div className="flex items-center space-x-3">
             <CalendarIcon className="h-6 w-6 sm:h-8 sm:w-8 text-gray-600 dark:text-gray-400 flex-shrink-0" />
             <h1 className="text-lg sm:text-xl lg:text-2xl font-semibold text-gray-900 dark:text-white">My Assigned Jobs</h1>
