@@ -337,9 +337,9 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         throw new Error(errorMsg);
       }
 
-      // Get folder path using RPC function (returns path directly, not ID)
+      // Get folder ID using RPC function (returns UUID)
       console.log('📁 Getting upload folder...');
-      const { data: folderPathData, error: folderError } = await supabase.rpc(
+      const { data: folderData, error: folderError } = await supabase.rpc(
         'get_upload_folder',
         {
           p_property_id: jobData.property_id,
@@ -366,36 +366,33 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         throw new Error(errorMsg);
       }
 
-      if (!folderPathData) {
-        console.error('❌ No folder path returned');
+      if (!folderData) {
+        console.error('❌ No folder ID returned');
+        const errorMsg = 'Failed to create upload folder';
+        if (onError) onError(errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      console.log('✅ Upload folder ID:', folderData);
+      const subfolderId = folderData;
+
+      // Get the actual folder path from the database to ensure consistency
+      const { data: folderInfo, error: folderInfoError } = await supabase
+        .from('files')
+        .select('path')
+        .eq('id', subfolderId)
+        .single();
+
+      if (folderInfoError || !folderInfo) {
+        console.error('❌ Failed to get folder path:', folderInfoError);
         const errorMsg = 'Failed to determine upload folder path';
         if (onError) onError(errorMsg);
         throw new Error(errorMsg);
       }
 
-      console.log('✅ Upload folder path:', folderPathData);
-
       // Remove leading slash from folder path if present
-      const folderPath = folderPathData.startsWith('/') ? folderPathData.substring(1) : folderPathData;
-      console.log('📁 Using folder path:', folderPath);
-
-      // Now get the folder ID for database entry
-      const { data: folderInfo, error: folderInfoError } = await supabase
-        .from('files')
-        .select('id')
-        .eq('path', folderPathData)
-        .eq('type', 'folder/directory')
-        .single();
-
-      if (folderInfoError || !folderInfo) {
-        console.error('❌ Failed to get folder ID:', folderInfoError);
-        const errorMsg = 'Failed to get folder information';
-        if (onError) onError(errorMsg);
-        throw new Error(errorMsg);
-      }
-
-      const subfolderId = folderInfo.id;
-      console.log('✅ Upload folder ID:', subfolderId);
+      const folderPath = folderInfo.path.startsWith('/') ? folderInfo.path.substring(1) : folderInfo.path;
+      console.log('📁 Using folder path from database:', folderPath);
 
       // Upload each file
       for (let i = 0; i < files.length; i++) {
