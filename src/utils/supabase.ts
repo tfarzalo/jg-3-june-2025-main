@@ -4,7 +4,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
+  console.warn('Missing Supabase environment variables. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your environment.');
 }
 
 // Create Supabase client with a simpler configuration
@@ -13,11 +13,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storage: localStorage,
+    storage: window.localStorage,
+    storageKey: `sb-${supabaseUrl.split('//')[1].split('.')[0]}-auth-token`,
+    flowType: 'pkce',
   },
   realtime: {
     params: {
-      eventsPerSecond: 10,
+      eventsPerSecond: 2,
     },
   },
   db: {

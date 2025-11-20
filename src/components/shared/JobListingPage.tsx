@@ -38,6 +38,14 @@ export interface Job {
     job_type_label: string;
   };
   scheduled_date: string;
+  due_date?: string;
+  completed_date?: string;
+  description?: string;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
+  created_by?: string;
+  assigned_to?: string;
   job_phase: {
     job_phase_label: string;
     color_light_mode: string;
@@ -45,6 +53,81 @@ export interface Job {
   } | null;
   work_order_num: number;
   total_billing_amount?: number;
+  work_orders?: Array<{
+    submission_date?: string;
+    is_occupied?: boolean;
+    is_full_paint?: boolean;
+    unit_size?: string;
+    paint_type?: string;
+    has_sprinklers?: boolean;
+    sprinklers_painted?: boolean;
+    painted_ceilings?: boolean;
+    ceiling_rooms_count?: number;
+    painted_patio?: boolean;
+    painted_garage?: boolean;
+    painted_cabinets?: boolean;
+    painted_crown_molding?: boolean;
+    painted_front_door?: boolean;
+    cabinet_removal_repair?: string;
+    ceiling_lights_repair?: string;
+    has_accent_wall?: boolean;
+    accent_wall_type?: string;
+    accent_wall_count?: number;
+    has_extra_charges?: boolean;
+    extra_charges_description?: string;
+    extra_hours?: number;
+    additional_comments?: string;
+  }>;
+}
+
+interface ExportConfig {
+  dateRange: {
+    startDate: string;
+    endDate: string;
+  };
+  columns: {
+    // Job Information
+    workOrder: boolean;
+    phase: boolean;
+    property: boolean;
+    address: boolean;
+    unitNumber: boolean;
+    unitSize: boolean;
+    jobType: boolean;
+    scheduledDate: boolean;
+    dueDate: boolean;
+    completedDate: boolean;
+    description: boolean;
+    status: boolean;
+    amount: boolean;
+    createdBy: boolean;
+    assignedTo: boolean;
+    createdAt: boolean;
+    updatedAt: boolean;
+    // Work Order Information
+    submissionDate: boolean;
+    isOccupied: boolean;
+    isFullPaint: boolean;
+    paintType: boolean;
+    hasSprinklers: boolean;
+    sprinklersPainted: boolean;
+    paintedCeilings: boolean;
+    ceilingRoomsCount: boolean;
+    paintedPatio: boolean;
+    paintedGarage: boolean;
+    paintedCabinets: boolean;
+    paintedCrownMolding: boolean;
+    paintedFrontDoor: boolean;
+    cabinetRemovalRepair: boolean;
+    ceilingLightsRepair: boolean;
+    hasAccentWall: boolean;
+    accentWallType: boolean;
+    accentWallCount: boolean;
+    hasExtraCharges: boolean;
+    extraChargesDescription: boolean;
+    extraHours: boolean;
+    additionalComments: boolean;
+  };
 }
 
 export type SortField = 'work_order_num' | 'job_phase' | 'property_name' | 'unit_number' | 'unit_size' | 'job_type' | 'scheduled_date' | 'total_billing_amount';
@@ -106,22 +189,69 @@ export function JobListingPage({
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showExportConfig, setShowExportConfig] = useState(false);
   const [exportType, setExportType] = useState<'csv' | 'pdf' | null>(null);
-  const [exportConfig, setExportConfig] = useState({
-    dateRange: {
-      startDate: format(subMonths(new Date(), 1), 'yyyy-MM-dd'),
-      endDate: format(new Date(), 'yyyy-MM-dd')
-    },
-    columns: {
-      workOrder: true,
-      phase: true,
-      property: true,
-      unitNumber: true,
-      unitSize: true,
-      jobType: true,
-      scheduledDate: true,
-      amount: true,
-      address: true
+  // Load export preferences from localStorage or use defaults
+  const [exportConfig, setExportConfig] = useState(() => {
+    const saved = localStorage.getItem('jobExportConfig');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Failed to parse saved export config:', e);
+      }
     }
+    return {
+      dateRange: {
+        startDate: format(subMonths(new Date(), 1), 'yyyy-MM-dd'),
+        endDate: format(new Date(), 'yyyy-MM-dd')
+      },
+      columns: {
+        // Job Information
+        workOrder: true,
+        phase: true,
+        property: true,
+        address: true,
+        unitNumber: true,
+        unitSize: true,
+        jobType: true,
+        scheduledDate: true,
+        dueDate: false,
+        completedDate: false,
+        description: false,
+        status: false,
+        amount: true,
+        createdBy: false,
+        assignedTo: false,
+        createdAt: false,
+        updatedAt: false,
+        // Work Order Information
+        submissionDate: false,
+        isOccupied: false,
+        isFullPaint: false,
+        paintType: false,
+        hasSprinklers: false,
+        sprinklersPainted: false,
+        paintedCeilings: false,
+        ceilingRoomsCount: false,
+        paintedPatio: false,
+        paintedGarage: false,
+        paintedCabinets: false,
+        paintedCrownMolding: false,
+        paintedFrontDoor: false,
+        cabinetRemovalRepair: false,
+        ceilingLightsRepair: false,
+        hasAccentWall: false,
+        accentWallType: false,
+        accentWallCount: false,
+        hasExtraCharges: false,
+        extraChargesDescription: false,
+        extraHours: false,
+        additionalComments: false
+      }
+    };
+  });
+  const [expandedSections, setExpandedSections] = useState({
+    jobInfo: true,
+    workOrderInfo: false
   });
   const [sortConfig, setSortConfig] = useState<SortConfig>({
     field: 'scheduled_date',
@@ -187,12 +317,51 @@ export function JobListingPage({
   };
 
   const handleExportConfigSubmit = () => {
+    // Save preferences to localStorage
+    localStorage.setItem('jobExportConfig', JSON.stringify(exportConfig));
+    
     if (exportType === 'csv') {
       exportToCSV();
     } else if (exportType === 'pdf') {
       exportToPDF();
     }
     setShowExportConfig(false);
+  };
+
+  const toggleSection = (section: 'jobInfo' | 'workOrderInfo') => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
+
+  const toggleAllInSection = (section: 'jobInfo' | 'workOrderInfo', checked: boolean) => {
+    setExportConfig((prev: ExportConfig) => {
+      const newColumns = { ...prev.columns };
+      if (section === 'jobInfo') {
+        const jobFields: (keyof typeof newColumns)[] = [
+          'workOrder', 'phase', 'property', 'address', 'unitNumber', 'unitSize',
+          'jobType', 'scheduledDate', 'dueDate', 'completedDate', 'description',
+          'status', 'amount', 'createdBy', 'assignedTo', 'createdAt', 'updatedAt'
+        ];
+        jobFields.forEach(field => {
+          newColumns[field] = checked;
+        });
+      } else {
+        const workOrderFields: (keyof typeof newColumns)[] = [
+          'submissionDate', 'isOccupied', 'isFullPaint', 'paintType', 'hasSprinklers',
+          'sprinklersPainted', 'paintedCeilings', 'ceilingRoomsCount', 'paintedPatio',
+          'paintedGarage', 'paintedCabinets', 'paintedCrownMolding', 'paintedFrontDoor',
+          'cabinetRemovalRepair', 'ceilingLightsRepair', 'hasAccentWall', 'accentWallType',
+          'accentWallCount', 'hasExtraCharges', 'extraChargesDescription', 'extraHours',
+          'additionalComments'
+        ];
+        workOrderFields.forEach(field => {
+          newColumns[field] = checked;
+        });
+      }
+      return { ...prev, columns: newColumns };
+    });
   };
 
   const exportToCSV = () => {
@@ -205,6 +374,9 @@ export function JobListingPage({
 
     const data = filteredJobs.map(job => {
       const row: Record<string, string> = {};
+      const workOrder = job.work_orders?.[0]; // Get first work order if exists
+      
+      // Job Information
       if (exportConfig.columns.workOrder) row['Work Order #'] = formatWorkOrderNumber(job.work_order_num);
       if (exportConfig.columns.phase) row['Phase'] = job.job_phase?.job_phase_label || '';
       if (exportConfig.columns.property) row['Property'] = job.property.property_name;
@@ -213,7 +385,42 @@ export function JobListingPage({
       if (exportConfig.columns.unitSize) row['Unit Size'] = job.unit_size.unit_size_label;
       if (exportConfig.columns.jobType) row['Job Type'] = job.job_type.job_type_label;
       if (exportConfig.columns.scheduledDate) row['Scheduled Date'] = formatDate(job.scheduled_date);
+      if (exportConfig.columns.dueDate && job.due_date) row['Due Date'] = formatDate(job.due_date);
+      if (exportConfig.columns.completedDate && job.completed_date) row['Completed Date'] = formatDate(job.completed_date);
+      if (exportConfig.columns.description && job.description) row['Description'] = job.description;
+      if (exportConfig.columns.status && job.status) row['Status'] = job.status;
       if (exportConfig.columns.amount) row['Amount'] = job.total_billing_amount ? `$${job.total_billing_amount.toFixed(2)}` : '$0.00';
+      if (exportConfig.columns.createdBy && job.created_by) row['Created By'] = job.created_by;
+      if (exportConfig.columns.assignedTo && job.assigned_to) row['Assigned To'] = job.assigned_to;
+      if (exportConfig.columns.createdAt && job.created_at) row['Created At'] = formatDate(job.created_at);
+      if (exportConfig.columns.updatedAt && job.updated_at) row['Updated At'] = formatDate(job.updated_at);
+      
+      // Work Order Information
+      if (workOrder) {
+        if (exportConfig.columns.submissionDate && workOrder.submission_date) row['Submission Date'] = formatDate(workOrder.submission_date);
+        if (exportConfig.columns.isOccupied) row['Is Occupied'] = workOrder.is_occupied ? 'Yes' : 'No';
+        if (exportConfig.columns.isFullPaint) row['Full Paint'] = workOrder.is_full_paint ? 'Yes' : 'No';
+        if (exportConfig.columns.paintType && workOrder.paint_type) row['Paint Type'] = workOrder.paint_type;
+        if (exportConfig.columns.hasSprinklers) row['Has Sprinklers'] = workOrder.has_sprinklers ? 'Yes' : 'No';
+        if (exportConfig.columns.sprinklersPainted) row['Sprinklers Painted'] = workOrder.sprinklers_painted ? 'Yes' : 'No';
+        if (exportConfig.columns.paintedCeilings) row['Painted Ceilings'] = workOrder.painted_ceilings ? 'Yes' : 'No';
+        if (exportConfig.columns.ceilingRoomsCount && workOrder.ceiling_rooms_count) row['Ceiling Rooms Count'] = String(workOrder.ceiling_rooms_count);
+        if (exportConfig.columns.paintedPatio) row['Painted Patio'] = workOrder.painted_patio ? 'Yes' : 'No';
+        if (exportConfig.columns.paintedGarage) row['Painted Garage'] = workOrder.painted_garage ? 'Yes' : 'No';
+        if (exportConfig.columns.paintedCabinets) row['Painted Cabinets'] = workOrder.painted_cabinets ? 'Yes' : 'No';
+        if (exportConfig.columns.paintedCrownMolding) row['Painted Crown Molding'] = workOrder.painted_crown_molding ? 'Yes' : 'No';
+        if (exportConfig.columns.paintedFrontDoor) row['Painted Front Door'] = workOrder.painted_front_door ? 'Yes' : 'No';
+        if (exportConfig.columns.cabinetRemovalRepair && workOrder.cabinet_removal_repair) row['Cabinet Removal/Repair'] = workOrder.cabinet_removal_repair;
+        if (exportConfig.columns.ceilingLightsRepair && workOrder.ceiling_lights_repair) row['Ceiling Lights Repair'] = workOrder.ceiling_lights_repair;
+        if (exportConfig.columns.hasAccentWall) row['Has Accent Wall'] = workOrder.has_accent_wall ? 'Yes' : 'No';
+        if (exportConfig.columns.accentWallType && workOrder.accent_wall_type) row['Accent Wall Type'] = workOrder.accent_wall_type;
+        if (exportConfig.columns.accentWallCount && workOrder.accent_wall_count) row['Accent Wall Count'] = String(workOrder.accent_wall_count);
+        if (exportConfig.columns.hasExtraCharges) row['Has Extra Charges'] = workOrder.has_extra_charges ? 'Yes' : 'No';
+        if (exportConfig.columns.extraChargesDescription && workOrder.extra_charges_description) row['Extra Charges Description'] = workOrder.extra_charges_description;
+        if (exportConfig.columns.extraHours && workOrder.extra_hours) row['Extra Hours'] = String(workOrder.extra_hours);
+        if (exportConfig.columns.additionalComments && workOrder.additional_comments) row['Additional Comments'] = workOrder.additional_comments;
+      }
+      
       return row;
     });
 
@@ -1088,8 +1295,8 @@ export function JobListingPage({
       {/* Export Configuration Modal */}
       {showExportConfig && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-2xl w-full shadow-xl">
-            <div className="flex justify-between items-center mb-4">
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-xl">
+            <div className="flex justify-between items-center mb-6">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Export Configuration
               </h3>
@@ -1103,7 +1310,7 @@ export function JobListingPage({
 
             <div className="space-y-6">
               {/* Date Range Selection */}
-              <div>
+              <div className="bg-gray-50 dark:bg-[#0F172A] rounded-lg p-4">
                 <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Date Range</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -1111,7 +1318,7 @@ export function JobListingPage({
                     <input
                       type="date"
                       value={exportConfig.dateRange.startDate}
-                      onChange={(e) => setExportConfig(prev => ({
+                      onChange={(e) => setExportConfig((prev: ExportConfig) => ({
                         ...prev,
                         dateRange: { ...prev.dateRange, startDate: e.target.value }
                       }))}
@@ -1123,7 +1330,7 @@ export function JobListingPage({
                     <input
                       type="date"
                       value={exportConfig.dateRange.endDate}
-                      onChange={(e) => setExportConfig(prev => ({
+                      onChange={(e) => setExportConfig((prev: ExportConfig) => ({
                         ...prev,
                         dateRange: { ...prev.dateRange, endDate: e.target.value }
                       }))}
@@ -1133,139 +1340,602 @@ export function JobListingPage({
                 </div>
               </div>
 
-              {/* Column Selection */}
+              {/* Column Selection with Accordions */}
               <div>
-                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Columns to Include</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={exportConfig.columns.workOrder}
-                        onChange={(e) => setExportConfig(prev => ({
-                          ...prev,
-                          columns: { ...prev.columns, workOrder: e.target.checked }
-                        }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">Work Order #</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={exportConfig.columns.phase}
-                        onChange={(e) => setExportConfig(prev => ({
-                          ...prev,
-                          columns: { ...prev.columns, phase: e.target.checked }
-                        }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">Phase</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={exportConfig.columns.property}
-                        onChange={(e) => setExportConfig(prev => ({
-                          ...prev,
-                          columns: { ...prev.columns, property: e.target.checked }
-                        }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">Property</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={exportConfig.columns.address}
-                        onChange={(e) => setExportConfig(prev => ({
-                          ...prev,
-                          columns: { ...prev.columns, address: e.target.checked }
-                        }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">Address</span>
-                    </label>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={exportConfig.columns.unitNumber}
-                        onChange={(e) => setExportConfig(prev => ({
-                          ...prev,
-                          columns: { ...prev.columns, unitNumber: e.target.checked }
-                        }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">Unit #</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={exportConfig.columns.unitSize}
-                        onChange={(e) => setExportConfig(prev => ({
-                          ...prev,
-                          columns: { ...prev.columns, unitSize: e.target.checked }
-                        }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">Unit Size</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={exportConfig.columns.jobType}
-                        onChange={(e) => setExportConfig(prev => ({
-                          ...prev,
-                          columns: { ...prev.columns, jobType: e.target.checked }
-                        }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">Job Type</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={exportConfig.columns.scheduledDate}
-                        onChange={(e) => setExportConfig(prev => ({
-                          ...prev,
-                          columns: { ...prev.columns, scheduledDate: e.target.checked }
-                        }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">Work Order Date</span>
-                    </label>
-                    <label className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        checked={exportConfig.columns.amount}
-                        onChange={(e) => setExportConfig(prev => ({
-                          ...prev,
-                          columns: { ...prev.columns, amount: e.target.checked }
-                        }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">Amount</span>
-                    </label>
-                  </div>
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Fields to Export</h4>
+                
+                {/* Job Information Accordion */}
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg mb-3">
+                  <button
+                    onClick={() => toggleSection('jobInfo')}
+                    className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 dark:hover:bg-[#0F172A] transition-colors"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">Job Information</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        ({Object.entries(exportConfig.columns).filter(([key, val]) => 
+                          !key.includes('is') && !key.includes('painted') && !key.includes('has') && 
+                          !key.includes('extra') && !key.includes('accent') && !key.includes('submission') &&
+                          !key.includes('cabinet') && !key.includes('ceiling') && !key.includes('additional') &&
+                          !key.includes('sprinklers') && !key.includes('paint') && val
+                        ).length} selected)
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleAllInSection('jobInfo', true);
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                      >
+                        Select All
+                      </button>
+                      <span className="text-gray-400">|</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleAllInSection('jobInfo', false);
+                        }}
+                        className="text-xs text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                      >
+                        Clear All
+                      </button>
+                      {expandedSections.jobInfo ? (
+                        <ChevronUp className="h-5 w-5 text-gray-500" />
+                      ) : (
+                        <ChevronDown className="h-5 w-5 text-gray-500" />
+                      )}
+                    </div>
+                  </button>
+                  {expandedSections.jobInfo && (
+                    <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#0F172A]">
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.workOrder}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, workOrder: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Work Order #</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.phase}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, phase: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Phase</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.property}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, property: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Property</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.address}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, address: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Address</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.unitNumber}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, unitNumber: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Unit #</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.unitSize}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, unitSize: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Unit Size</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.jobType}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, jobType: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Job Type</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.scheduledDate}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, scheduledDate: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Scheduled Date</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.dueDate}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, dueDate: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Due Date</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.completedDate}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, completedDate: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Completed Date</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.amount}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, amount: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Amount</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.description}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, description: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Description</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.status}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, status: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Status</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.createdBy}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, createdBy: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Created By</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.assignedTo}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, assignedTo: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Assigned To</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.createdAt}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, createdAt: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Created At</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.updatedAt}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, updatedAt: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Updated At</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Work Order Information Accordion */}
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg">
+                  <button
+                    onClick={() => toggleSection('workOrderInfo')}
+                    className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 dark:hover:bg-[#0F172A] transition-colors"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">Work Order Details</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        ({Object.entries(exportConfig.columns).filter(([key, val]) => 
+                          (key.includes('is') || key.includes('painted') || key.includes('has') || 
+                          key.includes('extra') || key.includes('accent') || key.includes('submission') ||
+                          key.includes('cabinet') || key.includes('ceiling') || key.includes('additional') ||
+                          key.includes('sprinklers') || key === 'paintType') && val
+                        ).length} selected)
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleAllInSection('workOrderInfo', true);
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                      >
+                        Select All
+                      </button>
+                      <span className="text-gray-400">|</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleAllInSection('workOrderInfo', false);
+                        }}
+                        className="text-xs text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                      >
+                        Clear All
+                      </button>
+                      {expandedSections.workOrderInfo ? (
+                        <ChevronUp className="h-5 w-5 text-gray-500" />
+                      ) : (
+                        <ChevronDown className="h-5 w-5 text-gray-500" />
+                      )}
+                    </div>
+                  </button>
+                  {expandedSections.workOrderInfo && (
+                    <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#0F172A]">
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.submissionDate}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, submissionDate: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Submission Date</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.isOccupied}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, isOccupied: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Is Occupied</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.isFullPaint}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, isFullPaint: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Full Paint</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.paintType}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, paintType: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Paint Type</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.hasSprinklers}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, hasSprinklers: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Has Sprinklers</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.sprinklersPainted}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, sprinklersPainted: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Sprinklers Painted</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.paintedCeilings}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, paintedCeilings: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Painted Ceilings</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.ceilingRoomsCount}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, ceilingRoomsCount: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Ceiling Rooms Count</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.paintedPatio}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, paintedPatio: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Painted Patio</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.paintedGarage}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, paintedGarage: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Painted Garage</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.paintedCabinets}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, paintedCabinets: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Painted Cabinets</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.paintedCrownMolding}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, paintedCrownMolding: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Painted Crown Molding</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.paintedFrontDoor}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, paintedFrontDoor: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Painted Front Door</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.cabinetRemovalRepair}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, cabinetRemovalRepair: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Cabinet Removal/Repair</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.ceilingLightsRepair}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, ceilingLightsRepair: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Ceiling Lights Repair</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.hasAccentWall}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, hasAccentWall: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Has Accent Wall</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.accentWallType}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, accentWallType: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Accent Wall Type</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.accentWallCount}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, accentWallCount: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Accent Wall Count</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.hasExtraCharges}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, hasExtraCharges: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Has Extra Charges</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.extraChargesDescription}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, extraChargesDescription: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Extra Charges Description</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.extraHours}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, extraHours: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Extra Hours</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input
+                            type="checkbox"
+                            checked={exportConfig.columns.additionalComments}
+                            onChange={(e) => setExportConfig((prev: ExportConfig) => ({
+                              ...prev,
+                              columns: { ...prev.columns, additionalComments: e.target.checked }
+                            }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Additional Comments</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="flex justify-end space-x-3 mt-6">
-              <button
-                onClick={() => setShowExportConfig(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-400 bg-gray-100 dark:bg-[#2D3B4E] rounded-lg hover:bg-gray-200 dark:hover:bg-[#374151] transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleExportConfigSubmit}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Export {exportType?.toUpperCase()}
-              </button>
+            <div className="flex justify-between items-center mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Your field preferences will be saved for future exports.
+              </p>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowExportConfig(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-400 bg-gray-100 dark:bg-[#2D3B4E] rounded-lg hover:bg-gray-200 dark:hover:bg-[#374151] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleExportConfigSubmit}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Export {exportType?.toUpperCase()}
+                </button>
+              </div>
             </div>
           </div>
         </div>

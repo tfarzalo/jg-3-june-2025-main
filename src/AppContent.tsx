@@ -23,32 +23,34 @@ export function AppContent() {
   const { role, loading: roleLoading } = useUserRole();
   const [isInitialLoad, setIsInitialLoad] = useState(true);
 
-  // Reduced timeout and better logic
+  // Add isApprovalPage check
+  const isApprovalPage = location.pathname.startsWith('/approval/');
+
+  // Reduce timeout duration
   useEffect(() => {
     const timeout = setTimeout(() => {
-      console.log('AppContent: Auth initialization timeout, forcing completion');
       setIsInitialLoad(false);
-    }, 8000); // Increased to 8 seconds to allow for session refresh
-
+    }, 5000); // Reduced from 8000
+  
     return () => clearTimeout(timeout);
   }, []);
-
-  // Check if current route is an approval page (should not require auth)
-  const isApprovalPage = useMemo(() => 
-    location.pathname.startsWith('/approval/'), 
-    [location.pathname]
-  );
-
-  // Simplified auth state with proper initialization check
+  
+  // Simplify auth state handling
   const authState = useMemo(() => ({
     hasSession: !!session,
     authLoading: authLoading,
-    roleLoading: roleLoading && !!session, // Only consider role loading if we have a session
+    roleLoading: roleLoading && !!session,
     role,
     pathname: location.pathname,
     isApprovalPage,
     isInitialized: authInitialized
   }), [session, authLoading, roleLoading, role, location.pathname, isApprovalPage, authInitialized]);
+  
+  // Remove this duplicate declaration
+  // const shouldShowLoading = !isApprovalPage && (
+  //   !authState.isInitialized || 
+  //   (authState.hasSession && authState.roleLoading && !authState.role)
+  // );
 
   useEffect(() => {
     console.log('AppContent: Auth state update:', authState);

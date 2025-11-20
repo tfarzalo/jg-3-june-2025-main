@@ -10,7 +10,8 @@ import {
   ArrowLeft,
   Plus,
   ClipboardCheck,
-  User
+  User,
+  FileText
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { PropertyMap } from './PropertyMap';
@@ -75,6 +76,14 @@ interface Property {
   compliance_po_needed: string;
   compliance_w9_created: string;
   paint_location: string;
+}
+
+interface PropertyFile {
+  id: string;
+  name: string;
+  path: string;
+  type: string;
+  created_at: string;
 }
 
 interface Job {
@@ -154,6 +163,7 @@ export function PropertyDetails() {
   const [callbacks, setCallbacks] = useState<PropertyCallback[]>([]);
   const [updates, setUpdates] = useState<PropertyUpdate[]>([]);
   const [updateTypes, setUpdateTypes] = useState<string[]>([]);
+  const [propertyFiles, setPropertyFiles] = useState<PropertyFile[]>([]);
   
   // State for new callback form
   const [showCallbackForm, setShowCallbackForm] = useState(false);
@@ -185,6 +195,27 @@ export function PropertyDetails() {
 
   console.log('PropertyDetails: Formatted address:', formattedAddress);
   console.log('PropertyDetails: Property data:', property);
+
+  useEffect(() => {
+    if (propertyId) {
+      fetchPropertyFiles();
+    }
+  }, [propertyId]);
+
+  const fetchPropertyFiles = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('files')
+        .select('*')
+        .eq('property_id', propertyId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setPropertyFiles(data || []);
+    } catch (err) {
+      console.error('Error fetching property files:', err);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -1203,6 +1234,28 @@ export function PropertyDetails() {
             error={jobsError ?? null}
             showAddButton={false}
           />
+        </div>
+
+        {/* Property Documents Section */}
+        <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow-lg lg:col-span-3 mt-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Property Documents</h3>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {propertyFiles.map(file => (
+              <div key={file.id} className="relative flex items-center space-x-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#1E293B] px-6 py-5 shadow-sm hover:border-gray-400 dark:hover:border-gray-600">
+                <div className="flex-shrink-0">
+                  <FileText className="h-6 w-6 text-gray-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <a href={file.path} target="_blank" rel="noopener noreferrer" className="focus:outline-none">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{file.name}</p>
+                    <p className="truncate text-sm text-gray-500 dark:text-gray-400">
+                      {new Date(file.created_at).toLocaleDateString()}
+                    </p>
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

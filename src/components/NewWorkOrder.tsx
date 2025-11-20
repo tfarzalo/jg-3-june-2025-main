@@ -898,14 +898,17 @@ const NewWorkOrder = () => {
                   </div>
                   <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Sprinkler Images
+                      Sprinkler Images <span className="text-red-500">*</span>
                     </label>
+                    <p className="text-sm text-red-800 italic mb-2">Please submit 1 picture of the uncovered sprinkler head, and 1 picture with the sprinkler head cover "on".</p>
+                    <p className="text-sm text-red-800 italic mb-4">Por favor, envíe 1 foto del cabezal del aspersor descubierto y 1 foto con la cubierta del cabezal del aspersor "puesta".</p>
                     <ImageUpload
                       jobId={jobId || ''}
                       workOrderId={existingWorkOrder?.id || ''}
                       folder="sprinkler"
                       onUploadComplete={handleUploadComplete}
                       onError={handleUploadError}
+                      required={true}
                     />
                   </div>
                 </>
@@ -978,7 +981,7 @@ const NewWorkOrder = () => {
                 {formData.painted_ceilings && (
                   <div className="ml-6">
                     <label htmlFor="ceiling_rooms_count" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      Number of Rooms
+                      Number of Ceilings
                     </label>
                     <input
                       type="number"
@@ -1140,15 +1143,17 @@ const NewWorkOrder = () => {
             
             {formData.has_extra_charges && (
               <div className="space-y-6">
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/30 text-yellow-800 dark:text-yellow-200 px-4 py-3 rounded-lg mb-4">
-                  <div className="flex items-start">
-                    <AlertCircle className="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400 mt-0.5" />
-                    <div>
-                      <p className="font-medium">Extra Charges Require Approval</p>
-                      <p className="mt-1 text-sm">Adding extra charges will set this job to "Pending Work Order" status until the charges are approved.</p>
+                {isSubcontractor && (
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/30 text-yellow-800 dark:text-yellow-200 px-4 py-3 rounded-lg mb-4">
+                    <div className="flex items-start">
+                      <AlertCircle className="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400 mt-0.5" />
+                      <div>
+                        <p className="font-medium">Extra Charges Require Approval</p>
+                        <p className="mt-1 text-sm">Adding extra charges will set this job to "Pending Work Order" status until the charges are approved.</p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
                 
                 <div>
                   <label htmlFor="extra_charges_description" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">

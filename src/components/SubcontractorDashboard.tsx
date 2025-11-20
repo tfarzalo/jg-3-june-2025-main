@@ -15,6 +15,7 @@ import { format, parseISO, startOfDay, endOfDay, addDays, isSameDay } from 'date
 import { formatInTimeZone } from 'date-fns-tz';
 import { useUserRole } from '../hooks/useUserRole';
 import { LoadingScreen } from './ui/LoadingScreen';
+import { Dialog } from '@headlessui/react';
 
 interface Job {
   id: string;
@@ -47,12 +48,12 @@ export function SubcontractorDashboard() {
   const [tomorrowJobs, setTomorrowJobs] = useState<Job[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [displayedJobs, setDisplayedJobs] = useState<Job[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const { role } = useUserRole();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const previewUserId = searchParams.get('userId');
   const isPreview = previewUserId && (role === 'admin' || role === 'jg_management');
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchJobs = async () => {
@@ -220,7 +221,7 @@ export function SubcontractorDashboard() {
         throw jobsError;
       }
       
-            console.log('fetchJobsForDate: Raw jobs data received:', jobsData);
+      console.log('fetchJobsForDate: Raw jobs data received:', jobsData);
 
       // Map the data to match the Job interface and flatten nested arrays
       const mappedJobs: Job[] = (jobsData || []).map(job => ({
@@ -231,7 +232,6 @@ export function SubcontractorDashboard() {
         work_order: Array.isArray(job.work_order) ? job.work_order[0] : job.work_order,
       }));
 
-      
       console.log('fetchJobsForDate: Mapped jobs:', mappedJobs);
       return mappedJobs;
       

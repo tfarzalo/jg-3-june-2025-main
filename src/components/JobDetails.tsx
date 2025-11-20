@@ -38,6 +38,7 @@ import {
   CheckCircle2,
   X
 } from 'lucide-react';
+import { Dialog } from '@headlessui/react';
 import { supabase } from '../utils/supabase';
 import { formatDate } from '../lib/dateUtils';
 import { formatAddress, formatCurrency } from '../lib/utils/formatUtils';
@@ -151,6 +152,8 @@ export function JobDetails() {
   const { phaseChanges, loading: phaseChangesLoading, error: phaseChangesError, refetch: refetchPhaseChanges } = useJobPhaseChanges(jobId);
   const { phases, loading: phasesLoading } = usePhases();
   const { isAdmin, isJGManagement } = useUserRole();
+  const [showFilesModal, setShowFilesModal] = useState(false);
+  const [propertyFiles, setPropertyFiles] = useState<PropertyFile[]>([]);
   
   const [showPhaseChangeModal, setShowPhaseChangeModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -179,6 +182,29 @@ export function JobDetails() {
   const [notificationType, setNotificationType] = useState<'sprinkler_paint' | 'drywall_repairs' | null>(null);
 
   // Add debug logging
+  useEffect(() => {
+    if (job?.property?.id) {
+      fetchPropertyFiles();
+    }
+  }, [job]);
+
+  const fetchPropertyFiles = async () => {
+    if (!job?.property?.id) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('files')
+        .select('*')
+        .eq('property_id', job.property.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setPropertyFiles(data || []);
+    } catch (err) {
+      console.error('Error fetching property files:', err);
+    }
+  };
+
   useEffect(() => {
     if (job) {
       console.log('Job Details:', {
@@ -1472,9 +1498,7 @@ export function JobDetails() {
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Ceilings</span>
                     <p className={`text-lg font-bold ${job.work_order.painted_ceilings ? 'text-green-800 dark:text-green-200' : ''} mt-1`}>
                       {job.work_order.painted_ceilings ? (
-                        <><span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
-                          ({job.work_order.ceiling_rooms_count} rooms)
-                        </span></>
+                        `Yes - ${job.work_order.ceiling_rooms_count} ceilings`
                       ) : 'No'}
                     </p>
                   </div>
@@ -1936,6 +1960,48 @@ export function JobDetails() {
           />
         )}
       </div>
+
+      <button
+        onClick={() => setShowFilesModal(true)}
+        className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+      >
+        <FileText className="-ml-1 mr-2 h-5 w-5" />
+        Property Files
+      </button>
+
+      <Dialog open={showFilesModal} onClose={() => setShowFilesModal(false)}>
+        <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
+        <div className="fixed inset-0 flex items-center justify-center p-4">
+          <Dialog.Panel className="mx-auto max-w-3xl rounded bg-white p-6">
+            <Dialog.Title className="text-lg font-medium mb-4">Property Files</Dialog.Title>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {propertyFiles.map(file => (
+                <div key={file.id} className="relative flex items-center space-x-3 rounded-lg border border-gray-300 bg-white px-6 py-5 shadow-sm hover:border-gray-400">
+                  <div className="flex-shrink-0">
+                    <FileText className="h-6 w-6 text-gray-400" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <a href={file.path} target="_blank" rel="noopener noreferrer" className="focus:outline-none">
+                      <p className="text-sm font-medium text-gray-900">{file.name}</p>
+                      <p className="truncate text-sm text-gray-500">
+                        {new Date(file.created_at).toLocaleDateString()}
+                      </p>
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowFilesModal(false)}
+                className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+          </Dialog.Panel>
+        </div>
+      </Dialog>
     </div>
   );
 }

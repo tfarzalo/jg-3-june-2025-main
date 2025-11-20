@@ -25,24 +25,11 @@ export function useUserRole(): UseUserRoleResult {
   });
 
   const fetchUserRole = useCallback(async () => {
+    if (!authInitialized) return; // Wait for auth to be ready
+    
     try {
-      // First check if we have a session
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        console.error('Session error in fetchUserRole:', sessionError);
-        setState(prev => ({
-          ...prev,
-          role: null,
-          permissions: [],
-          error: null,
-          loading: false
-        }));
-        return;
-      }
-      
+      const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        console.log('No session found in fetchUserRole');
         setState(prev => ({
           ...prev,
           role: null,
@@ -53,33 +40,13 @@ export function useUserRole(): UseUserRoleResult {
         return;
       }
 
-      // Check if session is expired
-      const expiresAt = new Date(session.expires_at! * 1000);
-      const now = new Date();
-      
-      if (expiresAt <= now) {
-        console.log('Session expired in fetchUserRole, not making API call');
-        setState(prev => ({
-          ...prev,
-          role: null,
-          permissions: [],
-          error: 'Session expired',
-          loading: false
-        }));
-        return;
-      }
-
-      console.log('Fetching user role for user:', session.user.id);
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', session.user.id)
         .single();
 
-      if (profileError) {
-        console.error('Profile fetch error:', profileError);
-        throw profileError;
-      }
+      if (profileError) throw profileError;
 
       setState(prev => ({
         ...prev,
@@ -89,7 +56,6 @@ export function useUserRole(): UseUserRoleResult {
         loading: false
       }));
     } catch (error) {
-      console.error('Error fetching role:', error);
       setState(prev => ({
         ...prev,
         role: null,
@@ -98,7 +64,7 @@ export function useUserRole(): UseUserRoleResult {
         loading: false
       }));
     }
-  }, []);
+  }, [authInitialized]);
 
   useEffect(() => {
     let mounted = true;
@@ -180,6 +146,6 @@ export function useUserRole(): UseUserRoleResult {
     ...state,
     isAdmin: state.role === 'admin',
     isJGManagement: state.role === 'jg_management',
-    isSubcontractor: state.role === 'subcontractor'
+    isSubcontractor: state.role === 'subcontractor'  // Change to lowercase to match database
   };
 }

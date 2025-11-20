@@ -81,8 +81,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     let mounted = true;
     let initCompleted = false;
-
-    const forceComplete = () => {
+  
+    // Aggressive timeout to prevent hanging
+    const emergencyTimeout = setTimeout(() => {
       if (!initCompleted && mounted) {
         console.log('Force completing auth initialization');
         initCompleted = true;
@@ -92,11 +93,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoading(false);
         setInitialized(true);
       }
-    };
-
-    // Aggressive timeout to prevent hanging
-    const emergencyTimeout = setTimeout(forceComplete, 2000);
-
+    }, 10000); // Increased to 10 seconds
+  
     const initializeAuth = async () => {
       if (!mounted || initCompleted) return;
       
