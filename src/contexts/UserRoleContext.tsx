@@ -1,0 +1,105 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../utils/supabase';
+
+interface UserRoleContextType {
+  role: string | null;
+  isSubcontractor: boolean;
+  isAdmin: boolean;
+  isJGManagement: boolean;
+  loading: boolean;
+  error: string | null;
+}
+
+const UserRoleContext = createContext<UserRoleContextType>({
+  role: null,
+  isSubcontractor: false,
+  isAdmin: false,
+  isJGManagement: false,
+  loading: true,
+  error: null
+});
+
+export function UserRoleProvider({ children }: { children: React.ReactNode }) {
+  const [role, setRole] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Calculate boolean flags based on role
+  const isSubcontractor = role === 'subcontractor';
+  const isAdmin = role === 'admin';
+  const isJGManagement = role === 'jg_management';
+
+  useEffect(() => {
+    const fetchUserRole = async () => {
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+
+        if (user) {
+          console.log('UserRoleContext: User ID from auth:', user.id);
+          console.log('UserRoleContext: User object:', user);
+          
+          // Check if user ID has any unexpected characters
+          if (user.id && user.id.includes(':')) {
+            console.error('UserRoleContext: User ID contains unexpected characters:', user.id);
+            // Clean the user ID by removing anything after the first colon
+            const cleanUserId = user.id.split(':')[0];
+            console.log('UserRoleContext: Cleaned user ID:', cleanUserId);
+            
+            const { data: profile, error: profileError } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', cleanUserId)
+              .single();
+
+            if (profileError) {
+              console.error('UserRoleContext: Profile error with cleaned ID:', profileError);
+              throw profileError;
+            }
+            setRole(profile.role);
+          } else {
+            const { data: profile, error: profileError } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', user.id)
+              .single();
+
+            if (profileError) {
+              console.error('UserRoleContext: Profile error:', profileError);
+              throw profileError;
+            }
+            setRole(profile.role);
+          }
+        }
+      } catch (err) {
+        console.error('UserRoleContext: Error fetching user role:', err);
+        setError(err instanceof Error ? err.message : 'Failed to fetch user role');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserRole();
+  }, []);
+
+  return (
+    <UserRoleContext.Provider value={{ 
+      role, 
+      isSubcontractor, 
+      isAdmin, 
+      isJGManagement, 
+      loading, 
+      error 
+    }}>
+      {children}
+    </UserRoleContext.Provider>
+  );
+}
+
+export function useUserRole() {
+  const context = useContext(UserRoleContext);
+  if (context === undefined) {
+    throw new Error('useUserRole must be used within a UserRoleProvider');
+  }
+  return context;
+}

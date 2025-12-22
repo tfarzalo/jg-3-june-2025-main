@@ -1,0 +1,25 @@
+-- Add work order submission timestamp and submitted_by information to get_job_details
+-- 
+-- STEP 1: First run check_work_orders_schema.sql to see what fields exist
+--
+-- STEP 2: If created_at and a user reference field exist, this is a SIMPLE change:
+--
+-- In apply_get_job_details_fix_v8.sql around line 327-356, find the work_order json_build_object
+-- and ADD these two lines right after 'submission_date':
+--
+--     'submission_date', wo.submission_date,
+--     'created_at', wo.created_at,                        -- ADD THIS
+--     'submitted_by_name', COALESCE(u.full_name, u.email, 'System'),  -- ADD THIS
+--     'unit_number', wo.unit_number,
+--
+-- Then in the FROM clause around line 356-359, ADD this join:
+--
+--     FROM work_orders wo
+--     LEFT JOIN job_categories jc ON jc.id = wo.job_category_id
+--     LEFT JOIN profiles u ON u.id = wo.user_id           -- ADD THIS (or use auth.users if profiles doesn't exist)
+--     WHERE wo.job_id = p_job_id
+--
+-- If work_orders doesn't have user_id, check for: created_by, submitted_by, or link through jobs.created_by
+--
+-- This is NOT a full function replacement - just a 2-line addition to the JSON and 1 JOIN
+-- Much safer than replacing the entire function!

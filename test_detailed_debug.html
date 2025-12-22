@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detailed Debug Test</title>
+</head>
+<body>
+    <h1>Detailed Debug Test</h1>
+    <p>Testing different access methods to identify the exact issue...</p>
+    
+    <div id="results"></div>
+    
+    <script>
+        async function runDetailedTests() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<h3>Running tests...</h3>';
+            
+            const tests = [
+                {
+                    name: 'Test 1: Direct REST API Access (anon key)',
+                    url: 'https://tbwtfimnbmvbgesidbxh.supabase.co/rest/v1/calendar_tokens?select=*&limit=1',
+                    headers: {
+                        'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRid3RmaW1uYm12Ymdlc2lkYnhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAxMjkwNzksImV4cCI6MjA2NTcwNTA3OX0.mRyJ7yYFnR3buz9nVF2P6tXTMISTH6fvjx0ZH77fflo',
+                        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRid3RmaW1uYm12Ymdlc2lkYnhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAxMjkwNzksImV4cCI6MjA2NTcwNTA3OX0.mRyJ7yYFnR3buz9nVF2P6tXTMISTH6fvjx0ZH77fflo'
+                    }
+                },
+                {
+                    name: 'Test 2: Edge Function without token (should get 400)',
+                    url: 'https://tbwtfimnbmvbgesidbxh.supabase.co/functions/v1/calendar-feed?scope=events',
+                    headers: {}
+                },
+                {
+                    name: 'Test 3: Edge Function with invalid token (should get 403)',
+                    url: 'https://tbwtfimnbmvbgesidbxh.supabase.co/functions/v1/calendar-feed?scope=events&token=invalid-token',
+                    headers: {}
+                }
+            ];
+            
+            let results = '';
+            
+            for (const test of tests) {
+                try {
+                    const response = await fetch(test.url, { headers: test.headers });
+                    const responseText = await response.text();
+                    
+                    results += `
+                        <div style="border: 1px solid #ccc; margin: 10px 0; padding: 15px; border-radius: 5px;">
+                            <h4>${test.name}</h4>
+                            <p><strong>Status:</strong> ${response.status} ${response.statusText}</p>
+                            <p><strong>URL:</strong> ${test.url}</p>
+                            <p><strong>Response:</strong> ${responseText}</p>
+                            <p><strong>Headers:</strong> ${JSON.stringify(test.headers, null, 2)}</p>
+                        </div>
+                    `;
+                    
+                    // Wait a bit between tests
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                } catch (error) {
+                    results += `
+                        <div style="border: 1px solid #ff0000; margin: 10px 0; padding: 15px; border-radius: 5px; background-color: #fff5f5;">
+                            <h4>${test.name}</h4>
+                            <p style="color: red;"><strong>Error:</strong> ${error.message}</p>
+                        </div>
+                    `;
+                }
+            }
+            
+            resultsDiv.innerHTML = `
+                <h3>Test Results:</h3>
+                ${results}
+                <div style="margin-top: 20px; padding: 15px; background-color: #f0f8ff; border-radius: 5px;">
+                    <h4>Analysis:</h4>
+                    <ul>
+                        <li><strong>Test 1</strong>: Shows if basic database access works</li>
+                        <li><strong>Test 2</strong>: Shows if Edge Function is reachable</li>
+                        <li><strong>Test 3</strong>: Shows if Edge Function can process requests</li>
+                    </ul>
+                    <p><strong>Expected Results:</strong></p>
+                    <ul>
+                        <li>Test 1: 200 (success) or 401 (RLS blocking)</li>
+                        <li>Test 2: 400 (missing token) - NOT 401</li>
+                        <li>Test 3: 403 (invalid token) - NOT 401</li>
+                    </ul>
+                </div>
+            `;
+        }
+        
+        // Run tests when page loads
+        runDetailedTests();
+    </script>
+</body>
+</html>

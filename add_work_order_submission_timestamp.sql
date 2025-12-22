@@ -1,0 +1,393 @@
+-- Add work order submission timestamp and username to get_job_details function
+-- This updates the function to include created_at and submitted_by_name in the work_order object
+
+DROP FUNCTION IF EXISTS get_job_details(UUID);
+
+CREATE OR REPLACE FUNCTION get_job_details(p_job_id UUID)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_result JSON;
+    v_property_id UUID;
+    v_category_id UUID;
+    v_unit_size_id UUID;
+    v_job_category_name TEXT;
+    v_extra_charges_hours INTEGER;
+    v_extra_charges_description TEXT;
+    v_billing_category_id UUID;
+    v_billing_category_name TEXT;
+    v_hourly_billing_category_id UUID;
+    v_billing_category_exists BOOLEAN;
+    v_unit_size_exists BOOLEAN;
+    v_regular_billing_record JSON;
+    v_hourly_billing_record JSON;
+    v_regular_billing_count INTEGER;
+    v_hourly_billing_count INTEGER;
+    v_regular_bill_amount NUMERIC;
+    v_regular_sub_pay_amount NUMERIC;
+    v_hourly_bill_amount NUMERIC;
+    v_hourly_sub_pay_amount NUMERIC;
+    v_matching_billing_categories JSON;
+    v_billing_details JSON;
+    v_hourly_billing_details JSON;
+    v_extra_charges_details JSON;
+    v_debug_info JSON;
+    v_error_info JSON;
+    v_work_order JSON;
+    v_property JSON;
+    v_unit_size JSON;
+    v_job_type JSON;
+    v_job_phase JSON;
+BEGIN
+    -- Get the job's property, category, and unit size IDs
+    SELECT 
+        j.property_id,
+        jc.id,
+        j.unit_size_id,
+        jc.name
+    INTO 
+        v_property_id,
+        v_category_id,
+        v_unit_size_id,
+        v_job_category_name
+    FROM jobs j
+    LEFT JOIN job_categories jc ON jc.id = j.job_category_id
+    WHERE j.id = p_job_id;
+
+    -- Get extra charges information from the active work order
+    SELECT 
+        wo.extra_hours,
+        wo.extra_charges_description
+    INTO 
+        v_extra_charges_hours,
+        v_extra_charges_description
+    FROM work_orders wo
+    WHERE wo.job_id = p_job_id
+    AND wo.is_active = true;
+
+    -- Get billing category information (regular billing)
+    SELECT 
+        bc.id,
+        bc.name
+    INTO 
+        v_billing_category_id,
+        v_billing_category_name
+    FROM billing_categories bc
+    WHERE bc.property_id = v_property_id
+    AND bc.name = v_job_category_name;
+
+    -- Get hourly billing category information
+    -- Look for billing_details with is_hourly = true for this category
+    SELECT 
+        bd.category_id
+    INTO 
+        v_hourly_billing_category_id
+    FROM billing_details bd
+    JOIN billing_categories bc ON bc.id = bd.category_id
+    WHERE bc.property_id = v_property_id
+    AND bc.name = v_job_category_name
+    AND bd.is_hourly = true
+    LIMIT 1;
+
+    -- Check if billing category and unit size exist
+    v_billing_category_exists := v_billing_category_id IS NOT NULL;
+    v_unit_size_exists := v_unit_size_id IS NOT NULL;
+
+    -- Get regular billing details (is_hourly = false) - separate queries to avoid GROUP BY issues
+    SELECT 
+        json_build_object(
+            'bill_amount', bd.bill_amount,
+            'sub_pay_amount', bd.sub_pay_amount,
+            'profit_amount', bd.bill_amount - bd.sub_pay_amount,
+            'is_hourly', bd.is_hourly,
+            'display_order', 1,
+            'section_name', 'Regular Billing',
+            'debug', json_build_object(
+                'bill_amount', bd.bill_amount,
+                'sub_pay_amount', bd.sub_pay_amount,
+                'is_hourly', bd.is_hourly,
+                'category_id', bd.category_id,
+                'unit_size_id', bd.unit_size_id
+            )
+        ),
+        COUNT(*)
+    INTO 
+        v_regular_billing_record,
+        v_regular_billing_count
+    FROM billing_details bd
+    WHERE bd.category_id = v_billing_category_id
+    AND bd.unit_size_id = v_unit_size_id
+    AND bd.is_hourly = false
+    GROUP BY bd.bill_amount, bd.sub_pay_amount, bd.is_hourly, bd.category_id, bd.unit_size_id
+    LIMIT 1;
+
+    -- Get hourly billing details (is_hourly = true)
+    SELECT 
+        json_build_object(
+            'bill_amount', bd.bill_amount,
+            'sub_pay_amount', bd.sub_pay_amount,
+            'profit_amount', bd.bill_amount - bd.sub_pay_amount,
+            'is_hourly', bd.is_hourly,
+            'display_order', 2,
+            'section_name', 'Hourly Billing',
+            'debug', json_build_object(
+                'bill_amount', bd.bill_amount,
+                'sub_pay_amount', bd.sub_pay_amount,
+                'is_hourly', bd.is_hourly,
+                'category_id', bd.category_id,
+                'unit_size_id', bd.unit_size_id
+            )
+        ),
+        COUNT(*)
+    INTO 
+        v_hourly_billing_record,
+        v_hourly_billing_count
+    FROM billing_details bd
+    WHERE bd.category_id = v_billing_category_id
+    AND bd.unit_size_id = v_unit_size_id
+    AND bd.is_hourly = true
+    GROUP BY bd.bill_amount, bd.sub_pay_amount, bd.is_hourly, bd.category_id, bd.unit_size_id
+    LIMIT 1;
+
+    -- Build extra charges details if they exist
+    IF v_extra_charges_hours IS NOT NULL AND v_extra_charges_hours > 0 THEN
+        -- Get hourly rates
+        SELECT 
+            v_hourly_billing_record->>'bill_amount',
+            v_hourly_billing_record->>'sub_pay_amount'
+        INTO 
+            v_hourly_bill_amount,
+            v_hourly_sub_pay_amount;
+
+        v_extra_charges_details := json_build_object(
+            'description', v_extra_charges_description,
+            'hours', v_extra_charges_hours,
+            'bill_amount', (v_hourly_bill_amount * v_extra_charges_hours)::numeric,
+            'sub_pay_amount', (v_hourly_sub_pay_amount * v_extra_charges_hours)::numeric,
+            'profit_amount', ((v_hourly_bill_amount - v_hourly_sub_pay_amount) * v_extra_charges_hours)::numeric,
+            'hourly_rate', v_hourly_bill_amount,
+            'sub_pay_rate', v_hourly_sub_pay_amount,
+            'is_hourly', true,
+            'display_order', 3,
+            'section_name', 'Extra Charges',
+            'debug', json_build_object(
+                'property_id', v_property_id::text,
+                'billing_category_id', v_billing_category_id::text,
+                'billing_category_name', v_billing_category_name,
+                'unit_size_id', v_unit_size_id::text,
+                'job_category_name', v_job_category_name,
+                'bill_amount', v_hourly_bill_amount,
+                'sub_pay_amount', v_hourly_sub_pay_amount,
+                'raw_record', v_hourly_billing_record,
+                'record_count', v_hourly_billing_count,
+                'billing_category_exists', v_billing_category_exists,
+                'unit_size_exists', v_unit_size_exists,
+                'matching_billing_categories', v_matching_billing_categories,
+                'query_params', json_build_object(
+                    'property_id', v_property_id::text,
+                    'billing_category_id', v_billing_category_id::text,
+                    'unit_size_id', v_unit_size_id::text,
+                    'is_hourly', true
+                )
+            )
+        );
+    END IF;
+
+    -- Build billing details with proper structure
+    v_billing_details := json_build_object(
+        'bill_amount', COALESCE((v_regular_billing_record->>'bill_amount')::numeric, 0),
+        'sub_pay_amount', COALESCE((v_regular_billing_record->>'sub_pay_amount')::numeric, 0),
+        'profit_amount', COALESCE((v_regular_billing_record->>'profit_amount')::numeric, 0),
+        'is_hourly', false,
+        'display_order', 1,
+        'section_name', 'Regular Billing',
+        'debug', json_build_object(
+            'property_id', v_property_id::text,
+            'billing_category_id', v_billing_category_id::text,
+            'billing_category_name', v_billing_category_name,
+            'unit_size_id', v_unit_size_id::text,
+            'job_category_name', v_job_category_name,
+            'bill_amount', COALESCE((v_regular_billing_record->>'bill_amount')::numeric, 0),
+            'sub_pay_amount', COALESCE((v_regular_billing_record->>'sub_pay_amount')::numeric, 0),
+            'raw_record', v_regular_billing_record,
+            'record_count', COALESCE(v_regular_billing_count, 0),
+            'billing_category_exists', v_billing_category_exists,
+            'unit_size_exists', v_unit_size_exists,
+            'matching_billing_categories', v_matching_billing_categories,
+            'query_params', json_build_object(
+                'property_id', v_property_id::text,
+                'billing_category_id', v_billing_category_id::text,
+                'unit_size_id', v_unit_size_id::text,
+                'is_hourly', false
+            )
+        )
+    );
+
+    v_hourly_billing_details := json_build_object(
+        'bill_amount', COALESCE((v_hourly_billing_record->>'bill_amount')::numeric, 0),
+        'sub_pay_amount', COALESCE((v_hourly_billing_record->>'sub_pay_amount')::numeric, 0),
+        'profit_amount', COALESCE((v_hourly_billing_record->>'profit_amount')::numeric, 0),
+        'is_hourly', true,
+        'display_order', 2,
+        'section_name', 'Hourly Billing',
+        'debug', json_build_object(
+            'property_id', v_property_id::text,
+            'billing_category_id', v_billing_category_id::text,
+            'billing_category_name', v_billing_category_name,
+            'unit_size_id', v_unit_size_id::text,
+            'job_category_name', v_job_category_name,
+            'bill_amount', COALESCE((v_hourly_billing_record->>'bill_amount')::numeric, 0),
+            'sub_pay_amount', COALESCE((v_hourly_billing_record->>'sub_pay_amount')::numeric, 0),
+            'raw_record', v_hourly_billing_record,
+            'record_count', COALESCE(v_hourly_billing_count, 0),
+            'billing_category_exists', v_billing_category_exists,
+            'unit_size_exists', v_unit_size_exists,
+            'matching_billing_categories', v_matching_billing_categories,
+            'query_params', json_build_object(
+                'property_id', v_property_id::text,
+                'billing_category_id', v_billing_category_id::text,
+                'unit_size_id', v_unit_size_id::text,
+                'is_hourly', true
+            )
+        )
+    );
+
+    -- ⚡ UPDATED: Get work order data with created_at and submitted_by_name
+    SELECT json_build_object(
+        'id', wo.id,
+        'submission_date', wo.submission_date,
+        'created_at', wo.created_at,
+        'submitted_by_name', u.full_name,
+        'unit_number', wo.unit_number,
+        'unit_size', wo.unit_size,
+        'is_occupied', wo.is_occupied,
+        'is_full_paint', wo.is_full_paint,
+        'job_category_id', wo.job_category_id,
+        'job_category', jc.name,
+        'has_sprinklers', wo.has_sprinklers,
+        'sprinklers_painted', wo.sprinklers_painted,
+        'painted_ceilings', wo.painted_ceilings,
+        'ceiling_rooms_count', wo.ceiling_rooms_count,
+        'individual_ceiling_count', wo.individual_ceiling_count,
+        'ceiling_display_label', wo.ceiling_display_label,
+        'ceiling_billing_detail_id', wo.ceiling_billing_detail_id,
+        'painted_patio', wo.painted_patio,
+        'painted_garage', wo.painted_garage,
+        'painted_cabinets', wo.painted_cabinets,
+        'painted_crown_molding', wo.painted_crown_molding,
+        'painted_front_door', wo.painted_front_door,
+        'has_accent_wall', wo.has_accent_wall,
+        'accent_wall_type', wo.accent_wall_type,
+        'accent_wall_count', wo.accent_wall_count,
+        'accent_wall_billing_detail_id', wo.accent_wall_billing_detail_id,
+        'has_extra_charges', wo.has_extra_charges,
+        'extra_charges_description', wo.extra_charges_description,
+        'extra_hours', wo.extra_hours,
+        'additional_comments', wo.additional_comments,
+        'is_active', wo.is_active
+    )
+    INTO v_work_order
+    FROM work_orders wo
+    LEFT JOIN job_categories jc ON jc.id = wo.job_category_id
+    LEFT JOIN users u ON u.id = wo.user_id
+    WHERE wo.job_id = p_job_id
+    AND wo.is_active = true;
+
+    -- Get property data separately
+    SELECT json_build_object(
+        'id', p.id,
+        'name', p.property_name,
+        'address', p.address,
+        'address_2', p.address_2,
+        'city', p.city,
+        'state', p.state,
+        'zip', p.zip,
+        'ap_email', p.ap_email,
+        'quickbooks_number', p.quickbooks_number
+    )
+    INTO v_property
+    FROM properties p
+    WHERE p.id = v_property_id;
+
+    -- Get unit size data separately
+    SELECT json_build_object(
+        'id', us.id,
+        'label', us.unit_size_label
+    )
+    INTO v_unit_size
+    FROM unit_sizes us
+    WHERE us.id = v_unit_size_id;
+
+    -- Get job type data separately
+    SELECT json_build_object(
+        'id', jt.id,
+        'label', jt.job_type_label
+    )
+    INTO v_job_type
+    FROM job_types jt
+    JOIN jobs j ON j.job_type_id = jt.id
+    WHERE j.id = p_job_id;
+
+    -- Get job phase data separately with colors
+    SELECT json_build_object(
+        'id', jp.id,
+        'label', jp.job_phase_label,
+        'color_light_mode', jp.color_light_mode,
+        'color_dark_mode', jp.color_dark_mode
+    )
+    INTO v_job_phase
+    FROM job_phases jp
+    JOIN jobs j ON j.current_phase_id = jp.id
+    WHERE j.id = p_job_id;
+
+    -- Build the final result
+    SELECT json_build_object(
+        'id', j.id,
+        'work_order_num', j.work_order_num,
+        'unit_number', j.unit_number,
+        'description', j.job_description,
+        'scheduled_date', j.scheduled_date,
+        'assigned_to', j.assigned_to,
+        'assignment_status', j.assignment_status,
+        'assignment_decision_at', j.assignment_decision_at,
+        'declined_reason_code', j.declined_reason_code,
+        'declined_reason_text', j.declined_reason_text,
+        'property', v_property,
+        'unit_size', v_unit_size,
+        'job_type', v_job_type,
+        'job_phase', v_job_phase,
+        'work_order', v_work_order,
+        'billing_details', v_billing_details,
+        'hourly_billing', v_hourly_billing_details,
+        'extra_charges_details', v_extra_charges_details,
+        'invoice_sent', j.invoice_sent,
+        'invoice_paid', j.invoice_paid,
+        'invoice_sent_date', j.invoice_sent_date,
+        'invoice_paid_date', j.invoice_paid_date
+    )
+    INTO v_result
+    FROM jobs j
+    WHERE j.id = p_job_id;
+
+    RETURN v_result;
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN json_build_object(
+            'error', true,
+            'message', SQLERRM,
+            'detail', SQLSTATE
+        );
+END;
+$$;
+
+-- Grant permissions
+GRANT EXECUTE ON FUNCTION get_job_details TO authenticated;
+
+-- Set search path
+ALTER FUNCTION get_job_details(UUID) SET search_path = public;
+
+-- Verification query (commented out - uncomment to test with a real job ID)
+-- SELECT get_job_details('YOUR_JOB_ID_HERE'::uuid);
