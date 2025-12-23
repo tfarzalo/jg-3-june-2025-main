@@ -7,6 +7,24 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    date: 'December 23, 2025',
+    type: 'enhancement',
+    title: 'Admin File Upload Limit Removal',
+    description: 'Removed the 5MB file upload size limit for Admin and Management users, allowing for larger file uploads across the system.'
+  },
+  {
+    date: 'December 23, 2025',
+    type: 'enhancement',
+    title: 'Job Import Improvements',
+    description: 'Enhanced the Job Import Manager with better validation and file processing capabilities.'
+  },
+  {
+    date: 'December 23, 2025',
+    type: 'update',
+    title: 'System Deployment & Performance',
+    description: 'Deployed latest system updates and performance improvements to the main application repository.'
+  },
+  {
     date: 'November 24, 2025',
     type: 'fix',
     title: 'Critical Job Creation Fix',
