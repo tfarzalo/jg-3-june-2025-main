@@ -430,6 +430,15 @@ export function SubcontractorDashboard() {
     return fullName.split(' ')[0] || fullName;
   };
 
+  const formatDateLocalized = (date: Date) => {
+    return new Intl.DateTimeFormat(language === 'es' ? 'es-ES' : 'en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    }).format(date);
+  };
+
   const toggleJobExpansion = (jobId: string) => {
     setExpandedJobs(prev => ({
       ...prev,

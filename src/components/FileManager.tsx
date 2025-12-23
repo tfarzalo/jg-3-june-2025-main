@@ -234,8 +234,8 @@ export function FileManager() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('date');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [sortBy, setSortBy] = useState<SortOption>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showPreview, setShowPreview] = useState<FileItem | null>(null);
   const [showRenameInput, setShowRenameInput] = useState<FileItem | null>(null);
   const [newName, setNewName] = useState('');
@@ -342,10 +342,10 @@ export function FileManager() {
     const trimmed = newName.trim();
     if (!trimmed) return { valid: false, error: 'Name cannot be empty' };
     
-    // Check for spaces
-    if (/\s/.test(trimmed)) {
-      return { valid: false, error: 'File names cannot contain spaces' };
-    }
+    // Check for spaces - DISABLED to allow spaces in folder names
+    // if (/\s/.test(trimmed)) {
+    //   return { valid: false, error: 'File names cannot contain spaces' };
+    // }
     
     // Check extension for files
     if (!originalName.endsWith('/')) { // Not a folder
@@ -363,10 +363,11 @@ export function FileManager() {
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
     
-    if (/\s/.test(newFolderName.trim())) {
+    // Check for spaces - DISABLED to allow spaces in folder names
+    /* if (/\s/.test(newFolderName.trim())) {
       setError('Folder names cannot contain spaces');
       return;
-    }
+    } */
 
     try {
       const { data: userData } = await supabase.auth.getUser();
@@ -383,9 +384,11 @@ export function FileManager() {
       setNewFolderName('');
       setShowNewFolderInput(false);
       fetchItems();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error creating folder:', err);
-      setError(t.failedToCreate);
+      // Try to extract a more specific error message if available
+      const errorMessage = err?.message || err?.error_description || err?.details || t.failedToCreate;
+      setError(`${t.failedToCreate} ${errorMessage !== t.failedToCreate ? `(${errorMessage})` : ''}`);
     }
   };
 

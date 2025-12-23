@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { FolderOpen, File as FileIcon, Image as ImageIcon, FileText, ChevronRight, Eye } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { FolderOpen, File as FileIcon, Image as ImageIcon, FileText, ChevronRight, Eye, ArrowUp, ArrowDown } from 'lucide-react';
 import { supabase } from '../../utils/supabase';
 import { getPreviewUrl } from '../../utils/storagePreviews';
 import Lightbox from 'yet-another-react-lightbox';
@@ -56,6 +56,10 @@ export const PropertyFilesPreview: React.FC<PropertyFilesPreviewProps> = ({ prop
   ]);
   const [lightboxIndex, setLightboxIndex] = useState(-1);
   const [lightboxImages, setLightboxImages] = useState<Array<{ src: string }>>([]);
+  const [sortConfig, setSortConfig] = useState<{ key: keyof FileItem; direction: 'asc' | 'desc' } | null>({ 
+    key: 'name', 
+    direction: 'asc' 
+  });
 
   useEffect(() => {
     fetchItems();
@@ -71,15 +75,28 @@ export const PropertyFilesPreview: React.FC<PropertyFilesPreviewProps> = ({ prop
 
       // Filter by current folder
       if (currentFolderId === null) {
-        // At root level, show only items with folder_id null for this property
-        query = query.is('folder_id', null);
+        // Check for "Properties" root folder to handle nested structure
+        const { data: propsFolder } = await supabase
+          .from('files')
+          .select('id')
+          .eq('name', 'Properties')
+          .is('folder_id', null)
+          .single();
+
+        if (propsFolder) {
+          // Show items that are either at root (legacy) or under "Properties" folder
+          query = query.or(`folder_id.is.null,folder_id.eq.${propsFolder.id}`);
+        } else {
+          // Fallback for legacy structure
+          query = query.is('folder_id', null);
+        }
       } else {
         query = query.eq('folder_id', currentFolderId);
       }
 
       const { data, error } = await query
         .order('type', { ascending: false })
-        .order('created_at', { ascending: false });
+        .order('name', { ascending: true }); // Default sort by name
 
       if (error) throw error;
 
@@ -158,6 +175,53 @@ export const PropertyFilesPreview: React.FC<PropertyFilesPreviewProps> = ({ prop
     }
   };
 
+  const handleSort = (key: keyof FileItem) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const sortedItems = useMemo(() => {
+    let sortableItems = [...items];
+    if (sortConfig !== null) {
+      sortableItems.sort((a, b) => {
+        // Always keep folders on top
+        const aIsFolder = a.type === 'folder/directory';
+        const bIsFolder = b.type === 'folder/directory';
+        
+        if (aIsFolder && !bIsFolder) return -1;
+        if (!aIsFolder && bIsFolder) return 1;
+        
+        // If both are folders or both are files, sort by key
+        let aValue = a[sortConfig.key];
+        let bValue = b[sortConfig.key];
+        
+        // Handle dates
+        if (sortConfig.key === 'created_at') {
+            aValue = new Date(a.created_at).getTime();
+            bValue = new Date(b.created_at).getTime();
+        }
+
+        // Handle string comparison for case-insensitivity
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+            aValue = aValue.toLowerCase();
+            bValue = bValue.toLowerCase();
+        }
+
+        if (aValue < bValue) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
+        }
+        if (aValue > bValue) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+    return sortableItems;
+  }, [items, sortConfig]);
+
   if (loading) {
     return (
       <div className="text-center py-8 text-gray-500 dark:text-gray-400">
@@ -199,14 +263,41 @@ export const PropertyFilesPreview: React.FC<PropertyFilesPreviewProps> = ({ prop
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-[#0F172A]">
               <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Name
+                <th 
+                  scope="col" 
+                  className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
+                  onClick={() => handleSort('name')}
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Name</span>
+                    {sortConfig?.key === 'name' && (
+                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                    )}
+                  </div>
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Size
+                <th 
+                  scope="col" 
+                  className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
+                  onClick={() => handleSort('size')}
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Size</span>
+                    {sortConfig?.key === 'size' && (
+                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                    )}
+                  </div>
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Date
+                <th 
+                  scope="col" 
+                  className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
+                  onClick={() => handleSort('created_at')}
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Date</span>
+                    {sortConfig?.key === 'created_at' && (
+                      sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                    )}
+                  </div>
                 </th>
                 <th scope="col" className="px-6 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Actions
@@ -214,7 +305,7 @@ export const PropertyFilesPreview: React.FC<PropertyFilesPreviewProps> = ({ prop
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-[#1E293B] divide-y divide-gray-200 dark:divide-gray-700">
-              {items.map((item) => (
+              {sortedItems.map((item) => (
                 <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-[#0F172A] transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
