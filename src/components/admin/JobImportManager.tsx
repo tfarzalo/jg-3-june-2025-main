@@ -48,40 +48,33 @@ export function JobImportManager() {
     properties: {},
     unitSizes: {},
     jobTypes: {},
-    jobCategories: {},
-    subcontractors: {},
-    jobPhases: {}
+    jobCategories: {}
   });
+
   const [isProcessing, setIsProcessing] = useState(false);
 
   // Fetch reference data on mount
   useEffect(() => {
     const fetchRefs = async () => {
       try {
-        const [props, units, types, cats, subs, phases] = await Promise.all([
+        const [props, units, types, cats] = await Promise.all([
           supabase.from('properties').select('id, property_name').eq('is_archived', false),
           supabase.from('unit_sizes').select('id, unit_size_label'),
           supabase.from('job_types').select('id, job_type_label'),
-          supabase.from('job_categories').select('id, name'),
-          supabase.from('profiles').select('id, full_name').eq('role', 'subcontractor'),
-          supabase.from('job_phases').select('id, job_phase_label')
+          supabase.from('job_categories').select('id, name')
         ]);
 
         const refs: ReferenceData = {
           properties: {},
           unitSizes: {},
           jobTypes: {},
-          jobCategories: {},
-          subcontractors: {},
-          jobPhases: {}
+          jobCategories: {}
         };
 
         props.data?.forEach(p => refs.properties[p.property_name.toLowerCase()] = p.id);
         units.data?.forEach(u => refs.unitSizes[u.unit_size_label.toLowerCase()] = u.id);
         types.data?.forEach(t => refs.jobTypes[t.job_type_label.toLowerCase()] = t.id);
         cats.data?.forEach(c => refs.jobCategories[c.name.toLowerCase()] = c.id);
-        subs.data?.forEach(s => refs.subcontractors[s.full_name.toLowerCase()] = s.id);
-        phases.data?.forEach(p => refs.jobPhases[p.job_phase_label.toLowerCase()] = p.id);
 
         setReferenceData(refs);
       } catch (error) {
@@ -162,20 +155,6 @@ export function JobImportManager() {
         if (!jobCategoryId) errors.push(`Job Category "${data['Job Category']}" not found`);
       }
 
-      // Validate Assigned To (Optional)
-      let assignedTo: string | null = null;
-      if (data['Assigned To']) {
-        assignedTo = referenceData.subcontractors[data['Assigned To']?.toLowerCase()] || null;
-        if (!assignedTo) errors.push(`Subcontractor "${data['Assigned To']}" not found`);
-      }
-
-      // Validate Job Status (Optional)
-      let currentPhaseId: string | null = null;
-      if (data['Job Status']) {
-        currentPhaseId = referenceData.jobPhases[data['Job Status']?.toLowerCase()] || null;
-        if (!currentPhaseId) errors.push(`Job Status "${data['Job Status']}" not found`);
-      }
-
       // Validate Date (Support multiple formats)
       let scheduledDate = '';
       let displayDate = '';
@@ -231,9 +210,7 @@ export function JobImportManager() {
           job_type_id: jobTypeId,
           job_category_id: jobCategoryId,
           scheduled_date: scheduledDate,
-          display_date: displayDate,
-          assigned_to: assignedTo,
-          current_phase_id: currentPhaseId
+          display_date: displayDate
         } : undefined
       };
     });
@@ -242,8 +219,8 @@ export function JobImportManager() {
   };
 
   const downloadTemplate = () => {
-    const headers = ['Property Name', 'Unit Number', 'Unit Size', 'Job Type', 'Scheduled Date', 'Description', 'Job Category', 'Assigned To', 'Job Status'];
-    const example = ['Sunset Apartments', '101', '1x1', 'Full Paint', '12/25/2025', 'Standard turn', 'Turns', '', 'Job Request'];
+    const headers = ['Property Name', 'Unit Number', 'Job Category', 'Job Type', 'Unit Size', 'Scheduled Date', 'Description'];
+    const example = ['511 Queens', '101', 'Regular Paint', 'Paint', '1 Bedroom', '12-25-2025', 'optional'];
     const csvContent = [headers.join(','), example.join(',')].join('\n');
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -354,28 +331,6 @@ export function JobImportManager() {
           console.error(`Error importing row ${result.row}:`, error);
           failureCount++;
         } else {
-          // If we have assigned_to or current_phase_id, we need to update the job
-          // create_job RPC returns the new job ID
-          if (jobId && (result.parsedData.assigned_to || result.parsedData.current_phase_id)) {
-            const updates: any = {};
-            if (result.parsedData.assigned_to) {
-              updates.assigned_to = result.parsedData.assigned_to;
-              updates.assignment_status = 'pending';
-            }
-            if (result.parsedData.current_phase_id) {
-              updates.current_phase_id = result.parsedData.current_phase_id;
-            }
-
-            const { error: updateError } = await supabase
-              .from('jobs')
-              .update(updates)
-              .eq('id', jobId);
-
-            if (updateError) {
-              console.error(`Error updating job details for row ${result.row}:`, updateError);
-              // We don't count this as a failure since the job was created
-            }
-          }
           successCount++;
         }
       }
@@ -436,8 +391,11 @@ export function JobImportManager() {
               <p className="text-lg font-medium text-gray-900 dark:text-white mb-1">
                 Drop your CSV file here
               </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
                 or click to select a file
+              </p>
+              <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                All imported jobs will be set as new Job Request jobs
               </p>
             </div>
           ) : (

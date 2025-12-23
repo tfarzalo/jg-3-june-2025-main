@@ -22,6 +22,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
+import { config } from '../config/environment';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Lightbox from 'yet-another-react-lightbox';
 import 'yet-another-react-lightbox/styles.css';
@@ -161,6 +162,45 @@ const buildStoragePath = (path: string | null | undefined, name: string, jobId?:
   
   // Fallbacks for legacy rows that were missing path
   return jobId ? `jobs/${jobId}/${name}` : `root/${name}`;
+};
+
+// Helper to upload with progress
+const uploadFileWithProgress = async (
+  bucket: string,
+  path: string,
+  file: File,
+  onProgress: (progress: number) => void
+) => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('No session');
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const url = `${config.supabase.url}/storage/v1/object/${bucket}/${path}`;
+
+    xhr.open('POST', url);
+    xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
+    xhr.setRequestHeader('apikey', config.supabase.anonKey!);
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percent = (event.loaded / event.total) * 100;
+        onProgress(percent);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(xhr.response);
+      } else {
+        reject(new Error(`Upload failed: ${xhr.statusText}`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Network error'));
+
+    xhr.send(file);
+  });
 };
 
 export function FileManager() {
@@ -501,12 +541,13 @@ export function FileManager() {
         }
         filePath = filePath.replace(/\/+/g, '/');
 
-        // Upload to storage
-        const { error: uploadError } = await supabase.storage
-          .from('files')
-          .upload(filePath, file);
-
-        if (uploadError) throw uploadError;
+        // Upload to storage with progress
+        await uploadFileWithProgress('files', filePath, file, (progress) => {
+          setUploadProgress(prev => ({
+            ...prev,
+            [file.name]: progress
+          }));
+        });
 
         // Create file record
         const { error: dbError } = await supabase
@@ -523,12 +564,6 @@ export function FileManager() {
           });
 
         if (dbError) throw dbError;
-
-        // Update progress after successful upload
-        setUploadProgress(prev => ({
-          ...prev,
-          [file.name]: 100
-        }));
       }
 
       setSelectedFiles([]);

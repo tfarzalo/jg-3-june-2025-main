@@ -2,7 +2,48 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Upload, X } from 'lucide-react';
 import { supabase } from '../utils/supabase';
+import { config } from '../config/environment';
 import { WorkOrderLink } from './shared/WorkOrderLink';
+
+// Helper to upload with progress
+const uploadFileWithProgress = async (
+  bucket: string,
+  path: string,
+  file: File,
+  onProgress: (progress: number) => void
+) => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('No session');
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const url = `${config.supabase.url}/storage/v1/object/${bucket}/${path}`;
+
+    xhr.open('POST', url);
+    xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
+    xhr.setRequestHeader('apikey', config.supabase.anonKey!);
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percent = (event.loaded / event.total) * 100;
+        onProgress(percent);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(xhr.response);
+      } else {
+        reject(new Error(`Upload failed: ${xhr.statusText}`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Network error'));
+
+    xhr.send(file);
+  });
+};
+
 import { PropertyLink } from './shared/PropertyLink';
 
 interface Property {
@@ -29,6 +70,7 @@ export function FileUpload() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
   const [properties, setProperties] = useState<Property[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -140,6 +182,7 @@ export function FileUpload() {
 
     setLoading(true);
     setError(null);
+    setUploadProgress({});
 
     try {
       const { data: userData } = await supabase.auth.getUser();
@@ -202,15 +245,13 @@ export function FileUpload() {
           storagePath = `general/${sanitizedFilename}`;
         }
 
-        // Upload file to storage
-        const { data: storageData, error: storageError } = await supabase.storage
-          .from('files')
-          .upload(storagePath, file, {
-            cacheControl: '3600',
-            upsert: false
-          });
-
-        if (storageError) throw storageError;
+        // Upload file to storage with progress
+        await uploadFileWithProgress('files', storagePath, file, (progress) => {
+          setUploadProgress(prev => ({
+            ...prev,
+            [file.name]: progress
+          }));
+        });
 
         // Create file record in database
         const { error: dbError } = await supabase
@@ -354,21 +395,31 @@ export function FileUpload() {
             </div>
             <div className="divide-y divide-gray-200 dark:divide-[#2D3B4E]">
               {selectedFiles.map((file, index) => (
-                <div key={index} className="px-6 py-4 flex items-center justify-between">
-                  <div>
-                    <p className="text-gray-900 dark:text-white font-medium">{file.name}</p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{formatFileSize(file.size)}</p>
+                <div key={index} className="px-6 py-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <p className="text-gray-900 dark:text-white font-medium">{file.name}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{formatFileSize(file.size)}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const newFiles = [...selectedFiles];
+                        newFiles.splice(index, 1);
+                        setSelectedFiles(newFiles);
+                      }}
+                      className="text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-500 transition-colors"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      const newFiles = [...selectedFiles];
-                      newFiles.splice(index, 1);
-                      setSelectedFiles(newFiles);
-                    }}
-                    className="text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-500 transition-colors"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
+                  {uploadProgress[file.name] !== undefined && (
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
+                      <div 
+                        className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
+                        style={{ width: `${uploadProgress[file.name]}%` }}
+                      ></div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

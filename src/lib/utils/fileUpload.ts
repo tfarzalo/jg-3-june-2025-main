@@ -30,12 +30,29 @@ export async function uploadPropertyUnitMap(
       };
     }
 
-    // Validate file size (max 10MB)
-    const maxSize = 10 * 1024 * 1024; // 10MB
-    if (file.size > maxSize) {
+    // Check user role for size limit
+    const { data: { user } } = await supabase.auth.getUser();
+    let maxSize = 10 * 1024 * 1024; // 10MB default
+    let isUnlimited = false;
+
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (profile && (profile.role === 'admin' || profile.role === 'jg_management')) {
+        isUnlimited = true;
+      }
+    }
+
+    // Validate file size
+    if (!isUnlimited && file.size > maxSize) {
+      const sizeLimitMB = Math.round(maxSize / (1024 * 1024));
       return {
         success: false,
-        error: 'File size must be less than 10MB'
+        error: `File size must be less than ${sizeLimitMB}MB`
       };
     }
 
