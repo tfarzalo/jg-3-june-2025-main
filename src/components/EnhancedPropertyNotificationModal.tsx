@@ -276,12 +276,11 @@ export function EnhancedPropertyNotificationModal({
       return null;
     }
     const workOrderCode = `WO-${String(job.work_order_num).padStart(6, '0')}`;
-    const basePath = `/${job.property.name}/Work Orders/${workOrderCode}`;
+    const basePath = `/Properties/${job.property.name}/Work Orders/${workOrderCode}`;
     const { data, error } = await supabase
       .from('files')
       .select('id')
       .eq('path', basePath)
-      .eq('type', 'folder/directory')
       .maybeSingle();
     if (error || !data?.id) {
       return null;

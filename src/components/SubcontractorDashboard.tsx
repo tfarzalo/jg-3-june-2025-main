@@ -63,6 +63,8 @@ interface PropertyDetails {
   unit_map_file_path: string | null;
   maintenance_supervisor_name: string;
   maintenance_supervisor_title: string | null;
+  primary_contact_name: string | null;
+  primary_contact_role: string | null;
   billing_categories: BillingCategory[];
   paint_colors: PaintScheme[];
 }
@@ -601,7 +603,9 @@ export function SubcontractorDashboard() {
       const propertyDetails: PropertyDetails = {
         ...propertyData,
         billing_categories: processedBillingData,
-        paint_colors: paintColors
+        paint_colors: paintColors,
+        primary_contact_name: (propertyData as any).primary_contact_name || null,
+        primary_contact_role: (propertyData as any).primary_contact_role || null
       };
 
       // Cache the data
@@ -871,15 +875,19 @@ export function SubcontractorDashboard() {
                           </div>
                         ) : (
                           <div className="space-y-6">
-                            {/* Position / Job */}
-                            {propertyDataCache[job.property?.id || '']?.maintenance_supervisor_name && (
+                            {/* Subcontractor Contact (Primary Contact) */}
+                            {(propertyDataCache[job.property?.id || '']?.primary_contact_name || propertyDataCache[job.property?.id || '']?.maintenance_supervisor_name) && (
                               <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
                                 <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
                                   <User className="h-5 w-5 mr-2 text-green-600 dark:text-green-400" />
-                                  {propertyDataCache[job.property?.id || '']?.maintenance_supervisor_title || text.positionJob}
+                                  {propertyDataCache[job.property?.id || '']?.primary_contact_role || propertyDataCache[job.property?.id || '']?.maintenance_supervisor_title || text.positionJob}
                                 </h4>
                                 <p className="text-gray-800 dark:text-gray-200 text-sm">
-                                  {getFirstName(propertyDataCache[job.property?.id || '']?.maintenance_supervisor_name || '')}
+                                  {getFirstName(
+                                    propertyDataCache[job.property?.id || '']?.primary_contact_name || 
+                                    propertyDataCache[job.property?.id || '']?.maintenance_supervisor_name || 
+                                    ''
+                                  )}
                                 </p>
                               </div>
                             )}

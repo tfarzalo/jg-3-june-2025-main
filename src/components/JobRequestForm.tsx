@@ -273,8 +273,8 @@ export function JobRequestForm() {
       // Format work order number as WO-000001
       const formattedWorkOrder = `WO-${String(workOrderNum).padStart(6, '0')}`;
 
-      // Build paths - job request creates folder at /{PropertyName}/Work Orders/WO-000001
-      const workOrderFolderPath = `/${propertyName}/Work Orders/${formattedWorkOrder}`;
+      // Build paths - job request creates folder at /Properties/{PropertyName}/Work Orders/WO-000001
+      const workOrderFolderPath = `/Properties/${propertyName}/Work Orders/${formattedWorkOrder}`;
       const jobFilesFolderPath = `${workOrderFolderPath}/Job Files`;
 
       // First, get the Work Order folder ID (created by job insertion trigger)
@@ -298,7 +298,6 @@ export function JobRequestForm() {
         .from('files')
         .select('id')
         .eq('path', jobFilesFolderPath)
-        .eq('type', 'folder/directory')
         .single();
 
       if (existingJobFilesFolder) {

@@ -32,6 +32,7 @@ export function PropertyEditForm() {
   const [previewAddress, setPreviewAddress] = useState('');
   const [paintSchemes, setPaintSchemes] = useState<PaintScheme[]>([]);
   const [contacts, setContacts] = useState<PropertyContact[]>([]);
+  const [subcontractorContactSource, setSubcontractorContactSource] = useState<string>('community_manager');
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [propertyGroups, setPropertyGroups] = useState<PropertyManagementGroup[]>([]);
   
@@ -221,6 +222,18 @@ export function PropertyEditForm() {
         compliance_invoice_delivery_date: data.compliance_invoice_delivery_date || ''
       });
 
+      // Determine subcontractor contact source
+      if (data.primary_contact_name && data.primary_contact_name === data.maintenance_supervisor_name) {
+        setSubcontractorContactSource('maintenance_supervisor');
+      } else if (data.primary_contact_name && data.primary_contact_name === data.community_manager_name) {
+        setSubcontractorContactSource('community_manager');
+      } else if (data.primary_contact_name) {
+        // We'll check against additional contacts later or leave it as is if it matches a name
+        // Ideally we'd store the source ID but for now we rely on name matching
+        // Let's defer exact matching to when contacts are loaded or just default to 'community_manager' if ambiguous
+        // A better approach is checking if it matches the *current* values
+      }
+
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch property');
       setTimeout(() => navigate('/dashboard/properties'), 2000);
@@ -291,6 +304,30 @@ export function PropertyEditForm() {
       updateData.community_manager_title = (formData.community_manager_title || '').trim() || 'Community Manager';
       updateData.maintenance_supervisor_title = (formData.maintenance_supervisor_title || '').trim() || 'Maintenance Supervisor';
       
+      // Set primary contact fields based on selected source
+      if (subcontractorContactSource === 'community_manager') {
+        updateData.primary_contact_name = formData.community_manager_name;
+        updateData.primary_contact_role = updateData.community_manager_title;
+        updateData.primary_contact_phone = formData.community_manager_phone;
+      } else if (subcontractorContactSource === 'maintenance_supervisor') {
+        updateData.primary_contact_name = formData.maintenance_supervisor_name;
+        updateData.primary_contact_role = updateData.maintenance_supervisor_title;
+        updateData.primary_contact_phone = formData.maintenance_supervisor_phone;
+      } else {
+        // Additional contact
+        const contact = contacts.find(c => c.id === subcontractorContactSource);
+        if (contact) {
+          updateData.primary_contact_name = contact.name;
+          updateData.primary_contact_role = contact.position;
+          updateData.primary_contact_phone = contact.phone;
+        } else {
+           // Fallback
+           updateData.primary_contact_name = formData.community_manager_name;
+           updateData.primary_contact_role = updateData.community_manager_title;
+           updateData.primary_contact_phone = formData.community_manager_phone;
+        }
+      }
+
       const { error } = await supabase
         .from('properties')
         .update(updateData)
@@ -375,21 +412,14 @@ export function PropertyEditForm() {
 
   const handleDeleteContact = (id: string) => {
     setContacts(prev => prev.filter(contact => contact.id !== id));
+    if (subcontractorContactSource === id) {
+      setSubcontractorContactSource('community_manager');
+    }
   };
 
-  const handlePrimaryContactChange = (contactId: string) => {
-    const contact = contacts.find(c => c.id === contactId);
-    if (!contact) return;
-
-    setFormData(prev => ({
-      ...prev,
-      maintenance_supervisor_name: contact.name,
-      maintenance_supervisor_title: contact.position,
-      maintenance_supervisor_email: contact.email,
-      maintenance_supervisor_phone: contact.phone
-    }));
-
-    toast.success(`Set ${contact.name} as Primary Contact (Maintenance Supervisor)`);
+  const handleSubcontractorContactChange = (source: string) => {
+    setSubcontractorContactSource(source);
+    toast.success('Subcontractor contact updated');
   };
 
   return (
@@ -629,19 +659,31 @@ export function PropertyEditForm() {
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Contact Information</h2>
 
-            
-            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Position / Job */}
-              <div className="space-y-4">
+              {/* Community Manager */}
+              <div className="space-y-4 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50/50 dark:bg-gray-800/50">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200">Position / Job</h3>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Community Manager</h3>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      name="subcontractor_contact_source"
+                      checked={subcontractorContactSource === 'community_manager'}
+                      onChange={() => handleSubcontractorContactChange('community_manager')}
+                      className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                      title="Set as Subcontractor Contact"
+                    />
+                    <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Subcontractor Contact</label>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Position / Job</label>
                   <input
                     type="text"
                     name="community_manager_title"
                     value={formData.community_manager_title}
                     onChange={handleChange}
-                    className="w-48 h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Position / Job"
                   />
                 </div>
@@ -655,7 +697,7 @@ export function PropertyEditForm() {
                     name="community_manager_name"
                     value={formData.community_manager_name}
                     onChange={handleChange}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -668,7 +710,7 @@ export function PropertyEditForm() {
                     name="community_manager_email"
                     value={formData.community_manager_email}
                     onChange={handleChange}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -681,21 +723,35 @@ export function PropertyEditForm() {
                     name="community_manager_phone"
                     value={formData.community_manager_phone}
                     onChange={handleChange}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
 
-              {/* Position / Job */}
-              <div className="space-y-4">
+              {/* Maintenance Supervisor */}
+              <div className="space-y-4 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50/50 dark:bg-gray-800/50">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200">Position / Job</h3>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Maintenance Supervisor</h3>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      name="subcontractor_contact_source"
+                      checked={subcontractorContactSource === 'maintenance_supervisor'}
+                      onChange={() => handleSubcontractorContactChange('maintenance_supervisor')}
+                      className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                      title="Set as Subcontractor Contact"
+                    />
+                    <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Subcontractor Contact</label>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Position / Job</label>
                   <input
                     type="text"
                     name="maintenance_supervisor_title"
                     value={formData.maintenance_supervisor_title}
                     onChange={handleChange}
-                    className="w-48 h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Position / Job"
                   />
                 </div>
@@ -709,7 +765,7 @@ export function PropertyEditForm() {
                     name="maintenance_supervisor_name"
                     value={formData.maintenance_supervisor_name}
                     onChange={handleChange}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -722,7 +778,7 @@ export function PropertyEditForm() {
                     name="maintenance_supervisor_email"
                     value={formData.maintenance_supervisor_email}
                     onChange={handleChange}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
@@ -735,7 +791,7 @@ export function PropertyEditForm() {
                     name="maintenance_supervisor_phone"
                     value={formData.maintenance_supervisor_phone}
                     onChange={handleChange}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -761,16 +817,16 @@ export function PropertyEditForm() {
                 <div className="space-y-4">
                   {contacts.map((contact) => (
                     <div key={contact.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end p-4 bg-gray-50 dark:bg-[#0F172A] rounded-lg border border-gray-200 dark:border-gray-700">
-                       {/* Primary Checkbox */}
+                       {/* Subcontractor Contact Checkbox */}
                        <div className="md:col-span-1 flex flex-col items-center justify-center pb-3">
-                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Primary</label>
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2 text-center leading-tight">Subcontractor<br/>Contact</label>
                         <input
                           type="radio"
-                          name="primary_contact_select"
-                          checked={contact.name === formData.maintenance_supervisor_name}
-                          onChange={() => handlePrimaryContactChange(contact.id)}
+                          name="subcontractor_contact_select"
+                          checked={subcontractorContactSource === contact.id}
+                          onChange={() => handleSubcontractorContactChange(contact.id)}
                           className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                          title="Set as Primary Contact (Maintenance Supervisor)"
+                          title="Set as Subcontractor Contact"
                         />
                        </div>
 

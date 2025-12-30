@@ -64,7 +64,6 @@ export function ImageGallery({ workOrderId, folder, allowDelete = false }: Image
         .select('id, name, path')
         .eq('name', subfolderName)
         .eq('folder_id', workOrderId)
-        .eq('type', 'folder/directory')
         .maybeSingle();
         
       console.log('[ImageGallery] Subfolder lookup', { 

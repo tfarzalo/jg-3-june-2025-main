@@ -544,7 +544,7 @@ export function JobDetails() {
       const workOrderNum = `WO-${String(job?.work_order_num ?? 0).padStart(6, '0')}`;
       const propertyName = job?.property?.name;
       // Build the full path to the work order folder
-      const fullPath = `/${propertyName}/Work Orders/${workOrderNum}`;
+      const fullPath = `/Properties/${propertyName}/Work Orders/${workOrderNum}`;
       console.log('[JobDetails] Looking for work order folder', { fullPath, workOrderNum, propertyName });
       
       // Find the work order folder by full path
@@ -552,7 +552,6 @@ export function JobDetails() {
         .from('files')
         .select('id')
         .eq('path', fullPath)
-        .eq('type', 'folder/directory')
         .maybeSingle();
         
       console.log('[JobDetails] Work order folder lookup result', { folder, error, fullPath });
