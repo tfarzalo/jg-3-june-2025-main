@@ -333,8 +333,9 @@ export function JobRequestForm() {
         try {
           const sanitizedFilename = sanitizeFilename(file.name);
 
-          // Storage path: Property Name/Work Orders/WO-000001/Job Files/filename
-          const storagePath = `${propertyName}/Work Orders/${formattedWorkOrder}/Job Files/${sanitizedFilename}`;
+          // Storage path: Properties/Property Name/Work Orders/WO-000001/Job Files/filename
+          // Note: We include 'Properties' prefix to match the folder structure
+          const storagePath = `Properties/${propertyName}/Work Orders/${formattedWorkOrder}/Job Files/${sanitizedFilename}`;
           const normalizedStoragePath = storagePath.replace(/^\/+/, '').replace(/\/+/g, '/');
 
           // Upload file to storage

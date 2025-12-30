@@ -50,8 +50,17 @@ async function getJobsForDate(date: string): Promise<JobData[]> {
   // This matches exactly how the calendar displays jobs by date
   console.log('Querying jobs for date:', date);
   
-  // Query all jobs and filter by DATE in ET timezone
-  // We can't use PostgREST filters for timezone casting, so we fetch and filter
+  // Calculate next day for range query to optimize fetch
+  // We want to fetch jobs where scheduled_date (Midnight ET) falls on this day
+  // Since Midnight ET = 05:00 UTC, a UTC date range of [date, date+1] covers it
+  const dateObj = new Date(date);
+  const nextDateObj = new Date(dateObj);
+  nextDateObj.setDate(dateObj.getDate() + 1);
+  const nextDate = nextDateObj.toISOString().split('T')[0];
+
+  console.log(`Querying jobs between ${date} and ${nextDate} (UTC range covering ET day)`);
+  
+  // Query jobs within the date range
   const { data, error } = await supabase
     .from('jobs')
     .select(`
@@ -65,6 +74,8 @@ async function getJobsForDate(date: string): Promise<JobData[]> {
     `)
     .not('scheduled_date', 'is', null)
     .not('status', 'eq', 'Cancelled')
+    .gte('scheduled_date', date)
+    .lt('scheduled_date', nextDate)
     .order('scheduled_date', { ascending: true });
   
   if (error) {

@@ -126,7 +126,7 @@ export async function uploadPropertyUnitMap(
         name: file.name,
         path: filePath,
         storage_path: filePath,
-        display_path: `${propertyName}/Property Files/${file.name}`,
+        display_path: `/Properties/${propertyName}/Property Files/${file.name}`,
         size: file.size,
         type: file.type,
         uploaded_by: (await supabase.auth.getUser()).data.user?.id,

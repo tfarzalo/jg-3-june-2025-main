@@ -1,4 +1,12 @@
--- 1. Safe folder creation helper
+-- DROP AND RECREATE get_upload_folder
+-- 
+-- This script safely drops the existing function (to handle signature/default value changes)
+-- and then recreates it with the robust duplicate-key handling logic.
+
+-- 1. Drop existing function(s) to clear conflicts
+DROP FUNCTION IF EXISTS get_upload_folder(uuid, uuid, text);
+
+-- 2. Ensure the safe folder creation helper exists
 CREATE OR REPLACE FUNCTION ensure_folder_exists(
     p_path TEXT,
     p_parent_folder_id UUID DEFAULT NULL,
@@ -24,7 +32,7 @@ BEGIN
     SELECT id INTO v_folder_id
     FROM files
     WHERE path = p_path
-    AND type IN ('folder/directory', 'folder/job', 'folder/property') -- Check all folder types
+    AND type IN ('folder/directory', 'folder/job', 'folder/property')
     LIMIT 1;
     
     -- 2. If not found, create it with conflict handling
@@ -53,7 +61,7 @@ BEGIN
 END;
 $$;
 
--- 2. Update get_upload_folder to use the safe helper
+-- 3. Recreate get_upload_folder with new logic
 CREATE OR REPLACE FUNCTION get_upload_folder(
     p_property_id UUID,
     p_job_id UUID,
@@ -136,6 +144,6 @@ BEGIN
 END;
 $$;
 
--- 3. Grant permissions
+-- 4. Grant permissions
 GRANT EXECUTE ON FUNCTION ensure_folder_exists TO authenticated;
 GRANT EXECUTE ON FUNCTION get_upload_folder TO authenticated;

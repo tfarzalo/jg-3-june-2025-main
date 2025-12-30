@@ -2805,7 +2805,7 @@ const NewWorkOrder = () => {
               {dynamicServices.length > 0 && (
                 <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
                   <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Additional Services</h2>
-                  <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-4 sm:gap-6">
                     {dynamicServices.map(service => {
                       const value = dynamicFormValues[service.id] || { checked: false, quantity: 1, billingDetailId: '', description: '' };
                       
@@ -2853,7 +2853,7 @@ const NewWorkOrder = () => {
                             <div className="ml-6 space-y-4">
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
-                                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                                     Size / Type <span className="text-red-500">*</span>
                                   </label>
                                   <select
@@ -2864,7 +2864,7 @@ const NewWorkOrder = () => {
                                         [service.id]: { ...prev[service.id], billingDetailId: e.target.value }
                                       }));
                                     }}
-                                    className="w-full h-9 px-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded text-sm text-gray-900 dark:text-white"
+                                    className="w-full h-12 sm:h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                                   >
                                     <option value="">Select option...</option>
                                     {service.options.map(opt => (
@@ -2876,7 +2876,7 @@ const NewWorkOrder = () => {
                                 </div>
 
                                 <div>
-                                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                                     Quantity <span className="text-red-500">*</span>
                                   </label>
                                   <input
@@ -2890,13 +2890,13 @@ const NewWorkOrder = () => {
                                         [service.id]: { ...prev[service.id], quantity: qty }
                                       }));
                                     }}
-                                    className="w-full h-9 px-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded text-sm text-gray-900 dark:text-white"
+                                    className="w-full h-12 sm:h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                                   />
                                 </div>
                               </div>
 
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                                   Description (Optional)
                                 </label>
                                 <textarea
@@ -2908,7 +2908,7 @@ const NewWorkOrder = () => {
                                     }));
                                   }}
                                   rows={2}
-                                  className="w-full px-3 py-2 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded text-sm text-gray-900 dark:text-white resize-none"
+                                  className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                                   placeholder="Enter additional details..."
                                 />
                               </div>
