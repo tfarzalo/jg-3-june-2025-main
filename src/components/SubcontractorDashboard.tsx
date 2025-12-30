@@ -218,6 +218,10 @@ export function SubcontractorDashboard() {
         console.log('fetchJobs: Tomorrow data fetched:', tomorrowData);
         setTodayJobs(todayData || []);
         setTomorrowJobs(tomorrowData || []);
+
+        // Set initial tab based on pending jobs
+        const hasPendingJobs = (todayData || []).some(j => j.assignment_status === 'pending' || !j.assignment_status);
+        setActiveTab(hasPendingJobs ? 'pending' : 'accepted');
       } catch (err) {
         console.error('Error fetching initial jobs:', err);
         setError(err instanceof Error ? err.message : 'Failed to fetch jobs');

@@ -246,11 +246,8 @@ export function FileManager() {
   const [lightboxImages, setLightboxImages] = useState<{ src: string; alt: string }[]>([]);
   const [moveConfirmation, setMoveConfirmation] = useState<{ item: FileItem; targetFolderId: string } | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
-  // Removed modal editor state as we moved to dedicated page
-  // const [openDocument, setOpenDocument] = useState<{ item: FileItem; url: string } | null>(null);
-  // const [editorMode, setEditorMode] = useState<'spreadsheet' | 'document' | 'pdf' | null>(null);
-  // const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  // const [showCloseConfirmation, setShowCloseConfirmation] = useState(false);
+
+  const isFolder = (type: string) => type === 'folder/directory' || type === 'folder/job' || type === 'folder/property';
 
   const fetchItems = useCallback(async () => {
     if (!supabase) return;
@@ -1079,7 +1076,7 @@ export function FileManager() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (item.type !== 'folder/directory' && shouldOpenInEditor(item.type, item.name)) {
+                      if (!isFolder(item.type) && shouldOpenInEditor(item.type, item.name)) {
                         handleFileClick(item);
                         return;
                       }
@@ -1123,9 +1120,9 @@ export function FileManager() {
               key={item.id}
               draggable
               onDragStart={(e) => handleItemDragStart(e, item)}
-              onDragOver={(e) => item.type === 'folder/directory' ? handleItemDragOver(e, item.id) : undefined}
+              onDragOver={(e) => isFolder(item.type) ? handleItemDragOver(e, item.id) : undefined}
               onDragLeave={handleItemDragLeave}
-              onDrop={(e) => item.type === 'folder/directory' ? handleItemDrop(e, item) : undefined}
+              onDrop={(e) => isFolder(item.type) ? handleItemDrop(e, item) : undefined}
               className={`p-4 border rounded-lg transition-colors ${
                 dragOverFolderId === item.id 
                   ? 'bg-blue-100 dark:bg-blue-900 border-blue-500' 
@@ -1133,12 +1130,12 @@ export function FileManager() {
               }`}
             >
               <div className="flex flex-col items-center">
-                {item.type === 'folder/directory' ? (
+                {isFolder(item.type) ? (
                   <button
                     onClick={() => handleFolderClick(item)}
                     className="flex flex-col items-center text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400 w-full"
                   >
-                    <FolderOpen className="h-8 w-8 mb-2 text-yellow-500" />
+                    <FolderOpen className={`h-8 w-8 mb-2 ${item.type === 'folder/property' ? 'text-blue-500' : item.type === 'folder/job' ? 'text-green-500' : 'text-yellow-500'}`} />
                     <span className="text-center mb-2">{item.name}</span>
                   </button>
                 ) : (

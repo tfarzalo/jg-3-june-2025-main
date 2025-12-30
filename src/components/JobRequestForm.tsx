@@ -277,64 +277,25 @@ export function JobRequestForm() {
       const workOrderFolderPath = `/Properties/${propertyName}/Work Orders/${formattedWorkOrder}`;
       const jobFilesFolderPath = `${workOrderFolderPath}/Job Files`;
 
-      // First, get the Work Order folder ID (created by job insertion trigger)
-      const { data: workOrderFolder, error: woFolderError } = await supabase
-        .from('files')
-        .select('id')
-        .eq('path', workOrderFolderPath)
-        .single();
-
-      if (woFolderError || !workOrderFolder) {
-        console.error('Work Order folder not found:', woFolderError);
-        console.log('Expected path:', workOrderFolderPath);
-        setError('Unable to find the work order folder. Please try again.');
-        return;
-      }
-
-      // Create or get the Job Files folder
-      let jobFilesFolderId: string;
-
-      const { data: existingJobFilesFolder } = await supabase
-        .from('files')
-        .select('id')
-        .eq('path', jobFilesFolderPath)
-        .single();
-
-      if (existingJobFilesFolder) {
-        jobFilesFolderId = existingJobFilesFolder.id;
-      } else {
-        // Create the Job Files folder
-        const { data: newFolder, error: createFolderError } = await supabase
-          .from('files')
-          .insert({
-            name: 'Job Files',
-            path: jobFilesFolderPath,
-            size: 0,
-            type: 'folder/directory',
-            uploaded_by: user?.id,
-            property_id: formData.property_id,
-            job_id: jobId,
-            folder_id: workOrderFolder.id
-          })
-          .select('id')
-          .single();
-
-        if (createFolderError || !newFolder) {
-          console.error('Error creating Job Files folder:', createFolderError);
-          setError('Unable to create job files folder. Please try again.');
-          return;
-        }
-
-        jobFilesFolderId = newFolder.id;
-      }
-
       // Upload each file
       for (const file of selectedFiles) {
         try {
-          const sanitizedFilename = sanitizeFilename(file.name);
+          // Get the correct upload folder from the backend
+          const { data: folderId, error: folderError } = await supabase.rpc('get_upload_folder', {
+            p_property_id: formData.property_id,
+            p_job_id: jobId,
+            p_folder_type: 'job_files'
+          });
 
-          // Storage path: Properties/Property Name/Work Orders/WO-000001/Job Files/filename
-          // Note: We include 'Properties' prefix to match the folder structure
+          if (folderError || !folderId) {
+            console.error('Error getting upload folder:', folderError);
+            throw new Error('Failed to get upload folder');
+          }
+
+          const sanitizedFilename = sanitizeFilename(file.name);
+          
+          // Construct storage path: Properties/Property Name/Work Orders/WO-XXXXXX/Job Files/filename
+          // We can reconstruct this or query the folder path, but to be safe and consistent with the backend:
           const storagePath = `Properties/${propertyName}/Work Orders/${formattedWorkOrder}/Job Files/${sanitizedFilename}`;
           const normalizedStoragePath = storagePath.replace(/^\/+/, '').replace(/\/+/g, '/');
 
@@ -362,7 +323,7 @@ export function JobRequestForm() {
               uploaded_by: user?.id,
               property_id: formData.property_id,
               job_id: jobId,
-              folder_id: jobFilesFolderId
+              folder_id: folderId // Use the ID returned by the RPC
             });
 
           if (dbError) {
