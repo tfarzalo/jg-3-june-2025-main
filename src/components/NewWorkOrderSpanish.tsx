@@ -133,6 +133,10 @@ interface NewWorkOrderSpanishProps {
     unit_sizes: { unit_size_label: string }[]
   }>;
   billingOptionsLoading: boolean;
+  unitSizes?: Array<{ id: string; unit_size_label: string }>;
+  dynamicServices?: any[];
+  dynamicFormValues?: any;
+  setDynamicFormValues?: any;
 }
 
 const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
@@ -158,7 +162,11 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
   beforeImagesUploaded,
   ceilingPaintOptions,
   accentWallOptions,
-  billingOptionsLoading
+  billingOptionsLoading,
+  unitSizes = [],
+  dynamicServices,
+  dynamicFormValues,
+  setDynamicFormValues
 }) => {
   // Debug logging
   console.log('NewWorkOrderSpanish - Props Debug:', {
@@ -328,14 +336,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
               </div>
             </div>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                Tamaño de Unidad
-              </label>
-              <div className="text-gray-900 dark:text-white font-medium">
-                {job.unit_size?.unit_size_label}
-              </div>
-            </div>
+
             
             <div>
               <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -378,6 +379,27 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                     El número de unidad es establecido por la administración y no se puede cambiar.
                   </p>
                 )}
+              </div>
+
+              <div>
+                <label htmlFor="unit_size_id" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                  Tamaño de Unidad <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="unit_size_id"
+                  name="unit_size_id"
+                  required
+                  value={formData.unit_size_id}
+                  onChange={handleInputChange}
+                  className="w-full h-12 sm:h-11 px-4 border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-gray-50 dark:bg-[#0F172A]"
+                >
+                  <option value="">Seleccionar tamaño de unidad</option>
+                  {unitSizes.map(size => (
+                    <option key={size.id} value={size.id}>
+                      {size.unit_size_label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>

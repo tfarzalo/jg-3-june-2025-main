@@ -169,6 +169,7 @@ export function PropertyDetails() {
   const [callbacks, setCallbacks] = useState<PropertyCallback[]>([]);
   const [updates, setUpdates] = useState<PropertyUpdate[]>([]);
   const [paintSchemes, setPaintSchemes] = useState<PaintScheme[]>([]);
+  const [contacts, setContacts] = useState<PropertyContact[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [unitMapUrl, setUnitMapUrl] = useState<string | null>(null);
 
@@ -406,7 +407,16 @@ export function PropertyDetails() {
         if (updateError) throw updateError;
         setUpdates(updateData || []);
 
-                // Fetch paint schemes
+        // Fetch additional contacts
+        const { data: contactsData, error: contactsError } = await supabase
+          .from('property_contacts')
+          .select('*')
+          .eq('property_id', propertyId);
+
+        if (contactsError) throw contactsError;
+        setContacts(contactsData || []);
+
+        // Fetch paint schemes
         try {
           const { getPaintSchemesByProperty } = await import('../lib/paintColors');
           const schemes = await getPaintSchemesByProperty(propertyId);
@@ -899,6 +909,42 @@ export function PropertyDetails() {
                   <div className="min-w-0 flex-1">
                     <p className="text-gray-600 dark:text-gray-400 text-xs font-medium uppercase tracking-wide">Property Grade</p>
                     <p className="text-gray-900 dark:text-white text-sm font-medium">{property.property_grade}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Additional Contacts */}
+              {contacts.length > 0 && (
+                <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                  <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 uppercase tracking-wide">Additional Contacts</h4>
+                  <div className="space-y-4">
+                    {contacts.map(contact => (
+                      <div key={contact.id} className="border-b border-gray-200 dark:border-gray-700 last:border-0 pb-3 last:pb-0">
+                         {contact.position && (
+                            <div className="font-medium text-gray-900 dark:text-white text-sm mb-1">{contact.position}</div>
+                         )}
+                         <div className="space-y-1 ml-1">
+                            {contact.name && (
+                              <div className="flex items-center">
+                                <User className="h-3 w-3 text-gray-500 dark:text-gray-400 mr-2 flex-shrink-0" />
+                                <span className="text-gray-600 dark:text-gray-300 text-sm">{contact.name}</span>
+                              </div>
+                            )}
+                            {contact.email && (
+                              <div className="flex items-center">
+                                <Mail className="h-3 w-3 text-gray-500 dark:text-gray-400 mr-2 flex-shrink-0" />
+                                <span className="text-gray-600 dark:text-gray-300 text-sm">{contact.email}</span>
+                              </div>
+                            )}
+                            {contact.phone && (
+                              <div className="flex items-center">
+                                <Phone className="h-3 w-3 text-gray-500 dark:text-gray-400 mr-2 flex-shrink-0" />
+                                <span className="text-gray-600 dark:text-gray-300 text-sm">{contact.phone}</span>
+                              </div>
+                            )}
+                         </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

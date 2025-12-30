@@ -62,6 +62,7 @@ interface PropertyDetails {
   paint_location: string;
   unit_map_file_path: string | null;
   maintenance_supervisor_name: string;
+  maintenance_supervisor_title: string | null;
   billing_categories: BillingCategory[];
   paint_colors: PaintScheme[];
 }
@@ -467,6 +468,7 @@ export function SubcontractorDashboard() {
           paint_location,
           unit_map_file_path,
           maintenance_supervisor_name,
+          maintenance_supervisor_title,
           paint_colors
         `)
         .eq('id', propertyId)
@@ -874,7 +876,7 @@ export function SubcontractorDashboard() {
                               <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
                                 <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
                                   <User className="h-5 w-5 mr-2 text-green-600 dark:text-green-400" />
-                                  {text.positionJob}
+                                  {propertyDataCache[job.property?.id || '']?.maintenance_supervisor_title || text.positionJob}
                                 </h4>
                                 <p className="text-gray-800 dark:text-gray-200 text-sm">
                                   {getFirstName(propertyDataCache[job.property?.id || '']?.maintenance_supervisor_name || '')}

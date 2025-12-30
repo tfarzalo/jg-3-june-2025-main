@@ -85,6 +85,7 @@ interface WorkOrder {
   prepared_by: string;
   submission_date: string;
   unit_number: string;
+  unit_size?: string;
   is_occupied: boolean;
   is_full_paint: boolean;
   job_type?: string;
@@ -273,7 +274,8 @@ const buildWorkOrderPayload = (
   accentWallBillingDetailId?: string,
   ceilingPaintOptions: any[] = [],
   accentWallOptions: any[] = [],
-  dynamicFormValues: Record<string, any> = {}
+  dynamicFormValues: Record<string, any> = {},
+  unitSizes: UnitSize[] = []
 ): WorkOrderDBPayload => {
   // Build additional services payload
   const additionalServices: Record<string, any> = {};
@@ -291,7 +293,14 @@ const buildWorkOrderPayload = (
   const payload: WorkOrderDBPayload = {
     job_id: job.id,
     unit_number: formData.unit_number,
-    unit_size: toDbUnitSize(job.unit_size), // Use helper function
+    unit_size: (() => {
+      // If formData has unit_size_id, find the label
+      if (formData.unit_size_id) {
+        const found = unitSizes.find(u => u.id === formData.unit_size_id);
+        if (found) return found.unit_size_label;
+      }
+      return toDbUnitSize(job.unit_size);
+    })(),
     is_occupied: formData.is_occupied ?? false,
     is_full_paint: formData.is_full_paint ?? false,
     job_category_id: formData.job_category_id,
@@ -913,6 +922,7 @@ const NewWorkOrder = () => {
     sprinklers: false,
     sprinklers_painted: false,
     painted_ceilings: false,
+    unit_size_id: '',
     ceiling_rooms_count: '' as string | number,
     individual_ceiling_count: null as number | null, // New field for individual ceiling count
     ceiling_mode: 'unit_size' as 'unit_size' | 'individual', // Default to unit size mode
@@ -1019,6 +1029,7 @@ const NewWorkOrder = () => {
       
       setFormData({
         unit_number: existingWorkOrder.unit_number || '',
+        unit_size_id: (unitSizes.find(u => u.unit_size_label === existingWorkOrder.unit_size)?.id || job?.unit_size?.id || ''),
         is_occupied: existingWorkOrder.is_occupied ?? false,
         is_full_paint: existingWorkOrder.is_full_paint ?? false,
         job_type: existingWorkOrder.job_type || '',
@@ -1070,6 +1081,7 @@ const NewWorkOrder = () => {
     } else if (job) {
       setFormData({
         unit_number: job.unit_number || '',
+        unit_size_id: job.unit_size?.id || '',
         is_occupied: job.is_occupied ?? false,
         is_full_paint: job.is_full_paint ?? false,
         job_type: job.job_type?.job_type_label || '',
@@ -1634,7 +1646,8 @@ const NewWorkOrder = () => {
         accentWallBillingDetailId,
         ceilingPaintOptions,
         accentWallOptions,
-        dynamicFormValues
+        dynamicFormValues,
+        unitSizes
       );
       
       // Merge the ceiling/accent wall patch into the payload
@@ -1804,6 +1817,26 @@ const NewWorkOrder = () => {
 
       if (!workOrderResult.data) {
         throw new Error('No data returned from work order creation/update');
+      }
+
+      // Update job unit size if changed
+      if (formData.unit_size_id && formData.unit_size_id !== job.unit_size?.id) {
+        try {
+          // Use RPC function to update job unit size (works for subcontractors too)
+          const { error: unitSizeError } = await supabase.rpc('update_job_unit_size', {
+            p_job_id: job.id,
+            p_unit_size_id: formData.unit_size_id
+          });
+          
+          if (unitSizeError) {
+            console.error('Error updating job unit size:', unitSizeError);
+            // Don't throw here, just log error, as work order was successful
+          } else {
+            console.log('Job unit size updated successfully');
+          }
+        } catch (err) {
+          console.error('Exception updating job unit size:', err);
+        }
       }
       
       // Set the work order ID for image uploads
@@ -2269,14 +2302,7 @@ const NewWorkOrder = () => {
                   </div>
                 </div>
                 
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-                    Unit Size
-                  </label>
-                  <div className="text-gray-900 dark:text-white font-medium">
-                    {job.unit_size?.unit_size_label}
-                  </div>
-                </div>
+
                 
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
@@ -2319,6 +2345,27 @@ const NewWorkOrder = () => {
                         Unit number is set by management and cannot be changed.
                       </p>
                     )}
+                  </div>
+
+                  <div>
+                    <label htmlFor="unit_size_id" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                      Unit Size <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      id="unit_size_id"
+                      name="unit_size_id"
+                      required
+                      value={formData.unit_size_id}
+                      onChange={handleInputChange}
+                      className="w-full h-12 sm:h-11 px-4 border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-gray-50 dark:bg-[#0F172A]"
+                    >
+                      <option value="">Select a unit size</option>
+                      {unitSizes.map(size => (
+                        <option key={size.id} value={size.id}>
+                          {size.unit_size_label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>

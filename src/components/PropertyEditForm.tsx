@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Building2, ArrowLeft, MapPin, Plus, ZoomIn } from 'lucide-react';
+import { Building2, ArrowLeft, MapPin, Plus, ZoomIn, Trash2 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { useLeafletMap } from '../hooks/useLeafletMap';
 import { PaintColorsEditor } from './properties/PaintColorsEditor';
@@ -14,6 +14,16 @@ interface PropertyManagementGroup {
   company_name: string;
 }
 
+interface PropertyContact {
+  id: string;
+  property_id?: string;
+  position: string;
+  name: string;
+  email: string;
+  phone: string;
+  is_new?: boolean;
+}
+
 export function PropertyEditForm() {
   const { propertyId } = useParams<{ propertyId: string }>();
   const navigate = useNavigate();
@@ -21,6 +31,7 @@ export function PropertyEditForm() {
   const [error, setError] = useState<string | null>(null);
   const [previewAddress, setPreviewAddress] = useState('');
   const [paintSchemes, setPaintSchemes] = useState<PaintScheme[]>([]);
+  const [contacts, setContacts] = useState<PropertyContact[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [propertyGroups, setPropertyGroups] = useState<PropertyManagementGroup[]>([]);
   
@@ -102,7 +113,8 @@ export function PropertyEditForm() {
     fetchPropertyGroups();
     Promise.all([
       fetchProperty(),
-      fetchPaintSchemes()
+      fetchPaintSchemes(),
+      fetchContacts()
     ]);
   }, [propertyId, navigate]);
 
@@ -228,6 +240,23 @@ export function PropertyEditForm() {
     }
   };
 
+  const fetchContacts = async () => {
+    if (!propertyId) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('property_contacts')
+        .select('*')
+        .eq('property_id', propertyId);
+
+      if (error) throw error;
+      setContacts(data || []);
+    } catch (err) {
+      console.error('Failed to fetch property contacts:', err);
+      // Don't show error to user, just log it
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -276,9 +305,36 @@ export function PropertyEditForm() {
           const { savePaintSchemes } = await import('../lib/paintColors');
           await savePaintSchemes(propertyId, paintSchemes);
           console.log('Paint schemes saved successfully');
+
+          // Save property contacts
+          // 1. Delete existing contacts
+          const { error: deleteError } = await supabase
+            .from('property_contacts')
+            .delete()
+            .eq('property_id', propertyId);
+          
+          if (deleteError) throw deleteError;
+
+          // 2. Insert current contacts
+          if (contacts.length > 0) {
+            const contactsToInsert = contacts.map(c => ({
+              property_id: propertyId,
+              position: c.position,
+              name: c.name,
+              email: c.email,
+              phone: c.phone
+            }));
+
+            const { error: insertError } = await supabase
+              .from('property_contacts')
+              .insert(contactsToInsert);
+            
+            if (insertError) throw insertError;
+          }
+
         } catch (paintError) {
-          console.error('Error saving paint schemes:', paintError);
-          // Continue with navigation even if paint schemes fail to save
+          console.error('Error saving additional data:', paintError);
+          // Continue with navigation even if paint schemes/contacts fail to save
         }
       }
 
@@ -295,6 +351,45 @@ export function PropertyEditForm() {
   ) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleAddContact = () => {
+    setContacts(prev => [
+      ...prev,
+      {
+        id: `new-${Date.now()}`,
+        position: '',
+        name: '',
+        email: '',
+        phone: '',
+        is_new: true
+      }
+    ]);
+  };
+
+  const handleContactChange = (id: string, field: keyof PropertyContact, value: string) => {
+    setContacts(prev => prev.map(contact => 
+      contact.id === id ? { ...contact, [field]: value } : contact
+    ));
+  };
+
+  const handleDeleteContact = (id: string) => {
+    setContacts(prev => prev.filter(contact => contact.id !== id));
+  };
+
+  const handlePrimaryContactChange = (contactId: string) => {
+    const contact = contacts.find(c => c.id === contactId);
+    if (!contact) return;
+
+    setFormData(prev => ({
+      ...prev,
+      maintenance_supervisor_name: contact.name,
+      maintenance_supervisor_title: contact.position,
+      maintenance_supervisor_email: contact.email,
+      maintenance_supervisor_phone: contact.phone
+    }));
+
+    toast.success(`Set ${contact.name} as Primary Contact (Maintenance Supervisor)`);
   };
 
   return (
@@ -644,6 +739,104 @@ export function PropertyEditForm() {
                   />
                 </div>
               </div>
+            </div>
+
+            {/* Additional Contacts */}
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-6 mt-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-md font-semibold text-gray-900 dark:text-white">Additional Contacts</h3>
+                <button
+                  type="button"
+                  onClick={handleAddContact}
+                  className="flex items-center px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Contact
+                </button>
+              </div>
+
+              {contacts.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400 italic">No additional contacts added.</p>
+              ) : (
+                <div className="space-y-4">
+                  {contacts.map((contact) => (
+                    <div key={contact.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end p-4 bg-gray-50 dark:bg-[#0F172A] rounded-lg border border-gray-200 dark:border-gray-700">
+                       {/* Primary Checkbox */}
+                       <div className="md:col-span-1 flex flex-col items-center justify-center pb-3">
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Primary</label>
+                        <input
+                          type="radio"
+                          name="primary_contact_select"
+                          checked={contact.name === formData.maintenance_supervisor_name}
+                          onChange={() => handlePrimaryContactChange(contact.id)}
+                          className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          title="Set as Primary Contact (Maintenance Supervisor)"
+                        />
+                       </div>
+
+                       {/* Position */}
+                       <div className="md:col-span-3">
+                         <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Position / Job</label>
+                         <input
+                           type="text"
+                           value={contact.position || ''}
+                           onChange={(e) => handleContactChange(contact.id, 'position', e.target.value)}
+                           className="w-full h-9 px-3 text-sm bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           placeholder="Position"
+                         />
+                       </div>
+
+                       {/* Name */}
+                       <div className="md:col-span-3">
+                         <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Name</label>
+                         <input
+                           type="text"
+                           value={contact.name || ''}
+                           onChange={(e) => handleContactChange(contact.id, 'name', e.target.value)}
+                           className="w-full h-9 px-3 text-sm bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           placeholder="Name"
+                         />
+                       </div>
+
+                       {/* Email */}
+                       <div className="md:col-span-2">
+                         <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Email</label>
+                         <input
+                           type="email"
+                           value={contact.email || ''}
+                           onChange={(e) => handleContactChange(contact.id, 'email', e.target.value)}
+                           className="w-full h-9 px-3 text-sm bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           placeholder="Email"
+                         />
+                       </div>
+
+                       {/* Phone */}
+                       <div className="md:col-span-2">
+                         <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Phone</label>
+                         <input
+                           type="tel"
+                           value={contact.phone || ''}
+                           onChange={(e) => handleContactChange(contact.id, 'phone', e.target.value)}
+                           className="w-full h-9 px-3 text-sm bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           placeholder="Phone"
+                         />
+                       </div>
+
+                       {/* Delete */}
+                       <div className="md:col-span-1 flex justify-center pb-1">
+                         <button
+                           type="button"
+                           onClick={() => handleDeleteContact(contact.id)}
+                           className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                           title="Remove contact"
+                         >
+                           <Trash2 className="h-4 w-4" />
+                         </button>
+                       </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
