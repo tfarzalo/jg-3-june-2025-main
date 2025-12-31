@@ -1,9 +1,3 @@
--- =======================    -- Strip straight/curly apostrophes, allow spaces, normalize other symbols
-    v_clean := regexp_replace(input_text, '[''']', '', 'g');
-    v_clean := regexp_replace(v_clean, '[^A-Za-z0-9 -]', '_', 'g');
-    v_clean := regexp_replace(v_clean, '_{2,}', '_', 'g');
-    v_clean := regexp_replace(v_clean, '\s{2,}', ' ', 'g');
-    v_clean := trim(BOTH ' ' FROM trim(BOTH '_' FROM v_clean));===============================================
 -- Migration: Standardize property/work order folder paths
 -- Purpose : Normalize apostrophes/special characters so uploads always reuse
 --           the same property/work-order folders instead of creating variants.
@@ -29,9 +23,9 @@ BEGIN
         RETURN '';
     END IF;
 
-    -- Strip straight/curly apostrophes, allow spaces, normalize other symbols
-    v_clean := regexp_replace(input_text, '[''’]', '', 'g');
-    v_clean := regexp_replace(v_clean, '[^A-Za-z0-9\\- ]', '_', 'g');
+    v_clean := replace(input_text, '''', '');
+    v_clean := replace(v_clean, '’', '');
+    v_clean := regexp_replace(v_clean, '[^A-Za-z0-9 _-]', '_', 'g');
     v_clean := regexp_replace(v_clean, '_{2,}', '_', 'g');
     v_clean := regexp_replace(v_clean, '\\s{2,}', ' ', 'g');
     v_clean := trim(BOTH ' ' FROM trim(BOTH '_' FROM v_clean));

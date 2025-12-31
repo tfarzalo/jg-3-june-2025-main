@@ -9,6 +9,7 @@ import { Lightbox } from './Lightbox';
 import { UnitMapUpload } from './ui/UnitMapUpload';
 import { toast } from 'sonner';
 import { uploadPropertyUnitMap } from '../lib/utils/fileUpload';
+import { useUserRole } from '../contexts/UserRoleContext';
 
 interface PropertyManagementGroup {
   id: string;
@@ -27,6 +28,7 @@ interface PropertyContact {
 
 export function PropertyForm() {
   const navigate = useNavigate();
+  const { isAdmin, isJGManagement } = useUserRole();
   const [loading, setLoading] = useState(false);
   const [loadingGroups, setLoadingGroups] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -146,6 +148,10 @@ export function PropertyForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!(isAdmin || isJGManagement)) {
+      setError('You do not have permission to create properties.');
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -281,7 +287,12 @@ export function PropertyForm() {
 
       navigate(`/dashboard/properties/${data.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create property');
+      const msg = err instanceof Error ? err.message : 'Failed to create property';
+      if (/permission|row-level security|policy/i.test(msg)) {
+        setError('You do not have permission to create properties.');
+      } else {
+        setError(msg);
+      }
       setLoading(false);
     }
   };
@@ -1157,11 +1168,16 @@ export function PropertyForm() {
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !(isAdmin || isJGManagement)}
               className="px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
             >
               {loading ? 'Creating...' : 'Create Property'}
             </button>
+            {!(isAdmin || isJGManagement) && (
+              <div className="text-sm text-red-600 dark:text-red-400 flex items-center">
+                You do not have permission to create properties.
+              </div>
+            )}
           </div>
         </form>
       </div>

@@ -11,13 +11,27 @@ BEGIN
   END IF;
   
   -- Check if user has admin or management role through user_role_assignments
-  RETURN EXISTS (
+  IF EXISTS (
     SELECT 1 
     FROM public.user_role_assignments ura
     JOIN public.user_roles ur ON ura.role_id = ur.id
     WHERE ura.user_id = auth.uid() 
     AND ur.name IN ('Admin', 'JG Management')
-  );
+  ) THEN
+    RETURN TRUE;
+  END IF;
+  
+  -- Fallback to profiles.role
+  IF EXISTS (
+    SELECT 1
+    FROM public.profiles p
+    WHERE p.id = auth.uid()
+    AND p.role IN ('admin', 'jg_management')
+  ) THEN
+    RETURN TRUE;
+  END IF;
+  
+  RETURN FALSE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -29,13 +43,26 @@ BEGIN
     RETURN FALSE;
   END IF;
   
-  RETURN EXISTS (
+  IF EXISTS (
     SELECT 1 
     FROM public.user_role_assignments ura
     JOIN public.user_roles ur ON ura.role_id = ur.id
     WHERE ura.user_id = auth.uid() 
     AND ur.name = 'Subcontractor'
-  );
+  ) THEN
+    RETURN TRUE;
+  END IF;
+  
+  IF EXISTS (
+    SELECT 1
+    FROM public.profiles p
+    WHERE p.id = auth.uid()
+    AND p.role = 'subcontractor'
+  ) THEN
+    RETURN TRUE;
+  END IF;
+  
+  RETURN FALSE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -64,9 +91,22 @@ CREATE POLICY "Jobs limited access for subcontractors" ON jobs
 -- Properties table
 DROP POLICY IF EXISTS "Properties full access for admin/management" ON properties;
 DROP POLICY IF EXISTS "Properties read for subcontractors" ON properties;
+DROP POLICY IF EXISTS "Properties insert admin/management" ON properties;
+DROP POLICY IF EXISTS "Properties update admin/management" ON properties;
+DROP POLICY IF EXISTS "Properties delete admin/management" ON properties;
 
-CREATE POLICY "Properties full access for admin/management" ON properties
-  FOR ALL USING (public.is_admin_or_management());
+CREATE POLICY "Properties insert admin/management" ON properties
+  FOR INSERT TO authenticated
+  WITH CHECK (public.is_admin_or_management());
+
+CREATE POLICY "Properties update admin/management" ON properties
+  FOR UPDATE TO authenticated
+  USING (public.is_admin_or_management())
+  WITH CHECK (public.is_admin_or_management());
+
+CREATE POLICY "Properties delete admin/management" ON properties
+  FOR DELETE TO authenticated
+  USING (public.is_admin_or_management());
 
 CREATE POLICY "Properties read for subcontractors" ON properties
   FOR SELECT USING (public.is_subcontractor());
@@ -74,9 +114,22 @@ CREATE POLICY "Properties read for subcontractors" ON properties
 -- Property Management Groups table
 DROP POLICY IF EXISTS "PMG full access for admin/management" ON property_management_groups;
 DROP POLICY IF EXISTS "PMG read for subcontractors" ON property_management_groups;
+DROP POLICY IF EXISTS "PMG insert admin/management" ON property_management_groups;
+DROP POLICY IF EXISTS "PMG update admin/management" ON property_management_groups;
+DROP POLICY IF EXISTS "PMG delete admin/management" ON property_management_groups;
 
-CREATE POLICY "PMG full access for admin/management" ON property_management_groups
-  FOR ALL USING (public.is_admin_or_management());
+CREATE POLICY "PMG insert admin/management" ON property_management_groups
+  FOR INSERT TO authenticated
+  WITH CHECK (public.is_admin_or_management());
+
+CREATE POLICY "PMG update admin/management" ON property_management_groups
+  FOR UPDATE TO authenticated
+  USING (public.is_admin_or_management())
+  WITH CHECK (public.is_admin_or_management());
+
+CREATE POLICY "PMG delete admin/management" ON property_management_groups
+  FOR DELETE TO authenticated
+  USING (public.is_admin_or_management());
 
 CREATE POLICY "PMG read for subcontractors" ON property_management_groups
   FOR SELECT USING (public.is_subcontractor());

@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Building2, User, Phone, Mail, MapPin, Plus, X, Check } from 'lucide-react';
 import { supabase } from '@/utils/supabase';
+import { useUserRole } from '../contexts/UserRoleContext';
 
 export function PropertyGroupForm() {
   const navigate = useNavigate();
   const { groupId } = useParams<{ groupId: string }>();
   const isEditMode = Boolean(groupId);
+  const { isAdmin, isJGManagement } = useUserRole();
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(isEditMode);
   const [error, setError] = useState<string | null>(null);
@@ -98,6 +100,10 @@ export function PropertyGroupForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!(isAdmin || isJGManagement)) {
+      setError(`You do not have permission to ${isEditMode ? 'update' : 'create'} property management groups.`);
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -129,7 +135,12 @@ export function PropertyGroupForm() {
         navigate(`/dashboard/property-groups/${data.id}`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : `Failed to ${isEditMode ? 'update' : 'create'} property group`);
+      const msg = err instanceof Error ? err.message : `Failed to ${isEditMode ? 'update' : 'create'} property group`;
+      if (/permission|row-level security|policy/i.test(msg)) {
+        setError(`You do not have permission to ${isEditMode ? 'update' : 'create'} property management groups.`);
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -513,11 +524,16 @@ export function PropertyGroupForm() {
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !(isAdmin || isJGManagement)}
               className="px-6 py-3 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Property Group' : 'Create Property Group')}
             </button>
+            {!(isAdmin || isJGManagement) && (
+              <div className="text-sm text-red-600 dark:text-red-400 flex items-center">
+                You do not have permission to modify property management groups.
+              </div>
+            )}
           </div>
         </form>
       </div>
