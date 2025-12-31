@@ -8,7 +8,8 @@ import {
   Bell,
   FileText,
   LayoutDashboard,
-  Briefcase
+  Briefcase,
+  Ruler
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
@@ -17,6 +18,7 @@ import { LeadFormBuilder } from './LeadFormBuilder';
 import { DailyAgendaEmailSettings } from './DailyAgendaEmailSettings';
 import { JobImportManager } from './admin/JobImportManager';
 import { JobCategoryManager } from './admin/JobCategoryManager';
+import { UnitSizeManager } from './admin/UnitSizeManager';
 import { useUserRole } from '../hooks/useUserRole';
 
 interface AppSettingsData {
@@ -33,7 +35,7 @@ export function AppSettings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const [activeTab, setActiveTab] = useState<'overview' | 'email-templates' | 'lead-forms' | 'daily-agenda' | 'users' | 'sub-assignment-alerts' | 'bulk-schedule' | 'job-categories'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'email-templates' | 'lead-forms' | 'daily-agenda' | 'users' | 'sub-assignment-alerts' | 'bulk-schedule' | 'job-categories' | 'unit-sizes'>('overview');
   const [subAssignmentRecipients, setSubAssignmentRecipients] = useState<string[]>([]);
   const [adminOptions, setAdminOptions] = useState<AppSettingsData[]>([]);
 
@@ -263,6 +265,20 @@ export function AppSettings() {
               </button>
 
               <button
+                onClick={() => setActiveTab('unit-sizes')}
+                className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'unit-sizes'
+                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
+                }`}
+              >
+                <Ruler className={`flex-shrink-0 -ml-1 mr-3 h-6 w-6 ${
+                  activeTab === 'unit-sizes' ? 'text-blue-700 dark:text-blue-200' : 'text-gray-400 group-hover:text-gray-500'
+                }`} />
+                <span className="truncate">Unit Sizes</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab('users')}
                 className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'users'
@@ -354,6 +370,11 @@ export function AppSettings() {
             {/* Job Categories Tab */}
             {activeTab === 'job-categories' && (
               <JobCategoryManager />
+            )}
+
+            {/* Unit Sizes Tab */}
+            {activeTab === 'unit-sizes' && (
+              <UnitSizeManager />
             )}
 
             {/* User Management Tab */}

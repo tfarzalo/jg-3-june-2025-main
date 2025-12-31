@@ -67,9 +67,6 @@ export function BillingDetailsForm() {
   const [categoryLineItems, setCategoryLineItems] = useState<CategoryLineItems>({});
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
   const [selectedMasterCategoryId, setSelectedMasterCategoryId] = useState<string>('');
-  const [isCreatingNewCategory, setIsCreatingNewCategory] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState('');
-  const [newCategoryDescription, setNewCategoryDescription] = useState('');
   const [includeInWorkOrder, setIncludeInWorkOrder] = useState(false);
   const [propertyName, setPropertyName] = useState<string>('');
 
@@ -286,9 +283,6 @@ export function BillingDetailsForm() {
   const handleAddBillingItem = () => {
     setShowAddCategoryModal(true);
     setSelectedMasterCategoryId('');
-    setIsCreatingNewCategory(false); // Always false now - only existing categories
-    setNewCategoryName('');
-    setNewCategoryDescription('');
     setIncludeInWorkOrder(false);
   };
 
@@ -953,9 +947,6 @@ export function BillingDetailsForm() {
                   onClick={() => {
                     setShowAddCategoryModal(false);
                     setSelectedMasterCategoryId('');
-                    setIsCreatingNewCategory(false);
-                    setNewCategoryName('');
-                    setNewCategoryDescription('');
                     setIncludeInWorkOrder(false);
                   }}
                   className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 focus:outline-none"
@@ -965,32 +956,6 @@ export function BillingDetailsForm() {
               </div>
               
               <div className="space-y-6">
-                {/* Toggle between existing and new category */}
-                <div className="bg-gray-100 dark:bg-gray-800 p-1 rounded-lg inline-flex w-full">
-                  <button
-                    type="button"
-                    onClick={() => setIsCreatingNewCategory(false)}
-                    className={`flex-1 py-3 rounded-md text-sm font-semibold transition-all duration-200 ${
-                      !isCreatingNewCategory 
-                        ? 'bg-white dark:bg-[#2D3B4E] text-blue-600 dark:text-blue-400 shadow-sm' 
-                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                    }`}
-                  >
-                    Select Existing Category
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsCreatingNewCategory(true)}
-                    className={`flex-1 py-3 rounded-md text-sm font-semibold transition-all duration-200 ${
-                      isCreatingNewCategory 
-                        ? 'bg-white dark:bg-[#2D3B4E] text-blue-600 dark:text-blue-400 shadow-sm' 
-                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                    }`}
-                  >
-                    Create New Category
-                  </button>
-                </div>
-
                 <div className="min-h-[200px]">
                   {/* Only show existing categories selection - removed create new category option */}
                   <div className="space-y-4">
@@ -1042,9 +1007,6 @@ export function BillingDetailsForm() {
                   onClick={() => {
                     setShowAddCategoryModal(false);
                     setSelectedMasterCategoryId('');
-                    setIsCreatingNewCategory(false);
-                    setNewCategoryName('');
-                    setNewCategoryDescription('');
                     setIncludeInWorkOrder(false);
                   }}
                   className="px-6 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-[#2D3B4E] border border-gray-300 dark:border-[#4B5563] rounded-lg hover:bg-gray-50 dark:hover:bg-[#374151] focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors"
