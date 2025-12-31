@@ -20,7 +20,6 @@ import { formatInTimeZone } from 'date-fns-tz';
 import Papa from 'papaparse';
 import jsPDF from 'jspdf';
 import { supabase } from '@/utils/supabase';
-import { createClient } from '@supabase/supabase-js';
 import { toast } from 'sonner';
 import { getAdditionalBillingLines } from '../../lib/billing/additional';
 
@@ -1468,75 +1467,16 @@ export function JobListingPage({
         return;
       }
 
-      console.log('Deleting jobs with IDs:', selectedJobs);
-      
-      // For deletion operations, we need admin privileges to bypass RLS
-      // Create admin client with service role key
-      const adminClient = createClient(
-        import.meta.env.VITE_SUPABASE_URL,
-        import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY,
-        {
-          auth: {
-            autoRefreshToken: false,
-            persistSession: false
-          }
-        }
-      );
-      
-      // Delete in the correct order to maintain referential integrity
-      // 1. Delete work orders first
-      console.log('Step 1: Deleting work orders...');
-      const { error: workOrdersError, count: workOrdersCount } = await adminClient
-        .from('work_orders')
-        .delete({ count: 'exact' })
-        .in('job_id', selectedJobs);
+      console.log('Deleting jobs via edge function with IDs:', selectedJobs);
+      const { data: deleteResult, error: deleteError } = await supabase.functions.invoke('delete-jobs', {
+        body: { jobIds: selectedJobs }
+      });
 
-      if (workOrdersError) {
-        console.error('Error deleting work orders:', workOrdersError);
-        throw new Error(`Failed to delete work orders: ${workOrdersError.message}`);
+      if (deleteError) {
+        throw new Error(deleteError.message || 'Failed to delete jobs');
       }
-      console.log(`Deleted ${workOrdersCount || 0} work orders`);
-
-      // 2. Delete files associated with the jobs
-      console.log('Step 2: Deleting files...');
-      const { error: filesError, count: filesCount } = await adminClient
-        .from('files')
-        .delete({ count: 'exact' })
-        .in('job_id', selectedJobs);
-
-      if (filesError) {
-        console.error('Error deleting files:', filesError);
-        throw new Error(`Failed to delete files: ${filesError.message}`);
-      }
-      console.log(`Deleted ${filesCount || 0} files`);
-
-      // 3. Delete the jobs themselves
-      console.log('Step 3: Deleting jobs...');
-      const { error: jobsDeleteError, count: jobsCount } = await adminClient
-        .from('jobs')
-        .delete({ count: 'exact' })
-        .in('id', selectedJobs);
-
-      if (jobsDeleteError) {
-        console.error('Error deleting jobs:', jobsDeleteError);
-        throw new Error(`Failed to delete jobs: ${jobsDeleteError.message}`);
-      }
-      console.log(`Deleted ${jobsCount || 0} jobs`);
-
-      // 4. Verify deletion by checking if jobs still exist
-      console.log('Step 4: Verifying deletion...');
-      const { data: remainingJobs, error: verifyError } = await adminClient
-        .from('jobs')
-        .select('id')
-        .in('id', selectedJobs);
-
-      if (verifyError) {
-        console.error('Error verifying deletion:', verifyError);
-      } else {
-        console.log(`Remaining jobs after deletion:`, remainingJobs);
-        if (remainingJobs && remainingJobs.length > 0) {
-          throw new Error(`Deletion failed: ${remainingJobs.length} jobs still exist in database`);
-        }
+      if (deleteResult && deleteResult.error) {
+        throw new Error(typeof deleteResult.error === 'string' ? deleteResult.error : 'Failed to delete jobs');
       }
 
       // Refresh the jobs list

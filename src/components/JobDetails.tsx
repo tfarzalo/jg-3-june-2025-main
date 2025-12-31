@@ -2260,30 +2260,13 @@ export function JobDetails() {
                             : 'Recommended: Drywall Repairs notification')}
                     </p>
                     <div className="mt-3 flex flex-col md:flex-row md:items-center gap-3">
-                      <select
-                        value={notificationType || ''}
-                        onChange={(e) => {
-                          const val = e.target.value as 'extra_charges' | 'sprinkler_paint' | 'drywall_repairs';
-                          setNotificationType(val);
-                        }}
-                        className="px-3 py-2 rounded-lg border border-blue-300 bg-white text-blue-900 dark:bg-gray-900 dark:text-blue-200 dark:border-blue-700"
-                      >
-                        <option value="">
-                          {(!effectiveApprovalDecision?.decision && isPendingWorkOrder && derivedExtraCharges)
-                            ? 'Select: Extra Charges Approval'
-                            : 'Select notification type'}
-                        </option>
-                        <option value="extra_charges">Extra Charges Approval</option>
-                        <option value="sprinkler_paint">Sprinkler Paint Notification</option>
-                        <option value="drywall_repairs">Drywall Repairs Notification</option>
-                      </select>
                       <button
                         onClick={() => {
                           const recommended: 'extra_charges' | 'sprinkler_paint' | 'drywall_repairs' =
                             (!effectiveApprovalDecision?.decision && isPendingWorkOrder && derivedExtraCharges)
                               ? 'extra_charges'
                               : (job.work_order?.has_sprinklers ? 'sprinkler_paint' : 'drywall_repairs');
-                          const typeToUse = notificationType || recommended;
+                          const typeToUse = recommended;
                           setNotificationType(typeToUse);
                           setShowEnhancedNotificationModal(true);
                         }}
