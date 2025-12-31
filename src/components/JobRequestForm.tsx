@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthProvider';
 import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
 import { optimizeImage } from '../lib/utils/imageOptimization';
+import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
 
 interface Property {
   id: string;
@@ -42,6 +43,11 @@ export function JobRequestForm() {
   const [jobCategories, setJobCategories] = useState<JobCategory[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
+  const [hasChanges, setHasChanges] = useState(false);
+  const { attemptNavigate } = useUnsavedChangesPrompt(hasChanges, async () => {
+    const fakeEvent = { preventDefault() {} } as any;
+    await handleSubmit(fakeEvent);
+  });
 
   const [debugInfo, setDebugInfo] = useState<{
     supabaseConnected: boolean;
@@ -227,6 +233,7 @@ export function JobRequestForm() {
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
       setSelectedFiles(prev => [...prev, ...newFiles]);
+      setHasChanges(true);
     }
   };
 
@@ -235,6 +242,7 @@ export function JobRequestForm() {
     if (e.dataTransfer.files) {
       const newFiles = Array.from(e.dataTransfer.files);
       setSelectedFiles(prev => [...prev, ...newFiles]);
+      setHasChanges(true);
     }
   };
 
@@ -244,6 +252,7 @@ export function JobRequestForm() {
 
   const removeFile = (index: number) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    setHasChanges(true);
   };
 
   const sanitizeFilename = (filename: string) => {
@@ -432,6 +441,7 @@ export function JobRequestForm() {
   ) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    setHasChanges(true);
   };
 
   return (
@@ -440,7 +450,7 @@ export function JobRequestForm() {
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center space-x-3">
             <button
-              onClick={() => navigate('/dashboard/jobs')}
+              onClick={() => attemptNavigate(() => navigate(-1))}
               className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
             >
               <ArrowLeft className="h-6 w-6" />
@@ -680,7 +690,7 @@ export function JobRequestForm() {
           <div className="flex justify-end space-x-3 mt-6">
             <button
               type="button"
-              onClick={() => navigate('/dashboard/jobs')}
+              onClick={() => attemptNavigate(() => navigate(-1))}
               className="px-6 py-2 text-sm font-medium text-gray-700 dark:text-gray-400 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors"
             >
               Cancel
@@ -704,6 +714,16 @@ export function JobRequestForm() {
             </button>
           </div>
         </form>
+        <div className="mt-8 flex justify-end">
+          <button
+            type="submit"
+            disabled={loading}
+            className="px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+            onClick={() => document.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))}
+          >
+            {loading ? 'Creating...' : 'Create Job Request'}
+          </button>
+        </div>
       </div>
     </div>
   );

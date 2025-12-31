@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
+import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
 
 interface LeadStatus {
   id: string;
@@ -32,6 +33,11 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
   const [leadStatuses, setLeadStatuses] = useState<LeadStatus[]>([]);
+  const [hasChanges, setHasChanges] = useState(false);
+  const { attemptNavigate } = useUnsavedChangesPrompt(hasChanges, async () => {
+    const fakeEvent = { preventDefault() {} } as any;
+    await handleSubmit(fakeEvent);
+  });
   
   const [formData, setFormData] = useState({
     first_name: '',
@@ -168,11 +174,13 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
     if (newTag.trim() && !tags.includes(newTag.trim())) {
       setTags([...tags, newTag.trim()]);
       setNewTag('');
+      setHasChanges(true);
     }
   };
 
   const handleRemoveTag = (tagToRemove: string) => {
     setTags(tags.filter(tag => tag !== tagToRemove));
+    setHasChanges(true);
   };
 
   return (
@@ -183,8 +191,8 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
               Create New Contact
             </h2>
-            <button
-              onClick={onClose}
+              <button
+              onClick={() => attemptNavigate(onClose)}
               className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
             >
               <X className="h-6 w-6" />
@@ -206,7 +214,7 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
                     type="text"
                     required
                     value={formData.first_name}
-                    onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, first_name: e.target.value }); setHasChanges(true); }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="Enter first name"
                   />
@@ -219,7 +227,7 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
                     type="text"
                     required
                     value={formData.last_name}
-                    onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, last_name: e.target.value }); setHasChanges(true); }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="Enter last name"
                   />
@@ -231,7 +239,7 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
                   <input
                     type="email"
                     value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, email: e.target.value }); setHasChanges(true); }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="Enter email address"
                   />
@@ -243,7 +251,7 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
                   <input
                     type="tel"
                     value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, phone: e.target.value }); setHasChanges(true); }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="Enter phone number"
                   />
@@ -255,7 +263,7 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
                   <input
                     type="text"
                     value={formData.company}
-                    onChange={(e) => setFormData({ ...formData, company: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, company: e.target.value }); setHasChanges(true); }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="Enter company name"
                   />
@@ -267,7 +275,7 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
                   <input
                     type="text"
                     value={formData.job_title}
-                    onChange={(e) => setFormData({ ...formData, job_title: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, job_title: e.target.value }); setHasChanges(true); }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="Enter job title"
                   />
@@ -278,7 +286,7 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
                   </label>
                   <select
                     value={formData.status_id}
-                    onChange={(e) => setFormData({ ...formData, status_id: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, status_id: e.target.value }); setHasChanges(true); }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   >
                     <option value="">Select a status (optional)</option>
@@ -305,7 +313,7 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
                   <input
                     type="text"
                     value={formData.property_name}
-                    onChange={(e) => setFormData({ ...formData, property_name: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, property_name: e.target.value }); setHasChanges(true); }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="Enter property name (optional)"
                   />
@@ -317,7 +325,7 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
                   <input
                     type="text"
                     value={formData.property_address}
-                    onChange={(e) => setFormData({ ...formData, property_address: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, property_address: e.target.value }); setHasChanges(true); }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="Enter property address (optional)"
                   />
@@ -329,8 +337,8 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
                   <input
                     type="text"
                     value={formData.property_group}
-                    onChange={(e) => setFormData({ ...formData, property_group: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    onChange={(e) => { setFormData({ ...formData, property_group: e.target.value }); setHasChanges(true); }}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg白 dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder="Enter property management group (optional)"
                   />
                 </div>
@@ -408,7 +416,7 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
                   <input
                     type="text"
                     value={newTag}
-                    onChange={(e) => setNewTag(e.target.value)}
+                    onChange={(e) => { setNewTag(e.target.value); setHasChanges(true); }}
                     onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
                     placeholder="Add a tag"
                     className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -450,9 +458,9 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
               </label>
               <textarea
                 value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, notes: e.target.value }); setHasChanges(true); }}
                 rows={4}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg白 dark:bg-gray-700 text-gray-900 dark:text-white"
                 placeholder="Add any additional notes about this contact..."
               />
             </div>

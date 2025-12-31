@@ -355,7 +355,8 @@ export function PropertyDetails() {
           const { data: detailsData, error: detailsError } = await supabase
             .from('billing_details')
             .select('*')
-            .eq('property_id', propertyId);
+            .eq('property_id', propertyId)
+            .order('sort_order');
 
           if (detailsError) throw detailsError;
 
@@ -366,7 +367,20 @@ export function PropertyDetails() {
             }
             detailsByCategory[detail.category_id].push(detail);
           });
-          setCategoryDetails(detailsByCategory);
+          // Sort each category's details by sort_order, fallback to unit size label
+          const sortedByCategory: {[key: string]: BillingDetail[]} = {};
+          Object.keys(detailsByCategory).forEach(catId => {
+            const arr = detailsByCategory[catId] ?? [];
+            sortedByCategory[catId] = [...arr].sort((a, b) => {
+              const ao = (a as any).sort_order ?? Number.MAX_SAFE_INTEGER;
+              const bo = (b as any).sort_order ?? Number.MAX_SAFE_INTEGER;
+              if (ao !== bo) return ao - bo;
+              const al = unitSizes[a.unit_size_id] ?? '';
+              const bl = unitSizes[b.unit_size_id] ?? '';
+              return al.localeCompare(bl);
+            });
+          });
+          setCategoryDetails(sortedByCategory);
 
           const { data: unitSizeData, error: unitSizeError } = await supabase
             .from('unit_sizes')
@@ -1312,15 +1326,9 @@ export function PropertyDetails() {
                       {categoryDetails[category.id]?.map(detail => (
                         <div key={detail.unit_size_id} className="flex justify-between items-center text-sm py-2 px-3 bg-white dark:bg-gray-800 rounded-md">
                           <div className="flex-1">
-                            {category.name === 'Extra Charges' && detail.is_hourly ? (
-                              <div className="px-3 py-1 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded text-sm text-gray-700 dark:text-gray-300 font-medium w-fit">
-                                Hourly
-                              </div>
-                            ) : (
-                              <span className="text-gray-600 dark:text-gray-400 font-medium">
-                                {unitSizes[detail.unit_size_id]}
-                              </span>
-                            )}
+                            <span className="text-gray-600 dark:text-gray-400 font-medium">
+                              {unitSizes[detail.unit_size_id]}
+                            </span>
                           </div>
                           <div className="flex space-x-6">
                             <span className="text-gray-600 dark:text-gray-400">Bill: <span className="font-bold">${detail.bill_amount}</span></span>

@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
+import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
 
 interface FormField {
   id: string;
@@ -78,6 +79,14 @@ export function LeadFormBuilder() {
   const [successMessage, setSuccessMessage] = useState('Thank you for your submission!');
   const [redirectUrl, setRedirectUrl] = useState('');
   const [isFormActive, setIsFormActive] = useState(true);
+  const [hasChanges, setHasChanges] = useState(false);
+  const { attemptNavigate } = useUnsavedChangesPrompt(hasChanges, async () => {
+    if (selectedForm) {
+      await updateForm();
+    } else {
+      await createForm();
+    }
+  });
 
   // Field state
   const [newField, setNewField] = useState<Partial<FormField>>({
@@ -572,6 +581,13 @@ window.addEventListener('message', function(event) {
             Create and manage lead capture forms
           </p>
         </div>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => attemptNavigate(() => window.history.back())}
+            className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-100 rounded-lg"
+          >
+            Back
+          </button>
         <button
           onClick={() => {
             setSelectedForm(null);
@@ -587,6 +603,7 @@ window.addEventListener('message', function(event) {
           <Plus className="h-4 w-4 mr-2" />
           New Form
         </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -685,7 +702,7 @@ window.addEventListener('message', function(event) {
                         <input
                           type="text"
                           value={formName}
-                          onChange={(e) => setFormName(e.target.value)}
+                          onChange={(e) => { setFormName(e.target.value); setHasChanges(true); }}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                           placeholder="Enter form name"
                         />
@@ -697,7 +714,7 @@ window.addEventListener('message', function(event) {
                         <input
                           type="text"
                           value={formDescription}
-                          onChange={(e) => setFormDescription(e.target.value)}
+                          onChange={(e) => { setFormDescription(e.target.value); setHasChanges(true); }}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                           placeholder="Enter form description"
                         />
@@ -709,7 +726,7 @@ window.addEventListener('message', function(event) {
                         <input
                           type="text"
                           value={successMessage}
-                          onChange={(e) => setSuccessMessage(e.target.value)}
+                          onChange={(e) => { setSuccessMessage(e.target.value); setHasChanges(true); }}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                           placeholder="Thank you for your submission!"
                         />
@@ -721,7 +738,7 @@ window.addEventListener('message', function(event) {
                         <input
                           type="url"
                           value={redirectUrl}
-                          onChange={(e) => setRedirectUrl(e.target.value)}
+                          onChange={(e) => { setRedirectUrl(e.target.value); setHasChanges(true); }}
                           className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                           placeholder="https://example.com/thank-you"
                         />
@@ -732,7 +749,7 @@ window.addEventListener('message', function(event) {
                         <input
                           type="checkbox"
                           checked={isFormActive}
-                          onChange={(e) => setIsFormActive(e.target.checked)}
+                          onChange={(e) => { setIsFormActive(e.target.checked); setHasChanges(true); }}
                           className="mr-2"
                         />
                         <span className="text-sm text-gray-700 dark:text-gray-300">

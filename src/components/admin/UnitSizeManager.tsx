@@ -166,8 +166,14 @@ export function UnitSizeManager() {
           <h2 className="text-lg font-medium text-gray-900 dark:text-white">Unit Sizes</h2>
         </div>
         <button
+          onClick={() => window.history.back()}
+          className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+        >
+          Back
+        </button>
+        <button
           onClick={() => setIsAdding(true)}
-          className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+          className="flex items-center px-4 py-2 text-sm font-medium text白 bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
         >
           <Plus className="w-4 h-4 mr-2" />
           Add Unit Size
@@ -175,6 +181,7 @@ export function UnitSizeManager() {
       </div>
 
       {isAdding && (
+        <>
         <form onSubmit={handleAdd} className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -206,6 +213,17 @@ export function UnitSizeManager() {
             </button>
           </div>
         </form>
+        <div className="mt-4 flex justify-end">
+          <button
+            type="submit"
+            disabled={processingId === 'new'}
+            onClick={() => document.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))}
+            className="px-3 py-1.5 text-sm font-medium text白 bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+          >
+            {processingId === 'new' ? 'Creating...' : 'Create Unit Size'}
+          </button>
+        </div>
+        </>
       )}
 
       <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
@@ -256,4 +274,3 @@ export function UnitSizeManager() {
     </div>
   );
 }
-

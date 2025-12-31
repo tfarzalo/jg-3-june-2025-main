@@ -8,6 +8,7 @@ import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
 import { useAuth } from '../contexts/AuthProvider';
 import { optimizeImage } from '../lib/utils/imageOptimization';
+import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
 
 interface Property {
   id: string;
@@ -82,6 +83,11 @@ export function JobEditForm() {
     job_type_id: '',
     description: '',
     scheduled_date: ''
+  });
+  const [hasChanges, setHasChanges] = useState(false);
+  const { attemptNavigate } = useUnsavedChangesPrompt(hasChanges, async () => {
+    const fakeEvent = { preventDefault() {} } as any;
+    await handleSubmit(fakeEvent);
   });
 
   useEffect(() => {
@@ -682,6 +688,7 @@ export function JobEditForm() {
   ) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    setHasChanges(true);
   };
 
   if (loadingJob) {
@@ -698,7 +705,7 @@ export function JobEditForm() {
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center space-x-3">
             <button
-              onClick={() => navigate(`/dashboard/jobs/${jobId}`)}
+              onClick={() => attemptNavigate(() => navigate(-1))}
               className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
             >
               <ArrowLeft className="h-6 w-6" />
@@ -958,7 +965,7 @@ export function JobEditForm() {
             <div className="flex space-x-3">
               <button
                 type="button"
-                onClick={() => navigate(`/dashboard/jobs/${jobId}`)}
+                onClick={() => attemptNavigate(() => navigate(-1))}
                 className="px-6 py-2 text-sm font-medium text-gray-700 dark:text-gray-400 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors"
               >
                 Cancel
@@ -972,6 +979,15 @@ export function JobEditForm() {
               </button>
             </div>
           </div>
+        <div className="mt-8 flex justify-end">
+          <button
+            type="submit"
+            disabled={loading}
+            className="px-6 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+          >
+            {loading ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
         </form>
 
         {/* Delete Confirmation Modal */}

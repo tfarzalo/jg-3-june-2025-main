@@ -9,6 +9,7 @@ export type BillingLine = {
   rateSub: number;
   amountBill: number;
   amountSub: number;
+  orderKey?: number;
 };
 
 export async function getAdditionalBillingLines(
@@ -51,7 +52,7 @@ export async function getAdditionalBillingLines(
     if (!billingData && workOrder.ceiling_billing_detail_id) {
       const { data } = await supabase
         .from('billing_details')
-        .select('id,bill_amount,sub_pay_amount')
+        .select('id,bill_amount,sub_pay_amount,sort_order,category:billing_categories(sort_order)')
         .eq('id', workOrder.ceiling_billing_detail_id)
         .maybeSingle();
       billingData = data;
@@ -65,7 +66,7 @@ export async function getAdditionalBillingLines(
       // We need to get the property ID from the work order context
       // For now, we'll try to find it from the billing detail if it exists
       if (workOrder.ceiling_billing_detail_id) {
-        const { data: billingDetail } = await supabase
+      const { data: billingDetail } = await supabase
           .from('billing_details')
           .select('property_id')
           .eq('id', workOrder.ceiling_billing_detail_id)
@@ -104,6 +105,7 @@ export async function getAdditionalBillingLines(
         rateSub,
         amountBill: qty * rateBill,
         amountSub: qty * rateSub,
+        orderKey: (billingData as any)?.category?.sort_order ?? (billingData as any)?.sort_order ?? 0
       });
     } else {
       warnings.push('Painted Ceilings rate missing in Property Billing.');
@@ -117,7 +119,7 @@ export async function getAdditionalBillingLines(
     if (!billingData && workOrder.accent_wall_billing_detail_id) {
       const { data } = await supabase
         .from('billing_details')
-        .select('id,bill_amount,sub_pay_amount')
+        .select('id,bill_amount,sub_pay_amount,sort_order,category:billing_categories(sort_order)')
         .eq('id', workOrder.accent_wall_billing_detail_id)
         .maybeSingle();
       billingData = data;
@@ -138,6 +140,7 @@ export async function getAdditionalBillingLines(
         rateSub,
         amountBill: qty * rateBill,
         amountSub: qty * rateSub,
+        orderKey: (billingData as any)?.category?.sort_order ?? (billingData as any)?.sort_order ?? 0
       });
     } else {
       warnings.push('Accent Wall rate missing in Property Billing.');
@@ -163,7 +166,8 @@ export async function getAdditionalBillingLines(
           id,
           bill_amount,
           sub_pay_amount,
-          category:billing_categories(name),
+          sort_order,
+          category:billing_categories(name,sort_order),
           unit_size:unit_sizes(unit_size_label)
         `)
         .in('id', billingDetailIds);
@@ -195,6 +199,7 @@ export async function getAdditionalBillingLines(
               rateSub,
               amountBill: qty * rateBill,
               amountSub: qty * rateSub,
+              orderKey: (detail as any)?.category?.sort_order ?? (detail as any)?.sort_order ?? 0
             });
           } else {
              // Fallback if billing detail not found (e.g. deleted) but service exists
@@ -206,5 +211,11 @@ export async function getAdditionalBillingLines(
     }
   }
 
-  return { lines, warnings };
+  const sortedLines = [...lines].sort((a, b) => {
+    const ao = a.orderKey ?? 0;
+    const bo = b.orderKey ?? 0;
+    if (ao !== bo) return ao - bo;
+    return a.label.localeCompare(b.label);
+  });
+  return { lines: sortedLines, warnings };
 }

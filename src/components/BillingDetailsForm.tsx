@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Plus, X, DollarSign, Save, Trash2, ArrowLeft, GripVertical, FileText, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../utils/supabase';
+import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
 
 interface JobCategory {
   id: string;
@@ -39,6 +40,7 @@ interface BillingDetail {
   sub_pay_amount: number;
   profit_amount: number | null;
   is_hourly: boolean;
+  sort_order?: number;
 }
 
 interface CategoryLineItem {
@@ -69,6 +71,11 @@ export function BillingDetailsForm() {
   const [selectedMasterCategoryId, setSelectedMasterCategoryId] = useState<string>('');
   const [includeInWorkOrder, setIncludeInWorkOrder] = useState(false);
   const [propertyName, setPropertyName] = useState<string>('');
+  const [supportsDetailSortOrder, setSupportsDetailSortOrder] = useState<boolean>(false);
+  const [autoSaveTimer, setAutoSaveTimer] = useState<number | null>(null);
+  const { attemptNavigate } = useUnsavedChangesPrompt(hasChanges, async () => {
+    await handleSaveAll();
+  });
 
   // Drag and drop state
   const [draggedCategoryId, setDraggedCategoryId] = useState<string | null>(null);
@@ -102,6 +109,25 @@ export function BillingDetailsForm() {
       fetchPropertyBillingData();
     }
   }, [propertyId, jobCategories, unitSizes]);
+
+  useEffect(() => {
+    const checkDetailSortOrder = async () => {
+      try {
+        const { error } = await supabase
+          .from('billing_details')
+          .select('id, sort_order')
+          .limit(1);
+        if (!error) {
+          setSupportsDetailSortOrder(true);
+        } else {
+          setSupportsDetailSortOrder(false);
+        }
+      } catch {
+        setSupportsDetailSortOrder(false);
+      }
+    };
+    checkDetailSortOrder();
+  }, []);
 
   const fetchJobCategories = async () => {
     try {
@@ -241,7 +267,8 @@ export function BillingDetailsForm() {
       const { data: billingDetailsData, error: fetchDetailsError } = await supabase
         .from('billing_details')
         .select('*')
-        .eq('property_id', propertyId);
+        .eq('property_id', propertyId)
+        .order(supportsDetailSortOrder ? 'sort_order' : 'updated_at');
 
       if (fetchDetailsError) throw fetchDetailsError;
       setBillingDetails(billingDetailsData || []);
@@ -352,9 +379,6 @@ export function BillingDetailsForm() {
       // Close modal and reset form
       setShowAddCategoryModal(false);
       setSelectedMasterCategoryId('');
-      setIsCreatingNewCategory(false);
-      setNewCategoryName('');
-      setNewCategoryDescription('');
       setIncludeInWorkOrder(false);
       setHasChanges(true);
 
@@ -408,22 +432,33 @@ export function BillingDetailsForm() {
   };
 
   useEffect(() => {
-    const initialLineItems: CategoryLineItems = {};
+    const grouped: Record<string, BillingDetail[]> = {};
     billingDetails.forEach(detail => {
-      if (!initialLineItems[detail.category_id]) {
-        initialLineItems[detail.category_id] = [];
-      }
-      initialLineItems[detail.category_id].push({
-        id: crypto.randomUUID(),
-        unitSizeId: detail.unit_size_id,
-        billAmount: detail.bill_amount.toString(),
-        subPayAmount: detail.sub_pay_amount.toString(),
-        isHourly: detail.is_hourly
-      });
+      const key = detail.category_id;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(detail);
     });
-
-    setCategoryLineItems(initialLineItems);
-  }, [billingDetails]);
+    const next: CategoryLineItems = {};
+    Object.keys(grouped).forEach(categoryId => {
+      const details = grouped[categoryId];
+      const sorted = [...details].sort((a, b) => {
+        if (supportsDetailSortOrder) {
+          const ao = a.sort_order ?? 0;
+          const bo = b.sort_order ?? 0;
+          return ao - bo;
+        }
+        return 0;
+      });
+      next[categoryId] = sorted.map(d => ({
+        id: crypto.randomUUID(),
+        unitSizeId: d.unit_size_id,
+        billAmount: d.bill_amount.toString(),
+        subPayAmount: d.sub_pay_amount.toString(),
+        isHourly: d.is_hourly
+      }));
+    });
+    setCategoryLineItems(next);
+  }, [billingDetails, supportsDetailSortOrder]);
 
   const handleRemoveLineItem = (propertyBillingCategoryId: string, lineItemId: string) => {
     setCategoryLineItems(prev => ({
@@ -481,22 +516,18 @@ export function BillingDetailsForm() {
 
       if (catError) throw catError;
 
-      const updates = [];
+      const updates: any[] = [];
 
       for (const propertyBillingCategoryId in categoryLineItems) {
-        for (const lineItem of categoryLineItems[propertyBillingCategoryId]) {
+        const items = categoryLineItems[propertyBillingCategoryId] || [];
+        items.forEach((lineItem, index) => {
           const pbc = propertyBillingCategories.find(p => p.id === propertyBillingCategoryId);
           if (!pbc || pbc.property_id !== propertyId) {
             console.warn(`Skipping line item for property billing category ${propertyBillingCategoryId} not associated with property ${propertyId}`);
-            continue;
+            return;
           }
 
-          // Skip validation for Extra Charges category
-          if (pbc.name === 'Extra Charges') {
-            if (!lineItem.billAmount || !lineItem.subPayAmount) continue;
-          } else {
-            if (!lineItem.unitSizeId || !lineItem.billAmount || !lineItem.subPayAmount) continue;
-          }
+          if (!lineItem.unitSizeId || !lineItem.billAmount || !lineItem.subPayAmount) return;
 
           const billAmountNum = parseFloat(lineItem.billAmount);
           const subPayAmountNum = parseFloat(lineItem.subPayAmount);
@@ -507,13 +538,14 @@ export function BillingDetailsForm() {
           updates.push({
             property_id: propertyId,
             category_id: propertyBillingCategoryId,
-            unit_size_id: pbc.name === 'Extra Charges' ? unitSizes[0]?.id : lineItem.unitSizeId, // Use first unit size for Extra Charges
+            unit_size_id: lineItem.unitSizeId,
             bill_amount: billAmountNum,
             sub_pay_amount: subPayAmountNum,
             profit_amount: profitAmount,
-            is_hourly: pbc.name === 'Extra Charges' ? true : lineItem.isHourly
+            is_hourly: lineItem.isHourly,
+            ...(supportsDetailSortOrder ? { sort_order: index + 1 } : {})
           });
-        }
+        });
       }
 
       // Use upsert instead of delete-then-insert to avoid conflicts
@@ -556,6 +588,74 @@ export function BillingDetailsForm() {
       ]
     }));
     setHasChanges(true);
+    if (autoSaveTimer) {
+      window.clearTimeout(autoSaveTimer);
+      setAutoSaveTimer(null);
+    }
+    const timerId = window.setTimeout(async () => {
+      if (hasChanges && !loading) {
+        try {
+          await (async () => {
+            setLoading(true);
+            setError(null);
+            try {
+              const categoryUpdates = propertyBillingCategories.map(cat => {
+                const isDefault = jobCategories.find(jc => jc.name === cat.name)?.is_default;
+                return {
+                  id: cat.id,
+                  property_id: propertyId,
+                  name: cat.name,
+                  description: cat.description,
+                  sort_order: cat.sort_order,
+                  include_in_work_order: isDefault ? true : cat.include_in_work_order
+                };
+              });
+              const { error: catError } = await supabase
+                .from('billing_categories')
+                .upsert(categoryUpdates, { onConflict: 'id' });
+              if (catError) throw catError;
+              const updates: any[] = [];
+              for (const cid in categoryLineItems) {
+                const items = categoryLineItems[cid] || [];
+                items.forEach((li, idx) => {
+                  const pbc = propertyBillingCategories.find(p => p.id === cid);
+                  if (!pbc || pbc.property_id !== propertyId) return;
+                  if (!li.unitSizeId || !li.billAmount || !li.subPayAmount) return;
+                  const billAmountNum = parseFloat(li.billAmount);
+                  const subPayAmountNum = parseFloat(li.subPayAmount);
+                  const profitAmount = li.isHourly ? null : billAmountNum - subPayAmountNum;
+                  updates.push({
+                    property_id: propertyId,
+                    category_id: cid,
+                    unit_size_id: li.unitSizeId,
+                    bill_amount: billAmountNum,
+                    sub_pay_amount: subPayAmountNum,
+                    profit_amount: profitAmount,
+                    is_hourly: li.isHourly,
+                    ...(supportsDetailSortOrder ? { sort_order: idx + 1 } : {})
+                  });
+                });
+              }
+              if (updates.length > 0) {
+                const { error: upsertError } = await supabase
+                  .from('billing_details')
+                  .upsert(updates, { 
+                    onConflict: 'property_id,category_id,unit_size_id',
+                    ignoreDuplicates: false 
+                  });
+                if (upsertError) throw upsertError;
+              }
+              setHasChanges(false);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Failed to auto-save billing details.');
+            } finally {
+              setLoading(false);
+            }
+          })();
+        } catch {}
+      }
+    }, 2000);
+    setAutoSaveTimer(timerId);
   };
 
   // Drag and drop handlers
@@ -713,7 +813,7 @@ export function BillingDetailsForm() {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button
-              onClick={() => navigate(`/dashboard/properties/${propertyId}`)}
+              onClick={() => attemptNavigate(() => navigate(-1))}
               className="inline-flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -737,7 +837,7 @@ export function BillingDetailsForm() {
               {loading ? 'Saving...' : 'Save All Changes'}
             </button>
             <button
-              onClick={() => navigate(`/dashboard/properties/${propertyId}`)}
+              onClick={() => attemptNavigate(() => navigate(-1))}
               className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-400 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors"
             >
               Cancel
@@ -745,6 +845,7 @@ export function BillingDetailsForm() {
           </div>
         </div>
 
+        
         {error && (
           <div className="bg-red-50 dark:bg-red-900/50 border border-red-200 dark:border-red-500/50 text-red-700 dark:text-red-200 px-4 py-3 rounded-lg">
             {error}
@@ -760,7 +861,7 @@ export function BillingDetailsForm() {
                 Drag and Drop Categories
               </p>
               <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
-                Use the grip handle to drag categories and rearrange their order. The order will be saved automatically.
+                Use the grip handle to drag categories and rearrange their order. Click “Save All Changes” to persist the new order.
               </p>
             </div>
           </div>
@@ -850,11 +951,11 @@ export function BillingDetailsForm() {
                         <div className="cursor-move text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                           <GripVertical className="h-4 w-4" />
                         </div>
-                        {pbc.name !== 'Extra Charges' ? (
+                        <div className="flex items-center gap-2 flex-1">
                           <select
                             value={lineItem.unitSizeId}
                             onChange={(e) => handleLineItemChange(propertyBillingCategoryId, lineItem.id, 'unitSizeId', e.target.value)}
-                            className="flex-1 h-11 px-4 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="h-11 px-4 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1"
                           >
                             <option value="">Select Unit Size</option>
                             {unitSizes.map(size => (
@@ -863,11 +964,7 @@ export function BillingDetailsForm() {
                               </option>
                             ))}
                           </select>
-                        ) : (
-                          <div className="flex-1 text-sm text-gray-600 dark:text-gray-400">
-                            Hourly Rates
-                          </div>
-                        )}
+                        </div>
 
                         <div className="flex flex-col space-y-1">
                           <label className="text-xs text-gray-500 dark:text-gray-400">
@@ -879,7 +976,7 @@ export function BillingDetailsForm() {
                               type="number"
                               value={lineItem.billAmount}
                               onChange={(e) => handleLineItemChange(propertyBillingCategoryId, lineItem.id, 'billAmount', e.target.value)}
-                              placeholder={lineItem.isHourly ? "Hourly Rate" : "Bill Amount"}
+                              placeholder={"Bill Amount"}
                               className="w-32 h-11 px-4 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                           </div>
@@ -895,25 +992,23 @@ export function BillingDetailsForm() {
                               type="number"
                               value={lineItem.subPayAmount}
                               onChange={(e) => handleLineItemChange(propertyBillingCategoryId, lineItem.id, 'subPayAmount', e.target.value)}
-                              placeholder={lineItem.isHourly ? "Sub Hourly Rate" : "Sub Pay"}
+                              placeholder={"Sub Pay"}
                               className="w-32 h-11 px-4 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                           </div>
                         </div>
 
-                        {pbc.name !== 'Extra Charges' && (
-                          <div className="flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={lineItem.isHourly}
-                              onChange={(e) => handleLineItemChange(propertyBillingCategoryId, lineItem.id, 'isHourly', e.target.checked)}
-                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                            />
-                            <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                              Hourly Rate
-                            </label>
-                          </div>
-                        )}
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={lineItem.isHourly}
+                            onChange={(e) => handleLineItemChange(propertyBillingCategoryId, lineItem.id, 'isHourly', e.target.checked)}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                            Hourly Rate
+                          </label>
+                        </div>
 
                         <button
                           onClick={() => handleRemoveLineItem(propertyBillingCategoryId, lineItem.id)}
@@ -936,6 +1031,17 @@ export function BillingDetailsForm() {
               );
             })}
           </div>
+        </div>
+
+        <div className="mt-8 flex justify-end">
+          <button
+            onClick={handleSaveAll}
+            disabled={loading || !hasChanges}
+            className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+          >
+            <Save className="h-4 w-4 mr-2" />
+            {loading ? 'Saving...' : 'Save All Changes'}
+          </button>
         </div>
 
         {showAddCategoryModal && (
