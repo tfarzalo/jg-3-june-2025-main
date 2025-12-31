@@ -10,6 +10,12 @@ interface NotificationEmailModalProps {
   job: Job | null;
   notificationType: 'sprinkler_paint' | 'drywall_repairs';
   onSent?: () => void;
+  additionalServices?: Array<{
+    label: string;
+    quantity: number;
+    unit_label?: string;
+    bill_amount: number;
+  }>;
 }
 
 interface EmailTemplate {

@@ -185,7 +185,6 @@ interface JobListingPageProps {
   hideAmountColumn?: boolean;
   showArchivesButton?: boolean;
   showInvoiceColumns?: boolean;
-  initialSortConfig?: SortConfig;
 }
 
 const JOB_EXPORT_SELECT = `
@@ -262,8 +261,7 @@ export function JobListingPage({
   refetch,
   hideAmountColumn = false,
   showArchivesButton = false,
-  showInvoiceColumns = false,
-  initialSortConfig
+  showInvoiceColumns = false
 }: JobListingPageProps) {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
@@ -351,17 +349,10 @@ export function JobListingPage({
     workOrderInfo: false
   });
   
-  const [sortConfig, setSortConfig] = useState<SortConfig>(initialSortConfig || {
+  const [sortConfig, setSortConfig] = useState<SortConfig>({
     field: 'scheduled_date',
     direction: 'desc'
   });
-
-  useEffect(() => {
-    if (initialSortConfig) {
-      setSortConfig(initialSortConfig);
-    }
-  }, [initialSortConfig]);
-
   const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [showUnarchiveConfirm, setShowUnarchiveConfirm] = useState(false);
@@ -411,16 +402,7 @@ export function JobListingPage({
           break;
       }
 
-      // If primary sort is not equal, return it
-      if (comparison !== 0) {
-        return comparison * direction;
-      }
-
-      // Secondary sort: Most recent (updated_at or scheduled_date) first
-      // This is always descending (newest first)
-      const dateA = a.updated_at ? parseISO(a.updated_at) : parseISO(a.scheduled_date);
-      const dateB = b.updated_at ? parseISO(b.updated_at) : parseISO(b.scheduled_date);
-      return dateB.getTime() - dateA.getTime();
+      return comparison * direction;
     });
   };
 
@@ -767,14 +749,9 @@ export function JobListingPage({
         ? extraChargesBillAmount - extraChargesSubPayAmount 
         : null;
       
-      // Combined Extra Charges (including Additional Services) for export display
-      const combinedExtraBill = (extraChargesBillAmount ?? 0) + (additionalServicesBillAmount ?? 0);
-      const combinedExtraSubPay = (extraChargesSubPayAmount ?? 0) + (additionalServicesSubPayAmount ?? 0);
-      const combinedExtraProfit = combinedExtraBill - combinedExtraSubPay;
-
-      if (exportConfig.columns.extraChargesBillToCustomer) row['Extra Charges Bill to Customer'] = combinedExtraBill > 0 ? `$${combinedExtraBill.toFixed(2)}` : 'N/A';
-      if (exportConfig.columns.extraChargesPayToSubcontractor) row['Extra Charges Pay to Subcontractor'] = combinedExtraSubPay > 0 ? `$${combinedExtraSubPay.toFixed(2)}` : 'N/A';
-      if (exportConfig.columns.extraChargesProfit) row['Extra Charges Profit'] = combinedExtraProfit !== 0 ? `$${combinedExtraProfit.toFixed(2)}` : 'N/A';
+      if (exportConfig.columns.extraChargesBillToCustomer) row['Extra Charges Bill to Customer'] = extraChargesBillAmount !== null ? `$${extraChargesBillAmount.toFixed(2)}` : 'N/A';
+      if (exportConfig.columns.extraChargesPayToSubcontractor) row['Extra Charges Pay to Subcontractor'] = extraChargesSubPayAmount !== null ? `$${extraChargesSubPayAmount.toFixed(2)}` : 'N/A';
+      if (exportConfig.columns.extraChargesProfit) row['Extra Charges Profit'] = extraChargesProfit !== null ? `$${extraChargesProfit.toFixed(2)}` : 'N/A';
       
       // Grand Totals - matching the BillingBreakdownV2 calculation exactly
       const totalBillToCustomer = 

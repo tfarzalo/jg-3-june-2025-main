@@ -25,8 +25,6 @@ interface ApprovalData {
       description: string;
       cost: number;
       hours?: number;
-      quantity?: number;
-      unit?: string;
     }>;
     total: number;
     job_details?: any;

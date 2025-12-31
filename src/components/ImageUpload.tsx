@@ -5,6 +5,7 @@ import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
 import { joinPathSegments } from '../utils/storagePaths';
 import { getPreviewUrl, uploadAndPreview, PreviewResult } from '../utils/storagePreviews';
+import { optimizeImage } from '../lib/utils/imageOptimization';
 
 interface ImageUploadProps {
   jobId: string;
@@ -316,11 +317,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     // Set total files to upload for progress tracking
     setTotalFilesToUpload(files.length);
     
-    // Create optimistic previews immediately
-    const newUploadingFiles: UploadingFile[] = files.map(file => ({
-      file,
-      preview: URL.createObjectURL(file),
-      progress: 0
+    const newUploadingFiles: UploadingFile[] = await Promise.all(files.map(async (file) => {
+      try {
+        const optimized = await optimizeImage(file);
+        const preview = URL.createObjectURL(optimized.blob);
+        return { file: new File([optimized.blob], file.name, { type: optimized.mime }), preview, progress: 0 };
+      } catch {
+        const preview = URL.createObjectURL(file);
+        return { file, preview, progress: 0 };
+      }
     }));
     setUploadingFiles(newUploadingFiles);
     setIsUploading(true);
@@ -412,16 +417,38 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       const folderPath = folderInfo.path.startsWith('/') ? folderInfo.path.substring(1) : folderInfo.path;
       console.log('📁 Using folder path from database:', folderPath);
 
+      // Precompute auto-naming start index
+      const { data: existingForFolder } = await supabase
+        .from('files')
+        .select('name')
+        .eq('job_id', jobId)
+        .eq('folder_id', subfolderId)
+        .eq('category', folder);
+      const nameRegex = new RegExp(`^wo-\\d+_${folder}_(\\d+)\\.`)
+      let maxIndex = 0
+      if (existingForFolder && Array.isArray(existingForFolder)) {
+        for (const row of existingForFolder as any[]) {
+          const m = typeof row.name === 'string' ? row.name.toLowerCase().match(nameRegex) : null
+          if (m && m[1]) {
+            const n = parseInt(m[1], 10)
+            if (!isNaN(n)) maxIndex = Math.max(maxIndex, n)
+          }
+        }
+      }
+      let nextIndex = maxIndex + 1
+
       // Upload each file
       for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        console.log(`📤 Uploading file ${i + 1}/${files.length}:`, file.name);
+        const originalFile = files[i];
+        console.log(`📤 Uploading file ${i + 1}/${files.length}:`, originalFile.name);
 
         try {
-          const timestamp = Date.now();
-          const randomSuffix = Math.random().toString(36).substring(7);
-          const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9-_\.]/g, '_');
-          const fileName = `${timestamp}-${randomSuffix}-${sanitizedFileName}`;
+          const optimized = await optimizeImage(originalFile)
+          const ext = optimized.suggestedExt
+          const woLabel = `wo-${String(jobData.work_order_num).padStart(6, '0')}`
+          const baseAutoName = `${woLabel}_${folder}_${nextIndex}.${ext}`
+          nextIndex += 1
+          const fileName = baseAutoName
 
           // Build the storage path using the actual folder path from database
           const fileStoragePath = `${folderPath}/${fileName}`;
@@ -429,16 +456,18 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
           console.log('  📍 Storage path:', fileStoragePath);
           console.log('  📦 Bucket: files');
-          console.log('  📏 Size:', file.size, 'bytes');
-          console.log('  📄 Type:', file.type);
+          console.log('  📏 Size (orig):', optimized.originalSize, 'bytes');
+          console.log('  📏 Size (opt):', optimized.optimizedSize, 'bytes');
+          console.log('  📄 Type:', optimized.mime);
 
-          const mimeType = file.type || 'application/octet-stream';
+          const fileForUpload = new File([optimized.blob], fileName, { type: optimized.mime })
+          const mimeType = fileForUpload.type || 'application/octet-stream';
           if (!mimeType.match(/^[a-zA-Z0-9]+\/[a-zA-Z0-9\-\+\.]+$/)) {
             throw new Error(`Invalid MIME type: ${mimeType}`);
           }
 
           // Upload file to storage
-          const previewResult = await uploadAndPreview(supabase, 'files', fileStoragePath, file, {
+          const previewResult = await uploadAndPreview(supabase, 'files', fileStoragePath, fileForUpload, {
             upsert: false,
             contentType: mimeType
           });
@@ -452,7 +481,9 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             .insert({
               name: fileName,
               path: filePath,
-              size: file.size,
+              size: optimized.optimizedSize,
+              original_size: optimized.originalSize,
+              optimized_size: optimized.optimizedSize,
               type: mimeType,
               uploaded_by: user.id,
               property_id: jobData.property_id,

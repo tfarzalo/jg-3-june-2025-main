@@ -508,12 +508,8 @@ export function JobDetails() {
           .eq('id', job?.work_order?.accent_wall_billing_detail_id)
           .maybeSingle();
 
-        const unitSizeLabel =
-          Array.isArray((data as any)?.unit_sizes)
-            ? ((data?.unit_sizes as any)?.[0]?.unit_size_label)
-            : (data as any)?.unit_sizes?.unit_size_label;
-        if (unitSizeLabel) {
-          setAccentWallDisplayLabel(unitSizeLabel);
+        if (data?.unit_sizes?.unit_size_label) {
+          setAccentWallDisplayLabel(data.unit_sizes.unit_size_label);
         } else {
           setAccentWallDisplayLabel(job?.work_order?.accent_wall_type);
         }
@@ -536,40 +532,40 @@ export function JobDetails() {
 
   useEffect(() => {
     const fetchWorkOrderFolderId = async () => {
-      if (!job?.property?.id || !job?.id || !job?.work_order_num) {
+      // We can still have a folder for Job Request because the work order folder is created at request time.
+      if (!job?.property?.name || !job?.work_order_num) {
+        console.log('[JobDetails] Cannot fetch work order folder - missing data', { 
+          hasWorkOrder: !!job?.work_order, 
+          hasPropertyName: !!job?.property?.name,
+          hasWorkOrderNum: !!job?.work_order_num
+        });
         return;
       }
-      const woName = `WO-${String(job.work_order_num).padStart(6, '0')}`;
+      const workOrderNum = `WO-${String(job?.work_order_num ?? 0).padStart(6, '0')}`;
+      const propertyName = job?.property?.name;
+      // Build the full path to the work order folder
+      const fullPath = `/Properties/${propertyName}/Work Orders/${workOrderNum}`;
+      console.log('[JobDetails] Looking for work order folder', { fullPath, workOrderNum, propertyName });
+      
+      // Find the work order folder by full path
       const { data: folder, error } = await supabase
         .from('files')
         .select('id')
-        .eq('property_id', job.property.id)
-        .eq('job_id', job.id)
-        .in('type', ['folder/directory', 'folder/job'])
-        .eq('name', woName)
+        .eq('path', fullPath)
         .maybeSingle();
-      if (!error && folder?.id) {
+        
+      console.log('[JobDetails] Work order folder lookup result', { folder, error, fullPath });
+      
+      if (!error && folder && folder.id) {
+        console.log('[JobDetails] ✅ Found work order folder:', folder.id);
         setWorkOrderFolderId(folder.id);
       } else {
+        console.log('[JobDetails] ❌ Work order folder not found or error occurred');
         setWorkOrderFolderId(null);
       }
     };
     fetchWorkOrderFolderId();
   }, [job]);
-
-  useEffect(() => {
-    const ensureJobFilesSubfolder = async () => {
-      if (!job?.property?.id || !job?.id) return;
-      try {
-        await supabase.rpc('get_upload_folder', {
-          p_property_id: job.property.id,
-          p_job_id: job.id,
-          p_folder_type: 'job_files'
-        });
-      } catch {}
-    };
-    ensureJobFilesSubfolder();
-  }, [job?.property?.id, job?.id]);
 
   const fetchSubcontractors = async () => {
     try {
@@ -822,7 +818,6 @@ export function JobDetails() {
     if (!job) return;
     
     const doc = new jsPDF();
-    const pageWidth = 210;
     let y = 20; // Starting y position
     const pageHeight = 280; // Maximum height before new page
     const margin = 20; // Left margin
@@ -988,136 +983,37 @@ export function JobDetails() {
     // Add billing details if available
     if (job.billing_details) {
       // Check if we need a new page
-      if (y > pageHeight - 150) {
+      if (y > pageHeight - 100) {
         doc.addPage();
         y = 20;
       }
       
       doc.setFontSize(16);
-      doc.text('Billing Breakdown', margin, y);
+      doc.text('Billing Details', margin, y);
       y += 15;
-
-      // Table header
-      doc.setFontSize(10);
       
-      // Admin sees full breakdown
-      doc.text('Description', margin, y);
-      doc.text('Qty', margin + 80, y);
-      doc.text('Bill', margin + 100, y);
-      doc.text('Pay', margin + 125, y);
-      doc.text('Profit', margin + 150, y);
-      
-      y += 5;
-      doc.setLineWidth(0.1);
-      doc.line(margin, y, margin + (pageWidth - margin * 2), y);
-      y += 6;
-
-      let totalAmount = 0;
-      let totalSubPay = 0;
-      let totalProfit = 0;
-
-      // Base Billing line item
-      doc.setFontSize(10);
-      const billingDescription = `${job?.work_order?.job_category || 'Standard Paint'} - ${job?.unit_size?.label ?? '—'}`;
-      doc.text(billingDescription, margin, y);
-      
-      const baseAmount = job.billing_details?.bill_amount ?? 0;
-      const baseSub = job.billing_details?.sub_pay_amount ?? 0;
-      const baseProfitVal = baseAmount - baseSub;
-      
-      doc.text('1', margin + 80, y);
-      doc.text(`${formatCurrency(baseAmount)}`, margin + 100, y);
-      doc.text(`${formatCurrency(baseSub)}`, margin + 125, y);
-      doc.text(`${formatCurrency(baseProfitVal)}`, margin + 150, y);
-      
-      totalAmount += baseAmount;
-      totalSubPay += baseSub;
-      totalProfit += baseProfitVal;
-      
-      y += 8;
-
-      // Additional Services & Extra Charges (Unified)
-      const unifiedExtraItems = [
-        // Map Additional Services
-        ...(additionalBillingLines || []).map(line => ({
-          description: line.label,
-          qty_or_hours: line.qty,
-          unit: line.unitLabel || 'items',
-          rate: line.qty > 0 ? line.amountBill / line.qty : 0,
-          amount: line.amountBill,
-          sub_pay: line.amountSub,
-          profit: line.amountBill - line.amountSub,
-          is_hours: false
-        })),
-        // Map Extra Charges (Labor)
-        ...(job?.work_order?.has_extra_charges && job?.work_order?.extra_hours && job?.work_order?.extra_hours > 0 ? [{
-          description: job?.work_order?.extra_charges_description || 'Extra Charges (Labor)',
-          qty_or_hours: Number(job?.work_order?.extra_hours) || 0,
-          unit: 'hrs',
-          rate: Number(job.extra_charges_details?.hourly_rate ?? job.hourly_billing_details?.bill_amount ?? 0),
-          amount: Number(job.extra_charges_details?.bill_amount) || (Number(job?.work_order?.extra_hours || 0) * Number(job.extra_charges_details?.hourly_rate ?? job.hourly_billing_details?.bill_amount ?? 0)),
-          sub_pay: Number(job.extra_charges_details?.sub_pay_amount) || (Number(job?.work_order?.extra_hours || 0) * Number(job.extra_charges_details?.sub_pay_rate ?? job.hourly_billing_details?.sub_pay_amount ?? 0)),
-          profit: (Number(job.extra_charges_details?.bill_amount) || (Number(job?.work_order?.extra_hours || 0) * Number(job.extra_charges_details?.hourly_rate ?? job.hourly_billing_details?.bill_amount ?? 0))) - 
-                  (Number(job.extra_charges_details?.sub_pay_amount) || (Number(job?.work_order?.extra_hours || 0) * Number(job.extra_charges_details?.sub_pay_rate ?? job.hourly_billing_details?.sub_pay_amount ?? 0))),
-          is_hours: true
-        }] : [])
-      ];
-
-      if (unifiedExtraItems.length > 0) {
-        doc.setFont(undefined, 'bold');
-        doc.text('Extra Charges', margin, y);
-        doc.setFont(undefined, 'normal');
-        y += 6;
-
-        unifiedExtraItems.forEach(item => {
-          if (y > pageHeight - 50) {
-             doc.addPage();
-             y = 20;
-          }
-          
-          const displayRate = Number(item.rate) || 0;
-          const displayAmount = Number(item.amount) || 0;
-          const displaySub = Number(item.sub_pay) || 0;
-          const displayProfit = Number(item.profit) || 0;
-          
-          const descriptionText = `${item.description} (${formatCurrency(displayRate)}/${item.is_hours ? 'hr' : 'ea'})`;
-          
-          if (descriptionText.length > 40) {
-             const splitDesc = doc.splitTextToSize(descriptionText, 80);
-             doc.text(splitDesc, margin, y);
-          } else {
-             doc.text(descriptionText, margin, y);
-          }
-
-          const qtyText = item.is_hours ? `${item.qty_or_hours} hrs` : `${item.qty_or_hours}`;
-          
-          doc.text(qtyText, margin + 80, y);
-          doc.text(`${formatCurrency(displayAmount)}`, margin + 100, y);
-          doc.text(`${formatCurrency(displaySub)}`, margin + 125, y);
-          doc.text(`${formatCurrency(displayProfit)}`, margin + 150, y);
-          
-          totalAmount += displayAmount;
-          totalSubPay += displaySub;
-          totalProfit += displayProfit;
-          
-          y += descriptionText.length > 40 ? 10 : 6;
-        });
+      doc.setFontSize(12);
+      doc.text(`Bill Amount: ${formatCurrency(job.billing_details.bill_amount)}`, margin, y);
+      y += 10;
+      doc.text(`Subcontractor Pay: ${formatCurrency(job.billing_details.sub_pay_amount)}`, margin, y);
+      y += 10;
+      if (job.billing_details.profit_amount !== null) {
+        doc.text(`Profit: ${formatCurrency(job.billing_details.profit_amount)}`, margin, y);
+        y += 10;
       }
-
-      // Total line
-      y += 4;
-      doc.setLineWidth(0.2);
-      doc.line(margin, y, margin + (pageWidth - margin * 2), y);
-      y += 6;
-      doc.setFont(undefined, 'bold');
-      doc.text('Total', margin, y);
       
-      doc.text(`${formatCurrency(totalAmount)}`, margin + 100, y);
-      doc.text(`${formatCurrency(totalSubPay)}`, margin + 125, y);
-      doc.text(`${formatCurrency(totalProfit)}`, margin + 150, y);
-      doc.setFont(undefined, 'normal');
-      
-      y += 15;
+      // Add extra charges billing if available
+      if (job.extra_charges_details) {
+        y += 5;
+        doc.text('Extra Charges Billing:', margin, y);
+        y += 10;
+        doc.text(`Hours: ${job.extra_charges_details.hours || 0}`, margin, y);
+        y += 10;
+        doc.text(`Amount: ${formatCurrency(job.extra_charges_details.amount)}`, margin, y);
+        y += 10;
+        doc.text(`Description: ${job.extra_charges_details.description || 'N/A'}`, margin, y);
+        y += 10;
+      }
     }
     
     // Add images if available
@@ -1144,7 +1040,7 @@ export function JobDetails() {
               const previewResult = await getPreviewUrl(supabase, 'work_orders', `${job?.work_order?.id ?? ''}/${image.name}`);
               
               if (previewResult) {
-                const img = new window.Image();
+                const img = new Image();
                 img.src = previewResult.url;
                 await new Promise((resolve) => {
                   img.onload = resolve;
@@ -1391,130 +1287,55 @@ export function JobDetails() {
       
       // Table header
       doc.setFontSize(8);
-      
-      // Define columns based on user role (Admin/Management sees more)
-      const showFullBreakdown = isAdmin || isJGManagement;
-      
-      if (showFullBreakdown) {
-        doc.text('Description', margin, y);
-        doc.text('Qty', margin + 80, y);
-        doc.text('Bill', margin + 100, y);
-        doc.text('Pay', margin + 125, y);
-        doc.text('Profit', margin + 150, y);
-      } else {
-        doc.text('Description', margin, y);
-        doc.text('Qty', margin + 100, y);
-        doc.text('Amount', margin + 120, y);
-      }
-      
+      doc.text('Description', margin, y);
+      doc.text('Qty', margin + 100, y);
+      doc.text('Amount', margin + 120, y);
       y += 4;
       doc.setLineWidth(0.1);
       doc.line(margin, y, margin + contentWidth, y);
       y += 4;
 
       let totalAmount = 0;
-      let totalSubPay = 0;
-      let totalProfit = 0;
 
       // Base Billing line item
       const billingDescription = `${job?.work_order?.job_category || 'Standard Paint'} - ${job?.unit_size?.label ?? '—'}`;
       doc.text(billingDescription, margin, y);
-      
+      doc.text('1', margin + 100, y);
       const baseAmount = job.billing_details?.bill_amount ?? 0;
-      const baseSub = job.billing_details?.sub_pay_amount ?? 0;
-      const baseProfitVal = baseAmount - baseSub;
-      
-      if (showFullBreakdown) {
-        doc.text('1', margin + 80, y);
-        doc.text(`${formatCurrency(baseAmount)}`, margin + 100, y);
-        doc.text(`${formatCurrency(baseSub)}`, margin + 125, y);
-        doc.text(`${formatCurrency(baseProfitVal)}`, margin + 150, y);
-      } else {
-        doc.text('1', margin + 100, y);
-        doc.text(`${formatCurrency(baseAmount)}`, margin + 120, y);
-      }
-      
+      doc.text(`${formatCurrency(baseAmount)}`, margin + 120, y);
       totalAmount += baseAmount;
-      totalSubPay += baseSub;
-      totalProfit += baseProfitVal;
-      
       y += 5;
 
-      // Additional Services & Extra Charges (Unified)
-      const unifiedExtraItems = [
-        // Map Additional Services
-        ...(additionalBillingLines || []).map(line => ({
-          description: line.label,
-          qty_or_hours: line.qty,
-          unit: line.unitLabel || 'items',
-          rate: line.qty > 0 ? line.amountBill / line.qty : 0,
-          amount: line.amountBill,
-          sub_pay: line.amountSub,
-          profit: line.amountBill - line.amountSub,
-          is_hours: false
-        })),
-        // Map Extra Charges (Labor)
-        ...(job?.work_order?.has_extra_charges && job?.work_order?.extra_hours && job?.work_order?.extra_hours > 0 ? [{
-          description: job?.work_order?.extra_charges_description || 'Extra Charges (Labor)',
-          qty_or_hours: Number(job?.work_order?.extra_hours) || 0,
-          unit: 'hrs',
-          rate: Number(job.extra_charges_details?.hourly_rate ?? job.hourly_billing_details?.bill_amount ?? 0),
-          amount: Number(job.extra_charges_details?.bill_amount) || (Number(job?.work_order?.extra_hours || 0) * Number(job.extra_charges_details?.hourly_rate ?? job.hourly_billing_details?.bill_amount ?? 0)),
-          sub_pay: Number(job.extra_charges_details?.sub_pay_amount) || (Number(job?.work_order?.extra_hours || 0) * Number(job.extra_charges_details?.sub_pay_rate ?? job.hourly_billing_details?.sub_pay_amount ?? 0)),
-          profit: (Number(job.extra_charges_details?.bill_amount) || (Number(job?.work_order?.extra_hours || 0) * Number(job.extra_charges_details?.hourly_rate ?? job.hourly_billing_details?.bill_amount ?? 0))) - 
-                  (Number(job.extra_charges_details?.sub_pay_amount) || (Number(job?.work_order?.extra_hours || 0) * Number(job.extra_charges_details?.sub_pay_rate ?? job.hourly_billing_details?.sub_pay_amount ?? 0))),
-          is_hours: true
-        }] : [])
-      ];
-
-      if (unifiedExtraItems.length > 0) {
-        // Section Header
-        doc.setFont(undefined, 'bold');
-        doc.text('Extra Charges', margin, y);
-        doc.setFont(undefined, 'normal');
-        y += 5;
-
-        unifiedExtraItems.forEach(item => {
-          if (y > 250) {
-             doc.addPage();
-             y = 20;
-          }
-          
-          const displayRate = Number(item.rate) || 0;
-          const displayAmount = Number(item.amount) || 0;
-          const displaySub = Number(item.sub_pay) || 0;
-          const displayProfit = Number(item.profit) || 0;
-          
-          // Description with Rate
-          const descriptionText = `${item.description} (${formatCurrency(displayRate)}/${item.is_hours ? 'hr' : 'ea'})`;
-          
-          // Handle long descriptions
-          if (descriptionText.length > 40) {
-             const splitDesc = doc.splitTextToSize(descriptionText, 80);
-             doc.text(splitDesc, margin, y);
-          } else {
-             doc.text(descriptionText, margin, y);
-          }
-
-          // Qty/Hrs
-          const qtyText = item.is_hours ? `${item.qty_or_hours} hrs` : `${item.qty_or_hours}`;
-          
-          if (showFullBreakdown) {
-            doc.text(qtyText, margin + 80, y);
-            doc.text(`${formatCurrency(displayAmount)}`, margin + 100, y);
-            doc.text(`${formatCurrency(displaySub)}`, margin + 125, y);
-            doc.text(`${formatCurrency(displayProfit)}`, margin + 150, y);
-          } else {
-            doc.text(qtyText, margin + 100, y);
-            doc.text(`${formatCurrency(displayAmount)}`, margin + 120, y);
-          }
-          
-          totalAmount += displayAmount;
-          totalSubPay += displaySub;
-          totalProfit += displayProfit;
-          
-          y += descriptionText.length > 40 ? 10 : 5;
+      // Additional Services (Painted Ceilings, Accent Walls)
+      if (additionalBillingLines && additionalBillingLines.length > 0) {
+        additionalBillingLines.forEach(line => {
+          if (y > 250) return; // Prevent overflow
+          // Show per-item pricing in description
+          const perItemPrice = line.qty > 0 ? line.amountBill / line.qty : 0;
+          const descriptionWithPrice = `${line.label} (${formatCurrency(perItemPrice)} each)`;
+          doc.text(descriptionWithPrice, margin, y);
+          doc.text(line.qty.toString(), margin + 100, y);
+          doc.text(`${formatCurrency(line.amountBill)}`, margin + 120, y);
+          totalAmount += line.amountBill;
+          y += 5;
         });
+      }
+
+      // Extra Charges line item (if any)
+      if (job?.work_order?.has_extra_charges && job?.work_order?.extra_hours && job?.work_order?.extra_hours > 0) {
+        if (y > 250) return; // Prevent overflow
+        const desc = job?.work_order?.extra_charges_description || 'Extra Charges';
+        const hours = job?.work_order?.extra_hours ?? 0;
+        const hourlyRate = 40;
+        const extraAmount = hours * hourlyRate;
+        
+        // Show hourly rate in description
+        const truncatedDesc = desc.length > 15 ? desc.substring(0, 15) + '...' : desc;
+        doc.text(`Extra Charges: ${truncatedDesc} (${formatCurrency(hourlyRate)}/hr)`, margin, y);
+        doc.text(hours.toString(), margin + 100, y);
+        doc.text(`${formatCurrency(extraAmount)}`, margin + 120, y);
+        totalAmount += extraAmount;
+        y += 5;
       }
 
       // Total line
@@ -1525,15 +1346,7 @@ export function JobDetails() {
       doc.setFontSize(9);
       doc.setFont(undefined, 'bold');
       doc.text('Total', margin, y);
-      
-      if (showFullBreakdown) {
-        doc.text(`${formatCurrency(totalAmount)}`, margin + 100, y);
-        doc.text(`${formatCurrency(totalSubPay)}`, margin + 125, y);
-        doc.text(`${formatCurrency(totalProfit)}`, margin + 150, y);
-      } else {
-        doc.text(`${formatCurrency(totalAmount)}`, margin + 120, y);
-      }
-      
+      doc.text(`${formatCurrency(totalAmount)}`, margin + 120, y);
       y += 8;
 
 
@@ -1916,8 +1729,8 @@ export function JobDetails() {
                   ) : (
                     <p className="font-semibold">Assignment pending acceptance by subcontractor.</p>
                   )}
+                </div>
               </div>
-            </div>
             )}
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1938,8 +1751,8 @@ export function JobDetails() {
                       <br />
                       {job?.property?.city ?? '—'}, {job?.property?.state ?? '—'} {job?.property?.zip ?? '—'}
                     </p>
-              </div>
-              </div>
+                  </div>
+                </div>
               </div>
               
               <div>
@@ -2132,7 +1945,7 @@ export function JobDetails() {
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow-lg mb-6">
             {/* Extra Charges Status - Shows different UI based on approval decision */}
             {job?.work_order?.has_extra_charges && (
-              <div>
+              <>
                 {/* Cancelled after decline - Re-activate option only */}
                 {isCancelled && effectiveApprovalDecision?.decision === 'declined' && (
                   <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/30 text-red-800 dark:text-red-200 px-4 py-3 rounded-lg mb-6 relative z-[50]">
@@ -2242,64 +2055,72 @@ export function JobDetails() {
                   </div>
                 )}
 
-              </div>
+                {/* PENDING STATE - Yellow alert with send/approve options */}
+                {!effectiveApprovalDecision?.decision && isPendingWorkOrder && (
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/30 text-yellow-800 dark:text-yellow-200 px-4 py-3 rounded-lg mb-6 relative z-[50]">
+                    <div className="flex items-start">
+                      <AlertCircle className="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-medium">Extra Charges Pending Approval</p>
+                        <p className="mt-1 text-sm">This work order has extra charges that require approval before proceeding.</p>
+                        <div className="mt-3 flex flex-wrap gap-3">
+                          <button
+                            onClick={handleSendExtraChargesNotification}
+                            className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                          >
+                            <Mail className="h-4 w-4 mr-2" />
+                            Send Approval Email
+                          </button>
+                          {(isAdmin || isJGManagement) && (
+                            <button
+                              onClick={handleApproveExtraCharges}
+                              className="inline-flex items-center px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition-colors"
+                              title="Bypass email and approve directly"
+                            >
+                              <CheckCircle className="h-4 w-4 mr-2" />
+                              Approve Manually
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
-            {/* Unified Approval / Notification Section */}
-            {hasWorkOrder && (
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/30 text-blue-800 dark:text-blue-200 px-4 py-3 rounded-lg mb-6 relative z-[50]">
+            {/* Notification Actions - Right below extra charges approval */}
+            {hasWorkOrder && job.work_order?.has_sprinklers && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/30 text-blue-800 dark:text-blue-200 px-4 py-3 rounded-lg mb-6">
                 <div className="flex items-start">
                   <Mail className="h-5 w-5 mr-2 text-blue-600 dark:text-blue-400 mt-0.5" />
                   <div className="flex-1">
-                    <p className="font-medium">Approval / Notification</p>
-                    <p className="mt-1 text-sm">
-                      {(!effectiveApprovalDecision?.decision && isPendingWorkOrder && derivedExtraCharges)
-                        ? 'Recommended: Extra Charges Approval email'
-                        : (job.work_order?.has_sprinklers
-                            ? 'Recommended: Sprinkler Paint notification'
-                            : 'Recommended: Drywall Repairs notification')}
-                    </p>
-                    <div className="mt-3 flex flex-col md:flex-row md:items-center gap-3">
-                      <select
-                        value={notificationType || ''}
-                        onChange={(e) => {
-                          const val = e.target.value as 'extra_charges' | 'sprinkler_paint' | 'drywall_repairs';
-                          setNotificationType(val);
-                        }}
-                        className="px-3 py-2 rounded-lg border border-blue-300 bg-white text-blue-900 dark:bg-gray-900 dark:text-blue-200 dark:border-blue-700"
-                      >
-                        <option value="">
-                          {(!effectiveApprovalDecision?.decision && isPendingWorkOrder && derivedExtraCharges)
-                            ? 'Select: Extra Charges Approval'
-                            : 'Select notification type'}
-                        </option>
-                        <option value="extra_charges">Extra Charges Approval</option>
-                        <option value="sprinkler_paint">Sprinkler Paint Notification</option>
-                        <option value="drywall_repairs">Drywall Repairs Notification</option>
-                      </select>
+                    <p className="font-medium">Notification Actions</p>
+                    <p className="mt-1 text-sm">Send notification emails to property managers about work progress.</p>
+                    <div className="mt-3 flex flex-wrap gap-3">
                       <button
-                        onClick={() => {
-                          const recommended: 'extra_charges' | 'sprinkler_paint' | 'drywall_repairs' =
-                            (!effectiveApprovalDecision?.decision && isPendingWorkOrder && derivedExtraCharges)
-                              ? 'extra_charges'
-                              : (job.work_order?.has_sprinklers ? 'sprinkler_paint' : 'drywall_repairs');
-                          const typeToUse = notificationType || recommended;
-                          setNotificationType(typeToUse);
-                          setShowEnhancedNotificationModal(true);
-                        }}
-                        className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                        onClick={handleSendSprinklerPaintNotification}
+                        className="inline-flex items-center px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition-colors"
                       >
                         <Mail className="h-4 w-4 mr-2" />
-                        Prepare Email
+                        Send Sprinkler Paint Notification
                       </button>
-                      {(!effectiveApprovalDecision?.decision && isPendingWorkOrder && (isAdmin || isJGManagement)) && (
+                      
+                      <button
+                        onClick={handleSendDrywallRepairsNotification}
+                        className="inline-flex items-center px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors"
+                      >
+                        <Mail className="h-4 w-4 mr-2" />
+                        Send Drywall Repairs Notification
+                      </button>
+
+                      {job?.work_order?.has_extra_charges && (
                         <button
-                          onClick={handleApproveExtraCharges}
-                          className="inline-flex items-center px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition-colors"
-                          title="Bypass email and approve directly"
+                          onClick={handleSendExtraChargesNotification}
+                          className="inline-flex items-center px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
                         >
-                          <CheckCircle className="h-4 w-4 mr-2" />
-                          Approve Manually
+                          <Mail className="h-4 w-4 mr-2" />
+                          Send Extra Charges Approval
                         </button>
                       )}
                     </div>
@@ -2573,7 +2394,6 @@ export function JobDetails() {
               </div>
             )}
           </div>
-
         )}
 
         {/* Billing Breakdown - Show only for Admins and JG Management if billing details exist */}
@@ -3107,12 +2927,6 @@ export function JobDetails() {
             job={job}
             notificationType={notificationType}
             onSent={handleNotificationSent}
-            additionalServices={additionalBillingLines.map(line => ({
-              label: line.label,
-              quantity: line.qty,
-              unit_label: line.unitLabel,
-              bill_amount: line.amountBill
-            }))}
           />
         )}
 

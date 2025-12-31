@@ -7,6 +7,7 @@ import { JobType } from '../lib/types';
 import { useAuth } from '../contexts/AuthProvider';
 import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
+import { optimizeImage } from '../lib/utils/imageOptimization';
 
 interface Property {
   id: string;
@@ -246,9 +247,8 @@ export function JobRequestForm() {
   };
 
   const sanitizeFilename = (filename: string) => {
-    const timestamp = Date.now();
     const name = filename.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase();
-    return `${timestamp}_${name}`;
+    return name;
   };
 
   const formatFileSize = (bytes: number) => {
@@ -270,67 +270,104 @@ export function JobRequestForm() {
     if (selectedFiles.length === 0) return;
 
     try {
-      // Format work order number as WO-000001
-      const formattedWorkOrder = `WO-${String(workOrderNum).padStart(6, '0')}`;
+      const targetFolderType = 'job_files';
 
-      // Build paths - job request creates folder at /Properties/{PropertyName}/Work Orders/WO-000001
-      const workOrderFolderPath = `/Properties/${propertyName}/Work Orders/${formattedWorkOrder}`;
-      const jobFilesFolderPath = `${workOrderFolderPath}/Job Files`;
+      // Ensure the Work Order and Job Files subfolder exist and get definitive IDs/paths
+      const { data: jobFilesFolderId, error: jobFilesErr } = await supabase.rpc('get_upload_folder', {
+        p_property_id: formData.property_id,
+        p_job_id: jobId,
+        p_folder_type: targetFolderType
+      });
+      if (jobFilesErr || !jobFilesFolderId) {
+        console.error('Failed to ensure Job Files folder:', jobFilesErr);
+        throw new Error('Failed to ensure Job Files folder');
+      }
 
-      // Upload each file
+      // Resolve the canonical path for the Job Files folder (with retry in case of immediate creation lag)
+      let folderPath = '';
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { data: folderInfo, error: folderInfoError } = await supabase
+          .from('files')
+          .select('path')
+          .eq('id', jobFilesFolderId)
+          .maybeSingle();
+        if (!folderInfoError && folderInfo?.path) {
+          folderPath = folderInfo.path;
+          break;
+        }
+        await new Promise(res => setTimeout(res, 200));
+      }
+      if (!folderPath) {
+        throw new Error('Failed to resolve Job Files folder path after retries');
+      }
+
+      // Compute starting index for auto naming in 'other' category
+      let nextIndex = 1
+      {
+        const { data: existing } = await supabase
+          .from('files')
+          .select('name')
+          .eq('folder_id', jobFilesFolderId)
+          .eq('job_id', jobId)
+          .eq('category', targetFolderType)
+        let maxIdx = 0
+        const rx = /^wo-\d+_other_(\d+)\./
+        if (existing && Array.isArray(existing)) {
+          for (const row of existing as any[]) {
+            const m = typeof row.name === 'string' ? row.name.toLowerCase().match(rx) : null
+            if (m && m[1]) {
+              const n = parseInt(m[1], 10)
+              if (!isNaN(n)) maxIdx = Math.max(maxIdx, n)
+            }
+          }
+        }
+        nextIndex = maxIdx + 1
+      }
+
+      // Upload each file into the resolved Job Files folder
       for (const file of selectedFiles) {
         try {
-          // Get the correct upload folder from the backend
-          const { data: folderId, error: folderError } = await supabase.rpc('get_upload_folder', {
-            p_property_id: formData.property_id,
-            p_job_id: jobId,
-            p_folder_type: 'job_files'
-          });
+          const optimized = file.type.startsWith('image/') ? await optimizeImage(file) : { blob: file, mime: file.type || 'application/octet-stream', suggestedExt: '', width: 0, height: 0, originalSize: file.size, optimizedSize: file.size }
+          const ext = optimized.suggestedExt || (file.name.split('.').pop() || 'bin')
+          const woLabel = `wo-${String(workOrderNum).padStart(6, '0')}`
+          const autoName = `${woLabel}_other_${nextIndex}.${ext}`
+          nextIndex += 1
+          const sanitizedFilename = sanitizeFilename(autoName);
+          const normalizedStoragePath = `${folderPath.replace(/^\/+/, '')}/${sanitizedFilename}`.replace(/\/+/g, '/');
 
-          if (folderError || !folderId) {
-            console.error('Error getting upload folder:', folderError);
-            throw new Error('Failed to get upload folder');
-          }
-
-          const sanitizedFilename = sanitizeFilename(file.name);
-          
-          // Construct storage path: Properties/Property Name/Work Orders/WO-XXXXXX/Job Files/filename
-          // We can reconstruct this or query the folder path, but to be safe and consistent with the backend:
-          const storagePath = `Properties/${propertyName}/Work Orders/${formattedWorkOrder}/Job Files/${sanitizedFilename}`;
-          const normalizedStoragePath = storagePath.replace(/^\/+/, '').replace(/\/+/g, '/');
-
-          // Upload file to storage
+          const uploadFile = new File([optimized.blob], sanitizedFilename, { type: optimized.mime })
           const { error: storageError } = await supabase.storage
             .from('files')
-            .upload(normalizedStoragePath, file, {
+            .upload(normalizedStoragePath, uploadFile, {
               cacheControl: '3600',
-              upsert: false
+              upsert: false,
+              contentType: optimized.mime
             });
-
           if (storageError) {
-            console.error('Error uploading file to storage:', file.name, storageError);
+            console.error('Storage upload failed:', sanitizedFilename, storageError);
             continue;
           }
 
-          // Create file record in database
           const { error: dbError } = await supabase
             .from('files')
             .insert({
               name: sanitizedFilename,
               path: normalizedStoragePath,
-              size: file.size,
-              type: file.type,
+              size: optimized.optimizedSize,
+              original_size: optimized.originalSize,
+              optimized_size: optimized.optimizedSize,
+              type: uploadFile.type,
               uploaded_by: user?.id,
               property_id: formData.property_id,
               job_id: jobId,
-              folder_id: folderId // Use the ID returned by the RPC
+              folder_id: jobFilesFolderId,
+              category: 'other'
             });
-
           if (dbError) {
-            console.error('Error creating file record in database:', file.name, dbError);
+            console.error('DB insert failed for file:', sanitizedFilename, dbError);
           }
         } catch (err) {
-          console.error('Error uploading file:', file.name, err);
+          console.error('Upload pipeline error:', file.name, err);
         }
       }
     } catch (err) {
@@ -368,7 +405,7 @@ export function JobRequestForm() {
         p_job_type_id: formData.job_type_id,
         p_description: formData.description || '', // Ensure description is not null
         p_scheduled_date: formattedDate,
-        p_job_category_id: formData.job_category_id
+        p_job_category_id: formData.job_category_id || null
       });
 
       if (error) {

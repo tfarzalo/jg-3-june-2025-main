@@ -85,12 +85,6 @@ interface EnhancedPropertyNotificationModalProps {
   job: Job | null;
   notificationType: 'extra_charges' | 'sprinkler_paint' | 'drywall_repairs';
   onSent?: () => void;
-  additionalServices?: Array<{
-    label: string;
-    quantity: number;
-    unit_label?: string;
-    bill_amount: number;
-  }>;
 }
 
 const STORAGE_BUCKET = 'job-images';
@@ -190,7 +184,6 @@ export function EnhancedPropertyNotificationModal({
   job,
   notificationType,
   onSent,
-  additionalServices = [],
 }: EnhancedPropertyNotificationModalProps) {
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null);
@@ -279,16 +272,15 @@ export function EnhancedPropertyNotificationModal({
   }, [job]);
 
   const findWorkOrderFolderId = useCallback(async (): Promise<string | null> => {
-    if (!job?.property?.id || !job?.id || !job?.work_order_num) {
+    if (!job?.property?.name || !job?.work_order_num) {
       return null;
     }
     const workOrderCode = `WO-${String(job.work_order_num).padStart(6, '0')}`;
+    const basePath = `/Properties/${job.property.name}/Work Orders/${workOrderCode}`;
     const { data, error } = await supabase
       .from('files')
       .select('id')
-      .eq('job_id', job.id)
-      .eq('type', 'folder/directory')
-      .eq('name', workOrderCode)
+      .eq('path', basePath)
       .maybeSingle();
     if (error || !data?.id) {
       return null;
@@ -583,39 +575,17 @@ export function EnhancedPropertyNotificationModal({
   ];
 
   const buildBillingItems = () => {
-    const items: Array<{
-      description: string;
-      hours?: number;
-      quantity?: number;
-      unit?: string;
-      bill_amount: number;
-      sub_pay_amount?: number;
-      profit_amount?: number;
-    }> = [];
-
-    // Add Additional Services
-    if (additionalServices?.length) {
-      items.push(...additionalServices.map(svc => ({
-        description: svc.label,
-        quantity: svc.quantity,
-        unit: svc.unit_label,
-        bill_amount: svc.bill_amount,
-      })));
-    }
-
-    // Add Extra Charges (Labor)
-    if (job?.extra_charges_details) {
-      const details = job.extra_charges_details;
-      items.push({
+    if (!job?.extra_charges_details) return [];
+    const details = job.extra_charges_details;
+    return [
+      {
         description: details.description || 'Extra Charges',
         hours: details.hours,
         bill_amount: details.bill_amount || 0,
         sub_pay_amount: details.sub_pay_amount,
         profit_amount: details.profit_amount,
-      });
-    }
-
-    return items;
+      },
+    ];
   };
 
   const renderJobDetailsPreview = () => {
@@ -798,8 +768,6 @@ export function EnhancedPropertyNotificationModal({
       description: item.description || '',
       cost: item.bill_amount || 0,
       hours: item.hours,
-      quantity: item.quantity,
-      unit: item.unit,
     }));
 
     const total = billingItems.reduce((sum, item) => sum + (item.cost || 0), 0);

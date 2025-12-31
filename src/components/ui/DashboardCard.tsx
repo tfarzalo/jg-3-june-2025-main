@@ -5,6 +5,7 @@ interface DashboardCardProps {
   title: string;
   children: React.ReactNode;
   viewAllLink?: string;
+  viewAllState?: any;
   actionButton?: React.ReactNode;
   titleColor?: string;
   className?: string;
@@ -15,6 +16,7 @@ export function DashboardCard({
   title, 
   children, 
   viewAllLink, 
+  viewAllState,
   actionButton,
   titleColor = 'text-gray-900 dark:text-white',
   className = '',
@@ -33,7 +35,7 @@ export function DashboardCard({
         <div className="flex items-center space-x-4">
           {actionButton}
           {viewAllLink && (
-            <Link to={viewAllLink} className="text-sm text-gray-500 hover:text-gray-700 dark:text-text-muted-dark dark:hover:text-text-base-dark transition-colors">
+            <Link to={viewAllLink} state={viewAllState} className="text-sm text-gray-500 hover:text-gray-700 dark:text-text-muted-dark dark:hover:text-text-base-dark transition-colors">
               View All
             </Link>
           )}

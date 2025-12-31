@@ -4,6 +4,7 @@ import { Upload, X } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { config } from '../config/environment';
 import { WorkOrderLink } from './shared/WorkOrderLink';
+import { optimizeImage } from '../lib/utils/imageOptimization';
 
 // Helper to upload with progress
 const uploadFileWithProgress = async (
@@ -225,31 +226,52 @@ export function FileUpload() {
 
       for (const file of selectedFiles) {
         const sanitizedFilename = sanitizeFilename(file.name);
-        let filePath: string;
         let storagePath: string;
+        let targetFolderId: string | null = null;
+        let targetFolderPath: string | null = null;
 
         if (formData.property_id) {
           if (formData.job_id) {
-            filePath = `/properties/${formData.property_id}/jobs/${formData.job_id}`;
-            storagePath = `properties/${formData.property_id}/jobs/${formData.job_id}/${sanitizedFilename}`;
+            const { data: uploadFolderId, error: uploadFolderError } = await supabase.rpc('get_upload_folder', {
+              p_property_id: formData.property_id,
+              p_job_id: formData.job_id,
+              p_folder_type: 'other'
+            });
+            if (uploadFolderError || !uploadFolderId) throw uploadFolderError || new Error('Failed to resolve upload folder');
+            targetFolderId = uploadFolderId;
           } else {
-            filePath = `/properties/${formData.property_id}`;
-            storagePath = `properties/${formData.property_id}/${sanitizedFilename}`;
+            const { data: propertyFilesFolderId, error: propertyFolderError } = await supabase.rpc('get_upload_folder', {
+              p_property_id: formData.property_id,
+              p_job_id: null,
+              p_folder_type: 'other'
+            });
+            if (propertyFolderError || !propertyFilesFolderId) throw propertyFolderError || new Error('Failed to resolve property files folder');
+            targetFolderId = propertyFilesFolderId;
           }
+          const { data: folderInfo, error: folderInfoError } = await supabase
+            .from('files')
+            .select('path')
+            .eq('id', targetFolderId)
+            .single();
+          if (folderInfoError || !folderInfo?.path) throw folderInfoError || new Error('Failed to resolve folder path');
+          targetFolderPath = folderInfo.path;
         } else if (formData.folder_id) {
           const folder = folders.find(f => f.id === formData.folder_id);
-          filePath = folder?.path || '/';
-          storagePath = `${folder?.path || ''}/${sanitizedFilename}`.replace(/^\/+/, '');
+          targetFolderId = formData.folder_id;
+          targetFolderPath = folder?.path || '/';
         } else {
-          filePath = '/general';
-          storagePath = `general/${sanitizedFilename}`;
+          targetFolderPath = 'general';
         }
 
-        // Upload file to storage with progress
-        await uploadFileWithProgress('files', storagePath, file, (progress) => {
+        const isImage = (file.type || '').toLowerCase().startsWith('image/')
+        const optimized = isImage ? await optimizeImage(file) : { blob: file, mime: file.type || 'application/octet-stream', suggestedExt: '', width: 0, height: 0, originalSize: file.size, optimizedSize: file.size }
+        const finalName = sanitizedFilename
+        const uploadFile = new File([optimized.blob], finalName, { type: optimized.mime })
+        storagePath = `${(targetFolderPath || '').replace(/^\/+/, '')}/${finalName}`.replace(/\/+/g, '/');
+        await uploadFileWithProgress('files', storagePath, uploadFile, (progress) => {
           setUploadProgress(prev => ({
             ...prev,
-            [file.name]: progress
+            [finalName]: progress
           }));
         });
 
@@ -257,14 +279,16 @@ export function FileUpload() {
         const { error: dbError } = await supabase
           .from('files')
           .insert({
-            name: sanitizedFilename,
-            path: filePath,
-            size: file.size,
-            type: file.type,
+            name: finalName,
+            path: storagePath,
+            size: optimized.optimizedSize,
+            original_size: optimized.originalSize,
+            optimized_size: optimized.optimizedSize,
+            type: uploadFile.type,
             uploaded_by: userData.user.id,
             property_id: formData.property_id || null,
             job_id: formData.job_id || null,
-            folder_id: formData.folder_id || generalFolderId
+            folder_id: targetFolderId || generalFolderId
           });
 
         if (dbError) throw dbError;

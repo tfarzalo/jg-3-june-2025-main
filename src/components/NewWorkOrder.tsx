@@ -1901,7 +1901,7 @@ const NewWorkOrder = () => {
       for (const filePath of imagesToDelete) {
         // Remove from storage
         const { error: storageError } = await supabase.storage
-          .from('work_orders')
+          .from('files')
           .remove([filePath.replace(/^\/+/, '')]);
 
         if (storageError) {

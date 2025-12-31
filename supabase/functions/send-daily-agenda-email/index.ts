@@ -411,9 +411,46 @@ Deno.serve(async (req) => {
     })}`;
     const html = generateEmailHTML(jobs, summary, dateStr);
     
+    // If this is not a test run and there are no jobs, skip sending and log
+    if (!test && jobs.length === 0) {
+      console.log('No jobs scheduled for today; skipping send for non-test run');
+      const logInsert = await supabase
+        .from('daily_email_send_log')
+        .insert({
+          recipients: [],
+          job_count: 0,
+          success: true,
+          error_message: null,
+          triggered_by: 'cron'
+        });
+      if (logInsert.error) {
+        console.error('Failed to insert skip log:', logInsert.error);
+      } else {
+        console.log('Skip log inserted');
+      }
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: 'No jobs scheduled today; email not sent',
+          sent: 0,
+          failed: 0,
+          summary,
+          totalJobs: jobs.length
+        }),
+        {
+          status: 200,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    }
+    
     let sent = 0;
     let failed = 0;
     const results = [];
+    const recipientsSent: string[] = [];
     
     if (mode === 'single' && recipient) {
       // Send to single test recipient
@@ -421,6 +458,7 @@ Deno.serve(async (req) => {
       const result = await sendEmail(recipient, subject, html);
       if (result.success) {
         sent++;
+        recipientsSent.push(recipient);
       } else {
         failed++;
       }
@@ -452,6 +490,7 @@ Deno.serve(async (req) => {
           const result = await sendEmail(email, subject, html);
           if (result.success) {
             sent++;
+            recipientsSent.push(email);
             console.log(`✓ Email sent successfully to ${email}`);
           } else {
             failed++;
@@ -462,6 +501,22 @@ Deno.serve(async (req) => {
           console.warn('Skipping setting with no email:', setting);
         }
       }
+    }
+    
+    // Insert send log
+    const logInsert = await supabase
+      .from('daily_email_send_log')
+      .insert({
+        recipients: recipientsSent,
+        job_count: jobs.length,
+        success: failed === 0,
+        error_message: failed > 0 ? `Failed: ${failed} recipient(s)` : null,
+        triggered_by: test ? 'manual' : 'cron'
+      });
+    if (logInsert.error) {
+      console.error('Failed to insert send log:', logInsert.error);
+    } else {
+      console.log('Send log inserted');
     }
     
     const response = {

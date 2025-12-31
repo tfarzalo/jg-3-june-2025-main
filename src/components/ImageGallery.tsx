@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Trash2 } from 'lucide-react';
+import Lightbox from 'yet-another-react-lightbox';
+import 'yet-another-react-lightbox/styles.css';
 import { supabase } from '../utils/supabase';
 import { getPreviewUrl, PreviewResult } from '../utils/storagePreviews';
 
@@ -24,7 +26,7 @@ export function ImageGallery({ workOrderId, folder, allowDelete = false }: Image
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showLightbox, setShowLightbox] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null);
+  const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [imageUrls, setImageUrls] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
@@ -78,20 +80,35 @@ export function ImageGallery({ workOrderId, folder, allowDelete = false }: Image
         throw subfolderError;
       }
       
-      if (!subfolder || !subfolder.id) {
-        console.log('[ImageGallery] ⚠️ Subfolder not found - no images to display');
-        setFiles([]);
-        setLoading(false);
-        return;
+      let subfolderRecord = subfolder;
+      if (!subfolderRecord || !subfolderRecord.id) {
+        if (folder === 'job_files') {
+          const { data: legacySubfolder } = await supabase
+            .from('files')
+            .select('id, name, path')
+            .eq('name', 'Other Files')
+            .eq('folder_id', workOrderId)
+            .maybeSingle();
+          if (!legacySubfolder?.id) {
+            setFiles([]);
+            setLoading(false);
+            return;
+          }
+          subfolderRecord = legacySubfolder as any;
+        } else {
+          setFiles([]);
+          setLoading(false);
+          return;
+        }
       }
 
-      console.log('[ImageGallery] ✅ Found subfolder:', subfolder);
+      console.log('[ImageGallery] ✅ Found subfolder:', subfolderRecord);
 
       // 2. Fetch files from the subfolder with the correct category
       const query = supabase
         .from('files')
         .select('*')
-        .eq('folder_id', subfolder.id)
+        .eq('folder_id', subfolderRecord.id)
         .order('created_at', { ascending: false });
 
       // Job Files uploads often have no category; only filter by category for the image-specific buckets
@@ -102,7 +119,7 @@ export function ImageGallery({ workOrderId, folder, allowDelete = false }: Image
       const { data, error } = await query;
         
       console.log('[ImageGallery] File fetch query params:', { 
-        subfolderId: subfolder.id, 
+        subfolderId: subfolderRecord.id, 
         category: folder
       });
       console.log('[ImageGallery] File fetch results:', { 
@@ -117,10 +134,63 @@ export function ImageGallery({ workOrderId, folder, allowDelete = false }: Image
       }
 
       if (!data || data.length === 0) {
-        console.log('[ImageGallery] ⚠️ No files found in folder');
-        setFiles([]);
-        setLoading(false);
-        return;
+        console.log('[ImageGallery] ⚠️ No files found in DB; attempting storage fallback');
+        const storagePath = (subfolderRecord.path || '').replace(/^\/+/, '');
+        try {
+          const { data: objects, error: listError } = await supabase
+            .storage
+            .from('files')
+            .list(storagePath, { limit: 100 });
+          if (listError) {
+            console.error('[ImageGallery] ❌ Storage list error:', listError);
+            setFiles([]);
+            setLoading(false);
+            return;
+          }
+          if (!objects || objects.length === 0) {
+            console.log('[ImageGallery] ⚠️ No objects found in storage for path:', storagePath);
+            setFiles([]);
+            setLoading(false);
+            return;
+          }
+          const filesWithPreviews = await Promise.all(objects.map(async (obj) => {
+            try {
+              const fullPath = `${storagePath}/${obj.name}`.replace(/\/+/g, '/');
+              const previewResult = await getPreviewUrl(supabase, 'files', fullPath);
+              return {
+                id: `${subfolderRecord.id}:${obj.name}`,
+                file_path: fullPath,
+                file_name: obj.name,
+                file_type: 'file',
+                file_size: 0,
+                created_at: new Date().toISOString(),
+                previewResult
+              } as WorkOrderFile;
+            } catch (error) {
+              console.error('[ImageGallery] ❌ Error generating preview for storage object:', obj.name, error);
+              const { data: urlData } = supabase.storage
+                .from('files')
+                .getPublicUrl(`${storagePath}/${obj.name}`);
+              return {
+                id: `${subfolderRecord.id}:${obj.name}`,
+                file_path: `${storagePath}/${obj.name}`,
+                file_name: obj.name,
+                file_type: 'file',
+                file_size: 0,
+                created_at: new Date().toISOString(),
+                previewResult: { kind: 'signed' as const, url: urlData.publicUrl }
+              } as WorkOrderFile;
+            }
+          }));
+          setFiles(filesWithPreviews);
+          setLoading(false);
+          return;
+        } catch (fallbackErr) {
+          console.error('[ImageGallery] ❌ Storage fallback failed:', fallbackErr);
+          setFiles([]);
+          setLoading(false);
+          return;
+        }
       }
 
       console.log('[ImageGallery] 📸 Processing', data.length, 'files for preview URLs');
@@ -229,10 +299,12 @@ export function ImageGallery({ workOrderId, folder, allowDelete = false }: Image
     // ...rest of the code
   };
 
-  const handleImageClick = (image: { src: string; alt: string }) => {
-    setSelectedImage(image);
+  const handleImageClick = (index: number) => {
+    setCurrentIndex(index);
     setShowLightbox(true);
   };
+
+  // Lightbox library handles keyboard navigation and arrows internally
 
   if (loading) {
     return (
@@ -261,10 +333,10 @@ export function ImageGallery({ workOrderId, folder, allowDelete = false }: Image
   return (
     <div className="mt-4">
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {files.map((file) => (
+        {files.map((file, index) => (
           <div key={file.id} className="relative group">
             <button
-              onClick={() => handleImageClick({ src: getImageUrl(file), alt: file.file_name })}
+              onClick={() => handleImageClick(index)}
               className="w-full aspect-square rounded-lg overflow-hidden hover:opacity-90 transition-opacity"
             >
               <img
@@ -291,23 +363,23 @@ export function ImageGallery({ workOrderId, folder, allowDelete = false }: Image
         ))}
       </div>
 
-      {showLightbox && selectedImage && (
-        <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex items-center justify-center">
-          <button
-            onClick={() => setShowLightbox(false)}
-            className="absolute top-4 right-4 text-white hover:text-gray-300"
-          >
-            <X className="h-6 w-6" />
-          </button>
-          <div className="max-w-7xl max-h-[90vh] p-4">
-            <img
-              src={selectedImage.src}
-              alt={selectedImage.alt}
-              className="max-w-full max-h-[90vh] object-contain"
-            />
-          </div>
-        </div>
-      )}
+      <Lightbox
+        open={showLightbox}
+        close={() => setShowLightbox(false)}
+        index={currentIndex}
+        slides={files.map(f => ({ src: getImageUrl(f) }))}
+        render={{
+          buttonClose: () => (
+            <button
+              onClick={() => setShowLightbox(false)}
+              className="absolute top-4 right-4 text-white hover:text-gray-300"
+              aria-label="Close"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          ),
+        }}
+      />
     </div>
   );
 }

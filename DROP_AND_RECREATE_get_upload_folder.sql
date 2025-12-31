@@ -5,6 +5,11 @@
 
 -- 1. Drop existing function(s) to clear conflicts
 DROP FUNCTION IF EXISTS get_upload_folder(uuid, uuid, text);
+DROP FUNCTION IF EXISTS ensure_folder_exists(text) CASCADE;
+DROP FUNCTION IF EXISTS ensure_folder_exists(text, uuid) CASCADE;
+DROP FUNCTION IF EXISTS ensure_folder_exists(text, uuid, uuid) CASCADE;
+DROP FUNCTION IF EXISTS ensure_folder_exists(text, uuid, uuid, uuid) CASCADE;
+DROP FUNCTION IF EXISTS ensure_folder_exists(text, uuid, uuid, uuid, text) CASCADE;
 
 -- 2. Ensure the safe folder creation helper exists
 CREATE OR REPLACE FUNCTION ensure_folder_exists(
@@ -16,6 +21,7 @@ CREATE OR REPLACE FUNCTION ensure_folder_exists(
 RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
     v_folder_id UUID;
@@ -61,6 +67,22 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION ensure_folder_exists(
+    p_path TEXT,
+    p_parent_folder_id UUID DEFAULT NULL,
+    p_property_id UUID DEFAULT NULL,
+    p_job_id UUID DEFAULT NULL,
+    p_folder_type TEXT DEFAULT 'folder/directory'
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN public.ensure_folder_exists(p_path, p_parent_folder_id, p_property_id, p_job_id);
+END;
+$$;
 -- 3. Recreate get_upload_folder with new logic
 CREATE OR REPLACE FUNCTION get_upload_folder(
     p_property_id UUID,
@@ -70,6 +92,7 @@ CREATE OR REPLACE FUNCTION get_upload_folder(
 RETURNS UUID 
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
     v_property_name TEXT;
@@ -90,21 +113,21 @@ BEGIN
     END IF;
     
     -- Ensure /Properties root exists
-    v_properties_root_id := ensure_folder_exists('/Properties', NULL, NULL, NULL);
+    v_properties_root_id := public.ensure_folder_exists('/Properties', NULL::uuid, NULL::uuid, NULL::uuid);
     
     -- Ensure property folder exists: /Properties/{Name}
-    v_property_folder_id := ensure_folder_exists(
+    v_property_folder_id := public.ensure_folder_exists(
         '/Properties/' || v_property_name, 
         v_properties_root_id, 
         p_property_id, 
-        NULL
+        NULL::uuid
     );
     
     -- Handle Property Files (Unit Maps, etc.)
     IF p_folder_type = 'property_files' THEN
-        RETURN ensure_folder_exists(
+        RETURN public.ensure_folder_exists(
             '/Properties/' || v_property_name || '/Property Files',
-            v_property_folder_id, p_property_id, NULL
+            v_property_folder_id, p_property_id, NULL::uuid
         );
     END IF;
     
@@ -112,17 +135,17 @@ BEGIN
     IF p_job_id IS NOT NULL THEN
         SELECT work_order_num INTO v_work_order_num FROM jobs WHERE id = p_job_id;
         
-        -- Ensure Work Orders root exists: /Properties/{Name}/Work Orders
-        v_work_orders_folder_id := ensure_folder_exists(
-            '/Properties/' || v_property_name || '/Work Orders',
-            v_property_folder_id, p_property_id, NULL
-        );
+    -- Ensure Work Orders root exists: /Properties/{Name}/Work Orders
+    v_work_orders_folder_id := public.ensure_folder_exists(
+        '/Properties/' || v_property_name || '/Work Orders',
+        v_property_folder_id, p_property_id, NULL::uuid
+    );
         
-        -- Ensure specific WO folder exists: /Properties/{Name}/Work Orders/WO-{Num}
-        v_wo_folder_id := ensure_folder_exists(
-            '/Properties/' || v_property_name || '/Work Orders/WO-' || LPAD(v_work_order_num::text, 6, '0'),
-            v_work_orders_folder_id, p_property_id, p_job_id
-        );
+    -- Ensure specific WO folder exists: /Properties/{Name}/Work Orders/WO-{Num}
+    v_wo_folder_id := public.ensure_folder_exists(
+        '/Properties/' || v_property_name || '/Work Orders/WO-' || LPAD(v_work_order_num::text, 6, '0'),
+        v_work_orders_folder_id, p_property_id, p_job_id
+    );
         
         -- Determine subfolder name
         v_folder_name := CASE p_folder_type
@@ -133,11 +156,11 @@ BEGIN
             ELSE 'Other Files'
         END;
         
-        -- Return final target folder ID
-        RETURN ensure_folder_exists(
-            '/Properties/' || v_property_name || '/Work Orders/WO-' || LPAD(v_work_order_num::text, 6, '0') || '/' || v_folder_name,
-            v_wo_folder_id, p_property_id, p_job_id
-        );
+    -- Return final target folder ID
+    RETURN public.ensure_folder_exists(
+        '/Properties/' || v_property_name || '/Work Orders/WO-' || LPAD(v_work_order_num::text, 6, '0') || '/' || v_folder_name,
+        v_wo_folder_id, p_property_id, p_job_id
+    );
     END IF;
     
     RAISE EXCEPTION 'Invalid parameters for get_upload_folder';
@@ -145,5 +168,6 @@ END;
 $$;
 
 -- 4. Grant permissions
-GRANT EXECUTE ON FUNCTION ensure_folder_exists TO authenticated;
-GRANT EXECUTE ON FUNCTION get_upload_folder TO authenticated;
+GRANT EXECUTE ON FUNCTION public.ensure_folder_exists(text, uuid, uuid, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.ensure_folder_exists(text, uuid, uuid, uuid, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_upload_folder(uuid, uuid, text) TO authenticated;

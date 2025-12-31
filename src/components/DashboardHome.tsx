@@ -550,13 +550,22 @@ export function DashboardHome() {
             key={index} 
             to={
               metric.label === 'Job Requests' 
-                ? '/dashboard/jobs/job-requests'
-                : metric.label === 'Work Orders'
+                ? '/dashboard/jobs/requests'
+                : metric.label === 'Work Orders' || metric.label === 'Pending Work Orders'
                 ? '/dashboard/jobs/work-orders'
-                : metric.label.includes('Jobs')
-                ? '/dashboard/jobs'
-                : `/dashboard/jobs/${metric.label.toLowerCase().replace(' ', '-')}`
+                : metric.label === 'Invoicing'
+                ? '/dashboard/jobs/invoicing'
+                : metric.label === 'Completed'
+                ? '/dashboard/jobs/completed'
+                : '/dashboard/jobs'
             } 
+            state={
+              metric.label === 'Work Orders'
+                ? { sortField: 'job_phase', sortDirection: 'desc' }
+                : metric.label === 'Pending Work Orders'
+                ? { sortField: 'job_phase', sortDirection: 'asc' }
+                : undefined
+            }
             className="block"
           >
             <MetricTile
@@ -712,6 +721,7 @@ export function DashboardHome() {
           <DashboardCard 
             title="Work Orders" 
             viewAllLink="/dashboard/jobs/work-orders"
+            viewAllState={{ sortField: 'job_phase', sortDirection: 'desc' }}
             titleColor="text-gray-900 dark:text-white"
             className="min-h-[300px]"
             phaseColor={phaseColors['Work Order'] || '#F97316'}
@@ -818,6 +828,7 @@ export function DashboardHome() {
         <DashboardCard 
           title="Work Orders" 
           viewAllLink="/dashboard/jobs/work-orders"
+          viewAllState={{ sortField: 'job_phase', sortDirection: 'desc' }}
           titleColor="text-gray-900 dark:text-white"
           className="min-h-[400px]"
           phaseColor={phaseColors['Work Order'] || '#F97316'}

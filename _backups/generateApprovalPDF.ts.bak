@@ -28,7 +28,6 @@ interface JobImage {
   file_path: string;
   file_name: string;
   image_type: string;
-  public_url?: string;
 }
 
 interface GeneratePDFOptions {
@@ -128,13 +127,13 @@ export async function generateApprovalPDF(options: GeneratePDFOptions): Promise<
 
   const tableData = extraChargesData.items.map(item => [
     item.description,
-    item.quantity ? `${item.quantity} ${item.unit || 'items'}` : (item.hours ? `${item.hours} hrs` : '-'),
+    item.hours ? `${item.hours} hrs` : '-',
     `$${item.cost.toFixed(2)}`
   ]);
 
   autoTable(doc, {
     startY: yPosition,
-    head: [['Description', 'Qty/Hrs', 'Amount']],
+    head: [['Description', 'Hours', 'Amount']],
     body: tableData,
     foot: [['', 'Total:', `$${extraChargesData.total.toFixed(2)}`]],
     theme: 'striped',

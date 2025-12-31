@@ -33,6 +33,7 @@ import {
   isDocument,
   isPDF
 } from '../services/fileSaveService';
+import { optimizeImage } from '../lib/utils/imageOptimization';
 
 // Translations
 const translations = {
@@ -127,6 +128,7 @@ interface FileItem {
   folder_id: string | null;
   uploaded_by: string;
   created_at: string;
+  updated_at?: string;
   size: number;
   job_id: string | null;
   property_id: string | null;
@@ -225,6 +227,8 @@ export function FileManager() {
   const [items, setItems] = useState<FileItem[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folderPath, setFolderPath] = useState<FolderPath[]>([{ id: null, name: t.allFiles }]);
+  const [currentFolderPath, setCurrentFolderPath] = useState<string | null>(null);
+  const [isWorkOrdersContext, setIsWorkOrdersContext] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -248,6 +252,13 @@ export function FileManager() {
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
 
   const isFolder = (type: string) => type === 'folder/directory' || type === 'folder/job' || type === 'folder/property';
+  const imageExts = new Set(['jpg','jpeg','png','gif','webp','bmp','tiff','svg']);
+  const isImageByExt = (name?: string) => {
+    if (!name) return false;
+    const ext = name.split('.').pop()?.toLowerCase() || '';
+    return imageExts.has(ext);
+  };
+  const isImageItem = (item: FileItem) => item.type.startsWith('image/') || isImageByExt(item.name) || !!item.previewUrl;
 
   const fetchItems = useCallback(async () => {
     if (!supabase) return;
@@ -257,7 +268,7 @@ export function FileManager() {
     try {
       let query = supabase
         .from('files')
-        .select('id, name, type, folder_id, uploaded_by, created_at, size, job_id, property_id, path');
+        .select('id, name, type, folder_id, uploaded_by, created_at, size, original_size, optimized_size, job_id, property_id, path, updated_at');
 
       // Handle root folder and nested folders correctly
       if (currentFolderId === null) {
@@ -265,6 +276,14 @@ export function FileManager() {
         query = query.is('folder_id', null);
       } else {
         query = query.eq('folder_id', currentFolderId);
+        const { data: curFolder } = await supabase
+          .from('files')
+          .select('path, name')
+          .eq('id', currentFolderId)
+          .maybeSingle();
+        const pathStr = curFolder?.path || null;
+        setCurrentFolderPath(pathStr);
+        setIsWorkOrdersContext(!!pathStr && /\/Work Orders\/?$/i.test(pathStr));
       }
 
       // Add job_id filter if we're in a job context
@@ -274,7 +293,9 @@ export function FileManager() {
         query = query.eq('job_id', jobId);
       }
 
-      const { data, error: fetchError } = await query.order('name');
+      const { data, error: fetchError } = await (isWorkOrdersContext
+        ? query.order('updated_at', { ascending: false }).order('created_at', { ascending: false })
+        : query.order('name'));
 
       if (fetchError) {
         console.error('[FileManager] fetchItems error:', JSON.stringify(fetchError, null, 2));
@@ -288,7 +309,7 @@ export function FileManager() {
         
         // Generate preview URL for image files
         let previewUrl = null;
-        if (file.type.startsWith('image/')) {
+        if (file.type.startsWith('image/') || isImageByExt(file.name)) {
           try {
             const previewResult = await getPreviewUrl(supabase, 'files', filePath);
             previewUrl = previewResult.url;
@@ -529,23 +550,88 @@ export function FileManager() {
         propertyId = jobData?.property_id;
       }
 
-      for (const file of selectedFiles) {
-        // Create a proper file path based on context
-        let filePath;
-        if (jobId && propertyId) {
-          filePath = `properties/${propertyId}/jobs/${jobId}/${currentFolderId || ''}/${Date.now()}_${file.name}`;
-        } else if (currentFolderId) {
-          filePath = `${currentFolderId}/${Date.now()}_${file.name}`;
-        } else {
-          filePath = `root/${Date.now()}_${file.name}`;
+      // Resolve target folder path
+      let targetFolderId: string | null = currentFolderId;
+      let basePath: string | null = null;
+      if (targetFolderId) {
+        const { data: folderInfo } = await supabase
+          .from('files')
+          .select('path')
+          .eq('id', targetFolderId)
+          .maybeSingle();
+        basePath = folderInfo?.path || null;
+      } else if (jobId && propertyId) {
+        const { data: uploadFolderId } = await supabase.rpc('get_upload_folder', {
+          p_property_id: propertyId,
+          p_job_id: jobId,
+          p_folder_type: 'other'
+        });
+        if (uploadFolderId) {
+          targetFolderId = uploadFolderId;
+          const { data: folderInfo } = await supabase
+            .from('files')
+            .select('path')
+            .eq('id', uploadFolderId)
+            .maybeSingle();
+          basePath = folderInfo?.path || null;
         }
-        filePath = filePath.replace(/\/+/g, '/');
+      }
 
-        // Upload to storage with progress
-        await uploadFileWithProgress('files', filePath, file, (progress) => {
+      // Determine auto naming context
+      let autoCategory: 'before' | 'sprinkler' | 'other' | null = null
+      let woSegment: string | null = null
+      if (basePath) {
+        const lowerPath = basePath.toLowerCase()
+        if (lowerPath.includes('/work orders/')) {
+          if (lowerPath.includes('/before images')) autoCategory = 'before'
+          else if (lowerPath.includes('/sprinkler images')) autoCategory = 'sprinkler'
+          else autoCategory = 'other'
+          const m = basePath.match(/WO-\d+/)
+          if (m) woSegment = m[0]
+        }
+      }
+
+      // Precompute index if auto naming applies
+      let nextIndex = 1
+      if (autoCategory && targetFolderId) {
+        const { data: existing } = await supabase
+          .from('files')
+          .select('name')
+          .eq('folder_id', targetFolderId)
+        let maxIdx = 0
+        const rx = new RegExp(`^wo-\\d+_${autoCategory}_(\\d+)\\.`)
+        if (existing && Array.isArray(existing)) {
+          for (const row of existing as any[]) {
+            const n = typeof row.name === 'string' ? row.name.toLowerCase().match(rx) : null
+            if (n && n[1]) {
+              const v = parseInt(n[1], 10)
+              if (!isNaN(v)) maxIdx = Math.max(maxIdx, v)
+            }
+          }
+        }
+        nextIndex = maxIdx + 1
+      }
+
+      for (const file of selectedFiles) {
+        const isImage = (file.type || '').toLowerCase().startsWith('image/')
+        const optimized = isImage ? await optimizeImage(file) : { blob: file, mime: file.type || 'application/octet-stream', suggestedExt: '', width: 0, height: 0, originalSize: file.size, optimizedSize: file.size }
+        let finalName = file.name
+        let finalCategory = null as string | null
+        if (autoCategory && woSegment) {
+          const woLabel = `wo-${woSegment.replace('WO-', '')}`
+          const ext = optimized.suggestedExt || (file.name.split('.').pop() || 'bin')
+          finalName = `${woLabel}_${autoCategory}_${nextIndex}.${ext}`
+          nextIndex += 1
+          finalCategory = autoCategory
+        }
+
+        const storageBase = (basePath || 'root').replace(/^\/+/, '')
+        const filePath = `${storageBase}/${finalName}`.replace(/\/+/g, '/')
+        const uploadFile = new File([optimized.blob], finalName, { type: optimized.mime })
+        await uploadFileWithProgress('files', filePath, uploadFile, (progress) => {
           setUploadProgress(prev => ({
             ...prev,
-            [file.name]: progress
+            [finalName]: progress
           }));
         });
 
@@ -553,14 +639,17 @@ export function FileManager() {
         const { error: dbError } = await supabase
           .from('files')
           .insert({
-            name: file.name,
-            type: file.type,
-            size: file.size,
+            name: finalName,
+            type: uploadFile.type,
+            size: optimized.optimizedSize,
+            original_size: optimized.originalSize,
+            optimized_size: optimized.optimizedSize,
             path: filePath,
-            folder_id: currentFolderId,
+            folder_id: targetFolderId,
             uploaded_by: userData.user.id,
             job_id: jobId || null,
-            property_id: propertyId
+            property_id: propertyId,
+            category: finalCategory
           });
 
         if (dbError) throw dbError;
@@ -665,11 +754,16 @@ export function FileManager() {
 
   const sortedItems = [...items].sort((a, b) => {
     const order = sortOrder === 'asc' ? 1 : -1;
+    if (isWorkOrdersContext) {
+      const aDate = new Date(a.updated_at || a.created_at).getTime();
+      const bDate = new Date(b.updated_at || b.created_at).getTime();
+      return (bDate - aDate) * 1; // always show latest first in Work Orders
+    }
     switch (sortBy) {
       case 'name':
         return order * a.name.localeCompare(b.name);
       case 'date':
-        return order * (new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        return order * (new Date(a.updated_at || a.created_at).getTime() - new Date(b.updated_at || b.created_at).getTime());
       case 'size':
         return order * (a.size - b.size);
       case 'type':
@@ -682,6 +776,7 @@ export function FileManager() {
   const filteredItems = sortedItems.filter(item =>
     item.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
 
   const getExtension = (name: string) => {
     const parts = name?.split('.') || [];
@@ -755,6 +850,20 @@ export function FileManager() {
 
     throw lastError || new Error('No signed URL available');
   };
+
+  const formatBytes = (bytes?: number | null) => {
+    if (!bytes || bytes <= 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`
+  }
+
+  const percentSaved = (orig?: number | null, opt?: number | null) => {
+    if (!orig || !opt || orig <= 0) return null
+    const saved = 1 - opt / orig
+    return Math.max(0, Math.round(saved * 100))
+  }
 
   // Function to handle file download (always downloads)
   const handleDownload = async (item: FileItem) => {
@@ -873,7 +982,7 @@ export function FileManager() {
   };
 
   const handleFileClick = async (item: FileItem) => {
-    if (item.type.startsWith('image/')) {
+    if (isImageItem(item)) {
       return handleImagePreview(item);
     }
 
@@ -1049,7 +1158,7 @@ export function FileManager() {
                     onClick={() => handleFileClick(item)}
                     className="flex items-center w-full hover:text-blue-600 dark:hover:text-blue-400"
                   >
-                    {item.type.startsWith('image/') && item.previewUrl ? (
+                    {isImageItem(item) && item.previewUrl ? (
                       <img
                         src={item.previewUrl}
                         alt={item.name}
@@ -1072,6 +1181,16 @@ export function FileManager() {
                 <span className="text-sm text-gray-500 dark:text-gray-400">
                   {formatDate(item.created_at)}
                 </span>
+                {isImageItem(item) && (
+                  <div className="text-xs text-gray-600 dark:text-gray-300">
+                    <span className="mr-3">Org: {formatBytes((item as any).original_size ?? item.size)}</span>
+                    <span className="mr-3">Opt: {formatBytes((item as any).optimized_size ?? item.size)}</span>
+                    {(() => {
+                      const p = percentSaved((item as any).original_size ?? item.size, (item as any).optimized_size ?? item.size)
+                      return p !== null ? <span>Saved: {p}%</span> : null
+                    })()}
+                  </div>
+                )}
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={(e) => {
@@ -1143,7 +1262,7 @@ export function FileManager() {
                     onClick={() => handleFileClick(item)}
                     className="flex flex-col items-center w-full hover:text-blue-600 dark:hover:text-blue-400"
                   >
-                    {item.type.startsWith('image/') && item.previewUrl ? (
+                    {isImageItem(item) && item.previewUrl ? (
                       <img
                         src={item.previewUrl}
                         alt={item.name}
@@ -1324,6 +1443,7 @@ export function FileManager() {
               placeholder={t.enterNewName}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 mb-4"
             />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">File extensions cannot be changed.</p>
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {

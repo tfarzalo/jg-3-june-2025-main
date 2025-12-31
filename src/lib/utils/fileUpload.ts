@@ -1,4 +1,5 @@
 import { supabase } from '../../utils/supabase';
+import { optimizeImage } from './imageOptimization';
 
 export interface FileUploadResult {
   success: boolean;
@@ -76,17 +77,22 @@ export async function uploadPropertyUnitMap(
     // Create the file path in the Property Files folder
     // Sanitize property name to avoid spaces in file paths
     const sanitizedPropertyName = propertyName.replace(/[^a-zA-Z0-9\-_]/g, '_');
-    const fileName = `unit-map-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const optimized = await optimizeImage(file);
+    const ext = optimized.suggestedExt || (file.name.split('.').pop() || 'jpg');
+    const baseName = `unit-map-${Date.now()}`;
+    const fileName = `${baseName}.${ext}`;
     const filePath = `${sanitizedPropertyName}/Property_Files/${fileName}`;
 
     console.log('[uploadPropertyUnitMap] Uploading to storage:', filePath);
 
     // Upload file to Supabase storage
+    const uploadFile = new File([optimized.blob], fileName, { type: optimized.mime });
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('files')
-      .upload(filePath, file, {
+      .upload(filePath, uploadFile, {
         cacheControl: '3600',
-        upsert: false
+        upsert: false,
+        contentType: optimized.mime
       });
 
     if (uploadError) {
@@ -123,12 +129,14 @@ export async function uploadPropertyUnitMap(
     const { data: fileRecord, error: dbError } = await supabase
       .from('files')
       .insert({
-        name: file.name,
+        name: fileName,
         path: filePath,
         storage_path: filePath,
-        display_path: `/Properties/${propertyName}/Property Files/${file.name}`,
-        size: file.size,
-        type: file.type,
+        display_path: `/Properties/${propertyName}/Property Files/${fileName}`,
+        size: optimized.optimizedSize,
+        original_size: optimized.originalSize,
+        optimized_size: optimized.optimizedSize,
+        type: optimized.mime,
         uploaded_by: (await supabase.auth.getUser()).data.user?.id,
         property_id: propertyId,
         folder_id: propertyFilesFolderId

@@ -7,6 +7,7 @@ import { JobType } from '../lib/types';
 import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
 import { useAuth } from '../contexts/AuthProvider';
+import { optimizeImage } from '../lib/utils/imageOptimization';
 
 interface Property {
   id: string;
@@ -332,80 +333,73 @@ export function JobEditForm() {
     if (selectedFiles.length === 0 || !jobId) return;
 
     try {
-      // Format work order number as WO-000001
-      const formattedWorkOrder = `WO-${String(workOrderNum).padStart(6, '0')}`;
+      const { data: folderId, error: folderError } = await supabase.rpc('get_upload_folder', {
+        p_property_id: formData.property_id,
+        p_job_id: jobId,
+        p_folder_type: 'other'
+      });
 
-      // Build paths - job request creates folder at /Properties/{PropertyName}/Work Orders/WO-000001
-      const workOrderFolderPath = `/Properties/${propertyName}/Work Orders/${formattedWorkOrder}`;
-      const jobFilesFolderPath = `${workOrderFolderPath}/Job Files`;
-
-      // First, get the Work Order folder ID
-      const { data: workOrderFolder, error: woFolderError } = await supabase
-        .from('files')
-        .select('id')
-        .eq('path', workOrderFolderPath)
-        .single();
-
-      if (woFolderError || !workOrderFolder) {
-        console.error('Work Order folder not found:', woFolderError);
-        console.log('Expected path:', workOrderFolderPath);
-        setError('Unable to find the work order folder. Please try again.');
+      if (folderError || !folderId) {
+        console.error('Error getting upload folder:', folderError);
+        setError('Unable to resolve upload folder. Please try again.');
         return;
       }
 
-      // Create or get the Job Files folder
-      let jobFilesFolderId: string;
-
-      const { data: existingJobFilesFolder } = await supabase
+      const { data: folderInfo, error: folderInfoError } = await supabase
         .from('files')
-        .select('id')
-        .eq('path', jobFilesFolderPath)
+        .select('path')
+        .eq('id', folderId)
         .single();
 
-      if (existingJobFilesFolder) {
-        jobFilesFolderId = existingJobFilesFolder.id;
-      } else {
-        // Create the Job Files folder
-        const { data: newFolder, error: createFolderError } = await supabase
+      if (folderInfoError || !folderInfo?.path) {
+        console.error('Error getting folder path:', folderInfoError);
+        setError('Unable to resolve upload folder path. Please try again.');
+        return;
+      }
+
+      // Compute next index for auto-naming in 'other' category
+      let nextIndex = 1
+      {
+        const { data: existing } = await supabase
           .from('files')
-          .insert({
-            name: 'Job Files',
-            path: jobFilesFolderPath,
-            size: 0,
-            type: 'folder/directory',
-            uploaded_by: user?.id,
-            property_id: formData.property_id,
-            job_id: jobId,
-            folder_id: workOrderFolder.id
-          })
-          .select('id')
-          .single();
-
-        if (createFolderError || !newFolder) {
-          console.error('Error creating Job Files folder:', createFolderError);
-          setError('Unable to create job files folder. Please try again.');
-          return;
+          .select('name')
+          .eq('folder_id', folderId)
+          .eq('job_id', jobId)
+          .eq('category', 'other')
+        let maxIdx = 0
+        const rx = /^wo-\d+_other_(\d+)\./
+        if (existing && Array.isArray(existing)) {
+          for (const row of existing as any[]) {
+            const m = typeof row.name === 'string' ? row.name.toLowerCase().match(rx) : null
+            if (m && m[1]) {
+              const n = parseInt(m[1], 10)
+              if (!isNaN(n)) maxIdx = Math.max(maxIdx, n)
+            }
+          }
         }
-
-        jobFilesFolderId = newFolder.id;
+        nextIndex = maxIdx + 1
       }
 
       // Upload each file
       for (const file of selectedFiles) {
         try {
-          const sanitizedFilename = sanitizeFilename(file.name);
+          const optimized = await optimizeImage(file);
+          const ext = optimized.suggestedExt || (file.name.split('.').pop() || 'bin');
+          const woLabel = `wo-${String(workOrderNum).padStart(6, '0')}`;
+          const autoName = `${woLabel}_other_${nextIndex}.${ext}`;
+          nextIndex += 1
+          const sanitizedFilename = sanitizeFilename(autoName);
 
-          // Storage path: Properties/Property Name/Work Orders/WO-000001/Job Files/filename
-          // Note: We include 'Properties' prefix to match the folder structure
-          const storagePath = `Properties/${propertyName}/Work Orders/${formattedWorkOrder}/Job Files/${sanitizedFilename}`;
-          const normalizedStoragePath = storagePath.replace(/^\/+/, '').replace(/\/+/g, '/');
+          const normalizedStoragePath = `${folderInfo.path.replace(/^\/+/, '')}/${sanitizedFilename}`.replace(/\/+/g, '/');
 
           // Upload file to storage
+          const uploadFile = new File([optimized.blob], sanitizedFilename, { type: optimized.mime })
           const { error: storageError } = await supabase.storage
             .from('files')
-            .upload(normalizedStoragePath, file, {
+            .upload(normalizedStoragePath, uploadFile, {
               cacheControl: '3600',
-              upsert: false
+              upsert: false,
+              contentType: optimized.mime
             });
 
           if (storageError) {
@@ -419,12 +413,15 @@ export function JobEditForm() {
             .insert({
               name: sanitizedFilename,
               path: normalizedStoragePath,
-              size: file.size,
-              type: file.type,
+              size: optimized.optimizedSize,
+              original_size: optimized.originalSize,
+              optimized_size: optimized.optimizedSize,
+              type: optimized.mime,
               uploaded_by: user?.id,
               property_id: formData.property_id,
               job_id: jobId,
-              folder_id: jobFilesFolderId
+              folder_id: folderId,
+              category: 'other'
             });
 
           if (dbError) {
