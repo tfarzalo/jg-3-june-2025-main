@@ -359,6 +359,16 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
       let contentToSave: string | Blob | Buffer = content;
       let mimeType = 'text/html';
       
+      const buildFullHtml = (inner: string) => `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${fileName}</title><style>body{font-family:Arial,sans-serif;line-height:1.6;color:#000}table{width:100%;border-collapse:collapse}img{max-width:100%;height:auto}h1,h2,h3{margin:.5em 0}p{margin:.5em 0}</style></head><body>${inner}</body></html>`;
+      
+      const sanitizeHtml = (html: string) => {
+        return html
+          .replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[\s\S]*?<\/style>/gi, '')
+          .replace(/\son\w+="[^"]*"/gi, '')
+          .replace(/\son\w+='[^']*'/gi, '');
+      };
+      
       const normalizedFileType = (fileType || '').toLowerCase();
       const isDocx = normalizedFileType.includes('docx') || 
                      normalizedFileType.includes('word') || 
@@ -368,36 +378,40 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
       // Prepare the save promise
       const performSave = async () => {
         if (isDocx) {
+           const fullHtml = buildFullHtml(content);
            try {
-             console.log('🔄 Converting HTML back to DOCX...');
              // @ts-ignore
              const { default: HTMLtoDOCX } = await import('html-to-docx');
-             const fileBuffer = await HTMLtoDOCX(content, null, {
+             const fileBuffer = await HTMLtoDOCX(fullHtml, null, {
                table: { row: { cantSplit: true } },
                footer: true,
                pageNumber: true,
              });
              contentToSave = new Blob([fileBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
              mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-             console.log('✅ Conversion successful, saving as DOCX');
-           } catch (convError) {
-             console.error('❌ DOCX conversion failed:', convError);
-             
-             // FALLBACK STRATEGY:
-             // If conversion fails, save as HTML content but keep the .docx mime type
-             // This "tricks" Supabase into accepting the file (bypassing mime type checks)
-             // The DocumentEditor's loadDocument function handles HTML-in-DOCX gracefully
-             console.warn('⚠️ Falling back to saving as HTML (with DOCX mime type shim)');
-             
-             contentToSave = content; // Save the HTML string directly
-             // We MUST use the official DOCX mime type so Supabase doesn't reject it
-             // even though the content is actually HTML text
-             mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-             
-             if (isMountedRef.current) {
-                // Show a non-intrusive warning instead of blocking error
-                setError('Warning: Document saved in compatibility mode. Formatting may be simplified.');
-                // Don't set status to error, proceed to save
+           } catch {
+             const sanitized = buildFullHtml(sanitizeHtml(content));
+             try {
+               // @ts-ignore
+               const { default: HTMLtoDOCX } = await import('html-to-docx');
+               const fileBuffer = await HTMLtoDOCX(sanitized, null, {
+                 table: { row: { cantSplit: true } },
+                 footer: true,
+                 pageNumber: true,
+               });
+               contentToSave = new Blob([fileBuffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+               mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+             } catch {
+               const plain = sanitizeHtml(content)
+                 .replace(/<[^>]*>/g, '\n')
+                 .replace(/\n{3,}/g, '\n\n')
+                 .trim();
+               const { Document, Packer, Paragraph } = await import('docx');
+               const paragraphs = plain.split(/\n{2,}/).map((p) => new (Paragraph as any)(p));
+               const doc = new (Document as any)({ sections: [{ properties: {}, children: paragraphs }] });
+               const blob = await (Packer as any).toBlob(doc);
+               contentToSave = blob;
+               mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
              }
            }
         } else if (fileName.toLowerCase().endsWith('.txt')) {

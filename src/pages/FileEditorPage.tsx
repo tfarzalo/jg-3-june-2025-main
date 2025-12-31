@@ -68,11 +68,32 @@ export const FileEditorPage = () => {
       }
 
       // 3. Get Signed URL
-      // Try multiple path strategies
-      const normalizedPath = normalizeStoragePath(file.path, file.name);
+      // Build robust candidate storage keys to handle legacy and folder-based paths
       const candidates = new Set<string>();
+      const normalizedPath = normalizeStoragePath(file.path, file.name);
+      const rootCandidate = `root/${file.name}`;
+      const jobsCandidate = file.job_id ? `jobs/${file.job_id}/${file.name}` : null;
+
       if (file.path) candidates.add(file.path);
       if (normalizedPath) candidates.add(normalizedPath);
+      candidates.add(rootCandidate);
+      if (jobsCandidate) candidates.add(jobsCandidate);
+
+      // If the file is inside a folder, try the folder's path + filename
+      if (file.folder_id) {
+        const { data: folderRow } = await supabase
+          .from('files')
+          .select('path')
+          .eq('id', file.folder_id)
+          .maybeSingle();
+        const folderPath = folderRow?.path || null;
+        if (folderPath) {
+          const folderNormalized = normalizeStoragePath(folderPath, file.name);
+          if (folderNormalized) candidates.add(folderNormalized);
+          // Also consider the raw folder path if it already ends with the filename
+          candidates.add(folderPath);
+        }
+      }
 
       let signedUrl = null;
       let lastError = null;
@@ -90,7 +111,74 @@ export const FileEditorPage = () => {
       }
 
       if (!signedUrl) {
-        throw lastError || new Error('Could not generate signed URL');
+        const trim = (p: string) => (p || '').replace(/^\/+/, '').replace(/\/+$/, '');
+        const parentOf = (p: string) => {
+          const clean = trim(p);
+          const idx = clean.lastIndexOf('/');
+          return idx > 0 ? clean.slice(0, idx) : '';
+        };
+        const join = (a: string, b: string) => `${trim(a)}/${trim(b)}`.replace(/\/+/g, '/');
+        const signKey = async (key: string) => {
+          const { data } = await supabase.storage.from('files').createSignedUrl(trim(key), 3600);
+          return data?.signedUrl || null;
+        };
+        const listBase = async (base: string) => {
+          const { data } = await supabase.storage.from('files').list(trim(base), { limit: 200 });
+          return data || [];
+        };
+        const tryListAndSign = async (prefix: string | null) => {
+          const base = trim(prefix || '');
+          if (!base) return null;
+          const entries = await listBase(base);
+          const exact = entries.find((e: any) => e?.name === file.name);
+          if (exact) {
+            const key = join(base, exact.name);
+            const s = await signKey(key);
+            if (s) return s;
+          }
+          for (const e of entries as any[]) {
+            const n = String(e?.name || '');
+            if (!n.includes('.')) {
+              const childBase = join(base, n);
+              const childEntries = await listBase(childBase);
+              const childExact = childEntries.find((ce: any) => ce?.name === file.name);
+              if (childExact) {
+                const key = join(childBase, childExact.name);
+                const s = await signKey(key);
+                if (s) return s;
+              }
+            }
+          }
+          return null;
+        };
+
+        const folderPathRow = file.folder_id
+          ? await supabase.from('files').select('path').eq('id', file.folder_id).maybeSingle()
+          : { data: { path: null } };
+        const folderPath = folderPathRow?.data?.path || null;
+
+        const normalizedParent = normalizedPath ? parentOf(normalizedPath) : null;
+        const rawParent = file.path ? parentOf(file.path) : null;
+        const candidatesToList = [
+          folderPath,
+          normalizedParent,
+          rawParent,
+          'JG Docs and Info',
+          'root',
+          file.job_id ? `jobs/${file.job_id}` : null
+        ];
+
+        for (const base of candidatesToList) {
+          const maybeUrl = await tryListAndSign(base);
+          if (maybeUrl) {
+            signedUrl = maybeUrl;
+            break;
+          }
+        }
+
+        if (!signedUrl) {
+          throw lastError || new Error('Could not generate signed URL');
+        }
       }
 
       setFileUrl(signedUrl);
