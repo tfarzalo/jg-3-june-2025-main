@@ -3110,6 +3110,12 @@ export function JobDetails() {
             job={job}
             notificationType={notificationType}
             onSent={handleNotificationSent}
+            additionalServices={additionalBillingLines.map(line => ({
+              label: line.label,
+              quantity: line.qty,
+              unit_label: line.unitLabel,
+              bill_amount: line.amountBill
+            }))}
           />
         )}
 

@@ -579,6 +579,53 @@ const ApprovalPage: React.FC = () => {
           <p className="text-sm text-gray-500 mb-6">
             We will proceed with the work order phase immediately. You will receive updates as work progresses.
           </p>
+          
+          {/* Itemized Breakdown (Approved View) */}
+          {approvalData?.extra_charges_data?.items?.length ? (
+            <div className="text-left bg-white border border-gray-200 rounded-lg overflow-hidden mb-6">
+              <div className="bg-gradient-to-r from-amber-50 to-amber-100 px-6 py-3 border-b border-amber-200">
+                <h2 className="text-base font-semibold text-gray-900 flex items-center">
+                  <span className="text-xl mr-2">🧾</span>
+                  Itemized Extra Charges
+                </h2>
+              </div>
+              <div className="px-6 py-4">
+                <div className="space-y-3 mb-4">
+                  {approvalData.extra_charges_data.items.map((charge, index) => (
+                    <div 
+                      key={index} 
+                      className="flex justify-between items-start py-2 border-b border-gray-100 last:border-b-0"
+                    >
+                      <div className="flex-1 pr-4">
+                        <p className="font-medium text-gray-900">{charge.description}</p>
+                        {charge.quantity !== undefined && (
+                          <p className="text-xs text-gray-500">
+                            {charge.quantity} {charge.unit || 'items'}
+                          </p>
+                        )}
+                        {charge.hours !== undefined && (
+                          <p className="text-xs text-gray-500">
+                            {charge.hours} hour{charge.hours !== 1 ? 's' : ''}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="font-semibold text-gray-900">
+                          ${charge.cost.toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-between items-center bg-gray-50 border border-gray-200 rounded-md p-3">
+                  <span className="text-sm font-semibold text-gray-700">Total:</span>
+                  <span className="text-lg font-bold text-gray-900">
+                    ${approvalData.extra_charges_data.total.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {/* Download PDF Button */}
           <button
@@ -636,6 +683,53 @@ const ApprovalPage: React.FC = () => {
           <p className="text-sm text-gray-500 mb-6">
             The job will remain in "Pending Work Order" status. Our team has been notified and will contact you to discuss alternative options.
           </p>
+          
+          {/* Itemized Breakdown (Declined View for reference) */}
+          {approvalData?.extra_charges_data?.items?.length ? (
+            <div className="text-left bg-white border border-gray-200 rounded-lg overflow-hidden mb-6">
+              <div className="bg-gradient-to-r from-amber-50 to-amber-100 px-6 py-3 border-b border-amber-200">
+                <h2 className="text-base font-semibold text-gray-900 flex items-center">
+                  <span className="text-xl mr-2">🧾</span>
+                  Itemized Extra Charges
+                </h2>
+              </div>
+              <div className="px-6 py-4">
+                <div className="space-y-3 mb-4">
+                  {approvalData.extra_charges_data.items.map((charge, index) => (
+                    <div 
+                      key={index} 
+                      className="flex justify-between items-start py-2 border-b border-gray-100 last:border-b-0"
+                    >
+                      <div className="flex-1 pr-4">
+                        <p className="font-medium text-gray-900">{charge.description}</p>
+                        {charge.quantity !== undefined && (
+                          <p className="text-xs text-gray-500">
+                            {charge.quantity} {charge.unit || 'items'}
+                          </p>
+                        )}
+                        {charge.hours !== undefined && (
+                          <p className="text-xs text-gray-500">
+                            {charge.hours} hour{charge.hours !== 1 ? 's' : ''}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="font-semibold text-gray-900">
+                          ${charge.cost.toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-between items-center bg-gray-50 border border-gray-200 rounded-md p-3">
+                  <span className="text-sm font-semibold text-gray-700">Total:</span>
+                  <span className="text-lg font-bold text-gray-900">
+                    ${approvalData.extra_charges_data.total.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="text-xs text-gray-400 border-t pt-4">
             Declined by: {approvalData?.approver_name || approvalData?.approver_email}<br/>

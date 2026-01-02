@@ -81,6 +81,7 @@ interface BillingDetail {
   id: string;
   bill_amount: number;
   sub_pay_amount: number;
+  is_hourly: boolean;
   unit_size: {
     unit_size_label: string;
   };
@@ -515,6 +516,7 @@ export function SubcontractorDashboard() {
               id,
               bill_amount,
               sub_pay_amount,
+              is_hourly,
               category_id,
               unit_size_id,
               unit_sizes!billing_details_unit_size_id_fkey (
@@ -561,6 +563,7 @@ export function SubcontractorDashboard() {
           id: detail.id,
           bill_amount: detail.bill_amount,
           sub_pay_amount: detail.sub_pay_amount,
+          is_hourly: !!detail.is_hourly,
           unit_size: {
             unit_size_label: Array.isArray(detail.unit_sizes) 
               ? detail.unit_sizes[0]?.unit_size_label || 'Unknown'
@@ -1002,10 +1005,10 @@ export function SubcontractorDashboard() {
                                                 .map((detail) => (
                                                 <div key={detail.id} className="flex justify-between items-center text-sm">
                                                   <span className="text-gray-600 dark:text-gray-400">
-                                                    {category.name === 'Extra Charges' ? 'Hourly Rate' : detail.unit_size.unit_size_label}
+                                                    {detail.unit_size.unit_size_label}
                                                   </span>
                                                   <span className="text-green-600 dark:text-green-400 font-medium">
-                                                    {text.subPay} {formatCurrency(detail.sub_pay_amount)}
+                                                    {text.subPay} {formatCurrency(detail.sub_pay_amount)}{detail.is_hourly ? '/hour' : ''}
                                                   </span>
                                                 </div>
                                               ))}
