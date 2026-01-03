@@ -64,6 +64,7 @@ interface Property {
   primary_contact_name: string;
   primary_contact_phone: string;
   primary_contact_role: string;
+  primary_contact_email?: string | null;
   subcontractor_a: string;
   subcontractor_b: string;
   ap_name: string;
@@ -172,6 +173,7 @@ export function PropertyDetails() {
   const [contacts, setContacts] = useState<PropertyContact[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [unitMapUrl, setUnitMapUrl] = useState<string | null>(null);
+  const [notificationContactSource, setNotificationContactSource] = useState<string>('community_manager');
 
   // Generate unit map URL when property data loads
   useEffect(() => {
@@ -274,6 +276,34 @@ export function PropertyDetails() {
     const parsed = new Date(value);
     if (isNaN(parsed.getTime())) return 'Invalid date';
     return format(parsed, 'MM/dd/yyyy');
+  };
+
+  const updateNotificationEmail = async (email: string | null) => {
+    if (!propertyId) return;
+    try {
+      await supabase
+        .from('properties')
+        .update({ primary_contact_email: email })
+        .eq('id', propertyId);
+      toast.success('Email notifications contact updated');
+      setProperty(prev => prev ? { ...prev, primary_contact_email: email || '' } as any : prev);
+    } catch (e) {
+      toast.error('Failed to update notifications contact');
+    }
+  };
+  const handleNotificationContactChange = (source: string) => {
+    setNotificationContactSource(source);
+    if (!property) return;
+    if (source === 'community_manager') {
+      updateNotificationEmail(property.community_manager_email || null);
+    } else if (source === 'maintenance_supervisor') {
+      updateNotificationEmail(property.maintenance_supervisor_email || null);
+    } else if (source === 'ap') {
+      updateNotificationEmail(property.ap_email || null);
+    } else {
+      const contact = contacts.find(c => c.id === source);
+      updateNotificationEmail(contact?.email || null);
+    }
   };
 
   const complianceItems: { label: string; value: string; date?: string | null }[] = property ? [
@@ -429,6 +459,25 @@ export function PropertyDetails() {
 
         if (contactsError) throw contactsError;
         setContacts(contactsData || []);
+        const currentEmail = propertyData.primary_contact_email || propertyData.ap_email || null;
+        if (currentEmail) {
+          if (currentEmail === propertyData.community_manager_email) {
+            setNotificationContactSource('community_manager');
+          } else if (currentEmail === propertyData.maintenance_supervisor_email) {
+            setNotificationContactSource('maintenance_supervisor');
+          } else if (currentEmail === propertyData.ap_email) {
+            setNotificationContactSource('ap');
+          } else {
+            const match = (contactsData || []).find(c => c.email === currentEmail);
+            if (match) {
+              setNotificationContactSource(match.id);
+            } else if (propertyData.ap_email) {
+              setNotificationContactSource('ap');
+            }
+          }
+        } else if (propertyData.ap_email) {
+          setNotificationContactSource('ap');
+        }
 
         // Fetch paint schemes
         try {
@@ -937,6 +986,17 @@ export function PropertyDetails() {
                          {contact.position && (
                             <div className="font-medium text-gray-900 dark:text-white text-sm mb-1">{contact.position}</div>
                          )}
+                         <div className="flex items-center space-x-3 mb-2">
+                           <input
+                             type="radio"
+                             name="notification_contact_source"
+                             className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
+                             checked={notificationContactSource === contact.id}
+                             onChange={() => handleNotificationContactChange(contact.id)}
+                             title="Set as Email Notifications Contact"
+                           />
+                           <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Email Notifications</span>
+                         </div>
                          <div className="space-y-1 ml-1">
                             {contact.name && (
                               <div className="flex items-center">
@@ -1041,6 +1101,17 @@ export function PropertyDetails() {
                   <h4 className="text-sm font-bold text-blue-800 dark:text-blue-200 mb-3 uppercase tracking-wide">
                     {(property.community_manager_title || 'Community Manager').toUpperCase()}
                   </h4>
+                  <div className="flex items-center space-x-3 mb-2">
+                    <input
+                      type="radio"
+                      name="notification_contact_source"
+                      className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
+                      checked={notificationContactSource === 'community_manager'}
+                      onChange={() => handleNotificationContactChange('community_manager')}
+                      title="Set as Email Notifications Contact"
+                    />
+                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Email Notifications</span>
+                  </div>
                   <div className="space-y-2">
                     {property.community_manager_name && (
                       <div className="flex items-center">
@@ -1069,6 +1140,17 @@ export function PropertyDetails() {
                   <h4 className="text-sm font-bold text-green-800 dark:text-green-200 mb-3 uppercase tracking-wide">
                     {(property.maintenance_supervisor_title || 'Maintenance Supervisor').toUpperCase()}
                   </h4>
+                  <div className="flex items-center space-x-3 mb-2">
+                    <input
+                      type="radio"
+                      name="notification_contact_source"
+                      className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
+                      checked={notificationContactSource === 'maintenance_supervisor'}
+                      onChange={() => handleNotificationContactChange('maintenance_supervisor')}
+                      title="Set as Email Notifications Contact"
+                    />
+                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Email Notifications</span>
+                  </div>
                   <div className="space-y-2">
                     {property.maintenance_supervisor_name && (
                       <div className="flex items-center">
@@ -1112,6 +1194,12 @@ export function PropertyDetails() {
                       <div className="flex items-center">
                         <Clipboard className="h-4 w-4 text-purple-600 dark:text-purple-400 mr-2 flex-shrink-0" />
                         <span className="text-gray-900 dark:text-white text-sm">{property.primary_contact_role}</span>
+                      </div>
+                    )}
+                    {property.primary_contact_email && (
+                      <div className="flex items-center">
+                        <Mail className="h-4 w-4 text-purple-600 dark:text-purple-400 mr-2 flex-shrink-0" />
+                        <span className="text-gray-900 dark:text-white text-sm">{property.primary_contact_email}</span>
                       </div>
                     )}
                   </div>
@@ -1241,22 +1329,33 @@ export function PropertyDetails() {
             <PaintColorsViewer items={paintSchemes} />
           </div>
 
-          {/* Billing Information */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6 flex items-center">
-              <Clipboard className="h-5 w-5 text-blue-600 dark:text-blue-400 mr-2" />
-              Billing Information
-            </h3>
-            <div className="space-y-6">
-              {/* AP Contact */}
-              {(property.ap_name || property.ap_email || property.ap_phone) && (
-                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                  <h4 className="text-sm font-bold text-blue-800 dark:text-blue-200 mb-3 uppercase tracking-wide">AP Contact</h4>
-                  <div className="space-y-2">
-                    {property.ap_name && (
-                      <div className="flex items-center">
-                        <User className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">{property.ap_name}</span>
+              {/* Billing Information */}
+              <div className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6 flex items-center">
+                  <Clipboard className="h-5 w-5 text-blue-600 dark:text-blue-400 mr-2" />
+                  Billing Information
+                </h3>
+                <div className="space-y-6">
+                  {/* AP Contact */}
+                  {(property.ap_name || property.ap_email || property.ap_phone) && (
+                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                      <h4 className="text-sm font-bold text-blue-800 dark:text-blue-200 mb-3 uppercase tracking-wide">AP Contact</h4>
+                      <div className="flex items-center space-x-3 mb-2">
+                        <input
+                          type="radio"
+                          name="notification_contact_source"
+                          className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
+                          checked={notificationContactSource === 'ap'}
+                          onChange={() => handleNotificationContactChange('ap')}
+                          title="Set as Email Notifications Contact"
+                        />
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Email Notifications</span>
+                      </div>
+                      <div className="space-y-2">
+                        {property.ap_name && (
+                          <div className="flex items-center">
+                            <User className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
+                            <span className="text-gray-900 dark:text-white text-sm">{property.ap_name}</span>
                       </div>
                     )}
                     {property.ap_email && (

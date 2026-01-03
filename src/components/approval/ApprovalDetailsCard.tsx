@@ -94,7 +94,7 @@ export function ApprovalDetailsCard({
                   {charge.quantity !== undefined && (
                     <p className="text-sm text-gray-500 flex items-center mb-1">
                       <span className="mr-1">📦</span>
-                      {charge.quantity} {charge.unit || 'items'}
+                      {charge.quantity} ({charge.unit || 'items'})
                     </p>
                   )}
                   {charge.hours !== undefined && (
@@ -103,6 +103,23 @@ export function ApprovalDetailsCard({
                       {charge.hours} hour{charge.hours !== 1 ? 's' : ''}
                     </p>
                   )}
+                  {(() => {
+                    const hasHours = typeof charge.hours === 'number' && charge.hours > 0;
+                    const hasQty = typeof charge.quantity === 'number' && charge.quantity > 0;
+                    const rate = hasHours
+                      ? charge.cost / (charge.hours as number)
+                      : hasQty
+                      ? charge.cost / (charge.quantity as number)
+                      : undefined;
+                    if (typeof rate !== 'number') return null;
+                    return (
+                      <p className="text-xs text-gray-500">
+                        Rate: $
+                        {rate.toFixed(2)}
+                        {hasHours ? '/hr' : ` per ${charge.unit || 'item'}`}
+                      </p>
+                    );
+                  })()}
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className="font-bold text-lg text-gray-900">
@@ -125,27 +142,7 @@ export function ApprovalDetailsCard({
         </div>
       </div>
 
-      {/* Approver Info */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden mb-6">
-        <div className="bg-gradient-to-r from-green-50 to-green-100 px-6 py-4 border-b border-green-200">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-            <span className="text-2xl mr-2">👤</span>
-            Approval Information
-          </h2>
-        </div>
-        <div className="px-6 py-5">
-          <div className="space-y-2">
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Approver Name</p>
-              <p className="text-base text-gray-900">{approverName || 'Not specified'}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Email</p>
-              <p className="text-base text-gray-700">{approverEmail}</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      
     </>
   );
 }

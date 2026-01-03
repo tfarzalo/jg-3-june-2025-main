@@ -19,6 +19,8 @@ interface ExtraChargesData {
     description: string;
     cost: number;
     hours?: number;
+    quantity?: number;
+    unit?: string;
   }>;
   total: number;
 }
@@ -126,17 +128,33 @@ export async function generateApprovalPDF(options: GeneratePDFOptions): Promise<
   doc.text('Extra Charges', 15, yPosition);
   yPosition += 5;
 
-  const tableData = extraChargesData.items.map(item => [
-    item.description,
-    item.quantity ? `${item.quantity} ${item.unit || 'items'}` : (item.hours ? `${item.hours} hrs` : '-'),
-    `$${item.cost.toFixed(2)}`
-  ]);
+  const tableData = extraChargesData.items.map(item => {
+    const hasHours = typeof item.hours === 'number' && item.hours > 0;
+    const hasQty = typeof item.quantity === 'number' && item.quantity > 0;
+    const rate = hasHours
+      ? item.cost / (item.hours as number)
+      : hasQty
+      ? item.cost / (item.quantity as number)
+      : undefined;
+    const qtyOrHrs = item.quantity
+      ? `${item.quantity} (${item.unit || 'items'})`
+      : (item.hours ? `${item.hours} hrs` : '-');
+    const rateText = typeof rate === 'number'
+      ? `$${rate.toFixed(2)}${hasHours ? '/hr' : ` per ${item.unit || 'item'}`}`
+      : '-';
+    return [
+      item.description,
+      qtyOrHrs,
+      rateText,
+      `$${item.cost.toFixed(2)}`
+    ];
+  });
 
   autoTable(doc, {
     startY: yPosition,
-    head: [['Description', 'Qty/Hrs', 'Amount']],
+    head: [['Description', 'Qty/Hrs', 'Rate', 'Amount']],
     body: tableData,
-    foot: [['', 'Total:', `$${extraChargesData.total.toFixed(2)}`]],
+    foot: [['', '', 'Total:', `$${extraChargesData.total.toFixed(2)}`]],
     theme: 'striped',
     headStyles: {
       fillColor: [37, 99, 235],
@@ -150,9 +168,10 @@ export async function generateApprovalPDF(options: GeneratePDFOptions): Promise<
       fontSize: 11
     },
     columnStyles: {
-      0: { cellWidth: 110 },
+      0: { cellWidth: 95 },
       1: { cellWidth: 30, halign: 'center' },
-      2: { cellWidth: 40, halign: 'right' }
+      2: { cellWidth: 35, halign: 'center' },
+      3: { cellWidth: 30, halign: 'right' }
     }
   });
 

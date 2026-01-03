@@ -34,6 +34,7 @@ export interface Job {
     zip: string;
     ap_name: string | null;
     ap_email: string | null;
+    primary_contact_email?: string | null;
     quickbooks_number: string | null;
     is_archived: boolean;
   };
@@ -291,7 +292,7 @@ export function useJobDetails(jobId: string | undefined) {
             
           if (fallbackError) {
             console.error('Fallback query also failed:', fallbackError);
-            setError(rpcError);
+            setError(rpcError.message ?? 'Failed to fetch job details');
             setLoading(false);
             return;
           }
@@ -304,13 +305,127 @@ export function useJobDetails(jobId: string | undefined) {
           }
         }
         
+        // General fallback for other RPC failures: attempt a joined job details query
+        console.log('Attempting general fallback job details query...');
+        const { data: joinedData, error: joinedError } = await supabase
+          .from('jobs')
+          .select(`
+            id,
+            work_order_num,
+            unit_number,
+            description,
+            scheduled_date,
+            assigned_to,
+            property:properties (
+              id,
+              property_name,
+              address,
+              address_2,
+              city,
+              state,
+              zip,
+              ap_name,
+              ap_email,
+              primary_contact_email,
+              quickbooks_number,
+              is_archived
+            ),
+            unit_size:unit_sizes (
+              id,
+              unit_size_label
+            ),
+            job_type:job_types (
+              id,
+              job_type_label
+            ),
+            job_phase:job_phases (
+              id,
+              job_phase_label,
+              color_light_mode,
+              color_dark_mode
+            ),
+            work_order:work_orders (
+              id,
+              submission_date,
+              created_at,
+              unit_number,
+              is_occupied,
+              is_full_paint,
+              unit_size,
+              job_category,
+              has_sprinklers,
+              sprinklers_painted,
+              painted_ceilings,
+              ceiling_rooms_count,
+              individual_ceiling_count,
+              ceiling_display_label,
+              painted_patio,
+              painted_garage,
+              painted_cabinets,
+              painted_crown_molding,
+              painted_front_door,
+              has_accent_wall,
+              accent_wall_type,
+              accent_wall_count,
+              has_extra_charges,
+              extra_charges_description,
+              extra_hours,
+              additional_comments,
+              is_active
+            )
+          `)
+          .eq('id', jobId)
+          .single();
+        
+        if (!joinedError && joinedData) {
+          const jd: any = joinedData;
+          const normalizedShape = {
+            ...jd,
+            property: jd.property ? {
+              id: jd.property.id,
+              name: jd.property.property_name,
+              address: jd.property.address,
+              city: jd.property.city,
+              state: jd.property.state,
+              zip: jd.property.zip,
+              ap_name: jd.property.ap_name,
+              ap_email: jd.property.ap_email,
+              primary_contact_email: jd.property.primary_contact_email,
+              quickbooks_number: jd.property.quickbooks_number,
+              is_archived: jd.property.is_archived,
+            } : null,
+            unit_size: jd.unit_size ? {
+              id: jd.unit_size.id,
+              label: jd.unit_size.unit_size_label,
+            } : null,
+            job_type: jd.job_type ? {
+              id: jd.job_type.id,
+              label: jd.job_type.job_type_label,
+            } : null,
+            job_phase: jd.job_phase ? {
+              id: jd.job_phase.id,
+              label: jd.job_phase.job_phase_label,
+              color_light_mode: jd.job_phase.color_light_mode,
+              color_dark_mode: jd.job_phase.color_dark_mode,
+            } : null,
+          };
+          setRawJob(normalizedShape as any);
+          setError(null);
+          setLoading(false);
+          return;
+        }
+        
+        if (joinedError) {
+          console.error('Joined fallback query failed:', joinedError);
+        }
+        
         // Handle specific RPC errors
         if (rpcError.message?.includes('function') && rpcError.message?.includes('does not exist')) {
-          setError(new Error('Database function not found. Please contact support.'));
+          setError('Database function not found. Please contact support.');
         } else if (rpcError.message?.includes('permission denied')) {
-          setError(new Error('Permission denied. Please check your access rights.'));
+          setError('Permission denied. Please check your access rights.');
         } else {
-          setError(rpcError);
+          setError(rpcError.message ?? 'Failed to fetch job details');
         }
         
         setLoading(false);
@@ -319,7 +434,7 @@ export function useJobDetails(jobId: string | undefined) {
 
       if (!data) {
         console.error('No data returned from get_job_details');
-        setError(new Error('Job not found'));
+        setError('Job not found');
         setLoading(false);
         return;
       }
@@ -376,12 +491,12 @@ export function useJobDetails(jobId: string | undefined) {
       if (err instanceof Error) {
         if (err.message.includes('status code null') || err.message.includes('Request failed')) {
           console.error('Network/database connection error detected');
-          setError(new Error('Unable to connect to database. Please check your connection and try again.'));
+          setError('Unable to connect to database. Please check your connection and try again.');
         } else {
-          setError(err);
+          setError(err.message ?? 'Failed to fetch job details');
         }
       } else {
-        setError(new Error('Failed to fetch job details'));
+        setError('Failed to fetch job details');
       }
       
       if (isMountedRef.current) {

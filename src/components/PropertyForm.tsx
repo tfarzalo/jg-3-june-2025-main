@@ -37,6 +37,7 @@ export function PropertyForm() {
   const [paintSchemes, setPaintSchemes] = useState<PaintScheme[]>([]);
   const [contacts, setContacts] = useState<PropertyContact[]>([]);
   const [subcontractorContactSource, setSubcontractorContactSource] = useState<string>('community_manager');
+  const [notificationContactSource, setNotificationContactSource] = useState<string>('community_manager');
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [pendingUnitMapFile, setPendingUnitMapFile] = useState<File | null>(null);
   const [createdPropertyId, setCreatedPropertyId] = useState<string | null>(null);
@@ -129,6 +130,12 @@ export function PropertyForm() {
       setPreviewAddress(addressParts.join(', '));
     }
   }, [formData.address, formData.city, formData.state, formData.zip]);
+  
+  useEffect(() => {
+    if ((formData.ap_email || '').trim() && notificationContactSource === 'community_manager') {
+      setNotificationContactSource('ap');
+    }
+  }, [formData.ap_email]);
 
   const fetchPropertyGroups = async () => {
     try {
@@ -190,6 +197,21 @@ export function PropertyForm() {
            cleanedFormData.primary_contact_role = cleanedFormData.community_manager_title;
            cleanedFormData.primary_contact_email = formData.community_manager_email;
            cleanedFormData.primary_contact_phone = formData.community_manager_phone;
+        }
+      }
+
+      if (notificationContactSource === 'community_manager') {
+        cleanedFormData.primary_contact_email = formData.community_manager_email;
+      } else if (notificationContactSource === 'maintenance_supervisor') {
+        cleanedFormData.primary_contact_email = formData.maintenance_supervisor_email;
+      } else if (notificationContactSource === 'ap') {
+        cleanedFormData.primary_contact_email = formData.ap_email;
+      } else {
+        const notifyContact = contacts.find(c => c.id === notificationContactSource);
+        if (notifyContact) {
+          cleanedFormData.primary_contact_email = notifyContact.email;
+        } else if (formData.ap_email) {
+          cleanedFormData.primary_contact_email = formData.ap_email;
         }
       }
 
@@ -334,6 +356,10 @@ export function PropertyForm() {
   const handleSubcontractorContactChange = (source: string) => {
     setSubcontractorContactSource(source);
     toast.success('Subcontractor contact updated');
+  };
+  const handleNotificationContactChange = (source: string) => {
+    setNotificationContactSource(source);
+    toast.success('Email notifications contact updated');
   };
 
   return (
@@ -580,18 +606,29 @@ export function PropertyForm() {
               <div className="space-y-4 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50/50 dark:bg-gray-800/50">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-bold text-gray-900 dark:text-white">Property Contact 1</h3>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      name="subcontractor_contact_source"
-                      checked={subcontractorContactSource === 'community_manager'}
-                      onChange={() => handleSubcontractorContactChange('community_manager')}
-                      className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                      title="Set as Subcontractor Contact"
-                    />
-                    <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Subcontractor Contact</label>
-                  </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    name="subcontractor_contact_source"
+                    checked={subcontractorContactSource === 'community_manager'}
+                    onChange={() => handleSubcontractorContactChange('community_manager')}
+                    className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    title="Set as Subcontractor Contact"
+                  />
+                  <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Subcontractor Contact</label>
                 </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    name="notification_contact_source"
+                    checked={notificationContactSource === 'community_manager'}
+                    onChange={() => handleNotificationContactChange('community_manager')}
+                    className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
+                    title="Set as Email Notifications Contact"
+                  />
+                  <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Email Notifications</label>
+                </div>
+              </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Position / Job</label>
                   <input
@@ -648,18 +685,29 @@ export function PropertyForm() {
               <div className="space-y-4 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50/50 dark:bg-gray-800/50">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-bold text-gray-900 dark:text-white">Property Contact 2</h3>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      name="subcontractor_contact_source"
-                      checked={subcontractorContactSource === 'maintenance_supervisor'}
-                      onChange={() => handleSubcontractorContactChange('maintenance_supervisor')}
-                      className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                      title="Set as Subcontractor Contact"
-                    />
-                    <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Subcontractor Contact</label>
-                  </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    name="subcontractor_contact_source"
+                    checked={subcontractorContactSource === 'maintenance_supervisor'}
+                    onChange={() => handleSubcontractorContactChange('maintenance_supervisor')}
+                    className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                    title="Set as Subcontractor Contact"
+                  />
+                  <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Subcontractor Contact</label>
                 </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    name="notification_contact_source"
+                    checked={notificationContactSource === 'maintenance_supervisor'}
+                    onChange={() => handleNotificationContactChange('maintenance_supervisor')}
+                    className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
+                    title="Set as Email Notifications Contact"
+                  />
+                  <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Email Notifications</label>
+                </div>
+              </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Position / Job</label>
                   <input
@@ -736,6 +784,17 @@ export function PropertyForm() {
                          title="Set as Subcontractor Contact"
                        />
                        <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Subcontractor Contact</label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                       <input
+                         type="radio"
+                         name="notification_contact_source"
+                         checked={notificationContactSource === contact.id}
+                         onChange={() => handleNotificationContactChange(contact.id)}
+                         className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
+                         title="Set as Email Notifications Contact"
+                       />
+                       <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Email Notifications</label>
                     </div>
                   </div>
 
@@ -1070,6 +1129,17 @@ export function PropertyForm() {
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div className="space-y-4">
                 <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200">AP Contact</h3>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    name="notification_contact_source"
+                    checked={notificationContactSource === 'ap'}
+                    onChange={() => setNotificationContactSource('ap')}
+                    className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
+                    title="Set as Email Notifications Contact"
+                  />
+                  <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Email Notifications</label>
+                </div>
                 <div>
                   <label htmlFor="ap_name" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                     Name

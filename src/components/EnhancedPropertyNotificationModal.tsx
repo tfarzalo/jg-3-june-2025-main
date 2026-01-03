@@ -236,10 +236,28 @@ export function EnhancedPropertyNotificationModal({
     work_order_num: job?.work_order_num || null,
   }), [job]);
 
-  const initializeRecipient = useCallback(() => {
-    if (!job) return;
-    setRecipientEmail(job.property?.ap_email || '');
-    setApContactName(job.property?.ap_name || '');
+  const initializeRecipient = useCallback(async () => {
+    if (!job?.property?.id) return;
+    try {
+      const { data: prop, error } = await supabase
+        .from('properties')
+        .select('primary_contact_email, ap_email, ap_name')
+        .eq('id', job.property.id)
+        .single();
+      if (error) {
+        const fallback = job.property?.primary_contact_email || job.property?.ap_email || '';
+        setRecipientEmail(fallback);
+        setApContactName(job.property?.ap_name || '');
+        return;
+      }
+      const defaultEmail = prop?.primary_contact_email || prop?.ap_email || '';
+      setRecipientEmail(defaultEmail || '');
+      setApContactName(prop?.ap_name || job.property?.ap_name || '');
+    } catch {
+      const fallback = job.property?.primary_contact_email || job.property?.ap_email || '';
+      setRecipientEmail(fallback);
+      setApContactName(job.property?.ap_name || '');
+    }
   }, [job]);
 
   const normalizeImageType = (image: JobImage): ImageBucket => {

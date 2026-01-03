@@ -309,13 +309,22 @@ export function JobDetails() {
     return null;
   }, [approvalTokenDecision, phaseChanges, reactivatedFromDecline]);
 
+  const hasDrywallSignal = useMemo(() => {
+    const text = `${job?.work_order?.additional_comments ?? ''} ${job?.work_order?.extra_charges_description ?? ''}`.toLowerCase();
+    const drywallInAdditional = additionalBillingLines.some(line => /drywall/i.test(line.label));
+    return /dry\s*wall/i.test(text) || drywallInAdditional;
+  }, [job?.work_order?.additional_comments, job?.work_order?.extra_charges_description, additionalBillingLines]);
 
   // Initialize recipient email with property AP contact when job loads
   useEffect(() => {
-    if (job?.property?.ap_email && !recipientEmail) {
-      setRecipientEmail(job?.property?.ap_email);
+    if (!recipientEmail) {
+      const preferred =
+        job?.property?.primary_contact_email ||
+        job?.property?.ap_email ||
+        '';
+      setRecipientEmail(preferred);
     }
-  }, [job?.property?.ap_email, recipientEmail]);
+  }, [job?.property?.primary_contact_email, job?.property?.ap_email, recipientEmail]);
 
   // Fetch approval token decision status for Extra Charges
   const fetchApprovalDecision = useCallback(async () => {
@@ -1754,6 +1763,7 @@ export function JobDetails() {
         }
       : null
   );
+  
 
   // Filter out 'Pending Work Order' and 'Cancelled' from the phases array used for navigation
   // Completed is treated as the final phase
@@ -2245,51 +2255,57 @@ export function JobDetails() {
               </div>
             )}
 
-            {/* Unified Approval / Notification Section */}
-            {hasWorkOrder && (
-              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/30 text-blue-800 dark:text-blue-200 px-4 py-3 rounded-lg mb-6 relative z-[50]">
-                <div className="flex items-start">
-                  <Mail className="h-5 w-5 mr-2 text-blue-600 dark:text-blue-400 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="font-medium">Approval / Notification</p>
-                    <p className="mt-1 text-sm">
-                      {(!effectiveApprovalDecision?.decision && isPendingWorkOrder && derivedExtraCharges)
-                        ? 'Recommended: Extra Charges Approval email'
-                        : (job.work_order?.has_sprinklers
-                            ? 'Recommended: Sprinkler Paint notification'
-                            : 'Recommended: Drywall Repairs notification')}
-                    </p>
-                    <div className="mt-3 flex flex-col md:flex-row md:items-center gap-3">
-                      <button
-                        onClick={() => {
-                          const recommended: 'extra_charges' | 'sprinkler_paint' | 'drywall_repairs' =
-                            (!effectiveApprovalDecision?.decision && isPendingWorkOrder && derivedExtraCharges)
-                              ? 'extra_charges'
-                              : (job.work_order?.has_sprinklers ? 'sprinkler_paint' : 'drywall_repairs');
-                          const typeToUse = recommended;
-                          setNotificationType(typeToUse);
-                          setShowEnhancedNotificationModal(true);
-                        }}
-                        className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-                      >
-                        <Mail className="h-4 w-4 mr-2" />
-                        Prepare Email
-                      </button>
-                      {(!effectiveApprovalDecision?.decision && isPendingWorkOrder && (isAdmin || isJGManagement)) && (
+            {(() => {
+              const needsExtraChargesApproval = !effectiveApprovalDecision?.decision && isPendingWorkOrder && !!derivedExtraCharges;
+              const showBlueVariant = !needsExtraChargesApproval && (job.work_order?.has_sprinklers || hasDrywallSignal);
+              if (!hasWorkOrder || (!needsExtraChargesApproval && !showBlueVariant)) return null;
+              const containerClasses = needsExtraChargesApproval
+                ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700/30 text-yellow-900 dark:text-yellow-200'
+                : 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/30 text-blue-800 dark:text-blue-200';
+              const iconClasses = needsExtraChargesApproval
+                ? 'text-yellow-600 dark:text-yellow-400'
+                : 'text-blue-600 dark:text-blue-400';
+              const heading = needsExtraChargesApproval ? 'Extra Charges Approval Needed' : 'Notification Needed';
+              const itemLabel = job.work_order?.has_sprinklers ? 'Sprinkler Paint' : 'Drywall Repairs';
+              const message = needsExtraChargesApproval
+                ? 'Extra charges need approval. Recommended: send approval email.'
+                : `Notification email needed: ${itemLabel}`;
+              const recommended: 'extra_charges' | 'sprinkler_paint' | 'drywall_repairs' =
+                needsExtraChargesApproval ? 'extra_charges' : (job.work_order?.has_sprinklers ? 'sprinkler_paint' : 'drywall_repairs');
+              return (
+                <div className={`${containerClasses} px-4 py-3 rounded-lg mb-6 relative z-[50]`}>
+                  <div className="flex items-start">
+                    <Mail className={`h-5 w-5 mr-2 ${iconClasses} mt-0.5`} />
+                    <div className="flex-1">
+                      <p className="font-medium">{heading}</p>
+                      <p className="mt-1 text-sm">{message}</p>
+                      <div className="mt-3 flex flex-col md:flex-row md:items-center gap-3">
                         <button
-                          onClick={handleApproveExtraCharges}
-                          className="inline-flex items-center px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition-colors"
-                          title="Bypass email and approve directly"
+                          onClick={() => {
+                            setNotificationType(recommended);
+                            setShowEnhancedNotificationModal(true);
+                          }}
+                          className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
                         >
-                          <CheckCircle className="h-4 w-4 mr-2" />
-                          Approve Manually
+                          <Mail className="h-4 w-4 mr-2" />
+                          Prepare Email
                         </button>
-                      )}
+                        {(needsExtraChargesApproval && (isAdmin || isJGManagement)) && (
+                          <button
+                            onClick={handleApproveExtraCharges}
+                            className="inline-flex items-center px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition-colors"
+                            title="Bypass email and approve directly"
+                          >
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            Approve Manually
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
             
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-8">Work Order Details</h2>
             {/* Unit Information Section */}

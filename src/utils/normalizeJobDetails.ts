@@ -15,6 +15,7 @@ export type PropertyLite = {
   zip?: number | string | null;
   ap_name?: string | null;
   ap_email?: string | null;
+  primary_contact_email?: string | null;
   quickbooks_number?: string | null;
   is_archived?: boolean;
 };
@@ -84,6 +85,7 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
     zip: d?.property?.zip ?? null,
     ap_name: d?.property?.ap_name ?? null,
     ap_email: d?.property?.ap_email ?? null,
+    primary_contact_email: d?.property?.primary_contact_email ?? null,
     quickbooks_number: d?.property?.quickbooks_number ?? null,
     is_archived: d?.property?.is_archived ?? false,
   };

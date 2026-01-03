@@ -437,6 +437,9 @@ export function DashboardHome() {
   
   // Define allTodaysJobs - should be today's jobs, not all jobs
   const allTodaysJobs = todaysJobs || [];
+  
+  // Pending Work Orders list
+  const pendingWorkOrders = jobs.filter(job => job.job_phase?.job_phase_label === 'Pending Work Order');
 
   // Debug logging
   console.log('Dashboard: todaysJobs from hook:', todaysJobs.length);
@@ -499,7 +502,8 @@ export function DashboardHome() {
       label: 'Job Requests',
       value: jobs.filter(job => job.job_phase?.job_phase_label === 'Job Request').length.toString(),
       trend: { value: 12, isPositive: true },
-      color: 'blue'
+      color: 'blue',
+      notation: 'New / Scheduled'
     },
     {
       icon: FileText,
@@ -508,28 +512,32 @@ export function DashboardHome() {
         job.job_phase?.job_phase_label === 'Work Order'
       ).length.toString(),
       trend: { value: 15, isPositive: true },
-      color: 'orange'
+      color: 'orange',
+      notation: 'In House'
     },
     {
       icon: Clock,
       label: 'Pending Work Orders',
       value: jobs.filter(job => job.job_phase?.job_phase_label === 'Pending Work Order').length.toString(),
       trend: { value: 8, isPositive: true },
-      color: 'yellow'
-    },
-    {
-      icon: DollarSign,
-      label: 'Invoicing',
-      value: jobs.filter(job => job.job_phase?.job_phase_label === 'Invoicing').length.toString(),
-      trend: { value: 3, isPositive: false },
-      color: phaseColors['Invoicing'] || '#166534'
+      color: 'yellow',
+      notation: 'Per Customer'
     },
     {
       icon: CheckCircle,
       label: 'Completed',
       value: jobs.filter(job => job.job_phase?.job_phase_label === 'Completed').length.toString(),
       trend: { value: 5, isPositive: true },
-      color: phaseColors['Completed'] || '#1E40AF'
+      color: phaseColors['Completed'] || '#1E40AF',
+      notation: 'Ready for Billing'
+    },
+    {
+      icon: ClipboardList,
+      label: 'All Jobs',
+      value: jobs.length.toString(),
+      trend: { value: 4, isPositive: true },
+      color: 'purple',
+      notation: 'All Phases'
     }
   ];
 
@@ -544,15 +552,17 @@ export function DashboardHome() {
   return (
     <div className="p-3 sm:p-4 lg:p-6 bg-background dark:bg-background-dark min-h-screen">
       {/* Metrics Grid - Hidden on mobile */}
-      <div className="hidden lg:grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
+      <div className="hidden lg:grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 auto-rows-fr gap-6 mb-8">
         {metrics.map((metric, index) => (
           <Link 
             key={index} 
             to={
               metric.label === 'Job Requests' 
                 ? '/dashboard/jobs/requests'
-                : metric.label === 'Work Orders' || metric.label === 'Pending Work Orders'
+                : metric.label === 'Work Orders'
                 ? '/dashboard/jobs/work-orders'
+                : metric.label === 'Pending Work Orders'
+                ? '/dashboard/jobs/pending-work-orders'
                 : metric.label === 'Invoicing'
                 ? '/dashboard/jobs/invoicing'
                 : metric.label === 'Completed'
@@ -566,7 +576,7 @@ export function DashboardHome() {
                 ? { sortField: 'job_phase', sortDirection: 'asc' }
                 : undefined
             }
-            className="block"
+            className="block h-full"
           >
             <MetricTile
               icon={metric.icon}
@@ -574,6 +584,7 @@ export function DashboardHome() {
               value={metric.value}
               trend={metric.trend}
               color={metric.color}
+              notation={(metric as any).notation}
             />
           </Link>
         ))}
@@ -673,6 +684,9 @@ export function DashboardHome() {
           {/* Job Requests - Mobile */}
           <DashboardCard 
             title="Job Requests" 
+            notation="New / Scheduled"
+            titleColor="text-[#3B82F6]"
+            titleWeight="semibold"
             viewAllLink="/dashboard/jobs/requests"
             actionButton={
               <Link 
@@ -683,7 +697,6 @@ export function DashboardHome() {
                 Job Request
               </Link>
             }
-            titleColor="text-gray-900 dark:text-white"
             phaseColor={phaseColors['Job Request'] || '#3B82F6'}
             className="min-h-[300px]"
           >
@@ -720,6 +733,7 @@ export function DashboardHome() {
           {/* Work Orders - Mobile */}
           <DashboardCard 
             title="Work Orders" 
+            notation="In House"
             viewAllLink="/dashboard/jobs/work-orders"
             viewAllState={{ sortField: 'job_phase', sortDirection: 'desc' }}
             titleColor="text-gray-900 dark:text-white"
@@ -766,10 +780,11 @@ export function DashboardHome() {
       </div>
 
       {/* Desktop Layout - Original Grid */}
-      <div className="hidden lg:grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+      <div className="hidden lg:grid grid-cols-1 lg:grid-cols-3 auto-rows-fr gap-6 mb-6">
         {/* Job Requests */}
         <DashboardCard 
           title="Job Requests" 
+          notation="New / Scheduled"
           viewAllLink="/dashboard/jobs/requests"
           actionButton={
             <Link 
@@ -792,27 +807,27 @@ export function DashboardHome() {
             ) : (
               <table className="w-full">
                 <thead>
-                  <tr className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+                  <tr className="text-left text-[11px] sm:text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
                     <th className="pb-2">Property</th>
                     <th className="pb-2">Unit #</th>
                     <th className="pb-2">Work Date</th>
                   </tr>
                 </thead>
-                <tbody className="text-gray-700 dark:text-gray-300 text-sm">
+                <tbody className="text-gray-700 dark:text-gray-300 text-xs sm:text-sm">
                   {jobRequests.slice(0, 8).map(job => (
                     <tr key={job.id} className="cursor-pointer hover:bg-gray-50/50 dark:hover:bg-[#1E293B]/30 transition-colors">
-                      <td className="py-2">
-                        <Link to={`/dashboard/jobs/${job.id}`} className="block">
+                      <td className="py-2 whitespace-nowrap">
+                        <Link to={`/dashboard/jobs/${job.id}`} className="block max-w-[220px] truncate">
                           {getPropertyName(job)}
                         </Link>
                       </td>
-                      <td className="py-2">
-                        <Link to={`/dashboard/jobs/${job.id}`} className="block">
+                      <td className="py-2 whitespace-nowrap">
+                        <Link to={`/dashboard/jobs/${job.id}`} className="block truncate">
                           {job.unit_number || 'N/A'}
                         </Link>
                       </td>
-                      <td className="py-2">
-                        <Link to={`/dashboard/jobs/${job.id}`} className="block">
+                      <td className="py-2 whitespace-nowrap">
+                        <Link to={`/dashboard/jobs/${job.id}`} className="block truncate">
                           {new Date(job.scheduled_date).toLocaleDateString()}
                         </Link>
                       </td>
@@ -824,34 +839,35 @@ export function DashboardHome() {
           </div>
         </DashboardCard>
 
-        {/* Work Orders */}
+        {/* Pending Work Orders */}
         <DashboardCard 
-          title="Work Orders" 
-          viewAllLink="/dashboard/jobs/work-orders"
-          viewAllState={{ sortField: 'job_phase', sortDirection: 'desc' }}
+          title="Pending Work Orders" 
+          notation="Per Customer"
+          viewAllLink="/dashboard/jobs/pending-work-orders"
+          viewAllState={{ sortField: 'job_phase', sortDirection: 'asc' }}
           titleColor="text-gray-900 dark:text-white"
           className="min-h-[400px]"
-          phaseColor={phaseColors['Work Order'] || '#F97316'}
+          phaseColor={phaseColors['Pending Work Order'] || '#DAA520'}
         >
           <div className="space-y-4 max-h-[300px] overflow-y-auto">
-            {workOrders.length === 0 ? (
+            {pendingWorkOrders.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                No work orders found
+                No pending work orders found
               </div>
             ) : (
               <table className="w-full">
                 <thead>
-                  <tr className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+                  <tr className="text-left text-[11px] sm:text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
                     <th className="pb-2">WO#</th>
                     <th className="pb-2">Property</th>
                     <th className="pb-2">Unit #</th>
                     <th className="pb-2">Type</th>
                   </tr>
                 </thead>
-                <tbody className="text-gray-700 dark:text-gray-300 text-sm">
-                  {workOrders.slice(0, 8).map(job => (
+                <tbody className="text-gray-700 dark:text-gray-300 text-xs sm:text-sm">
+                  {pendingWorkOrders.slice(0, 8).map(job => (
                     <tr key={job.id} className="cursor-pointer hover:bg-gray-50/50 dark:hover:bg-[#1E293B]/30 transition-colors">
-                      <td className="py-2">
+                      <td className="py-2 whitespace-nowrap">
                         <Link to={`/dashboard/jobs/${job.id}`} className="flex items-center">
                           <span 
                             className="w-2 h-2 rounded-full mr-2 flex-shrink-0"
@@ -860,18 +876,18 @@ export function DashboardHome() {
                           {formatWorkOrderNumber(job.work_order_num)}
                         </Link>
                       </td>
-                      <td className="py-2">
-                        <Link to={`/dashboard/jobs/${job.id}`} className="block">
+                      <td className="py-2 whitespace-nowrap">
+                        <Link to={`/dashboard/jobs/${job.id}`} className="block max-w-[220px] truncate">
                           {getPropertyName(job)}
                         </Link>
                       </td>
-                      <td className="py-2">
-                        <Link to={`/dashboard/jobs/${job.id}`} className="block">
+                      <td className="py-2 whitespace-nowrap">
+                        <Link to={`/dashboard/jobs/${job.id}`} className="block truncate">
                           {job.unit_number || 'N/A'}
                         </Link>
                       </td>
-                      <td className="py-2">
-                        <Link to={`/dashboard/jobs/${job.id}`} className="block">
+                      <td className="py-2 whitespace-nowrap">
+                        <Link to={`/dashboard/jobs/${job.id}`} className="block truncate">
                           {getJobType(job)}
                         </Link>
                       </td>
@@ -972,64 +988,58 @@ export function DashboardHome() {
       </div>
 
       {/* Main Content Grid - Second Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Invoicing */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 auto-rows-fr gap-6">
+        {/* Work Orders - moved to bottom-left */}
         <DashboardCard 
-          title="Invoicing" 
-          viewAllLink="/dashboard/jobs/invoicing"
+          title="Work Orders" 
+          notation="In House"
+          viewAllLink="/dashboard/jobs/work-orders"
+          viewAllState={{ sortField: 'job_phase', sortDirection: 'desc' }}
           titleColor="text-gray-900 dark:text-white"
           className="min-h-[400px]"
-          phaseColor={phaseColors['Invoicing'] || '#10B981'}
+          phaseColor={phaseColors['Work Order'] || '#F97316'}
         >
           <div className="space-y-4 max-h-[300px] overflow-y-auto">
-            {invoicingJobs.length === 0 ? (
+            {workOrders.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
-                No jobs in invoicing
+                No work orders found
               </div>
             ) : (
               <table className="w-full">
                 <thead>
-                  <tr className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
-                    <th className="pb-2">ID</th>
+                  <tr className="text-left text-[11px] sm:text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+                    <th className="pb-2">WO#</th>
                     <th className="pb-2">Property</th>
-                    <th className="pb-2">Amount</th>
-                    <th className="pb-2">Sent</th>
-                    <th className="pb-2">Paid</th>
+                    <th className="pb-2">Unit #</th>
+                    <th className="pb-2">Type</th>
                   </tr>
                 </thead>
-                <tbody className="text-gray-700 dark:text-gray-300 text-sm">
-                  {invoicingJobs.slice(0, 8).map(job => (
+                <tbody className="text-gray-700 dark:text-gray-300 text-xs sm:text-sm">
+                  {workOrders.slice(0, 8).map(job => (
                     <tr key={job.id} className="cursor-pointer hover:bg-gray-50/50 dark:hover:bg-[#1E293B]/30 transition-colors">
-                      <td className="py-2">
-                        <Link to={`/dashboard/jobs/${job.id}`} className="block">
-                          {`WO-${String(job.work_order_num).padStart(6, '0')}`}
+                      <td className="py-2 whitespace-nowrap">
+                        <Link to={`/dashboard/jobs/${job.id}`} className="flex items-center">
+                          <span 
+                            className="w-2 h-2 rounded-full mr-2 flex-shrink-0"
+                            style={{ backgroundColor: getJobPhaseColor(job) }}
+                          ></span>
+                          {formatWorkOrderNumber(job.work_order_num)}
                         </Link>
                       </td>
-                      <td className="py-2">
-                        <Link to={`/dashboard/jobs/${job.id}`} className="block">
+                      <td className="py-2 whitespace-nowrap">
+                        <Link to={`/dashboard/jobs/${job.id}`} className="block max-w-[220px] truncate">
                           {getPropertyName(job)}
                         </Link>
                       </td>
-                      <td className="py-2">
-                        <Link to={`/dashboard/jobs/${job.id}`} className="block">
-                          <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                            {job.total_billing_amount ? `$${job.total_billing_amount.toFixed(2)}` : '$0.00'}
-                          </span>
+                      <td className="py-2 whitespace-nowrap">
+                        <Link to={`/dashboard/jobs/${job.id}`} className="block truncate">
+                          {job.unit_number || 'N/A'}
                         </Link>
                       </td>
-                      <td className="py-2">
-                        {/* Mailbox icon for sent */}
-                        <div className="flex items-center justify-center">
-                          <Mailbox className={`h-5 w-5 ${job.invoice_sent ? 'text-green-500' : 'text-gray-300'}`} />
-                        </div>
-                      </td>
-                      <td className="py-2">
-                        {/* Green checkmark for paid */}
-                        <div className="flex items-center justify-center">
-                          <svg className={`h-5 w-5 ${job.invoice_paid ? 'text-green-500' : 'text-gray-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        </div>
+                      <td className="py-2 whitespace-nowrap">
+                        <Link to={`/dashboard/jobs/${job.id}`} className="block truncate">
+                          {getJobType(job)}
+                        </Link>
                       </td>
                     </tr>
                   ))}
@@ -1042,6 +1052,7 @@ export function DashboardHome() {
         {/* Completed */}
         <DashboardCard 
           title="Completed" 
+          notation="Ready for Billing / Invoicing"
           viewAllLink="/dashboard/jobs/completed"
           titleColor="text-gray-900 dark:text-white"
           className="min-h-[400px]"
@@ -1060,27 +1071,27 @@ export function DashboardHome() {
             ) : (
               <table className="w-full">
                 <thead>
-                  <tr className="text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+                  <tr className="text-left text-[11px] sm:text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
                     <th className="pb-2">ID</th>
                     <th className="pb-2">Property</th>
                     <th className="pb-2">Date Modified</th>
                   </tr>
                 </thead>
-                <tbody className="text-gray-700 dark:text-gray-300 text-sm">
+                <tbody className="text-gray-700 dark:text-gray-300 text-xs sm:text-sm">
                   {completedJobs.map(job => (
                     <tr key={job.id} className="cursor-pointer hover:bg-gray-50/50 dark:hover:bg-[#1E293B]/30 transition-colors">
-                      <td className="py-2">
-                        <Link to={`/dashboard/jobs/${job.id}`} className="block">
+                      <td className="py-2 whitespace-nowrap">
+                        <Link to={`/dashboard/jobs/${job.id}`} className="block truncate">
                           {`WO-${String(job.work_order_num).padStart(6, '0')}`}
                         </Link>
                       </td>
-                      <td className="py-2">
-                        <Link to={`/dashboard/jobs/${job.id}`} className="block">
+                      <td className="py-2 whitespace-nowrap">
+                        <Link to={`/dashboard/jobs/${job.id}`} className="block max-w-[220px] truncate">
                           {job.property?.property_name || 'Unknown Property'}
                         </Link>
                       </td>
-                      <td className="py-2">
-                        <Link to={`/dashboard/jobs/${job.id}`} className="block">
+                      <td className="py-2 whitespace-nowrap">
+                        <Link to={`/dashboard/jobs/${job.id}`} className="block truncate">
                           {job.completed_date 
                             ? new Date(job.completed_date).toLocaleDateString()
                             : new Date(job.updated_at || job.created_at).toLocaleDateString()

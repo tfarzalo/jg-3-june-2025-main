@@ -600,7 +600,7 @@ const ApprovalPage: React.FC = () => {
                         <p className="font-medium text-gray-900">{charge.description}</p>
                         {charge.quantity !== undefined && (
                           <p className="text-xs text-gray-500">
-                            {charge.quantity} {charge.unit || 'items'}
+                            {charge.quantity} ({charge.unit || 'items'})
                           </p>
                         )}
                         {charge.hours !== undefined && (
@@ -608,6 +608,22 @@ const ApprovalPage: React.FC = () => {
                             {charge.hours} hour{charge.hours !== 1 ? 's' : ''}
                           </p>
                         )}
+                        {(() => {
+                          const hasHours = typeof charge.hours === 'number' && charge.hours > 0;
+                          const hasQty = typeof charge.quantity === 'number' && charge.quantity > 0;
+                          const rate = hasHours
+                            ? charge.cost / (charge.hours as number)
+                            : hasQty
+                            ? charge.cost / (charge.quantity as number)
+                            : undefined;
+                          if (typeof rate !== 'number') return null;
+                          return (
+                            <p className="text-xs text-gray-500">
+                              Rate: ${rate.toFixed(2)}
+                              {hasHours ? '/hr' : ` per ${charge.unit || 'item'}`}
+                            </p>
+                          );
+                        })()}
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="font-semibold text-gray-900">
@@ -704,7 +720,7 @@ const ApprovalPage: React.FC = () => {
                         <p className="font-medium text-gray-900">{charge.description}</p>
                         {charge.quantity !== undefined && (
                           <p className="text-xs text-gray-500">
-                            {charge.quantity} {charge.unit || 'items'}
+                            {charge.quantity} ({charge.unit || 'items'})
                           </p>
                         )}
                         {charge.hours !== undefined && (
@@ -712,6 +728,22 @@ const ApprovalPage: React.FC = () => {
                             {charge.hours} hour{charge.hours !== 1 ? 's' : ''}
                           </p>
                         )}
+                        {(() => {
+                          const hasHours = typeof charge.hours === 'number' && charge.hours > 0;
+                          const hasQty = typeof charge.quantity === 'number' && charge.quantity > 0;
+                          const rate = hasHours
+                            ? charge.cost / (charge.hours as number)
+                            : hasQty
+                            ? charge.cost / (charge.quantity as number)
+                            : undefined;
+                          if (typeof rate !== 'number') return null;
+                          return (
+                            <p className="text-xs text-gray-500">
+                              Rate: ${rate.toFixed(2)}
+                              {hasHours ? '/hr' : ` per ${charge.unit || 'item'}`}
+                            </p>
+                          );
+                        })()}
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="font-semibold text-gray-900">

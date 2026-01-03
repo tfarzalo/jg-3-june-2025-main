@@ -10,9 +10,10 @@ interface MetricTileProps {
     isPositive: boolean;
   };
   color?: string;
+  notation?: string;
 }
 
-export function MetricTile({ icon: Icon, label, value, trend, color = 'blue' }: MetricTileProps) {
+export function MetricTile({ icon: Icon, label, value, trend, color = 'blue', notation }: MetricTileProps) {
   const getBgStyle = () => {
     // Check if the color is a custom hex code
     if (color && color.startsWith('#')) {
@@ -65,7 +66,7 @@ export function MetricTile({ icon: Icon, label, value, trend, color = 'blue' }: 
   const bgProps = getBgStyle(); // Get either className or style
 
   return (
-    <div className="bg-white dark:bg-[#1E293B] rounded-xl p-4 shadow-lg transition-all duration-200 hover:shadow-xl relative overflow-hidden group">
+    <div className="h-full flex flex-col justify-between bg-white dark:bg-[#1E293B] rounded-xl p-4 shadow-lg transition-all duration-200 hover:shadow-xl relative overflow-hidden group">
       {/* Subtle background pattern */}
       <div className="absolute inset-0 opacity-5">
         <div className="absolute top-0 right-0 w-16 h-16 rounded-full bg-gradient-to-br from-current to-transparent transform translate-x-8 -translate-y-8"></div>
@@ -84,6 +85,7 @@ export function MetricTile({ icon: Icon, label, value, trend, color = 'blue' }: 
       
       {/* Bottom section with label and trend */}
       <div className="space-y-2">
+        {notation && <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-800 dark:text-gray-200">{notation}</p>}
         <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">{label}</p>
         
         {/* Trend indicator with mini chart */}

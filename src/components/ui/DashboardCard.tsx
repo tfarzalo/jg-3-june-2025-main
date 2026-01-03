@@ -8,8 +8,10 @@ interface DashboardCardProps {
   viewAllState?: any;
   actionButton?: React.ReactNode;
   titleColor?: string;
+  titleWeight?: 'normal' | 'medium' | 'semibold' | 'bold';
   className?: string;
   phaseColor?: string;
+  notation?: string;
 }
 
 export function DashboardCard({ 
@@ -19,11 +21,14 @@ export function DashboardCard({
   viewAllState,
   actionButton,
   titleColor = 'text-gray-900 dark:text-white',
+  titleWeight = 'medium',
   className = '',
-  phaseColor
+  phaseColor,
+  notation
 }: DashboardCardProps) {
+  const weightClass = titleWeight === 'bold' ? 'font-bold' : titleWeight === 'semibold' ? 'font-semibold' : titleWeight === 'normal' ? 'font-normal' : 'font-medium';
   return (
-    <div className={`bg-white dark:bg-surface-dark rounded-xl overflow-hidden shadow-lg ${className}`}>
+    <div className={`h-full flex flex-col bg-white dark:bg-surface-dark rounded-xl overflow-hidden shadow-lg ${className}`}>
       {phaseColor && (
         <div 
           className="h-1 w-full"
@@ -31,7 +36,10 @@ export function DashboardCard({
         />
       )}
       <div className="px-6 py-4 flex items-center justify-between border-b border-gray-200 dark:border-border-dark">
-        <h2 className={`font-medium ${titleColor}`}>{title}</h2>
+        <div>
+          {notation && <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-800 dark:text-gray-200 -mb-0.5">{notation}</div>}
+          <h2 className={`${weightClass} ${titleColor}`}>{title}</h2>
+        </div>
         <div className="flex items-center space-x-4">
           {actionButton}
           {viewAllLink && (
@@ -41,7 +49,7 @@ export function DashboardCard({
           )}
         </div>
       </div>
-      <div className="p-6">
+      <div className="p-6 flex-1">
         {children}
       </div>
     </div>

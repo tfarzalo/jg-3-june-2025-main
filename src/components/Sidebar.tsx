@@ -17,6 +17,7 @@ import {
   FolderOpen,
   Calendar as CalendarIcon,
   Activity,
+  Clock,
   ChevronsLeft,
   ChevronsRight,
   ArrowRight,
@@ -134,6 +135,8 @@ export function Sidebar() {
         return '#276EF1'; // Blue
       case 'Work Orders':
         return '#E95420'; // Orange-Red
+      case 'Pending Work Orders':
+        return '#FBBF24'; // Amber/Yellow
       case 'Invoicing':
         return '#00A878'; // Green
       case 'Completed':
@@ -220,8 +223,9 @@ export function Sidebar() {
           { icon: ClipboardList, label: 'All Jobs', to: '/dashboard/jobs', dataTutorial: 'jobs' },
           { icon: FileText, label: 'Job Requests', to: '/dashboard/jobs/requests' },
           { icon: FileText, label: 'Work Orders', to: '/dashboard/jobs/work-orders' },
-          { icon: DollarSign, label: 'Invoicing', to: '/dashboard/jobs/invoicing' },
+          { icon: Clock, label: 'Pending Work Orders', to: '/dashboard/jobs/pending-work-orders' },
           { icon: CheckCircle, label: 'Completed', to: '/dashboard/jobs/completed' },
+          { icon: DollarSign, label: 'Invoicing', to: '/dashboard/jobs/invoicing' },
           { icon: XCircle, label: 'Cancelled', to: '/dashboard/jobs/cancelled' },
           { icon: CalendarDays, label: 'Sub Scheduler', to: '/dashboard/sub-scheduler' },
         ]

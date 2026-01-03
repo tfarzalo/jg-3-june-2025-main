@@ -81,15 +81,38 @@ const NotificationEmailModal: React.FC<NotificationEmailModalProps> = ({
     }
   };
 
-  const initializeEmails = () => {
-    // Auto-populate recipient email with property AP contact if available
-    if (job?.property?.ap_email) {
-      setRecipientEmail(job.property.ap_email);
-    } else {
-      setRecipientEmail(''); // Leave empty for manual input if no AP email
+  const initializeEmails = async () => {
+    try {
+      if (!job?.property?.id) {
+        const preferred =
+          job?.property?.primary_contact_email ||
+          job?.property?.ap_email ||
+          '';
+        setRecipientEmail(preferred);
+        setCcEmails('');
+        setBccEmails('');
+        return;
+      }
+      const { data: prop, error } = await supabase
+        .from('properties')
+        .select('primary_contact_email, ap_email')
+        .eq('id', job.property.id)
+        .single();
+      const preferred = error
+        ? (job?.property?.primary_contact_email || job?.property?.ap_email || '')
+        : (prop?.primary_contact_email || prop?.ap_email || '');
+      setRecipientEmail(preferred);
+      setCcEmails('');
+      setBccEmails('');
+    } catch {
+      const preferred =
+        job?.property?.primary_contact_email ||
+        job?.property?.ap_email ||
+        '';
+      setRecipientEmail(preferred);
+      setCcEmails('');
+      setBccEmails('');
     }
-    setCcEmails('');
-    setBccEmails('');
   };
 
   // Process template with job data
