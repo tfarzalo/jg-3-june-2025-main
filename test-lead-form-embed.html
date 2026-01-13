@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lead Form Embed Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f3f4f6;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #1f2937;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #6b7280;
+            margin-bottom: 30px;
+        }
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 8px;
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+        }
+        .status.success {
+            background: #f0fdf4;
+            border-left-color: #10b981;
+        }
+        .status.error {
+            background: #fef2f2;
+            border-left-color: #ef4444;
+        }
+        .form-container {
+            margin: 30px 0;
+        }
+        .event-log {
+            background: #1f2937;
+            color: #10b981;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .event-log .timestamp {
+            color: #6b7280;
+            margin-right: 10px;
+        }
+        .event-log .event {
+            margin: 5px 0;
+        }
+        .instructions {
+            background: #fef3c7;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #f59e0b;
+            margin: 20px 0;
+        }
+        .instructions code {
+            background: #fef3c7;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #92400e;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 JG Painting Pros - Lead Form Embed Test</h1>
+        <p class="subtitle">Test the embedded lead form and event communication</p>
+
+        <div class="instructions">
+            <h3 style="margin-top: 0;">📝 Setup Instructions:</h3>
+            <ol>
+                <li>Replace <code>YOUR_FORM_ID_HERE</code> in the iframe src below with your actual form ID</li>
+                <li>Replace <code>YOUR_DOMAIN</code> with your actual domain (e.g., yourdomain.com)</li>
+                <li>Submit the form and watch the event log below</li>
+                <li>Events will be logged in real-time as they're received from the iframe</li>
+            </ol>
+        </div>
+
+        <div id="status" class="status" style="display: none;">
+            <strong id="status-title">Status:</strong>
+            <div id="status-message"></div>
+        </div>
+
+        <div class="form-container">
+            <h2>Embedded Form</h2>
+            
+            <!-- 
+                REPLACE 'YOUR_FORM_ID_HERE' with your actual form ID from the database
+                REPLACE 'YOUR_DOMAIN' with your domain (e.g., https://yourdomain.com)
+            -->
+            <iframe 
+                id="jg-lead-form"
+                src="http://localhost:5173/lead-form/YOUR_FORM_ID_HERE" 
+                width="100%" 
+                height="700" 
+                frameborder="0"
+                style="border: 1px solid #e5e7eb; border-radius: 8px; max-width: 600px;">
+            </iframe>
+        </div>
+
+        <div style="margin-top: 30px;">
+            <h2>Event Log</h2>
+            <p style="color: #6b7280; font-size: 14px;">Real-time events from the embedded form:</p>
+            <div id="event-log" class="event-log">
+                <div class="event">
+                    <span class="timestamp">[Loading...]</span>
+                    Waiting for form events...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Track events
+        const eventLog = document.getElementById('event-log');
+        const statusDiv = document.getElementById('status');
+        const statusTitle = document.getElementById('status-title');
+        const statusMessage = document.getElementById('status-message');
+
+        function logEvent(message, data = null) {
+            const timestamp = new Date().toLocaleTimeString();
+            const eventEl = document.createElement('div');
+            eventEl.className = 'event';
+            eventEl.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+            if (data) {
+                eventEl.innerHTML += ` <br><span class="timestamp">   </span>${JSON.stringify(data, null, 2)}`;
+            }
+            eventLog.appendChild(eventEl);
+            eventLog.scrollTop = eventLog.scrollHeight;
+        }
+
+        function showStatus(title, message, type = 'info') {
+            statusTitle.textContent = title;
+            statusMessage.textContent = message;
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'status ' + type;
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        // Clear initial message
+        eventLog.innerHTML = '';
+        logEvent('🔌 Event listener initialized');
+
+        // Listen for form submission events from the iframe
+        window.addEventListener('message', function(event) {
+            // Optional: Verify the origin for security
+            // if (event.origin !== 'http://localhost:5173') return;
+            
+            logEvent('📩 Message received from iframe', event.data);
+            
+            if (event.data.type === 'leadFormSubmitted') {
+                logEvent('✅ Lead form submitted successfully!', {
+                    formId: event.data.formId,
+                    success: event.data.success
+                });
+                showStatus('Success!', 'Form submitted successfully. Thank you!', 'success');
+                
+                // Add your custom code here
+                // Examples:
+                // - Track conversion with Google Analytics
+                // - Show a custom thank you message
+                // - Trigger a popup or modal
+                // - Redirect to a thank you page
+                // window.location.href = '/thank-you';
+                
+            } else if (event.data.type === 'leadFormError') {
+                logEvent('❌ Lead form error', {
+                    formId: event.data.formId,
+                    error: event.data.error
+                });
+                showStatus('Error', 'There was an error submitting the form. Please try again.', 'error');
+                
+            } else if (event.data.type === 'leadFormRedirect') {
+                logEvent('🔄 Form requesting redirect', {
+                    url: event.data.url
+                });
+                showStatus('Redirecting', 'Redirecting to: ' + event.data.url, 'info');
+                
+                // Uncomment to enable redirect:
+                // window.location.href = event.data.url;
+            } else {
+                logEvent('ℹ️ Other message type', event.data);
+            }
+        }, false);
+
+        logEvent('✅ Ready to receive events from embedded form');
+        logEvent('💡 Fill out and submit the form to see events');
+    </script>
+</body>
+</html>

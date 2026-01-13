@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendar Feed Test</title>
+</head>
+<body>
+    <h1>Calendar Feed Test</h1>
+    <p>Testing the calendar-feed Edge Function...</p>
+    
+    <div id="results"></div>
+    
+    <script>
+        async function testCalendarFeed() {
+            const resultsDiv = document.getElementById('results');
+            
+            try {
+                // Test the function without token first (should get 400, not 401)
+                const response = await fetch('https://tbwtfimnbmvbgesidbxh.supabase.co/functions/v1/calendar-feed?scope=events');
+                
+                resultsDiv.innerHTML = `
+                    <h3>Test Results:</h3>
+                    <p><strong>Status:</strong> ${response.status}</p>
+                    <p><strong>Status Text:</strong> ${response.statusText}</p>
+                    <p><strong>Response:</strong> ${await response.text()}</p>
+                `;
+                
+                if (response.status === 401) {
+                    resultsDiv.innerHTML += `
+                        <div style="color: red; margin-top: 20px;">
+                            <h4>🚨 401 Error Detected!</h4>
+                            <p>This suggests the Edge Function environment variables are not set correctly.</p>
+                            <p><strong>Action Required:</strong></p>
+                            <ol>
+                                <li>Go to Supabase Dashboard → Edge Functions → calendar-feed → Settings</li>
+                                <li>Set these environment variables:</li>
+                                <ul>
+                                    <li>SUPABASE_URL=https://tbwtfimnbmvbgesidbxh.supabase.co</li>
+                                    <li>SUPABASE_ANON_KEY=your-anon-key</li>
+                                    <li>SUPABASE_SERVICE_ROLE_KEY=your-service-role-key</li>
+                                </ul>
+                                <li>Redeploy the function</li>
+                            </ol>
+                        </div>
+                    `;
+                }
+                
+            } catch (error) {
+                resultsDiv.innerHTML = `
+                    <h3>Error:</h3>
+                    <p style="color: red;">${error.message}</p>
+                `;
+            }
+        }
+        
+        // Run test when page loads
+        testCalendarFeed();
+    </script>
+</body>
+</html>
