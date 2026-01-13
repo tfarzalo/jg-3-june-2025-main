@@ -198,12 +198,12 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
       formData.accent_wall_count !== undefined && 
       formData.accent_wall_count >= 0
     )) &&
-    // Extra Charges requirements
+    // Extra Charges requirements - hours must be greater than 0 when checkbox is checked
     (!formData.has_extra_charges || (
       formData.extra_charges_description && 
       formData.extra_charges_description.trim() !== '' && 
       formData.extra_hours !== undefined && 
-      formData.extra_hours >= 0
+      formData.extra_hours > 0
     ))
   );
 
@@ -1058,7 +1058,8 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                     type="number"
                     id="extra_hours"
                     name="extra_hours"
-                    min="0"
+                    min="0.25"
+                    step="0.25"
                     required={formData.has_extra_charges}
                     value={formData.extra_hours}
                     onChange={handleInputChange}
@@ -1068,6 +1069,9 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                         : 'border-gray-300 dark:border-[#2D3B4E]'
                     }`}
                   />
+                  {formData.has_extra_charges && formData.extra_hours !== undefined && formData.extra_hours <= 0 && (
+                    <p className="mt-1 text-sm text-red-500">Las horas adicionales deben ser mayores a 0</p>
+                  )}
                 </div>
               </div>
             )}

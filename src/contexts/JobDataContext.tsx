@@ -349,7 +349,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
   // Preload common phases for faster navigation
   const preloadCommonPhases = useCallback(async () => {
     console.log('JobDataProvider: Preloading common phases...');
-    const commonPhases = ['Job Request', 'Work Order', 'Pending Work Order', 'Invoicing', 'Completed'];
+    const commonPhases = ['Job Request', 'Pending Work Order', 'Work Order', 'Completed', 'Invoicing'];
     
     // Debug each phase individually
     for (const phase of commonPhases) {
@@ -538,7 +538,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
       }, async (payload) => {
         console.log('JobDataProvider: Profile updated:', payload.new);
         // Refetch all jobs to update assigned_to names
-        const commonPhases = ['Job Request', 'Work Order', 'Pending Work Order', 'Invoicing', 'Completed'];
+        const commonPhases = ['Job Request', 'Pending Work Order', 'Work Order', 'Completed', 'Invoicing'];
         for (const phase of commonPhases) {
           fetchJobs(phase, true);
         }
@@ -556,7 +556,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
             newAssignedTo: payload.new?.assigned_to
           });
           // Refetch jobs for all phases to update assignment display
-          const commonPhases = ['Job Request', 'Work Order', 'Pending Work Order', 'Invoicing', 'Completed'];
+          const commonPhases = ['Job Request', 'Pending Work Order', 'Work Order', 'Completed', 'Invoicing'];
           for (const phase of commonPhases) {
             fetchJobs(phase, true);
           }

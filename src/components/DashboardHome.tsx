@@ -535,7 +535,14 @@ export function DashboardHome() {
     {
       icon: ClipboardList,
       label: 'All Jobs',
-      value: jobs.length.toString(),
+      value: jobs.filter(job => 
+        job.job_phase?.job_phase_label === 'Job Request' ||
+        job.job_phase?.job_phase_label === 'Pending Work Order' ||
+        job.job_phase?.job_phase_label === 'Work Order' ||
+        job.job_phase?.job_phase_label === 'Completed' ||
+        job.job_phase?.job_phase_label === 'Invoicing' ||
+        job.job_phase?.job_phase_label === 'Cancelled'
+      ).length.toString(),
       trend: { value: 4, isPositive: true },
       color: 'purple',
       notation: 'All Phases'

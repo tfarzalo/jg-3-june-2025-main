@@ -524,7 +524,7 @@ export function PropertyDetails() {
 
           if (!propertyJobsError && propertyJobsData) {
             // Filter jobs to only show those in the specific phases we want
-            const allowedPhases = ['Job Request', 'Work Order', 'Pending Work Order', 'Invoicing', 'Completed', 'Cancelled'];
+            const allowedPhases = ['Job Request', 'Pending Work Order', 'Work Order', 'Completed', 'Invoicing', 'Cancelled'];
             
             // First, get the phase IDs for the allowed phases
             const { data: phaseData, error: phaseError } = await supabase

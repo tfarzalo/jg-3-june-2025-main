@@ -1198,6 +1198,55 @@ export function JobDetails() {
     doc.save(`work-order-${job?.work_order_num ?? 0}.pdf`);
   };
 
+  // Handle marking notification as sent (for non-approval scenarios)
+  // This advances the job from Pending Work Order to Work Order
+  const handleMarkNotificationSent = async () => {
+    if (!job) return;
+    
+    try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!userData.user) throw new Error('User not found');
+
+      // Get the Work Order phase ID
+      const { data: phaseData, error: phaseError } = await supabase
+        .from('job_phases')
+        .select('id')
+        .eq('job_phase_label', 'Work Order')
+        .single();
+        
+      if (phaseError) throw phaseError;
+      if (!phaseData) throw new Error('Work Order phase not found');
+
+      // Update the job phase
+      const { error: updateError } = await supabase
+        .from('jobs')
+        .update({ current_phase_id: phaseData.id })
+        .eq('id', job.id);
+
+      if (updateError) throw updateError;
+
+      // Log the phase change
+      const { error: phaseChangeError } = await supabase
+        .from('job_phase_changes')
+        .insert({
+          job_id: job.id,
+          changed_by: userData.user.id,
+          from_phase_id: job?.job_phase?.id,
+          to_phase_id: phaseData.id,
+          change_reason: 'Notification manually marked as sent - job advanced to Work Order'
+        });
+
+      if (phaseChangeError) console.error('Error logging phase change:', phaseChangeError);
+
+      // Refresh the job data
+      await refetchJob();
+      toast.success('Job advanced to Work Order phase');
+    } catch (error) {
+      console.error('Error marking notification as sent:', error);
+      toast.error('Failed to advance job. Please try again.');
+    }
+  };
 
   const handleApproveExtraCharges = async () => {
     if (!job) return;
@@ -1765,11 +1814,12 @@ export function JobDetails() {
   );
   
 
-  // Filter out 'Pending Work Order' and 'Cancelled' from the phases array used for navigation
-  // Completed is treated as the final phase
+  // Filter out 'Pending Work Order', 'Cancelled', and 'Archived' from the phases array used for navigation
+  // Users cannot advance to Archived phase from job details - Invoicing is the final navigable phase
   const navPhases = phases ? phases.filter(p => 
     p.job_phase_label !== 'Pending Work Order' && 
-    p.job_phase_label !== 'Cancelled'
+    p.job_phase_label !== 'Cancelled' &&
+    p.job_phase_label !== 'Archived'
   ) : [];
   const phaseId = job?.job_phase?.id ?? null;
   const navPhasesSafe = Array.isArray(navPhases) ? navPhases : [];
@@ -2298,6 +2348,16 @@ export function JobDetails() {
                           >
                             <CheckCircle className="h-4 w-4 mr-2" />
                             Approve Manually
+                          </button>
+                        )}
+                        {(!needsExtraChargesApproval && (isAdmin || isJGManagement)) && (
+                          <button
+                            onClick={handleMarkNotificationSent}
+                            className="inline-flex items-center px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
+                            title="Mark notification as sent and advance job to Work Order"
+                          >
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            Mark as Sent
                           </button>
                         )}
                       </div>

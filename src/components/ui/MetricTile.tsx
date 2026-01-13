@@ -86,7 +86,7 @@ export function MetricTile({ icon: Icon, label, value, trend, color = 'blue', no
       {/* Bottom section with label and trend */}
       <div className="space-y-2">
         {notation && <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-800 dark:text-gray-200">{notation}</p>}
-        <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">{label}</p>
+        <p className="text-gray-600 dark:text-gray-400 text-sm font-bold">{label}</p>
         
         {/* Trend indicator with mini chart */}
         <div className="flex items-center space-x-2">

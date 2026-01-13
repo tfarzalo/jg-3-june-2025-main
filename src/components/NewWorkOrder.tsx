@@ -2110,12 +2110,12 @@ const NewWorkOrder = () => {
       formData.accent_wall_count !== undefined && 
       formData.accent_wall_count > 0
     )) &&
-    // Extra Charges requirements
+    // Extra Charges requirements - hours must be greater than 0 when checkbox is checked
     (!formData.has_extra_charges || (
       formData.extra_charges_description && 
       formData.extra_charges_description.trim() !== '' && 
       formData.extra_hours !== undefined && 
-      formData.extra_hours >= 0
+      formData.extra_hours > 0
     ))
   );
 
@@ -2977,12 +2977,16 @@ const NewWorkOrder = () => {
                         type="number"
                         id="extra_hours"
                         name="extra_hours"
-                        min="0"
+                        min="0.25"
+                        step="0.25"
                         required={formData.has_extra_charges}
                         value={formData.extra_hours}
                         onChange={handleInputChange}
                         className="w-full h-12 sm:h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
                       />
+                      {formData.has_extra_charges && formData.extra_hours !== undefined && formData.extra_hours <= 0 && (
+                        <p className="mt-1 text-sm text-red-500">Extra hours must be greater than 0</p>
+                      )}
                     </div>
                   </div>
                 )}

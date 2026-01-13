@@ -954,29 +954,63 @@ export function EnhancedPropertyNotificationModal({
 
       if (error) throw error;
 
-      // If the job is in "Pending Work Order" phase and sending extra charges email, log this activity
-      if (job?.job_phase?.label === 'Pending Work Order' && notificationType === 'extra_charges') {
+      // If the job is in "Pending Work Order" phase, handle based on notification type
+      if (job?.job_phase?.label === 'Pending Work Order') {
         const { data: sessionData } = await supabase.auth.getSession();
         const currentUserId = sessionData?.session?.user?.id;
 
         if (currentUserId) {
-          // Get the current phase ID
-          const { data: phaseData } = await supabase
-            .from('job_phases')
-            .select('id')
-            .eq('job_phase_label', 'Pending Work Order')
-            .single();
+          if (notificationType === 'extra_charges') {
+            // For extra charges, just log activity (approval is still needed)
+            const { data: phaseData } = await supabase
+              .from('job_phases')
+              .select('id')
+              .eq('job_phase_label', 'Pending Work Order')
+              .single();
 
-          if (phaseData) {
-            // Log activity as a phase change (to same phase) to track the approval email
-            await supabase.from('job_phase_changes').insert({
-              job_id: job.id,
-              from_phase_id: phaseData.id,
-              to_phase_id: phaseData.id,
-              changed_by: currentUserId,
-              changed_at: new Date().toISOString(),
-              notes: `Extra charges approval email sent to ${recipientEmail}`
-            });
+            if (phaseData) {
+              // Log activity as a phase change (to same phase) to track the approval email
+              await supabase.from('job_phase_changes').insert({
+                job_id: job.id,
+                from_phase_id: phaseData.id,
+                to_phase_id: phaseData.id,
+                changed_by: currentUserId,
+                changed_at: new Date().toISOString(),
+                notes: `Extra charges approval email sent to ${recipientEmail}`
+              });
+            }
+          } else {
+            // For notification-only emails (sprinkler_paint, drywall_repairs), 
+            // auto-advance from Pending Work Order to Work Order
+            const { data: pendingPhaseData } = await supabase
+              .from('job_phases')
+              .select('id')
+              .eq('job_phase_label', 'Pending Work Order')
+              .single();
+
+            const { data: workOrderPhaseData } = await supabase
+              .from('job_phases')
+              .select('id')
+              .eq('job_phase_label', 'Work Order')
+              .single();
+
+            if (pendingPhaseData && workOrderPhaseData) {
+              // Update the job phase to Work Order
+              await supabase
+                .from('jobs')
+                .update({ current_phase_id: workOrderPhaseData.id })
+                .eq('id', job.id);
+
+              // Log the phase change
+              await supabase.from('job_phase_changes').insert({
+                job_id: job.id,
+                from_phase_id: pendingPhaseData.id,
+                to_phase_id: workOrderPhaseData.id,
+                changed_by: currentUserId,
+                changed_at: new Date().toISOString(),
+                notes: `Notification email (${notificationType === 'sprinkler_paint' ? 'Sprinkler Paint' : 'Drywall Repairs'}) sent to ${recipientEmail} - Job auto-advanced to Work Order`
+              });
+            }
           }
         }
       }

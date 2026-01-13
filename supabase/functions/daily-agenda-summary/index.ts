@@ -10,14 +10,16 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 // Function to get the next Monday-Friday date
 function getNextWorkday(): Date {
   const now = new Date();
-  
-  // Format in Eastern Time to get correctly day-of-week logic
-  // Create a date that represents "Tomorrow ET"
-  const etNowStr = now.toLocaleDateString("en-US", { timeZone: "America/New_York" });
-  const etNow = new Date(etNowStr); 
-  
-  const tomorrow = new Date(etNow);
+  const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
+  
+  // Set to 12:01 AM Eastern Time
+  tomorrow.setHours(12, 1, 0, 0);
+  
+  // If it's already past 12:01 AM, move to next day
+  if (now.getHours() >= 12 && now.getMinutes() >= 1) {
+    tomorrow.setDate(tomorrow.getDate() + 1);
+  }
   
   // Find next Monday-Friday
   while (tomorrow.getDay() === 0 || tomorrow.getDay() === 6) {
@@ -29,24 +31,18 @@ function getNextWorkday(): Date {
 
 // Function to get job counts for a specific date
 async function getJobCountsForDate(date: Date): Promise<{ paint: number; callback: number; repair: number }> {
-    // We are receiving a Javascript Date object that represents midnight local time (or UTC) of the target day.
-    // However, scheduled_date in DB is YYYY-MM-DD.
-    // If we convert this JS date to ISO string it becomes YYYY-MM-DDT...Z
-    // If we use string comparison it is safer.
-    
-    // Format date to YYYY-MM-DD string
-    const dateStr = date.toISOString().split('T')[0];
-    // NOTE: If 'date' is constructed in local time but equals UTC midnight, .toISOString() might shift it if not careful.
-    // Assuming 'date' passed in is correct UTC midnight for the day.
-    
-    // Actually, ensure we search for string match on scheduled_date (TEXT or DATE column)
-    // rather than timestamp comparison which causes TZ issues.
+  const startOfDay = new Date(date);
+  startOfDay.setHours(0, 0, 0, 0);
+  
+  const endOfDay = new Date(date);
+  endOfDay.setHours(23, 59, 59, 999);
   
   // Get jobs for the date
   const { data: jobs, error } = await supabase
     .from('jobs')
     .select('job_type:job_types(job_type_label)')
-    .eq('scheduled_date', dateStr) // Use exact string match YYYY-MM-DD
+    .gte('scheduled_date', startOfDay.toISOString())
+    .lte('scheduled_date', endOfDay.toISOString())
     .not('status', 'eq', 'Cancelled');
   
   if (error) {
@@ -76,9 +72,11 @@ async function getJobCountsForDate(date: Date): Promise<{ paint: number; callbac
 
 // Function to create agenda summary event
 async function createAgendaSummaryEvent(date: Date, counts: { paint: number; callback: number; repair: number }) {
-  const dateStr = date.toISOString().split('T')[0];
-  const startTimeStr = `${dateStr}T00:00:00`;
-  const endTimeStr = `${dateStr}T23:59:59`;
+  const startTime = new Date(date);
+  startTime.setHours(0, 0, 0, 0);
+  
+  const endTime = new Date(date);
+  endTime.setHours(23, 59, 59, 999);
   
   const totalJobs = counts.paint + counts.callback + counts.repair;
   const title = `${counts.paint} Paint | ${counts.callback} Callback | ${counts.repair} Repair | Total: ${totalJobs}`;
@@ -92,8 +90,8 @@ async function createAgendaSummaryEvent(date: Date, counts: { paint: number; cal
       details,
       color: '#3b82f6', // Blue color for paint jobs (primary)
       is_all_day: true,
-      start_at: startTimeStr,
-      end_at: endTimeStr,
+      start_at: startTime.toISOString(),
+      end_at: endTime.toISOString(),
       created_by: '00000000-0000-0000-0000-000000000000' // System user ID (admin role)
     })
     .select()
