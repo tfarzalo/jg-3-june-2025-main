@@ -614,5 +614,134 @@ Deno.serve(async (req) => {
           status
         `)
         .eq("assigned_to", targetId)
-        .not("scheduled_date", "is", null);
-      if
+        .not("scheduled_date", "is", null)
+        .in("status", OPEN_STATES as any);
+      if (jErr) throw jErr;
+
+      if (jobs && jobs.length > 0) {
+        // Get property IDs and assigned user IDs
+        const propertyIds = [...new Set(jobs.map(j => j.property_id).filter(Boolean))];
+        const assignedUserIds = [...new Set(jobs.map(j => j.assigned_to).filter(Boolean))];
+
+        // Batch fetch properties
+        const { data: properties } = propertyIds.length > 0 ? await supabase
+          .from("properties")
+          .select(`
+            id, 
+            property_name, 
+            name, 
+            address, 
+            address_1, 
+            address_2, 
+            city, 
+            state, 
+            postal_code, 
+            zip
+          `)
+          .in("id", propertyIds) : { data: [] };
+
+        // Batch fetch profiles for assigned users
+        const { data: profiles } = assignedUserIds.length > 0 ? await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", assignedUserIds) : { data: [] };
+
+        const propertyMap = new Map(properties?.map(p => [p.id, p]) || []);
+        const profileMap = new Map(profiles?.map(p => [p.id, p.full_name]) || []);
+
+        for (const j of jobs) {
+          try {
+            const property = propertyMap.get(j.property_id);
+            const assigneeName = profileMap.get(j.assigned_to);
+            
+            if (!property) {
+              console.log(`Skipping subcontractor job ${j.id}: no property found`);
+              continue;
+            }
+            
+            if (!j.scheduled_date) {
+              console.log(`Skipping subcontractor job ${j.id}: no scheduled_date`);
+              continue;
+            }
+
+            // Create all-day event
+            const [y, m, d] = j.scheduled_date.split('-').map(Number);
+            const start = new Date(Date.UTC(y, m-1, d, 5, 1, 0)); // 05:01 UTC = 00:01 EST
+            const end = new Date(Date.UTC(y, m-1, d, 23, 59, 0)); // 23:59 UTC = 18:59 EST
+            
+            const title = jobSummary(j, property, assigneeName);
+            const description = jobDescription(j, property, assigneeName);
+            const location = formatAddress(property);
+            const url = `https://portal.jgpaintingpros.com/jobs/${j.id}`;
+
+            items.push({
+              uid: `sub-job-${j.id}@app`,
+              title,
+              description,
+              start: start,
+              end: end,
+              location,
+              url,
+              categories: "Subcontractor Job",
+            });
+          } catch (jobErr) {
+            console.error(`Error processing subcontractor job ${j.id}:`, jobErr);
+            // Continue with next job
+          }
+        }
+      }
+    }
+    // Generate iCal format
+    const now = new Date();
+    const lines = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Paint Manager Pro//Calendar Feed//EN",
+      "CALSCALE:GREGORIAN",
+      "METHOD:PUBLISH",
+      "X-WR-CALNAME:Paint Manager Pro",
+      "X-WR-TIMEZONE:America/New_York",
+    ];
+
+    for (const item of items) {
+      lines.push("BEGIN:VEVENT");
+      lines.push(`UID:${item.uid}`);
+      lines.push(`DTSTAMP:${fmt(now)}`);
+      lines.push(`DTSTART:${fmt(item.start)}`);
+      lines.push(`DTEND:${fmt(item.end)}`);
+      lines.push(`SUMMARY:${esc(item.title)}`);
+      if (item.description) {
+        lines.push(`DESCRIPTION:${esc(item.description)}`);
+      }
+      if (item.location) {
+        lines.push(`LOCATION:${esc(item.location)}`);
+      }
+      if (item.url) {
+        lines.push(`URL:${item.url}`);
+      }
+      if (item.categories) {
+        lines.push(`CATEGORIES:${item.categories}`);
+      }
+      lines.push("END:VEVENT");
+    }
+
+    lines.push("END:VCALENDAR");
+
+    const icsData = lines.join("\r\n");
+
+    return new Response(icsData, {
+      status: 200,
+      headers: {
+        ...commonHeaders,
+        "Content-Type": "text/calendar; charset=utf-8",
+        "Content-Disposition": 'inline; filename="calendar.ics"',
+      },
+    });
+  } catch (err) {
+    console.error("Calendar feed error:", err);
+    return new Response(`Internal error: ${err instanceof Error ? err.message : String(err)}`, {
+      status: 500,
+      headers: commonHeaders,
+    });
+  }
+});
