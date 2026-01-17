@@ -351,14 +351,28 @@ export function Calendar() {
       let phaseIds: string[] = [];
       
       if (selectedPhases.length > 0) {
-        // Filter by selected phases
-        const { data: phaseData, error: phaseError } = await supabase
-          .from('job_phases')
-          .select('id')
-          .in('job_phase_label', selectedPhases);
+        // Filter out 'Events' as it's a virtual phase, not a real job_phase
+        const jobPhases = selectedPhases.filter(phase => phase !== 'Events');
+        
+        if (jobPhases.length > 0) {
+          // Filter by selected phases
+          const { data: phaseData, error: phaseError } = await supabase
+            .from('job_phases')
+            .select('id')
+            .in('job_phase_label', jobPhases);
 
-        if (phaseError) throw phaseError;
-        phaseIds = phaseData.map(p => p.id);
+          if (phaseError) throw phaseError;
+          phaseIds = phaseData.map(p => p.id);
+        } else {
+          // If only Events is selected, use default phases for agenda
+          const { data: phaseData, error: phaseError } = await supabase
+            .from('job_phases')
+            .select('id')
+            .in('job_phase_label', ['Job Request', 'Work Order', 'Pending Work Order']);
+
+          if (phaseError) throw phaseError;
+          phaseIds = phaseData.map(p => p.id);
+        }
       } else {
         // Default phases if none selected - only Job Request, Work Order, and Pending Work Order
         const { data: phaseData, error: phaseError } = await supabase
@@ -548,14 +562,19 @@ export function Calendar() {
       let phaseIds: string[] = [];
       
       if (selectedPhases.length > 0) {
-        // Filter by selected phases
-        const { data: phaseData, error: phaseError } = await supabase
-          .from('job_phases')
-          .select('id')
-          .in('job_phase_label', selectedPhases);
+        // Filter out 'Events' as it's a virtual phase, not a real job_phase
+        const jobPhases = selectedPhases.filter(phase => phase !== 'Events');
+        
+        if (jobPhases.length > 0) {
+          // Filter by selected phases
+          const { data: phaseData, error: phaseError } = await supabase
+            .from('job_phases')
+            .select('id')
+            .in('job_phase_label', jobPhases);
 
-        if (phaseError) throw phaseError;
-        phaseIds = phaseData.map(p => p.id);
+          if (phaseError) throw phaseError;
+          phaseIds = phaseData.map(p => p.id);
+        }
       } else {
         // Default phases if none selected - Job Request, Work Order, Pending Work Order, and Events
         const { data: phaseData, error: phaseError } = await supabase
@@ -585,34 +604,42 @@ export function Calendar() {
       const start = formatInTimeZone(monthStart, 'America/New_York', 'yyyy-MM-dd');
       const end = formatInTimeZone(monthEnd, 'America/New_York', 'yyyy-MM-dd');
 
-      // Fetch filtered jobs for display
-      const { data: filteredJobs, error: filteredError } = await supabase
-        .from('jobs')
-        .select(`
-          id,
-          work_order_num,
-          property:properties (
+      // Fetch filtered jobs for display (only if we have phases to filter by)
+      let filteredJobs = null;
+      let filteredError = null;
+      
+      if (phaseIds.length > 0) {
+        const result = await supabase
+          .from('jobs')
+          .select(`
             id,
-            property_name
-          ),
-          unit_number,
-          description,
-          scheduled_date,
-          job_phase:current_phase_id (
-            job_phase_label,
-            color_dark_mode
-          ),
-          job_type:job_types (
-            job_type_label
-          ),
-          assigned_to,
-          profiles:assigned_to (
-            full_name
-          )
-        `)
-        .in('current_phase_id', phaseIds)
-        .gte('scheduled_date', start)
-        .lte('scheduled_date', end);
+            work_order_num,
+            property:properties (
+              id,
+              property_name
+            ),
+            unit_number,
+            description,
+            scheduled_date,
+            job_phase:current_phase_id (
+              job_phase_label,
+              color_dark_mode
+            ),
+            job_type:job_types (
+              job_type_label
+            ),
+            assigned_to,
+            profiles:assigned_to (
+              full_name
+            )
+          `)
+          .in('current_phase_id', phaseIds)
+          .gte('scheduled_date', start)
+          .lte('scheduled_date', end);
+        
+        filteredJobs = result.data;
+        filteredError = result.error;
+      }
 
       // Fetch ALL jobs for agenda totals (excluding only Cancelled and Archived)
       const { data: allJobs, error: allJobsError } = await supabase
