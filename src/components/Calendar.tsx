@@ -814,20 +814,20 @@ export function Calendar() {
   }
 
   return (
-    <div className="p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
-      <div className="flex items-center justify-between mb-8">
+    <div className="p-3 lg:p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-6 lg:mb-8 space-y-4 lg:space-y-0">
         <div className="flex items-center space-x-3">
-          <CalendarIcon className="h-8 w-8 text-gray-500 dark:text-gray-400" />
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Calendar</h1>
+          <CalendarIcon className="h-6 w-6 lg:h-8 lg:w-8 text-gray-500 dark:text-gray-400" />
+          <h1 className="text-xl lg:text-2xl font-semibold text-gray-900 dark:text-white">Calendar</h1>
         </div>
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center justify-between lg:justify-center space-x-2 lg:space-x-4">
           <button
             onClick={() => setCurrentDate(subMonths(currentDate, 1))}
             className="p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
-          <h2 className="text-xl font-medium text-gray-900 dark:text-white">
+          <h2 className="text-base lg:text-xl font-medium text-gray-900 dark:text-white">
             {format(currentDate, 'MMMM yyyy')}
           </h2>
           <button
@@ -855,15 +855,16 @@ export function Calendar() {
       </div>
 
       {/* Phase Filter */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-4">
+      <div className="mb-4 lg:mb-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-4 space-y-2 lg:space-y-0">
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setShowPhaseFilter(!showPhaseFilter)}
-              className="flex items-center px-3 py-2 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors"
+              className="flex items-center px-3 py-2 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors text-sm"
             >
               <Filter className="h-4 w-4 mr-2" />
-              Filter by Phase & Events
+              <span className="hidden sm:inline">Filter by Phase & Events</span>
+              <span className="sm:hidden">Filter</span>
             </button>
             
             <button
@@ -879,15 +880,15 @@ export function Calendar() {
                 onClick={clearPhaseFilters}
                 className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
               >
-                Clear Filters
+                Clear
               </button>
             )}
           </div>
           
-          <div className="text-sm text-gray-600 dark:text-gray-400">
+          <div className="text-xs lg:text-sm text-gray-600 dark:text-gray-400">
             {selectedPhases.length > 0 
-              ? `Showing ${selectedPhases.length} filter${selectedPhases.length !== 1 ? 's' : ''}` 
-              : 'Showing Job Request, Work Order, and Pending Work Order'}
+              ? `${selectedPhases.length} filter${selectedPhases.length !== 1 ? 's' : ''}` 
+              : 'Showing default'}
           </div>
         </div>
         
@@ -956,16 +957,20 @@ export function Calendar() {
         </div>
       )}
 
-      {/* Two-column layout: Calendar on left, Day agenda on right */}
-      <div className="flex gap-6">
+      {/* Two-column layout on desktop, single column on mobile */}
+      <div className="flex flex-col lg:flex-row gap-6">
         {/* Calendar Column */}
-        <div className="flex-1">
+        <div className="flex-1 lg:flex-[2]">
           <div className="bg-white dark:bg-[#1E293B] rounded-lg overflow-hidden shadow">
             {/* Day headers */}
             <div className="grid grid-cols-7 gap-px bg-gray-200 dark:bg-[#2D3B4E]">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                <div key={day} className="bg-white dark:bg-[#1E293B] px-4 py-3 text-center">
-                  <span className="text-sm font-medium text-gray-500 dark:text-gray-400">{day}</span>
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, idx) => (
+                <div key={day} className="bg-white dark:bg-[#1E293B] px-1 lg:px-4 py-2 lg:py-3 text-center">
+                  <span className="text-xs lg:text-sm font-medium text-gray-500 dark:text-gray-400">
+                    {/* Show full day name on desktop, abbreviation on mobile */}
+                    <span className="hidden sm:inline">{day}</span>
+                    <span className="sm:hidden">{day.charAt(0)}</span>
+                  </span>
                 </div>
               ))}
             </div>
@@ -982,8 +987,14 @@ export function Calendar() {
                 return (
                   <div
                     key={i}
-                    onClick={() => setSelectedDate(date)}
-                    className={`cursor-pointer min-h-[120px] p-2 transition-colors ${
+                    onClick={() => {
+                      setSelectedDate(date);
+                      // On mobile, clicking a date should open the day popup
+                      if (window.innerWidth < 1024) { // lg breakpoint
+                        setShowDayPopup(true);
+                      }
+                    }}
+                    className={`cursor-pointer min-h-[80px] lg:min-h-[120px] p-1 lg:p-2 transition-colors ${
                       !isCurrentMonth 
                         ? 'opacity-50 bg-white dark:bg-[#1E293B]' 
                         : isTodays 
@@ -994,7 +1005,7 @@ export function Calendar() {
                     }`}
                   >
                                         <div className="flex items-center justify-between mb-1">
-                      <span className={`text-sm font-medium ${
+                      <span className={`text-xs lg:text-sm font-medium ${
                         isTodays 
                           ? 'text-blue-600 dark:text-blue-400' 
                           : isSelected
@@ -1004,91 +1015,119 @@ export function Calendar() {
                         {format(date, 'd')}
                       </span>
                       
-                      {/* Daily Agenda Summary Numbers - Only show if there are jobs scheduled */}
-                      {dayJobs.length > 0 && (() => {
-                        const totals = getJobTypeTotalsForDate(date);
-                        if (totals.total > 0) {
-                          return (
-                            <div 
-                              className="text-xs font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 px-1 py-0.5 rounded transition-colors"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedDate(date);
-                                setShowDayPopup(true);
-                              }}
-                            >
-                              <span className="text-blue-600 dark:text-blue-400">{totals.paint}</span>
-                              <span className="text-orange-500 dark:text-orange-400"> {totals.callback}</span>
-                              <span className="text-red-500 dark:text-red-400"> {totals.repair}</span>
-                              <span className="text-purple-700 dark:text-purple-400"> | {totals.total}</span>
-                            </div>
-                          );
-                        }
-                        return null;
-                      })()}
+                      {/* Daily Agenda Summary Numbers - Only show on desktop if there are jobs scheduled */}
+                      <div className="hidden lg:block">
+                        {dayJobs.length > 0 && (() => {
+                          const totals = getJobTypeTotalsForDate(date);
+                          if (totals.total > 0) {
+                            return (
+                              <div 
+                                className="text-xs font-medium cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 px-1 py-0.5 rounded transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedDate(date);
+                                  setShowDayPopup(true);
+                                }}
+                              >
+                                <span className="text-blue-600 dark:text-blue-400">{totals.paint}</span>
+                                <span className="text-orange-500 dark:text-orange-400"> {totals.callback}</span>
+                                <span className="text-red-500 dark:text-red-400"> {totals.repair}</span>
+                                <span className="text-purple-700 dark:text-purple-400"> | {totals.total}</span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                     </div>
                                           <div className="space-y-1 overflow-y-auto max-h-[80px]">
-                        {/* Render events first if Event Filter is visible */}
-                        {selectedPhases.includes('Events') && dayEvents.slice(0, 4).map(event => (
+                        {/* Desktop view: Show full event/job cards */}
+                        <div className="hidden lg:block space-y-1">
+                          {/* Render events first if Event Filter is visible */}
+                          {selectedPhases.includes('Events') && dayEvents.slice(0, 4).map(event => (
+                            <button
+                              key={`event-${event.id}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEventClick(event);
+                              }}
+                              className="w-full text-left p-1 rounded text-xs hover:bg-gray-100 dark:hover:bg-[#2D3B4E] transition-colors"
+                              style={{ backgroundColor: `${event.color}20` }}
+                            >
+                              <div className="font-medium text-gray-900 dark:text-white truncate flex items-center">
+                                <span 
+                                  className="w-2 h-2 rounded-full mr-1 flex-shrink-0"
+                                  style={{ backgroundColor: event.color }}
+                                ></span>
+                                <span className="truncate">{event.title}</span>
+                              </div>
+                              <div className="text-gray-600 dark:text-gray-400 truncate text-xs">
+                                Event
+                              </div>
+                            </button>
+                          ))}
+                          
+                          {/* Render jobs */}
+                          {dayJobs.slice(0, selectedPhases.includes('Events') ? 4 : 8).map(job => (
                           <button
-                            key={`event-${event.id}`}
+                            key={job.id}
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleEventClick(event);
+                              setSelectedJob(job);
                             }}
                             className="w-full text-left p-1 rounded text-xs hover:bg-gray-100 dark:hover:bg-[#2D3B4E] transition-colors"
-                            style={{ backgroundColor: `${event.color}20` }}
+                            style={{ backgroundColor: `${job.job_phase.color_dark_mode}20` }}
                           >
                             <div className="font-medium text-gray-900 dark:text-white truncate flex items-center">
                               <span 
                                 className="w-2 h-2 rounded-full mr-1 flex-shrink-0"
-                                style={{ backgroundColor: event.color }}
+                                style={{ backgroundColor: job.job_phase.color_dark_mode }}
                               ></span>
-                              <span className="truncate">{event.title}</span>
+                              <WorkOrderLink 
+                                jobId={job.id}
+                                workOrderNum={job.work_order_num}
+                              />
                             </div>
-                            <div className="text-gray-600 dark:text-gray-400 truncate text-xs">
-                              Event
+                            <div className="text-gray-600 dark:text-gray-400 truncate">
+                              <PropertyLink 
+                                propertyId={job.property.id}
+                                propertyName={job.property.property_name}
+                              />
                             </div>
                           </button>
                         ))}
                         
-                        {/* Render jobs */}
-                        {dayJobs.slice(0, selectedPhases.includes('Events') ? 4 : 8).map(job => (
-                        <button
-                          key={job.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedJob(job);
-                          }}
-                          className="w-full text-left p-1 rounded text-xs hover:bg-gray-100 dark:hover:bg-[#2D3B4E] transition-colors"
-                          style={{ backgroundColor: `${job.job_phase.color_dark_mode}20` }}
-                        >
-                          <div className="font-medium text-gray-900 dark:text-white truncate flex items-center">
-                            <span 
-                              className="w-2 h-2 rounded-full mr-1 flex-shrink-0"
-                              style={{ backgroundColor: job.job_phase.color_dark_mode }}
-                            ></span>
-                            <WorkOrderLink 
-                              jobId={job.id}
-                              workOrderNum={job.work_order_num}
-                            />
+                        {/* Show remaining count */}
+                        {(dayJobs.length + dayEvents.length) > 8 && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                            +{(dayJobs.length + dayEvents.length) - 8} more
                           </div>
-                          <div className="text-gray-600 dark:text-gray-400 truncate">
-                            <PropertyLink 
-                              propertyId={job.property.id}
-                              propertyName={job.property.property_name}
-                            />
-                          </div>
-                        </button>
-                      ))}
-                      
-                      {/* Show remaining count */}
-                      {(dayJobs.length + dayEvents.length) > 8 && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
-                          +{(dayJobs.length + dayEvents.length) - 8} more
+                        )}
                         </div>
-                      )}
-                    </div>
+                        
+                        {/* Mobile view: Show colored dots */}
+                        <div className="lg:hidden flex flex-wrap gap-1 mt-1">
+                          {/* Show dots for events */}
+                          {selectedPhases.includes('Events') && dayEvents.map((event, idx) => (
+                            <div
+                              key={`dot-event-${event.id}-${idx}`}
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: event.color }}
+                              title={event.title}
+                            />
+                          ))}
+                          
+                          {/* Show dots for jobs */}
+                          {dayJobs.map((job, idx) => (
+                            <div
+                              key={`dot-job-${job.id}-${idx}`}
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: job.job_phase.color_dark_mode }}
+                              title={`WO-${job.work_order_num}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
                   </div>
                 );
               })}
@@ -1096,8 +1135,8 @@ export function Calendar() {
           </div>
         </div>
 
-        {/* Day Agenda Column */}
-        <div className="w-80">
+        {/* Day Agenda Column - Hidden on mobile, shown on desktop */}
+        <div className="hidden lg:block lg:w-80">
           <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow h-fit">
             <div className="p-4 border-b border-gray-200 dark:border-[#2D3B4E]">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
@@ -1262,10 +1301,10 @@ export function Calendar() {
         </div>
       </div>
 
-      {/* Job Details Modal */}
+      {/* Job Details Modal - Mobile friendly */}
       {selectedJob && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-lg w-full shadow-xl">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 lg:p-4 z-50">
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 lg:p-6 max-w-lg w-full shadow-xl">
             <div className="flex justify-between items-start mb-4">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -1364,17 +1403,17 @@ export function Calendar() {
         />
       )}
 
-      {/* Day Popup Modal */}
+      {/* Day Popup Modal - Mobile friendly */}
       {showDayPopup && selectedDate && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-4xl w-full shadow-xl max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-2 lg:p-4 z-50">
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 lg:p-6 max-w-4xl w-full shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-start mb-4">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+              <h2 className="text-lg lg:text-xl font-semibold text-gray-900 dark:text-white">
                 {isToday(selectedDate) ? "Today's Agenda" : format(selectedDate, 'EEEE, MMMM d, yyyy')}
               </h2>
               <button
                 onClick={() => setShowDayPopup(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xl"
               >
                 ✕
               </button>
