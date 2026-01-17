@@ -481,9 +481,11 @@ export function Calendar() {
 
       // Clean up agenda summary events for dates that no longer have jobs
       // Get all existing agenda summary events for the current month
-      // Convert YYYY-MM-DD dates to timestamps for calendar_events query
-      const startTimestamp = `${start}T00:00:00`;
-      const endTimestamp = `${end}T23:59:59`;
+      // Convert YYYY-MM-DD dates to ISO timestamps for calendar_events query
+      const startDate = new Date(`${start}T00:00:00`);
+      const endDate = new Date(`${end}T23:59:59`);
+      const startTimestamp = formatInTimeZone(startDate, 'America/New_York', "yyyy-MM-dd'T'HH:mm:ssXXX");
+      const endTimestamp = formatInTimeZone(endDate, 'America/New_York', "yyyy-MM-dd'T'HH:mm:ssXXX");
       
       const { data: existingAgendaEvents, error: cleanupError } = await supabase
         .from('calendar_events')
