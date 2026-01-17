@@ -24,7 +24,7 @@ import {
   startOfWeek,
   addDays
 } from 'date-fns';
-import { formatInTimeZone, utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
+import { formatInTimeZone } from 'date-fns-tz';
 import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
 import { SubcontractorLink } from './shared/SubcontractorLink';
@@ -36,7 +36,6 @@ import SubscribeCalendarsModal from './calendar/SubscribeCalendarsModal';
 import { listCalendarEvents } from '../services/calendarEvents';
 import type { CalendarEvent } from '../types/calendar';
 import { useUserRole } from '../contexts/UserRoleContext';
-import { getRecurringEventsForDay } from '../utils/recurringEvents';
 
 interface Job {
   id: string;
@@ -65,30 +64,11 @@ interface JobPhase {
   color_dark_mode: string;
 }
 
-// Default job phases to display on calendar
-const DEFAULT_CALENDAR_PHASES = ['Job Request', 'Work Order', 'Pending Work Order'];
-
-// Timezone constant for consistent Eastern Time handling
-const CALENDAR_TIMEZONE = CALENDAR_TIMEZONE;
-
 export function Calendar() {
-  // Initialize with Eastern Time Zone
-  // Get current date in Eastern Time and create Date at noon to avoid timezone boundary issues
-  const getEasternDate = () => {
-    const now = new Date();
-    // Get the date string in Eastern Time
-    const easternDateString = formatInTimeZone(now, CALENDAR_TIMEZONE, 'yyyy-MM-dd');
-    // Create a Date representing noon on this date in Eastern Time
-    // Using noon avoids midnight timezone boundary issues
-    const easternNoon = zonedTimeToUtc(`${easternDateString} 12:00:00`, CALENDAR_TIMEZONE);
-    return easternNoon;
-  };
-  
-  const [currentDate, setCurrentDate] = useState(getEasternDate());
-  const [selectedDate, setSelectedDate] = useState(getEasternDate()); // New state for selected date
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date()); // New state for selected date
   const [showDayPopup, setShowDayPopup] = useState(false); // State for day popup visibility
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [allJobs, setAllJobs] = useState<Job[]>([]); // All jobs for agenda totals
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -124,8 +104,8 @@ export function Calendar() {
   const getJobTypeTotalsForDate = (date: Date) => {
     const dateString = format(date, 'yyyy-MM-dd');
     
-    // Filter jobs for the specific date (allJobs already excludes Cancelled and Archived)
-    const dateJobs = allJobs.filter(job => 
+    // Filter jobs for the specific date
+    const dateJobs = jobs.filter(job => 
       job.scheduled_date.startsWith(dateString)
     );
     
@@ -189,13 +169,13 @@ export function Calendar() {
       try {
         const start = formatInTimeZone(
           startOfMonth(currentDate),
-          CALENDAR_TIMEZONE,
+          'America/New_York',
           "yyyy-MM-dd'T'00:00:00XXX"
         );
         
         const end = formatInTimeZone(
           endOfMonth(currentDate),
-          CALENDAR_TIMEZONE,
+          'America/New_York',
           "yyyy-MM-dd'T'23:59:59XXX"
         );
 
@@ -244,12 +224,12 @@ export function Calendar() {
       try {
         const startISO = formatInTimeZone(
           startOfMonth(currentDate),
-          CALENDAR_TIMEZONE,
+          'America/New_York',
           "yyyy-MM-dd'T'00:00:00XXX"
         );
         const endISO = formatInTimeZone(
           endOfMonth(currentDate),
-          CALENDAR_TIMEZONE,
+          'America/New_York',
           "yyyy-MM-dd'T'23:59:59XXX"
         );
         const evts = await listCalendarEvents(startISO, endISO);
@@ -305,12 +285,12 @@ export function Calendar() {
         // naive refresh; optimize later
         const startISO = formatInTimeZone(
           startOfMonth(currentDate),
-          CALENDAR_TIMEZONE,
+          'America/New_York',
           "yyyy-MM-dd'T'00:00:00XXX"
         );
         const endISO = formatInTimeZone(
           endOfMonth(currentDate),
-          CALENDAR_TIMEZONE,
+          'America/New_York',
           "yyyy-MM-dd'T'23:59:59XXX"
         );
         listCalendarEvents(startISO, endISO).then(setEvents).catch(() => {});
@@ -354,8 +334,8 @@ export function Calendar() {
       const monthStart = startOfMonth(currentDate);
       const monthEnd = endOfMonth(currentDate);
       
-      const start = formatInTimeZone(monthStart, CALENDAR_TIMEZONE, 'yyyy-MM-dd');
-      const end = formatInTimeZone(monthEnd, CALENDAR_TIMEZONE, 'yyyy-MM-dd');
+      const start = formatInTimeZone(monthStart, 'America/New_York', 'yyyy-MM-dd');
+      const end = formatInTimeZone(monthEnd, 'America/New_York', 'yyyy-MM-dd');
       
       console.log('Querying jobs for date range:', { start, end, currentDate: currentDate.toISOString() });
 
@@ -515,12 +495,12 @@ export function Calendar() {
       // Format with timezone for timestamp comparison
       const startTimestamp = formatInTimeZone(
         new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), 0, 0, 0),
-        CALENDAR_TIMEZONE,
+        'America/New_York',
         "yyyy-MM-dd'T'HH:mm:ssXXX"
       );
       const endTimestamp = formatInTimeZone(
         new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59),
-        CALENDAR_TIMEZONE,
+        'America/New_York',
         "yyyy-MM-dd'T'HH:mm:ssXXX"
       );
       
@@ -551,12 +531,12 @@ export function Calendar() {
       // Refresh events to show updated counts
       const startISO = formatInTimeZone(
         startOfMonth(currentDate),
-        CALENDAR_TIMEZONE,
+        'America/New_York',
         "yyyy-MM-dd'T'00:00:00XXX"
       );
       const endISO = formatInTimeZone(
         endOfMonth(currentDate),
-        CALENDAR_TIMEZONE,
+        'America/New_York',
         "yyyy-MM-dd'T'23:59:59XXX"
       );
       const evts = await listCalendarEvents(startISO, endISO);
@@ -626,8 +606,8 @@ export function Calendar() {
       
       // Format to YYYY-MM-DD for DATE column comparison
       // formatInTimeZone handles DST automatically
-      const start = formatInTimeZone(monthStart, CALENDAR_TIMEZONE, 'yyyy-MM-dd');
-      const end = formatInTimeZone(monthEnd, CALENDAR_TIMEZONE, 'yyyy-MM-dd');
+      const start = formatInTimeZone(monthStart, 'America/New_York', 'yyyy-MM-dd');
+      const end = formatInTimeZone(monthEnd, 'America/New_York', 'yyyy-MM-dd');
 
       // Fetch filtered jobs for display (only if we have phases to filter by)
       let filteredJobs = null;
@@ -666,65 +646,10 @@ export function Calendar() {
         filteredError = result.error;
       }
 
-      // Fetch ALL jobs for agenda totals (excluding only Cancelled and Archived)
-      const { data: allJobs, error: allJobsError } = await supabase
-        .from('jobs')
-        .select(`
-          id,
-          work_order_num,
-          property:properties (
-            id,
-            property_name
-          ),
-          unit_number,
-          description,
-          scheduled_date,
-          job_phase:current_phase_id (
-            job_phase_label,
-            color_dark_mode
-          ),
-          job_type:job_types (
-            job_type_label
-          ),
-          assigned_to,
-          profiles:assigned_to (
-            full_name
-          )
-        `)
-        .in('current_phase_id', allPhaseIds)
-        .gte('scheduled_date', start)
-        .lte('scheduled_date', end);
-
       if (filteredError) throw filteredError;
-      if (allJobsError) throw allJobsError;
       
       // Transform the filtered jobs for display
       const transformedJobs = filteredJobs?.map(job => {
-        const transformedJob = {
-          id: job.id,
-          work_order_num: job.work_order_num,
-          unit_number: job.unit_number,
-          description: job.description,
-          scheduled_date: job.scheduled_date,
-          assigned_to: job.assigned_to,
-          property: Array.isArray(job.property) && job.property.length > 0 
-            ? job.property[0] 
-            : (job.property as unknown as { id: string; property_name: string }) || { id: 'unknown', property_name: 'Unknown Property' },
-          job_phase: Array.isArray(job.job_phase) && job.job_phase.length > 0 
-            ? job.job_phase[0] 
-            : (job.job_phase as unknown as { job_phase_label: string; color_dark_mode: string }) || { job_phase_label: 'Unknown', color_dark_mode: '#6B7280' },
-          job_type: Array.isArray(job.job_type) && job.job_type.length > 0 
-            ? job.job_type[0] 
-            : (job.job_type as unknown as { job_type_label: string }) || { job_type_label: 'Unknown' },
-          assigned_to_name: Array.isArray(job.profiles) && job.profiles.length > 0 
-            ? job.profiles[0]?.full_name || null
-            : (job.profiles as any)?.full_name || null
-        };
-        return transformedJob;
-      }) || [];
-      
-      // Transform all jobs for agenda totals
-      const transformedAllJobs = allJobs?.map(job => {
         const transformedJob = {
           id: job.id,
           work_order_num: job.work_order_num,
@@ -754,7 +679,6 @@ export function Calendar() {
       }
       
       setJobs(transformedJobs);
-      setAllJobs(transformedAllJobs);
     } catch (err) {
       console.error('Error fetching jobs:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch jobs');
@@ -793,7 +717,7 @@ export function Calendar() {
     }
     
     // Convert the calendar Date to YYYY-MM-DD in Eastern Time for comparison
-    const calendarDateEastern = formatInTimeZone(date, CALENDAR_TIMEZONE, 'yyyy-MM-dd');
+    const calendarDateEastern = formatInTimeZone(date, 'America/New_York', 'yyyy-MM-dd');
     
     // job.scheduled_date is already a YYYY-MM-DD string in the database
     // Simple string comparison - no need to parse job.scheduled_date as Date
@@ -809,39 +733,31 @@ export function Calendar() {
       return [];
     }
     
-    const calendarDate = formatInTimeZone(date, CALENDAR_TIMEZONE, 'yyyy-MM-dd');
+    const calendarDate = formatInTimeZone(date, 'America/New_York', 'yyyy-MM-dd');
     const allEvents: CalendarEvent[] = [];
     
     // Process all events
     events.forEach(event => {
-      // Skip recurring instances (they're handled by recurring logic)
-      if (event.parent_event_id) {
+      if (!event.start_at || !event.end_at) {
         return;
       }
       
       const eventStart = parseISO(event.start_at);
       const eventEnd = parseISO(event.end_at);
-      const eventStartDate = formatInTimeZone(eventStart, CALENDAR_TIMEZONE, 'yyyy-MM-dd');
-      const eventEndDate = formatInTimeZone(eventEnd, CALENDAR_TIMEZONE, 'yyyy-MM-dd');
+      const eventStartDate = formatInTimeZone(eventStart, 'America/New_York', 'yyyy-MM-dd');
+      const eventEndDate = formatInTimeZone(eventEnd, 'America/New_York', 'yyyy-MM-dd');
       
-      // Check if this is a recurring event
-      if (event.is_recurring && event.recurrence_type) {
-        // For recurring events, check if the current date matches the recurrence pattern
-        const recurringEvents = getRecurringEventsForDay([event], date, CALENDAR_TIMEZONE);
-        allEvents.push(...recurringEvents);
+      // For regular events, check if the date matches
+      let shouldInclude = false;
+      
+      if (event.is_all_day) {
+        shouldInclude = calendarDate >= eventStartDate && calendarDate < eventEndDate;
       } else {
-        // For regular events, check if the date matches
-        let shouldInclude = false;
-        
-        if (event.is_all_day) {
-          shouldInclude = calendarDate >= eventStartDate && calendarDate < eventEndDate;
-        } else {
-          shouldInclude = eventStartDate === calendarDate;
-        }
-        
-        if (shouldInclude) {
-          allEvents.push(event);
-        }
+        shouldInclude = eventStartDate === calendarDate;
+      }
+      
+      if (shouldInclude) {
+        allEvents.push(event);
       }
     });
     
@@ -851,7 +767,7 @@ export function Calendar() {
   const formatJobDate = (dateString: string) => {
     return formatInTimeZone(
       parseISO(dateString),
-      CALENDAR_TIMEZONE,
+      'America/New_York',
       'MMM d, yyyy'
     );
   };
