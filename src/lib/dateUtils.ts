@@ -1,5 +1,5 @@
 import { parseISO } from 'date-fns';
-import { formatInTimeZone } from 'date-fns-tz';
+import { formatInTimeZone, utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
 import { startOfDay, endOfDay } from 'date-fns';
 
 // Use Eastern Time as the application's default timezone
@@ -324,39 +324,37 @@ export function normalizeDateToEastern(dateString: string): string {
 }
 
 /**
- * Create a Date object representing a specific date in Eastern Time
- * This avoids timezone conversion issues by explicitly setting the date in ET
+ * Create a Date object representing noon on a specific date in Eastern Time
+ * Uses zonedTimeToUtc to properly handle timezone conversion including DST
+ * Using noon avoids midnight timezone boundary issues
  * 
  * @param year - Year (e.g., 2026)
  * @param month - Month (0-11, where 0 = January)
  * @param day - Day of month (1-31)
- * @returns Date object in Eastern Time
+ * @returns Date object representing noon on that calendar date in Eastern Time
  */
 export function createEasternDate(year: number, month: number, day: number): Date {
-  // Create a date string and use formatInTimeZone to handle DST automatically
-  const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  // Create date string for noon Eastern Time
+  const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')} 12:00:00`;
   
-  // Use noon to avoid any DST boundary issues
-  // formatInTimeZone will automatically handle DST transitions
-  const isoString = `${dateString}T12:00:00`;
-  const date = parseISO(isoString);
-  
-  return date;
+  // Convert to UTC - this properly handles DST
+  return zonedTimeToUtc(dateString, TIMEZONE);
 }
 
 /**
- * Parse a YYYY-MM-DD date string as Eastern Time noon (to avoid timezone issues)
+ * Parse a YYYY-MM-DD date string as a Date object representing noon in Eastern Time
  * Use this when you need a Date object from a database DATE value
+ * Using noon avoids midnight timezone boundary issues
  * 
  * @param dateString - Date in YYYY-MM-DD format
- * @returns Date object representing that date at noon Eastern Time
+ * @returns Date object representing noon on that calendar date in Eastern Time
  */
 export function parseAsEasternDate(dateString: string): Date {
   if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
     throw new Error(`Invalid date format: ${dateString}, expected YYYY-MM-DD`);
   }
   
-  // Parse as noon to avoid DST issues
-  // The date-fns library will handle timezone conversions correctly
-  return parseISO(`${dateString}T12:00:00`);
+  // Parse as noon Eastern Time and convert to UTC
+  // This ensures the Date object represents the correct calendar date
+  return zonedTimeToUtc(`${dateString} 12:00:00`, TIMEZONE);
 }

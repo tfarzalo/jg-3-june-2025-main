@@ -24,7 +24,7 @@ import {
   startOfWeek,
   addDays
 } from 'date-fns';
-import { formatInTimeZone } from 'date-fns-tz';
+import { formatInTimeZone, utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
 import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
 import { SubcontractorLink } from './shared/SubcontractorLink';
@@ -70,13 +70,15 @@ const DEFAULT_CALENDAR_PHASES = ['Job Request', 'Work Order', 'Pending Work Orde
 
 export function Calendar() {
   // Initialize with Eastern Time Zone
-  // Get current date in Eastern Time without hard-coded timezone offset
+  // Get current date in Eastern Time and create Date at noon to avoid timezone boundary issues
   const getEasternDate = () => {
     const now = new Date();
+    // Get the date string in Eastern Time
     const easternDateString = formatInTimeZone(now, 'America/New_York', 'yyyy-MM-dd');
-    // Create Date object at noon to avoid DST issues
-    // Using parseISO without timezone offset lets date-fns handle DST correctly
-    return parseISO(`${easternDateString}T12:00:00`);
+    // Create a Date representing noon on this date in Eastern Time
+    // Using noon avoids midnight timezone boundary issues
+    const easternNoon = zonedTimeToUtc(`${easternDateString} 12:00:00`, 'America/New_York');
+    return easternNoon;
   };
   
   const [currentDate, setCurrentDate] = useState(getEasternDate());
