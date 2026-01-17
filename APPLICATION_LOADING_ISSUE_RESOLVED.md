@@ -17,13 +17,17 @@ The application requires a `.env` file in the root directory with Supabase confi
    cp .env.example .env
    ```
 
-2. **Verify the file contains**:
+2. **Verify the file contains the required variables**:
+   
+   The `.env.example` file contains the actual Supabase credentials for this project. After copying, your `.env` file will have:
    ```
-   VITE_SUPABASE_URL=https://tbwtfimnbmvbgesidbxh.supabase.co
-   VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-   VITE_SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-   VITE_SUPABASE_JWT_SECRET=WXHpi7PPx1noeH+ZOJvRel8zS45B91i6pKUWLZWIhKVUo...
+   VITE_SUPABASE_URL=<your-supabase-url>
+   VITE_SUPABASE_ANON_KEY=<your-anon-key>
+   VITE_SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>
+   VITE_SUPABASE_JWT_SECRET=<your-jwt-secret>
    ```
+   
+   **Note**: The `.env.example` in this repository contains the actual working credentials for the development environment.
 
 3. **Install dependencies** (if not already done):
    ```bash
@@ -59,8 +63,8 @@ You should see logs like:
 Timestamp: 2026-01-17T...
 URL: http://localhost:5173/
 Environment check: {
-  VITE_SUPABASE_URL: "SET (https://tbwtfimnbmvb...)",
-  VITE_SUPABASE_ANON_KEY: "SET (eyJhbGciOiJIUzI1NiIs...)"
+  VITE_SUPABASE_URL: "SET (https://your-project...)",
+  VITE_SUPABASE_ANON_KEY: "SET (eyJhbGc...)"
 }
 ✅ Root element found, creating React root...
 ✅ React root created, rendering app...

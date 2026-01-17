@@ -13,7 +13,7 @@ Professional painting business management system built with React, TypeScript, a
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd jg-3-june-2025-main
+   cd <repository-directory>
    ```
 
 2. **Install dependencies**
@@ -26,12 +26,12 @@ Professional painting business management system built with React, TypeScript, a
    cp .env.example .env
    ```
    
-   The `.env` file should contain:
+   **Note**: The `.env.example` file in this repository contains working Supabase credentials for development. After copying, verify the `.env` file contains:
    ```
-   VITE_SUPABASE_URL=your-supabase-url
-   VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
-   VITE_SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-   VITE_SUPABASE_JWT_SECRET=your-jwt-secret
+   VITE_SUPABASE_URL=<supabase-project-url>
+   VITE_SUPABASE_ANON_KEY=<supabase-anon-key>
+   VITE_SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+   VITE_SUPABASE_JWT_SECRET=<jwt-secret>
    ```
 
 4. **Start the development server**
