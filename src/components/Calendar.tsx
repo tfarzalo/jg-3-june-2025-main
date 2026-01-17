@@ -574,6 +574,16 @@ export function Calendar() {
 
           if (phaseError) throw phaseError;
           phaseIds = phaseData.map(p => p.id);
+        } else {
+          // If only 'Events' is selected (no job phases), use default phases
+          // This ensures jobs are still displayed on the calendar
+          const { data: phaseData, error: phaseError } = await supabase
+            .from('job_phases')
+            .select('id')
+            .in('job_phase_label', ['Job Request', 'Work Order', 'Pending Work Order']);
+
+          if (phaseError) throw phaseError;
+          phaseIds = phaseData.map(p => p.id);
         }
       } else {
         // Default phases if none selected - Job Request, Work Order, Pending Work Order, and Events
