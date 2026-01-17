@@ -92,7 +92,7 @@ Environment check: {
 ## 📚 Related Documentation
 
 - **Environment Setup**: See `.env.example` for required variables
-- **White Screen Fixes**: See `WHITE_SCREEN_FIX.md` and `WHITE_SCREEN_FIXED.md`
+- **White Screen Troubleshooting**: See `WHITE_SCREEN_FIXED.md` for production error handling
 - **Build Configuration**: See `vite.config.ts`
 - **Deployment**: See `DEPLOYMENT.md`
 
