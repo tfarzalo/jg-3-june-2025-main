@@ -65,6 +65,9 @@ interface JobPhase {
   color_dark_mode: string;
 }
 
+// Default job phases to display on calendar
+const DEFAULT_CALENDAR_PHASES = ['Job Request', 'Work Order', 'Pending Work Order'];
+
 export function Calendar() {
   // Initialize with Eastern Time Zone
   const getEasternDate = () => {
@@ -327,7 +330,7 @@ export function Calendar() {
       setPhases([eventsPhase, ...(data || [])]);
       
       // Set default selected phases to Job Request, Work Order, Pending Work Order, and Events
-      setSelectedPhases(['Job Request', 'Work Order', 'Pending Work Order', 'Events']);
+      setSelectedPhases([...DEFAULT_CALENDAR_PHASES, 'Events']);
     } catch (err) {
       console.error('Error fetching job phases:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch job phases');
@@ -368,7 +371,7 @@ export function Calendar() {
           const { data: phaseData, error: phaseError } = await supabase
             .from('job_phases')
             .select('id')
-            .in('job_phase_label', ['Job Request', 'Work Order', 'Pending Work Order']);
+            .in('job_phase_label', DEFAULT_CALENDAR_PHASES);
 
           if (phaseError) throw phaseError;
           phaseIds = phaseData.map(p => p.id);
@@ -378,7 +381,7 @@ export function Calendar() {
         const { data: phaseData, error: phaseError } = await supabase
           .from('job_phases')
           .select('id')
-          .in('job_phase_label', ['Job Request', 'Work Order', 'Pending Work Order']);
+          .in('job_phase_label', DEFAULT_CALENDAR_PHASES);
 
         if (phaseError) throw phaseError;
         phaseIds = phaseData.map(p => p.id);
@@ -574,13 +577,23 @@ export function Calendar() {
 
           if (phaseError) throw phaseError;
           phaseIds = phaseData.map(p => p.id);
+        } else {
+          // If only 'Events' is selected (no job phases), use default phases
+          // This ensures jobs are still displayed on the calendar
+          const { data: phaseData, error: phaseError } = await supabase
+            .from('job_phases')
+            .select('id')
+            .in('job_phase_label', DEFAULT_CALENDAR_PHASES);
+
+          if (phaseError) throw phaseError;
+          phaseIds = phaseData.map(p => p.id);
         }
       } else {
         // Default phases if none selected - Job Request, Work Order, Pending Work Order, and Events
         const { data: phaseData, error: phaseError } = await supabase
           .from('job_phases')
           .select('id')
-          .in('job_phase_label', ['Job Request', 'Work Order', 'Pending Work Order']);
+          .in('job_phase_label', DEFAULT_CALENDAR_PHASES);
 
         if (phaseError) throw phaseError;
         phaseIds = phaseData.map(p => p.id);
