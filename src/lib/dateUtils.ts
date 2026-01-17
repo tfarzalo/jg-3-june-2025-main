@@ -322,3 +322,39 @@ export function normalizeDateToEastern(dateString: string): string {
     return dateString;
   }
 }
+
+/**
+ * Create a Date object representing a specific date in Eastern Time
+ * This avoids timezone conversion issues by explicitly setting the date in ET
+ * 
+ * @param year - Year (e.g., 2026)
+ * @param month - Month (0-11, where 0 = January)
+ * @param day - Day of month (1-31)
+ * @returns Date object in Eastern Time
+ */
+export function createEasternDate(year: number, month: number, day: number): Date {
+  // Create a date string in Eastern Time format with explicit timezone
+  // Use noon to avoid any DST boundary issues
+  const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T12:00:00`;
+  
+  // Parse as Eastern Time
+  const easternDate = new Date(dateString + '-05:00');
+  
+  return easternDate;
+}
+
+/**
+ * Parse a YYYY-MM-DD date string as Eastern Time noon (to avoid timezone issues)
+ * Use this when you need a Date object from a database DATE value
+ * 
+ * @param dateString - Date in YYYY-MM-DD format
+ * @returns Date object representing that date at noon Eastern Time
+ */
+export function parseAsEasternDate(dateString: string): Date {
+  if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    throw new Error(`Invalid date format: ${dateString}, expected YYYY-MM-DD`);
+  }
+  
+  // Parse as noon Eastern Time to avoid DST issues
+  return parseISO(`${dateString}T12:00:00-05:00`);
+}
