@@ -381,7 +381,7 @@ export function Calendar() {
         .select(`
           scheduled_date, 
           current_phase_id,
-          job_types (
+          job_type:job_types (
             job_type_label
           )
         `)
@@ -401,13 +401,13 @@ export function Calendar() {
         const date = job.scheduled_date.split('T')[0]; // Get just the date part
         
         // Get the job type label from the joined data
-        const jobTypeLabel = Array.isArray(job.job_types) && job.job_types.length > 0 
-          ? job.job_types[0].job_type_label 
+        const jobTypeLabel = Array.isArray(job.job_type) && job.job_type.length > 0 
+          ? job.job_type[0].job_type_label 
           : 'Unknown';
         
         console.log(`Processing job:`, job);
         console.log(`Job scheduled_date: ${job.scheduled_date}`);
-        console.log(`Job type data:`, job.job_types);
+        console.log(`Job type data:`, job.job_type);
         console.log(`Extracted job type label: "${jobTypeLabel}"`);
         
         if (!jobsByDate.has(date)) {
