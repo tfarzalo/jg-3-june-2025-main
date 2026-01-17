@@ -329,7 +329,7 @@ export function normalizeDateToEastern(dateString: string): string {
  * Using noon avoids midnight timezone boundary issues
  * 
  * @param year - Year (e.g., 2026)
- * @param month - Month (0-11, where 0 = January)
+ * @param month - Month (0-11, where 0 = January, 11 = December) - JavaScript Date month convention
  * @param day - Day of month (1-31)
  * @returns Date object representing noon on that calendar date in Eastern Time
  */
@@ -348,10 +348,11 @@ export function createEasternDate(year: number, month: number, day: number): Dat
  * 
  * @param dateString - Date in YYYY-MM-DD format
  * @returns Date object representing noon on that calendar date in Eastern Time
+ * @throws Error if dateString is not in YYYY-MM-DD format
  */
 export function parseAsEasternDate(dateString: string): Date {
   if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
-    throw new Error(`Invalid date format: ${dateString}, expected YYYY-MM-DD`);
+    throw new Error('Invalid date format: expected YYYY-MM-DD');
   }
   
   // Parse as noon Eastern Time and convert to UTC
