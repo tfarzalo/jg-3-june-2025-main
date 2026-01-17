@@ -663,31 +663,31 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
             </div>
 
             {/* Navigation Items - Now scrollable with full sidebar menu */}
-            <div className="flex-1 overflow-y-auto">
-              <div className="p-4 space-y-2">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">
+              <div className="px-3 py-4 pb-6 space-y-3">
                 {/* Search */}
                 <button
                   onClick={() => {
                     setSearchOpen(true);
                     setMobileMenuOpen(false);
                   }}
-                  className="w-full flex items-center px-4 py-3 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
+                  className="w-full flex items-center px-4 py-3.5 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors touch-manipulation"
                 >
-                  <Search className="h-5 w-5 mr-3" />
-                  Search
+                  <Search className="h-5 w-5 mr-3 flex-shrink-0" />
+                  <span className="font-medium">Search</span>
                 </button>
 
                 {/* Quick Actions */}
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <button 
                     onClick={() => {
                       navigate('/dashboard/sub-scheduler');
                       setMobileMenuOpen(false);
                     }}
-                    className="w-full flex items-center px-4 py-3 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
+                    className="w-full flex items-center px-4 py-3.5 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors touch-manipulation"
                   >
-                    <Calendar className="h-5 w-5 mr-3" />
-                    Schedule
+                    <Calendar className="h-5 w-5 mr-3 flex-shrink-0" />
+                    <span className="font-medium">Schedule</span>
                   </button>
                   
                   <button 
@@ -695,10 +695,10 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                       navigate('/dashboard/jobs/new');
                       setMobileMenuOpen(false);
                     }}
-                    className="w-full flex items-center px-4 py-3 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
+                    className="w-full flex items-center px-4 py-3.5 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors touch-manipulation"
                   >
-                    <Plus className="h-5 w-5 mr-3" />
-                    New Job
+                    <Plus className="h-5 w-5 mr-3 flex-shrink-0" />
+                    <span className="font-medium">New Job</span>
                   </button>
                   
                   <button 
@@ -706,153 +706,153 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                       navigate('/dashboard/properties/new');
                       setMobileMenuOpen(false);
                     }}
-                    className="w-full flex items-center px-4 py-3 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
+                    className="w-full flex items-center px-4 py-3.5 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors touch-manipulation"
                   >
-                    <Plus className="h-5 w-5 mr-3" />
-                    New Property
+                    <Plus className="h-5 w-5 mr-3 flex-shrink-0" />
+                    <span className="font-medium">New Property</span>
                   </button>
                 </div>
 
                 {/* Full Navigation - Replicated from Sidebar */}
-                <div className="pt-4 border-t border-gray-200 dark:border-[#1E293B] space-y-6">
+                <div className="pt-2 mt-4 border-t border-gray-200 dark:border-[#1E293B] space-y-5">
                   
                   {/* DASHBOARD */}
                   <div>
-                    <h3 className="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                    <h3 className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
                       Dashboard
                     </h3>
                     <NavLink
                       to="/dashboard"
                       onClick={() => setMobileMenuOpen(false)}
                       className={({ isActive }) =>
-                        `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                        `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                           isActive
                             ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                         }`
                       }
                     >
-                      <LayoutGrid className="h-5 w-5 mr-3" />
+                      <LayoutGrid className="h-5 w-5 mr-3 flex-shrink-0" />
                       Dashboard
                     </NavLink>
                   </div>
 
                   {/* JOB MANAGEMENT */}
                   <div>
-                    <h3 className="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                    <h3 className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
                       Job Management
                     </h3>
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <NavLink
                         to="/dashboard/jobs"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                             isActive
                               ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <ClipboardList className="h-5 w-5 mr-3" />
+                        <ClipboardList className="h-5 w-5 mr-3 flex-shrink-0" />
                         All Jobs
                       </NavLink>
                       <NavLink
                         to="/dashboard/jobs/requests"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                             isActive
                               ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <FileText className="h-5 w-5 mr-3" />
+                        <FileText className="h-5 w-5 mr-3 flex-shrink-0" />
                         Job Requests
                       </NavLink>
                       <NavLink
                         to="/dashboard/jobs/work-orders"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                             isActive
                               ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <FileText className="h-5 w-5 mr-3" />
+                        <FileText className="h-5 w-5 mr-3 flex-shrink-0" />
                         Work Orders
                       </NavLink>
                       <NavLink
                         to="/dashboard/jobs/pending-work-orders"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                             isActive
                               ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <Clock className="h-5 w-5 mr-3" />
+                        <Clock className="h-5 w-5 mr-3 flex-shrink-0" />
                         Pending Work Orders
                       </NavLink>
                       <NavLink
                         to="/dashboard/jobs/completed"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                             isActive
                               ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <CheckCircle className="h-5 w-5 mr-3" />
+                        <CheckCircle className="h-5 w-5 mr-3 flex-shrink-0" />
                         Completed
                       </NavLink>
                       <NavLink
                         to="/dashboard/jobs/invoicing"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                             isActive
                               ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <DollarSign className="h-5 w-5 mr-3" />
+                        <DollarSign className="h-5 w-5 mr-3 flex-shrink-0" />
                         Invoicing
                       </NavLink>
                       <NavLink
                         to="/dashboard/jobs/cancelled"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                             isActive
                               ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <XCircle className="h-5 w-5 mr-3" />
+                        <XCircle className="h-5 w-5 mr-3 flex-shrink-0" />
                         Cancelled
                       </NavLink>
                       <NavLink
                         to="/dashboard/sub-scheduler"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                             isActive
                               ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <CalendarDays className="h-5 w-5 mr-3" />
+                        <CalendarDays className="h-5 w-5 mr-3 flex-shrink-0" />
                         Sub Scheduler
                       </NavLink>
                     </div>
@@ -860,36 +860,36 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
 
                   {/* PROPERTIES */}
                   <div>
-                    <h3 className="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                    <h3 className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
                       Properties
                     </h3>
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <NavLink
                         to="/dashboard/properties"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                             isActive
                               ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <Building2 className="h-5 w-5 mr-3" />
+                        <Building2 className="h-5 w-5 mr-3 flex-shrink-0" />
                         Properties
                       </NavLink>
                       <NavLink
                         to="/dashboard/property-groups"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                             isActive
                               ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <Building2 className="h-5 w-5 mr-3" />
+                        <Building2 className="h-5 w-5 mr-3 flex-shrink-0" />
                         Property Mgmt Groups
                       </NavLink>
                     </div>
@@ -897,60 +897,60 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
 
                   {/* FILE MANAGEMENT */}
                   <div>
-                    <h3 className="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                    <h3 className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
                       File Management
                     </h3>
                     <NavLink
                       to="/dashboard/files"
                       onClick={() => setMobileMenuOpen(false)}
                       className={({ isActive }) =>
-                        `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                        `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                           isActive
                             ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                         }`
                       }
                     >
-                      <FolderOpen className="h-5 w-5 mr-3" />
+                      <FolderOpen className="h-5 w-5 mr-3 flex-shrink-0" />
                       File Manager
                     </NavLink>
                   </div>
 
                   {/* JG USERS */}
                   <div>
-                    <h3 className="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                    <h3 className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
                       JG Users
                     </h3>
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <NavLink
                         to="/dashboard/users"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                             isActive
                               ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <Users className="h-5 w-5 mr-3" />
+                        <Users className="h-5 w-5 mr-3 flex-shrink-0" />
                         Users
                       </NavLink>
                       <NavLink
                         to="/messaging"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors relative ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation relative ${
                             isActive
                               ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <MessageCircle className="h-5 w-5 mr-3" />
+                        <MessageCircle className="h-5 w-5 mr-3 flex-shrink-0" />
                         Messaging
                         {unreadCount > 0 && (
-                          <span className="ml-auto bg-green-500 text-white text-xs rounded-full px-2 py-0.5">
+                          <span className="ml-auto bg-green-500 text-white text-xs rounded-full px-2 py-0.5 font-semibold">
                             {unreadCount}
                           </span>
                         )}
@@ -960,78 +960,78 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
 
                   {/* CALENDAR */}
                   <div>
-                    <h3 className="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                    <h3 className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
                       Calendar
                     </h3>
                     <NavLink
                       to="/dashboard/calendar"
                       onClick={() => setMobileMenuOpen(false)}
                       className={({ isActive }) =>
-                        `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                        `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                           isActive
                             ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                         }`
                       }
                     >
-                      <Calendar className="h-5 w-5 mr-3" />
+                      <Calendar className="h-5 w-5 mr-3 flex-shrink-0" />
                       Calendar
                     </NavLink>
                   </div>
 
                   {/* ACTIVITY */}
                   <div>
-                    <h3 className="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                    <h3 className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
                       Activity
                     </h3>
                     <NavLink
                       to="/dashboard/activity"
                       onClick={() => setMobileMenuOpen(false)}
                       className={({ isActive }) =>
-                        `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                        `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                           isActive
                             ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                         }`
                       }
                     >
-                      <ActivityIcon className="h-5 w-5 mr-3" />
+                      <ActivityIcon className="h-5 w-5 mr-3 flex-shrink-0" />
                       Activity Log
                     </NavLink>
                   </div>
 
                   {/* CONTACTS */}
                   <div>
-                    <h3 className="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                    <h3 className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
                       Contacts & Support
                     </h3>
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <NavLink
                         to="/dashboard/contacts"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                             isActive
                               ? 'bg-purple-50 text-purple-700 dark:bg-purple-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <Users className="h-5 w-5 mr-3" />
+                        <Users className="h-5 w-5 mr-3 flex-shrink-0" />
                         Contacts
                       </NavLink>
                       <NavLink
                         to="/dashboard/support"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                             isActive
                               ? 'bg-amber-50 text-amber-700 dark:bg-amber-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <HelpCircle className="h-5 w-5 mr-3" />
+                        <HelpCircle className="h-5 w-5 mr-3 flex-shrink-0" />
                         Support
                       </NavLink>
                     </div>
@@ -1040,21 +1040,21 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                   {/* SETTINGS - Only for admin */}
                   {isAdmin && (
                     <div>
-                      <h3 className="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                      <h3 className="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">
                         Settings
                       </h3>
                       <NavLink
                         to="/dashboard/settings"
                         onClick={() => setMobileMenuOpen(false)}
                         className={({ isActive }) =>
-                          `flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                          `flex items-center px-4 py-3.5 text-sm font-medium rounded-lg transition-colors touch-manipulation ${
                             isActive
                               ? 'bg-blue-50 text-blue-700 dark:bg-blue-600 dark:text-white'
                               : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
                           }`
                         }
                       >
-                        <Settings className="h-5 w-5 mr-3" />
+                        <Settings className="h-5 w-5 mr-3 flex-shrink-0" />
                         Admin Settings
                       </NavLink>
                     </div>
