@@ -1,5 +1,5 @@
-import { format, parseISO } from 'date-fns';
-import { formatInTimeZone } from 'date-fns-tz';
+import { parseISO } from 'date-fns';
+import { formatInTimeZone, utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
 import { startOfDay, endOfDay } from 'date-fns';
 
 // Use Eastern Time as the application's default timezone
@@ -321,4 +321,41 @@ export function normalizeDateToEastern(dateString: string): string {
     console.error('Error normalizing date:', error);
     return dateString;
   }
+}
+
+/**
+ * Create a Date object representing noon on a specific date in Eastern Time
+ * Uses zonedTimeToUtc to properly handle timezone conversion including DST
+ * Using noon avoids midnight timezone boundary issues
+ * 
+ * @param year - Year (e.g., 2026)
+ * @param month - Month (0-11, where 0 = January, 11 = December) - JavaScript Date month convention
+ * @param day - Day of month (1-31)
+ * @returns Date object representing noon on that calendar date in Eastern Time
+ */
+export function createEasternDate(year: number, month: number, day: number): Date {
+  // Create date string for noon Eastern Time
+  const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')} 12:00:00`;
+  
+  // Convert to UTC - this properly handles DST
+  return zonedTimeToUtc(dateString, TIMEZONE);
+}
+
+/**
+ * Parse a YYYY-MM-DD date string as a Date object representing noon in Eastern Time
+ * Use this when you need a Date object from a database DATE value
+ * Using noon avoids midnight timezone boundary issues
+ * 
+ * @param dateString - Date in YYYY-MM-DD format
+ * @returns Date object representing noon on that calendar date in Eastern Time
+ * @throws Error if dateString is not in YYYY-MM-DD format
+ */
+export function parseAsEasternDate(dateString: string): Date {
+  if (!dateString || !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    throw new Error('Invalid date format: expected YYYY-MM-DD');
+  }
+  
+  // Parse as noon Eastern Time and convert to UTC
+  // This ensures the Date object represents the correct calendar date
+  return zonedTimeToUtc(`${dateString} 12:00:00`, TIMEZONE);
 }
