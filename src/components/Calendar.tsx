@@ -70,12 +70,13 @@ const DEFAULT_CALENDAR_PHASES = ['Job Request', 'Work Order', 'Pending Work Orde
 
 export function Calendar() {
   // Initialize with Eastern Time Zone
-  // Use parseISO with Eastern timezone to avoid any timezone conversion issues
+  // Get current date in Eastern Time without hard-coded timezone offset
   const getEasternDate = () => {
     const now = new Date();
     const easternDateString = formatInTimeZone(now, 'America/New_York', 'yyyy-MM-dd');
-    // Create Date object representing this date at noon ET to avoid DST issues
-    return parseISO(`${easternDateString}T12:00:00-05:00`);
+    // Create Date object at noon to avoid DST issues
+    // Using parseISO without timezone offset lets date-fns handle DST correctly
+    return parseISO(`${easternDateString}T12:00:00`);
   };
   
   const [currentDate, setCurrentDate] = useState(getEasternDate());
@@ -619,15 +620,9 @@ export function Calendar() {
       const monthEnd = endOfMonth(currentDate);
       
       // Format to YYYY-MM-DD for DATE column comparison
-      // Since currentDate is already representing an Eastern Time date, 
-      // we extract just the date portion to avoid any timezone conversion
+      // formatInTimeZone handles DST automatically
       const start = formatInTimeZone(monthStart, 'America/New_York', 'yyyy-MM-dd');
       const end = formatInTimeZone(monthEnd, 'America/New_York', 'yyyy-MM-dd');
-      
-      console.log('Calendar.fetchJobs: Month range:', { start, end });
-      console.log('Calendar.fetchJobs: Current date:', currentDate.toISOString());
-      console.log('Calendar.fetchJobs: Month start:', monthStart.toISOString(), '-> formatted:', start);
-      console.log('Calendar.fetchJobs: Month end:', monthEnd.toISOString(), '-> formatted:', end);
 
       // Fetch filtered jobs for display (only if we have phases to filter by)
       let filteredJobs = null;
@@ -748,22 +743,10 @@ export function Calendar() {
         return transformedJob;
       }) || [];
 
-      console.log('Calendar.fetchJobs: =================================');
-      console.log('Calendar.fetchJobs: Fetched', transformedJobs.length, 'jobs for display');
-      console.log('Calendar.fetchJobs: Fetched', transformedAllJobs.length, 'total jobs for agenda');
-      
-      // Log first few jobs for debugging
-      if (transformedJobs.length > 0) {
-        console.log('Calendar.fetchJobs: Sample jobs:');
-        transformedJobs.slice(0, 5).forEach(job => {
-          console.log(`  - WO-${job.work_order_num}: ${job.scheduled_date} (${job.job_phase.job_phase_label})`);
-        });
-      } else {
-        console.warn('Calendar.fetchJobs: ⚠️ NO JOBS FETCHED! Check phase filters and date range.');
-        console.log('Calendar.fetchJobs: Phase IDs used:', phaseIds);
-        console.log('Calendar.fetchJobs: Date range:', { start, end });
+      // Only log warning if no jobs were fetched (potential issue)
+      if (transformedJobs.length === 0 && phaseIds.length > 0) {
+        console.warn('Calendar: No jobs found for month range', { start, end, phaseCount: phaseIds.length });
       }
-      console.log('Calendar.fetchJobs: =================================');
       
       setJobs(transformedJobs);
       setAllJobs(transformedAllJobs);
@@ -781,9 +764,6 @@ export function Calendar() {
     const monthStart = startOfMonth(currentDate);
     const startDate = startOfWeek(monthStart);
     
-    console.log('Calendar.calendarDays: monthStart:', monthStart.toISOString());
-    console.log('Calendar.calendarDays: startDate:', startDate.toISOString());
-    
     // Create a 6-week grid (42 days) to ensure we have enough rows
     // This will cover all possible month layouts
     const days = [];
@@ -793,12 +773,6 @@ export function Calendar() {
       days.push(day);
       day = addDays(day, 1);
     }
-    
-    // Log first and last day for debugging
-    console.log('Calendar.calendarDays: First day:', days[0].toISOString(), 
-                '-> ET:', formatInTimeZone(days[0], 'America/New_York', 'yyyy-MM-dd'));
-    console.log('Calendar.calendarDays: Last day:', days[41].toISOString(),
-                '-> ET:', formatInTimeZone(days[41], 'America/New_York', 'yyyy-MM-dd'));
     
     return days;
   };
@@ -816,17 +790,9 @@ export function Calendar() {
     // Convert the calendar Date to YYYY-MM-DD in Eastern Time for comparison
     const calendarDateEastern = formatInTimeZone(date, 'America/New_York', 'yyyy-MM-dd');
     
-    const matchedJobs = jobs.filter(job => {
-      // job.scheduled_date is already a YYYY-MM-DD string in the database
-      // Simple string comparison - no need to parse job.scheduled_date as Date
-      const matches = job.scheduled_date === calendarDateEastern;
-      
-      if (matches) {
-        console.log(`Calendar.getJobsForDay: ✓ Matched WO-${job.work_order_num} on ${calendarDateEastern}`);
-      }
-      
-      return matches;
-    });
+    // job.scheduled_date is already a YYYY-MM-DD string in the database
+    // Simple string comparison - no need to parse job.scheduled_date as Date
+    const matchedJobs = jobs.filter(job => job.scheduled_date === calendarDateEastern);
     
     return matchedJobs;
   };

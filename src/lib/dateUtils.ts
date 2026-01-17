@@ -1,4 +1,4 @@
-import { format, parseISO } from 'date-fns';
+import { parseISO } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { startOfDay, endOfDay } from 'date-fns';
 
@@ -333,14 +333,15 @@ export function normalizeDateToEastern(dateString: string): string {
  * @returns Date object in Eastern Time
  */
 export function createEasternDate(year: number, month: number, day: number): Date {
-  // Create a date string in Eastern Time format with explicit timezone
+  // Create a date string and use formatInTimeZone to handle DST automatically
+  const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  
   // Use noon to avoid any DST boundary issues
-  const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T12:00:00`;
+  // formatInTimeZone will automatically handle DST transitions
+  const isoString = `${dateString}T12:00:00`;
+  const date = parseISO(isoString);
   
-  // Parse as Eastern Time
-  const easternDate = new Date(dateString + '-05:00');
-  
-  return easternDate;
+  return date;
 }
 
 /**
@@ -355,6 +356,7 @@ export function parseAsEasternDate(dateString: string): Date {
     throw new Error(`Invalid date format: ${dateString}, expected YYYY-MM-DD`);
   }
   
-  // Parse as noon Eastern Time to avoid DST issues
-  return parseISO(`${dateString}T12:00:00-05:00`);
+  // Parse as noon to avoid DST issues
+  // The date-fns library will handle timezone conversions correctly
+  return parseISO(`${dateString}T12:00:00`);
 }
