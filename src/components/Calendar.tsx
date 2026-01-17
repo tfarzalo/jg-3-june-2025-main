@@ -338,17 +338,12 @@ export function Calendar() {
   const updateDailyAgendaEvents = async () => {
     try {
       // Get the current month's date range
-      const start = formatInTimeZone(
-        startOfMonth(currentDate),
-        'America/New_York',
-        "yyyy-MM-dd'T'00:00:00XXX"
-      );
+      // Use simple YYYY-MM-DD format for DATE column comparison
+      const monthStart = startOfMonth(currentDate);
+      const monthEnd = endOfMonth(currentDate);
       
-      const end = formatInTimeZone(
-        endOfMonth(currentDate),
-        'America/New_York',
-        "yyyy-MM-dd'T'23:59:59XXX"
-      );
+      const start = formatInTimeZone(monthStart, 'America/New_York', 'yyyy-MM-dd');
+      const end = formatInTimeZone(monthEnd, 'America/New_York', 'yyyy-MM-dd');
       
       console.log('Querying jobs for date range:', { start, end, currentDate: currentDate.toISOString() });
 
@@ -486,12 +481,29 @@ export function Calendar() {
 
       // Clean up agenda summary events for dates that no longer have jobs
       // Get all existing agenda summary events for the current month
+      // Create timestamps in Eastern timezone for calendar_events query
+      // Use parseISO with the YYYY-MM-DD string and set time in ET, then format as ISO
+      const startDate = parseISO(start); // Parse as date-only
+      const endDate = parseISO(end);     // Parse as date-only
+      
+      // Format with timezone for timestamp comparison
+      const startTimestamp = formatInTimeZone(
+        new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), 0, 0, 0),
+        'America/New_York',
+        "yyyy-MM-dd'T'HH:mm:ssXXX"
+      );
+      const endTimestamp = formatInTimeZone(
+        new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59),
+        'America/New_York',
+        "yyyy-MM-dd'T'HH:mm:ssXXX"
+      );
+      
       const { data: existingAgendaEvents, error: cleanupError } = await supabase
         .from('calendar_events')
         .select('id, start_at, title')
         .like('title', '%Paint%Callback%Repair%')
-        .gte('start_at', start)
-        .lt('start_at', new Date(new Date(end).getTime() + 24*60*60*1000).toISOString());
+        .gte('start_at', startTimestamp)
+        .lte('start_at', endTimestamp);
 
       if (!cleanupError && existingAgendaEvents) {
         for (const event of existingAgendaEvents) {
@@ -566,17 +578,12 @@ export function Calendar() {
       const allPhaseIds = allPhaseData.map(p => p.id);
 
       // Get start and end of month in Eastern Time
-      const start = formatInTimeZone(
-        startOfMonth(currentDate),
-        'America/New_York',
-        "yyyy-MM-dd'T'00:00:00XXX"
-      );
+      // Use simple YYYY-MM-DD format for DATE column comparison
+      const monthStart = startOfMonth(currentDate);
+      const monthEnd = endOfMonth(currentDate);
       
-      const end = formatInTimeZone(
-        endOfMonth(currentDate),
-        'America/New_York',
-        "yyyy-MM-dd'T'23:59:59XXX"
-      );
+      const start = formatInTimeZone(monthStart, 'America/New_York', 'yyyy-MM-dd');
+      const end = formatInTimeZone(monthEnd, 'America/New_York', 'yyyy-MM-dd');
 
       // Fetch filtered jobs for display
       const { data: filteredJobs, error: filteredError } = await supabase
