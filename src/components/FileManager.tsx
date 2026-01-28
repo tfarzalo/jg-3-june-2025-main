@@ -27,6 +27,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import Lightbox from 'yet-another-react-lightbox';
 import 'yet-another-react-lightbox/styles.css';
 import { getPreviewUrl } from '../utils/storagePreviews';
+import { buildStoragePath as buildCanonicalStoragePath } from '../utils/storagePaths';
+import { FILE_CATEGORY_PATHS, FOLDER_NAME_TO_CATEGORY, LEGACY_CATEGORY_ALIASES } from '../utils/fileCategories';
 import { 
   normalizeStoragePath,
   isSpreadsheet,
@@ -42,9 +44,12 @@ const translations = {
     allFiles: 'All Files',
     searchFiles: 'Search files...',
     name: 'Name',
-    date: 'Date',
+    createdDate: 'Created Date',
+    modifiedDate: 'Modified Date',
     size: 'Size',
     type: 'Type',
+    createdOn: 'Created',
+    modifiedOn: 'Modified',
     newFolder: 'New Folder',
     uploadFiles: 'Upload Files',
     enterFolderName: 'Enter folder name',
@@ -83,9 +88,12 @@ const translations = {
     allFiles: 'Todos los Archivos',
     searchFiles: 'Buscar archivos...',
     name: 'Nombre',
-    date: 'Fecha',
+    createdDate: 'Fecha de creación',
+    modifiedDate: 'Fecha de modificación',
     size: 'Tamaño',
     type: 'Tipo',
+    createdOn: 'Creado',
+    modifiedOn: 'Modificado',
     newFolder: 'Nueva Carpeta',
     uploadFiles: 'Subir Archivos',
     enterFolderName: 'Ingrese el nombre de la carpeta',
@@ -132,13 +140,17 @@ interface FileItem {
   size: number;
   job_id: string | null;
   property_id: string | null;
+  work_order_id?: string | null;
+  category?: string | null;
   file_path: string;
+  storage_path?: string | null;
+  display_path?: string | null;
   path?: string;
   previewUrl?: string | null;
 }
 
 type ViewMode = 'list' | 'grid';
-type SortOption = 'name' | 'date' | 'size' | 'type';
+type SortOption = 'name' | 'created' | 'modified' | 'size' | 'type';
 
 interface FolderPath {
   id: string | null;
@@ -156,8 +168,13 @@ const formatDate = (dateString: string) => {
   });
 };
 
+const formatDateOrDash = (dateString?: string | null) => {
+  if (!dateString) return '—';
+  return formatDate(dateString);
+};
+
 // Ensure file paths are storage-safe and include the file name
-const buildStoragePath = (path: string | null | undefined, name: string, jobId?: string | null) => {
+const resolveStoragePath = (path: string | null | undefined, name: string, jobId?: string | null) => {
   const normalized = normalizeStoragePath(path || '', name);
   
   if (normalized) return normalized;
@@ -266,24 +283,38 @@ export function FileManager() {
     setError(null);
 
     try {
+      let currentFolder: { id: string; name?: string | null; property_id?: string | null; job_id?: string | null; work_order_id?: string | null } | null = null;
+      const selectFields = 'id, name, type, folder_id, uploaded_by, created_at, size, original_size, optimized_size, job_id, property_id, work_order_id, category, path, storage_path, display_path, updated_at';
       let query = supabase
         .from('files')
-        .select('id, name, type, folder_id, uploaded_by, created_at, size, original_size, optimized_size, job_id, property_id, path, updated_at');
+        .select(selectFields);
+
+      const { data: propsFolder } = await supabase
+        .from('files')
+        .select('id')
+        .eq('name', 'Properties')
+        .is('folder_id', null)
+        .maybeSingle();
+      const propsFolderId = propsFolder?.id || null;
 
       // Handle root folder and nested folders correctly
       if (currentFolderId === null) {
-        // At root level, show only property folders (folder_id IS NULL)
+        // At root level, show only true root folders
         query = query.is('folder_id', null);
       } else {
         query = query.eq('folder_id', currentFolderId);
         const { data: curFolder } = await supabase
           .from('files')
-          .select('path, name')
+          .select('path, name, property_id, job_id, work_order_id')
           .eq('id', currentFolderId)
           .maybeSingle();
+        currentFolder = curFolder ? { id: currentFolderId, ...curFolder } : null;
         const pathStr = curFolder?.path || null;
         setCurrentFolderPath(pathStr);
-        setIsWorkOrdersContext(!!pathStr && /\/Work Orders\/?$/i.test(pathStr));
+        setIsWorkOrdersContext(
+          (curFolder?.name && curFolder.name.toLowerCase() === 'work orders') ||
+          (!!pathStr && /\/Work Orders\/?$/i.test(pathStr))
+        );
       }
 
       // Add job_id filter if we're in a job context
@@ -297,6 +328,55 @@ export function FileManager() {
         ? query.order('updated_at', { ascending: false }).order('created_at', { ascending: false })
         : query.order('name'));
 
+      let combinedData = data || [];
+
+      // If we're inside the "Properties" root, include legacy property folders that live at root
+      if (propsFolderId && currentFolderId === propsFolderId) {
+        const { data: legacyPropertyFolders } = await supabase
+          .from('files')
+          .select(selectFields)
+          .is('folder_id', null)
+          .not('property_id', 'is', null)
+          .eq('type', 'folder/directory');
+        if (legacyPropertyFolders?.length) {
+          const existingIds = new Set(combinedData.map(item => item.id));
+          combinedData = combinedData.concat(legacyPropertyFolders.filter(item => !existingIds.has(item.id)));
+        }
+      }
+
+      // If "Properties" root exists, hide legacy property folders from the top level
+      if (propsFolderId && currentFolderId === null) {
+        combinedData = combinedData.filter(item => {
+          if (item.id === propsFolderId) return true;
+          if (item.folder_id !== null) return true;
+          if (item.property_id && item.type === 'folder/directory') return false;
+          return true;
+        });
+      }
+      const category = currentFolder?.name ? FOLDER_NAME_TO_CATEGORY[currentFolder.name] : null;
+      if (category && currentFolder?.property_id) {
+        const categoryAliases = LEGACY_CATEGORY_ALIASES[category] || [category];
+        let categoryQuery = supabase
+          .from('files')
+          .select('id, name, type, folder_id, uploaded_by, created_at, size, original_size, optimized_size, job_id, property_id, work_order_id, category, path, storage_path, display_path, updated_at')
+          .eq('property_id', currentFolder.property_id)
+          .in('category', categoryAliases);
+
+        if (currentFolder.work_order_id) {
+          categoryQuery = categoryQuery.eq('work_order_id', currentFolder.work_order_id);
+        } else if (currentFolder.job_id) {
+          categoryQuery = categoryQuery.eq('job_id', currentFolder.job_id);
+        } else {
+          categoryQuery = categoryQuery.is('job_id', null);
+        }
+
+        const { data: categoryData } = await categoryQuery;
+        if (categoryData?.length) {
+          const existingIds = new Set(combinedData.map(item => item.id));
+          combinedData = combinedData.concat(categoryData.filter(item => !existingIds.has(item.id)));
+        }
+      }
+
       if (fetchError) {
         console.error('[FileManager] fetchItems error:', JSON.stringify(fetchError, null, 2));
         console.error('[FileManager] Query params:', { currentFolderId, jobId });
@@ -304,8 +384,8 @@ export function FileManager() {
       }
 
       // Process the files to ensure correct paths and generate preview URLs
-      const processedData = await Promise.all((data || []).map(async (file) => {
-        const filePath = buildStoragePath(file.path, file.name, file.job_id);
+      const processedData = await Promise.all((combinedData || []).map(async (file) => {
+        const filePath = resolveStoragePath(file.storage_path || file.path, file.name, file.job_id);
         
         // Generate preview URL for image files
         let previewUrl = null;
@@ -550,45 +630,58 @@ export function FileManager() {
         propertyId = jobData?.property_id;
       }
 
-      // Resolve target folder path
+      // Resolve target folder info
       let targetFolderId: string | null = currentFolderId;
-      let basePath: string | null = null;
+      let folderInfo: { name?: string | null; property_id?: string | null; job_id?: string | null; work_order_id?: string | null; path?: string | null } | null = null;
       if (targetFolderId) {
-        const { data: folderInfo } = await supabase
+        const { data } = await supabase
           .from('files')
-          .select('path')
+          .select('name, property_id, job_id, work_order_id, path')
           .eq('id', targetFolderId)
           .maybeSingle();
-        basePath = folderInfo?.path || null;
+        folderInfo = data || null;
+        if (!propertyId && folderInfo?.property_id) {
+          propertyId = folderInfo.property_id;
+        }
       } else if (jobId && propertyId) {
         const { data: uploadFolderId } = await supabase.rpc('get_upload_folder', {
           p_property_id: propertyId,
           p_job_id: jobId,
-          p_folder_type: 'other'
+          p_folder_type: 'other_files'
         });
         if (uploadFolderId) {
           targetFolderId = uploadFolderId;
-          const { data: folderInfo } = await supabase
+          const { data } = await supabase
             .from('files')
-            .select('path')
+            .select('name, property_id, job_id, work_order_id, path')
             .eq('id', uploadFolderId)
             .maybeSingle();
-          basePath = folderInfo?.path || null;
+          folderInfo = data || null;
         }
       }
 
+      const folderCategory = folderInfo?.name ? FOLDER_NAME_TO_CATEGORY[folderInfo.name] : null;
+      const category = folderCategory || (jobId ? 'other_files' : null);
+      const categoryPath = category ? FILE_CATEGORY_PATHS[category] : null;
+      let workOrderId: string | null = folderInfo?.work_order_id || null;
+      if (!workOrderId && jobId) {
+        const { data: workOrderData } = await supabase
+          .from('work_orders')
+          .select('id')
+          .eq('job_id', jobId)
+          .eq('is_active', true)
+          .maybeSingle();
+        workOrderId = workOrderData?.id || null;
+      }
+
       // Determine auto naming context
-      let autoCategory: 'before' | 'sprinkler' | 'other' | null = null
-      let woSegment: string | null = null
-      if (basePath) {
-        const lowerPath = basePath.toLowerCase()
-        if (lowerPath.includes('/work orders/')) {
-          if (lowerPath.includes('/before images')) autoCategory = 'before'
-          else if (lowerPath.includes('/sprinkler images')) autoCategory = 'sprinkler'
-          else autoCategory = 'other'
-          const m = basePath.match(/WO-\d+/)
-          if (m) woSegment = m[0]
-        }
+      let autoCategory: string | null = null;
+      let woSegment: string | null = null;
+      if (category) {
+        autoCategory = category;
+      }
+      if (folderInfo?.name?.startsWith('WO-')) {
+        woSegment = folderInfo.name;
       }
 
       // Precompute index if auto naming applies
@@ -616,7 +709,7 @@ export function FileManager() {
         const isImage = (file.type || '').toLowerCase().startsWith('image/')
         const optimized = isImage ? await optimizeImage(file) : { blob: file, mime: file.type || 'application/octet-stream', suggestedExt: '', width: 0, height: 0, originalSize: file.size, optimizedSize: file.size }
         let finalName = file.name
-        let finalCategory = null as string | null
+        let finalCategory = category as string | null
         if (autoCategory && woSegment) {
           const woLabel = `wo-${woSegment.replace('WO-', '')}`
           const ext = optimized.suggestedExt || (file.name.split('.').pop() || 'bin')
@@ -625,8 +718,19 @@ export function FileManager() {
           finalCategory = autoCategory
         }
 
-        const storageBase = (basePath || 'root').replace(/^\/+/, '')
-        const filePath = `${storageBase}/${finalName}`.replace(/\/+/g, '/')
+        let filePath = '';
+        if (propertyId && categoryPath) {
+          filePath = buildCanonicalStoragePath({
+            propertyId,
+            workOrderId,
+            jobIdFallback: jobId,
+            category: categoryPath,
+            filename: finalName
+          });
+        } else {
+          const basePath = (folderInfo?.path || 'root').replace(/^\/+/, '');
+          filePath = `${basePath}/${finalName}`.replace(/\/+/g, '/');
+        }
         const uploadFile = new File([optimized.blob], finalName, { type: optimized.mime })
         await uploadFileWithProgress('files', filePath, uploadFile, (progress) => {
           setUploadProgress(prev => ({
@@ -649,7 +753,11 @@ export function FileManager() {
             uploaded_by: userData.user.id,
             job_id: jobId || null,
             property_id: propertyId,
-            category: finalCategory
+            category: finalCategory,
+            work_order_id: workOrderId,
+            storage_path: filePath,
+            original_filename: file.name,
+            bucket: 'files'
           });
 
         if (dbError) throw dbError;
@@ -762,7 +870,9 @@ export function FileManager() {
     switch (sortBy) {
       case 'name':
         return order * a.name.localeCompare(b.name);
-      case 'date':
+      case 'created':
+        return order * (new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      case 'modified':
         return order * (new Date(a.updated_at || a.created_at).getTime() - new Date(b.updated_at || b.created_at).getTime());
       case 'size':
         return order * (a.size - b.size);
@@ -817,15 +927,16 @@ export function FileManager() {
   };
 
   const getSignedFileUrl = async (item: FileItem) => {
-    const normalizedPath = normalizeStoragePath(item.file_path, item.name);
+    const rawPath = item.storage_path || item.file_path;
+    const normalizedPath = normalizeStoragePath(rawPath, item.name);
     // Prefer the raw DB path first (most objects stored there), then normalized as a fallback
     const candidates = new Set<string>();
-    if (item.file_path) candidates.add(item.file_path);
+    if (rawPath) candidates.add(rawPath);
     if (normalizedPath) candidates.add(normalizedPath);
 
     // Fallback: if the path ends with "/<fileName>" and the parent segment already contains the name (e.g., ".../foo.csv/foo.csv"), try the parent path.
-    if (item.file_path) {
-      const segments = item.file_path.split('/').filter(Boolean);
+    if (rawPath) {
+      const segments = rawPath.split('/').filter(Boolean);
       if (segments.length > 1) {
         const last = segments[segments.length - 1];
         const parent = segments.slice(0, -1).join('/');
@@ -1058,7 +1169,8 @@ export function FileManager() {
               className="px-2 sm:px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
             >
               <option value="name">{t.name}</option>
-              <option value="date">{t.date}</option>
+              <option value="created">{t.createdDate}</option>
+              <option value="modified">{t.modifiedDate}</option>
               <option value="size">{t.size}</option>
               <option value="type">{t.type}</option>
             </select>
@@ -1178,9 +1290,10 @@ export function FileManager() {
                 )}
               </div>
               <div className="flex items-center space-x-4">
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {formatDate(item.created_at)}
-                </span>
+                <div className="text-xs text-gray-500 dark:text-gray-400 min-w-[140px]">
+                  <div>{t.createdOn}: {formatDateOrDash(item.created_at)}</div>
+                  <div>{t.modifiedOn}: {formatDateOrDash(item.updated_at || item.created_at)}</div>
+                </div>
                 {isImageItem(item) && (
                   <div className="text-xs text-gray-600 dark:text-gray-300">
                     <span className="mr-3">Org: {formatBytes((item as any).original_size ?? item.size)}</span>
@@ -1280,6 +1393,10 @@ export function FileManager() {
                     <span className="mt-2 text-center mb-2 text-gray-900 dark:text-gray-100">{item.name}</span>
                   </button>
                 )}
+                <div className="text-xs text-gray-500 dark:text-gray-400 text-center mt-1">
+                  <div>{t.createdOn}: {formatDateOrDash(item.created_at)}</div>
+                  <div>{t.modifiedOn}: {formatDateOrDash(item.updated_at || item.created_at)}</div>
+                </div>
                 <div className="flex items-center space-x-2 mt-2">
                   <button
                     onClick={(e) => {

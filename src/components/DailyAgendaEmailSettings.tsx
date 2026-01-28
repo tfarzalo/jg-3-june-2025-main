@@ -17,6 +17,11 @@ interface TestEmailStatus {
   message: string;
 }
 
+interface EmailConfig {
+  send_time_utc: string;
+  send_time_timezone: string;
+}
+
 export function DailyAgendaEmailSettings() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,9 +31,13 @@ export function DailyAgendaEmailSettings() {
     status: 'idle',
     message: ''
   });
+  const [emailConfig, setEmailConfig] = useState<EmailConfig | null>(null);
+  const [sendTime, setSendTime] = useState('07:00');
+  const [savingTime, setSavingTime] = useState(false);
 
   useEffect(() => {
     fetchUsers();
+    fetchEmailConfig();
   }, []);
 
   const fetchUsers = async () => {
@@ -67,6 +76,28 @@ export function DailyAgendaEmailSettings() {
       toast.error('Failed to load users');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchEmailConfig = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('daily_email_config')
+        .select('send_time_utc, send_time_timezone')
+        .single();
+      
+      if (error) throw error;
+      
+      if (data) {
+        setEmailConfig(data);
+        // Convert UTC time to local time for display
+        const utcTime = data.send_time_utc;
+        // Parse HH:MM:SS to HH:MM for input
+        const timeOnly = utcTime.substring(0, 5);
+        setSendTime(timeOnly);
+      }
+    } catch (error) {
+      console.error('Error fetching email config:', error);
     }
   };
 
@@ -144,6 +175,43 @@ export function DailyAgendaEmailSettings() {
     }, 5000);
   };
 
+  const updateSendTime = async () => {
+    try {
+      setSavingTime(true);
+      
+      // Format as HH:MM:SS for postgres TIME type
+      const timeString = `${sendTime}:00`;
+      
+      // Get the config ID first
+      const { data: configData, error: fetchError } = await supabase
+        .from('daily_email_config')
+        .select('id')
+        .single();
+      
+      if (fetchError) throw fetchError;
+      if (!configData) throw new Error('No email config found');
+      
+      // Update the config
+      const { error: updateError } = await supabase
+        .from('daily_email_config')
+        .update({
+          send_time_utc: timeString,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', configData.id);
+      
+      if (updateError) throw updateError;
+      
+      toast.success(`Daily email time updated to ${sendTime}. Cron job will be rescheduled automatically.`);
+      await fetchEmailConfig();
+    } catch (error) {
+      console.error('Error updating send time:', error);
+      toast.error('Failed to update send time: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setSavingTime(false);
+    }
+  };
+
   const isTestEmailValid = () => {
     if (testEmailMode === 'single') {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -162,6 +230,49 @@ export function DailyAgendaEmailSettings() {
         <p className="text-gray-600 dark:text-gray-400">
           Configure which admin and management users receive daily job summary emails.
         </p>
+      </div>
+
+      {/* Schedule Settings Section */}
+      <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow border border-gray-200 dark:border-[#2D3B4E]">
+        <div className="p-6 border-b border-gray-200 dark:border-[#2D3B4E]">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Email Schedule</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            Configure when daily agenda emails are sent automatically
+          </p>
+        </div>
+        <div className="p-6 space-y-4">
+          <div className="space-y-2">
+            <label htmlFor="sendTime" className="block text-sm font-medium text-gray-900 dark:text-white">
+              Daily Send Time (Eastern Time)
+            </label>
+            <div className="flex gap-3 items-center">
+              <input
+                id="sendTime"
+                type="time"
+                value={sendTime}
+                onChange={(e) => setSendTime(e.target.value)}
+                className="px-3 py-2 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-md text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <Button
+                onClick={updateSendTime}
+                disabled={savingTime}
+                className="whitespace-nowrap"
+              >
+                {savingTime ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Update Time'
+                )}
+              </Button>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Current schedule: Emails sent daily at {sendTime} Eastern Time (ET). The system will automatically convert this to UTC for scheduling.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Test Email Section */}
@@ -335,10 +446,11 @@ export function DailyAgendaEmailSettings() {
             <div className="text-sm text-blue-900 dark:text-blue-200">
               <p className="font-semibold mb-1">How it works:</p>
               <ul className="list-disc list-inside space-y-1 text-blue-800 dark:text-blue-300">
-                <li>Emails are sent automatically at 5:00 AM ET every day</li>
+                <li>Emails are sent automatically at {sendTime} (your local time) every day</li>
                 <li>Email content includes job counts and details for the current day</li>
                 <li>Use the test feature above to preview the email format</li>
                 <li>Only users with the toggle enabled will receive daily emails</li>
+                <li>The cron job will automatically reschedule when you change the send time</li>
               </ul>
             </div>
           </div>

@@ -1,9 +1,10 @@
 import * as React from "react";
+import { addDays, format, parseISO, subDays } from "date-fns";
+import { formatInTimeZone, zonedTimeToUtc } from "date-fns-tz";
 import { Pencil, X } from "lucide-react";
 import { Button } from "../ui/Button";
 import { updateCalendarEvent, deleteCalendarEvent } from "../../services/calendarEvents";
 import type { CalendarEvent, CalendarEventInsert } from "../../types/calendar";
-import { format } from "date-fns";
 
 interface Props {
   event: CalendarEvent | null;
@@ -16,6 +17,17 @@ interface Props {
 export default function EventDetailsModal({ event, onClose, onEventUpdated, onEventDeleted, canEdit }: Props) {
   const [isEditing, setIsEditing] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
+  const timeZone = "America/New_York";
+  const toUtcISO = React.useCallback(
+    (dateStr: string, timeStr: string) =>
+      zonedTimeToUtc(`${dateStr}T${timeStr}`, timeZone).toISOString(),
+    [timeZone]
+  );
+  const nextDateInZone = React.useCallback(
+    (dateStr: string) =>
+      formatInTimeZone(addDays(parseISO(dateStr), 1), timeZone, "yyyy-MM-dd"),
+    [timeZone]
+  );
   
   // Get Eastern Time date
   const getEasternDate = () => {
@@ -45,22 +57,25 @@ export default function EventDetailsModal({ event, onClose, onEventUpdated, onEv
     if (event) {
       const startDate = new Date(event.start_at);
       const endDate = new Date(event.end_at);
+      const endDateForAllDay = event.is_all_day ? subDays(endDate, 1) : endDate;
       
       setFormData({
         title: event.title || "",
         details: event.details || "",
         color: event.color || "#3b82f6",
         is_all_day: event.is_all_day || false,
-        start_date: startDate.toISOString().slice(0, 10),
-        end_date: endDate.toISOString().slice(0, 10),
-        start_time: event.is_all_day ? "" : startDate.toTimeString().slice(0, 5),
-        end_time: event.is_all_day ? "" : endDate.toTimeString().slice(0, 5),
+        start_date: formatInTimeZone(startDate, timeZone, "yyyy-MM-dd"),
+        end_date: formatInTimeZone(endDateForAllDay, timeZone, "yyyy-MM-dd"),
+        start_time: event.is_all_day ? "" : formatInTimeZone(startDate, timeZone, "HH:mm"),
+        end_time: event.is_all_day ? "" : formatInTimeZone(endDate, timeZone, "HH:mm"),
         // Recurring event fields
         is_recurring: event.is_recurring || false,
         recurrence_type: event.recurrence_type || "weekly",
         recurrence_interval: event.recurrence_interval || 1,
         recurrence_days: event.recurrence_days || [],
-        recurrence_end_date: event.recurrence_end_date ? new Date(event.recurrence_end_date).toISOString().slice(0, 10) : "",
+        recurrence_end_date: event.recurrence_end_date
+          ? formatInTimeZone(new Date(event.recurrence_end_date), timeZone, "yyyy-MM-dd")
+          : "",
       });
     }
   }, [event]);
@@ -114,23 +129,21 @@ export default function EventDetailsModal({ event, onClose, onEventUpdated, onEv
 
       if (formData.is_all_day) {
         // All-day events: start at 00:00 Eastern, end at next day 00:00 Eastern
-        startISO = new Date(`${start_date}T00:00:00-05:00`).toISOString();
-        const endBase = new Date(new Date(`${end_date}T00:00:00-05:00`).getTime() + 24*60*60*1000);
-        endISO = endBase.toISOString();
+        startISO = toUtcISO(start_date, "00:00:00");
+        endISO = toUtcISO(nextDateInZone(end_date), "00:00:00");
       } else {
         // Timed events: use provided times or default to 1 hour duration
         if (start_time && end_time) {
-          startISO = new Date(`${start_date}T${start_time}:00-05:00`).toISOString();
-          endISO = new Date(`${end_date}T${end_time}:00-05:00`).toISOString();
+          startISO = toUtcISO(start_date, `${start_time}:00`);
+          endISO = toUtcISO(end_date, `${end_time}:00`);
         } else if (start_time) {
           // Only start time provided, default to 1 hour duration
-          startISO = new Date(`${start_date}T${start_time}:00-05:00`).toISOString();
-          const endBase = new Date(new Date(startISO).getTime() + 60*60*1000);
-          endISO = endBase.toISOString();
+          startISO = toUtcISO(start_date, `${start_time}:00`);
+          endISO = new Date(new Date(startISO).getTime() + 60 * 60 * 1000).toISOString();
         } else {
           // No times provided, default to 12:01 AM - 11:59 PM Eastern (full day)
-          startISO = new Date(`${start_date}T00:01:00-05:00`).toISOString();
-          endISO = new Date(`${end_date}T23:59:00-05:00`).toISOString();
+          startISO = toUtcISO(start_date, "00:01:00");
+          endISO = toUtcISO(end_date, "23:59:00");
         }
       }
 
@@ -146,7 +159,9 @@ export default function EventDetailsModal({ event, onClose, onEventUpdated, onEv
         recurrence_type: formData.is_recurring ? formData.recurrence_type : undefined,
         recurrence_interval: formData.is_recurring ? formData.recurrence_interval : undefined,
         recurrence_days: formData.is_recurring && formData.recurrence_type === 'weekly' ? formData.recurrence_days : undefined,
-        recurrence_end_date: formData.is_recurring && formData.recurrence_end_date ? new Date(`${formData.recurrence_end_date}T23:59:59-05:00`).toISOString() : undefined,
+        recurrence_end_date: formData.is_recurring && formData.recurrence_end_date
+          ? toUtcISO(formData.recurrence_end_date, "23:59:59")
+          : undefined,
       };
 
       console.log('EventDetailsModal: Payload to send:', payload);
@@ -194,6 +209,7 @@ export default function EventDetailsModal({ event, onClose, onEventUpdated, onEv
 
   const startDate = new Date(event.start_at);
   const endDate = new Date(event.end_at);
+  const displayEndDate = event.is_all_day ? subDays(endDate, 1) : endDate;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -480,15 +496,15 @@ export default function EventDetailsModal({ event, onClose, onEventUpdated, onEv
                 <div className="flex justify-between">
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Start:</span>
                   <span className="text-sm text-gray-900 dark:text-white">
-                    {format(startDate, "PPP")}
-                    {!event.is_all_day && ` at ${format(startDate, "p")}`}
+                    {formatInTimeZone(startDate, timeZone, "PPP")}
+                    {!event.is_all_day && ` at ${formatInTimeZone(startDate, timeZone, "p")}`}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">End:</span>
                   <span className="text-sm text-gray-900 dark:text-white">
-                    {format(endDate, "PPP")}
-                    {!event.is_all_day && ` at ${format(endDate, "p")}`}
+                    {formatInTimeZone(displayEndDate, timeZone, "PPP")}
+                    {!event.is_all_day && ` at ${formatInTimeZone(displayEndDate, timeZone, "p")}`}
                   </span>
                 </div>
               </div>

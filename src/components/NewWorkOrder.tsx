@@ -22,6 +22,9 @@ import { withSubcontractorAccessCheck } from './withSubcontractorAccessCheck';
 import { useUserRole } from '../contexts/UserRoleContext';
 import { formatCurrency } from '../lib/utils/formatUtils';
 import { prepareCeilingAccentUpdate } from '../lib/workOrders/prepareCeilingAccentUpdate';
+import ExtraChargesSection from './ExtraChargesSection';
+import { ExtraChargeLineItem } from '../types/extraCharges';
+import { validateAllExtraCharges } from '../utils/extraChargesValidation';
 
 
 interface Job {
@@ -109,6 +112,7 @@ interface WorkOrder {
   has_extra_charges: boolean;
   extra_charges_description: string;
   extra_hours: number;
+  extra_charges_line_items?: ExtraChargeLineItem[];
   additional_comments: string;
   additional_services?: Record<string, any>;
 }
@@ -145,6 +149,7 @@ interface WorkOrderDBPayload {
   has_extra_charges: boolean;
   extra_charges_description: string;
   extra_hours: number;
+  extra_charges_line_items?: ExtraChargeLineItem[];
   additional_comments: string;
   prepared_by: string;
   ceiling_billing_detail_id?: string | null;
@@ -275,20 +280,9 @@ const buildWorkOrderPayload = (
   ceilingPaintOptions: any[] = [],
   accentWallOptions: any[] = [],
   dynamicFormValues: Record<string, any> = {},
-  unitSizes: UnitSize[] = []
+  unitSizes: UnitSize[] = [],
+  extraChargesItems: ExtraChargeLineItem[] = []
 ): WorkOrderDBPayload => {
-  // Build additional services payload
-  const additionalServices: Record<string, any> = {};
-  Object.entries(dynamicFormValues).forEach(([categoryId, values]) => {
-    if (values.checked) {
-      additionalServices[categoryId] = {
-        quantity: values.quantity,
-        billing_detail_id: values.billingDetailId,
-        description: values.description
-      };
-    }
-  });
-
   // Build the base payload with proper type casting using helper functions
   const payload: WorkOrderDBPayload = {
     job_id: job.id,
@@ -382,11 +376,11 @@ const buildWorkOrderPayload = (
     has_extra_charges: formData.has_extra_charges ?? false,
     extra_charges_description: formData.extra_charges_description || '',
     extra_hours: toDbNumber(formData.extra_hours) || 0,
+    extra_charges_line_items: formData.has_extra_charges ? extraChargesItems : [],
     additional_comments: formData.additional_comments || '',
     prepared_by: '', // Will be set during submission - this gets overridden
     ceiling_billing_detail_id: nilIfEmpty(ceilingBillingDetailId),
     accent_wall_billing_detail_id: nilIfEmpty(accentWallBillingDetailId),
-    additional_services: Object.keys(additionalServices).length > 0 ? additionalServices : undefined
   };
 
   // === FINAL PAYLOAD LOGGING ===
@@ -441,6 +435,13 @@ const validateWorkOrderPayload = (payload: WorkOrderDBPayload, accentWallOptions
   if (!payload.unit_size) errors.push('Unit size is required');
   if (!payload.job_category_id || payload.job_category_id === '') errors.push('Job category is required');
   if (!payload.prepared_by) errors.push('Prepared by is required');
+
+  if (payload.has_extra_charges) {
+    const extraChargesValidation = validateAllExtraCharges(payload.extra_charges_line_items || []);
+    if (!extraChargesValidation.isValid) {
+      errors.push(...extraChargesValidation.errors);
+    }
+  }
 
   // Validate ceiling and accent wall constraints
   if (payload.painted_ceilings && payload.ceiling_display_label === 'Paint Individual Ceiling' && (!payload.individual_ceiling_count || payload.individual_ceiling_count <= 0)) {
@@ -775,7 +776,7 @@ const translations = {
     // Extra Charges
     extraCharges: 'Extra Charges',
     extraChargesRequireApproval: 'Extra Charges Require Approval',
-    extraChargesWarning: 'Adding extra charges will set this job to "Pending Work Order" status until the charges are approved.',
+    extraChargesWarning: 'Extra charges, painted ceilings, accent walls, or sprinklers will set this job to "Pending Work Order" status until approved or notification is sent.',
     description: 'Description',
     describeExtraCharges: 'Describe the extra charges',
     extraHours: 'Extra Hours',
@@ -854,7 +855,7 @@ const translations = {
     // Extra Charges
     extraCharges: 'Cargos Adicionales',
     extraChargesRequireApproval: 'Los Cargos Adicionales Requieren Aprobación',
-    extraChargesWarning: 'Agregar cargos adicionales establecerá este trabajo en estado "Orden de Trabajo Pendiente" hasta que los cargos sean aprobados.',
+    extraChargesWarning: 'Los cargos adicionales, techos pintados, paredes de acento o rociadores establecerán este trabajo en estado "Orden de Trabajo Pendiente" hasta que sea aprobado o se envíe la notificación.',
     description: 'Descripción',
     describeExtraCharges: 'Describir los cargos adicionales',
     extraHours: 'Horas Adicionales',
@@ -988,6 +989,7 @@ const NewWorkOrder = () => {
   const [beforeImagesUploaded, setBeforeImagesUploaded] = useState(false);
   const [sprinklerImagesUploaded, setSprinklerImagesUploaded] = useState(false);
   const [accentWallDisplayLabel, setAccentWallDisplayLabel] = useState<string | null>(null);
+  const [extraChargesItems, setExtraChargesItems] = useState<ExtraChargeLineItem[]>([]);
 
   useEffect(() => {
     if (!jobId) {
@@ -1055,22 +1057,11 @@ const NewWorkOrder = () => {
         additional_comments: existingWorkOrder.additional_comments || ''
       });
 
-      // Load dynamic services values
-      if (existingWorkOrder.additional_services) {
-        const services = existingWorkOrder.additional_services as Record<string, any>;
-        const newValues: Record<string, any> = {};
-        
-        Object.entries(services).forEach(([categoryId, data]) => {
-          newValues[categoryId] = {
-            checked: true,
-            quantity: data.quantity || 1,
-            billingDetailId: data.billing_detail_id || '',
-            description: data.description || ''
-          };
-        });
-        setDynamicFormValues(newValues);
-      }
-      
+      const existingExtraCharges = Array.isArray(existingWorkOrder.extra_charges_line_items)
+        ? existingWorkOrder.extra_charges_line_items
+        : [];
+      setExtraChargesItems(existingExtraCharges);
+
       // Set the new state variables for ceiling billing details
       setSelectedCeilingBillingDetailId(existingWorkOrder.ceiling_billing_detail_id || null);
       setCeilingDisplayLabel(existingWorkOrder.ceiling_display_label || null);
@@ -1106,6 +1097,7 @@ const NewWorkOrder = () => {
         additional_comments: job.additional_comments || '',
         ceiling_mode: 'unit_size' as 'unit_size' | 'individual'
       });
+      setExtraChargesItems([]);
     }
   }, [existingWorkOrder, job]);
 
@@ -1231,6 +1223,14 @@ const NewWorkOrder = () => {
     }
   };
 
+  const handleAddExtraCharge = (item: ExtraChargeLineItem) => {
+    setExtraChargesItems(prev => [...prev, item]);
+  };
+
+  const handleRemoveExtraCharge = (id: string) => {
+    setExtraChargesItems(prev => prev.filter(item => item.id !== id));
+  };
+
   // Fetch property billing options for dynamic dropdowns
   const fetchPropertyBillingOptions = async () => {
     if (!job?.property?.id) return;
@@ -1269,55 +1269,8 @@ const NewWorkOrder = () => {
       console.log('Job unit size:', job?.unit_size);
       console.log('Unit size ID:', job?.unit_size?.id);
 
-      // --- Fetch Dynamic Services ---
-      const dynamicCats = billingCategories.filter(cat => 
-        cat.include_in_work_order === true && 
-        cat.name !== 'Painted Ceilings' && 
-        cat.name !== 'Accent Walls' &&
-        cat.name !== 'Regular Paint'
-      );
-
-      const loadedDynamicServices: typeof dynamicServices = [];
-
-      for (const cat of dynamicCats) {
-        const { data: catOptions, error: catError } = await supabase
-          .from('billing_details')
-          .select(`
-            id, 
-            unit_size_id, 
-            bill_amount, 
-            sub_pay_amount
-          `)
-          .eq('property_id', job.property.id)
-          .eq('category_id', cat.id)
-          .eq('is_hourly', false)
-          .order('bill_amount', { ascending: true });
-
-        if (!catError && catOptions && catOptions.length > 0) {
-          // Fetch unit sizes for labels
-          const unitSizeIds = catOptions.map(item => item.unit_size_id);
-          const { data: unitSizeData } = await supabase
-            .from('unit_sizes')
-            .select('id, unit_size_label')
-            .in('id', unitSizeIds);
-
-          const enrichedOptions = catOptions.map(opt => {
-            const us = unitSizeData?.find(u => u.id === opt.unit_size_id);
-            return {
-              ...opt,
-              unit_sizes: us ? [{ unit_size_label: us.unit_size_label }] : []
-            };
-          });
-
-          loadedDynamicServices.push({
-            id: cat.id,
-            name: cat.name,
-            options: enrichedOptions
-          });
-        }
-      }
-      setDynamicServices(loadedDynamicServices);
-      // -----------------------------
+      // Dynamic Additional Services are currently disabled (replaced by itemized Extra Charges)
+      setDynamicServices([]);
 
       // Fetch ceiling paint options if category exists
       // Note: Painted Ceilings pricing is based on service complexity, not unit size
@@ -1647,7 +1600,8 @@ const NewWorkOrder = () => {
         ceilingPaintOptions,
         accentWallOptions,
         dynamicFormValues,
-        unitSizes
+        unitSizes,
+        extraChargesItems
       );
       
       // Merge the ceiling/accent wall patch into the payload
@@ -1700,11 +1654,19 @@ const NewWorkOrder = () => {
       // Build whitelisted payload (snake_case only; strip undefined)
       const dbPayload = buildWhitelistedPayload(workOrderPayload);
 
+      const requiresApproval =
+        Boolean(
+          formData.has_extra_charges ||
+          formData.painted_ceilings ||
+          formData.has_accent_wall ||
+          formData.has_sprinklers
+        );
+
       // Get the target phase ID for phase advancement
       const { data: phaseData, error: phaseError } = await supabase
         .from('job_phases')
         .select('id')
-        .eq('job_phase_label', formData.has_extra_charges ? 'Pending Work Order' : 'Work Order');
+        .eq('job_phase_label', requiresApproval ? 'Pending Work Order' : 'Work Order');
         
       if (phaseError) {
         console.error('Error fetching phase:', phaseError);
@@ -1855,8 +1817,8 @@ const NewWorkOrder = () => {
           const { error: rpcError } = await supabase.rpc('update_job_phase', {
             p_job_id: job.id,
             p_new_phase_id: targetPhaseId,
-            p_change_reason: formData.has_extra_charges 
-              ? 'Work order created with extra charges - job advanced from Job Request' 
+            p_change_reason: requiresApproval
+              ? 'Work order created with approval-required items - job advanced from Job Request'
               : 'Work order created - job advanced from Job Request'
           });
           
@@ -1885,8 +1847,8 @@ const NewWorkOrder = () => {
             changed_by: previewUserId || userData.user.id,
             from_phase_id: job.job_phase?.id,
             to_phase_id: targetPhaseId,
-            change_reason: formData.has_extra_charges 
-              ? 'Work order created with extra charges - job advanced from Job Request' 
+            change_reason: requiresApproval
+              ? 'Work order created with approval-required items - job advanced from Job Request'
               : 'Work order created - job advanced from Job Request'
           }]);
           
@@ -2110,13 +2072,8 @@ const NewWorkOrder = () => {
       formData.accent_wall_count !== undefined && 
       formData.accent_wall_count > 0
     )) &&
-    // Extra Charges requirements - hours must be greater than 0 when checkbox is checked
-    (!formData.has_extra_charges || (
-      formData.extra_charges_description && 
-      formData.extra_charges_description.trim() !== '' && 
-      formData.extra_hours !== undefined && 
-      formData.extra_hours > 0
-    ))
+    // Extra Charges requirements - at least one line item when checkbox is checked
+    (!formData.has_extra_charges || extraChargesItems.length > 0)
   );
 
   if (loading) {
@@ -2250,6 +2207,9 @@ const NewWorkOrder = () => {
                 dynamicServices={dynamicServices}
                 dynamicFormValues={dynamicFormValues}
                 setDynamicFormValues={setDynamicFormValues}
+                extraChargesItems={extraChargesItems}
+                handleAddExtraCharge={handleAddExtraCharge}
+                handleRemoveExtraCharge={handleRemoveExtraCharge}
               />
             ) : (
           <>
@@ -2477,53 +2437,6 @@ const NewWorkOrder = () => {
                       </div>
                     </>
                   )}
-                </div>
-              </div>
-
-              {/* Before Images */}
-              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
-                  Before Images {isSubcontractor && <span className="text-red-500">*</span>}
-                </h2>
-                
-                <div className="space-y-4">
-                  <div>
-                    <ImageUpload
-                      jobId={jobId || ''}
-                      workOrderId={existingWorkOrder?.id || ''}
-                      folder="before"
-                      onUploadComplete={(filePath) => handleUploadComplete(filePath, 'before')}
-                      onError={handleUploadError}
-                      onImageDelete={handleImageDelete}
-                      required={isSubcontractor}
-                    />
-                    {isSubcontractor && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        Before images are required for all work orders.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Other Files */}
-              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Other Files</h2>
-                
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Additional Files (All File Types)
-                    </label>
-                    <ImageUpload
-                      jobId={jobId || ''}
-                      workOrderId={existingWorkOrder?.id || ''}
-                      folder="other"
-                      onUploadComplete={handleUploadComplete}
-                      onError={handleUploadError}
-                      onImageDelete={handleImageDelete}
-                    />
-                  </div>
                 </div>
               </div>
 
@@ -2801,127 +2714,7 @@ const NewWorkOrder = () => {
                 )}
               </div>
 
-              {/* Dynamic Additional Services */}
-              {dynamicServices.length > 0 && (
-                <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Additional Services</h2>
-                  <div className="grid grid-cols-1 gap-4 sm:gap-6">
-                    {dynamicServices.map(service => {
-                      const value = dynamicFormValues[service.id] || { checked: false, quantity: 1, billingDetailId: '', description: '' };
-                      
-                      return (
-                        <div key={service.id} className="space-y-3 p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center">
-                              <input
-                                type="checkbox"
-                                id={`service_${service.id}`}
-                                checked={value.checked}
-                                onChange={(e) => {
-                                  const checked = e.target.checked;
-                                  let defaultOptionId = '';
-                                  // Try to auto-select option matching job unit size
-                                  if (checked && job?.unit_size?.id) {
-                                    const match = service.options.find(o => o.unit_size_id === job.unit_size?.id);
-                                    if (match) defaultOptionId = match.id;
-                                  }
-                                  // Fallback to first option
-                                  if (checked && !defaultOptionId && service.options.length > 0) {
-                                    defaultOptionId = service.options[0].id;
-                                  }
-
-                                  setDynamicFormValues(prev => ({
-                                    ...prev,
-                                    [service.id]: {
-                                      ...prev[service.id],
-                                      checked,
-                                      quantity: prev[service.id]?.quantity || 1,
-                                      billingDetailId: defaultOptionId,
-                                      description: prev[service.id]?.description || ''
-                                    }
-                                  }));
-                                }}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                              />
-                              <label htmlFor={`service_${service.id}`} className="ml-2 block text-sm font-medium text-gray-900 dark:text-white">
-                                {service.name}
-                              </label>
-                            </div>
-                          </div>
-
-                          {value.checked && (
-                            <div className="ml-6 space-y-4">
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                                    Size / Type <span className="text-red-500">*</span>
-                                  </label>
-                                  <select
-                                    value={value.billingDetailId}
-                                    onChange={(e) => {
-                                      setDynamicFormValues(prev => ({
-                                        ...prev,
-                                        [service.id]: { ...prev[service.id], billingDetailId: e.target.value }
-                                      }));
-                                    }}
-                                    className="w-full h-12 sm:h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                                  >
-                                    <option value="">Select option...</option>
-                                    {service.options.map(opt => (
-                                      <option key={opt.id} value={opt.id}>
-                                        {opt.unit_sizes?.[0]?.unit_size_label || 'Standard'}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                                    Quantity <span className="text-red-500">*</span>
-                                  </label>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    value={value.quantity}
-                                    onChange={(e) => {
-                                      const qty = parseInt(e.target.value) || 0;
-                                      setDynamicFormValues(prev => ({
-                                        ...prev,
-                                        [service.id]: { ...prev[service.id], quantity: qty }
-                                      }));
-                                    }}
-                                    className="w-full h-12 sm:h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                                  />
-                                </div>
-                              </div>
-
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                                  Description (Optional)
-                                </label>
-                                <textarea
-                                  value={value.description}
-                                  onChange={(e) => {
-                                    setDynamicFormValues(prev => ({
-                                      ...prev,
-                                      [service.id]: { ...prev[service.id], description: e.target.value }
-                                    }));
-                                  }}
-                                  rows={2}
-                                  className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                                  placeholder="Enter additional details..."
-                                />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Extra Charges */}
+              {/* Extra Charges (Itemized) */}
               <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
                 <div className="flex items-center mb-6">
                   <input
@@ -2946,50 +2739,69 @@ const NewWorkOrder = () => {
                           <AlertCircle className="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400 mt-0.5" />
                           <div>
                             <p className="font-medium">Extra Charges Require Approval</p>
-                            <p className="mt-1 text-sm">Adding extra charges will set this job to "Pending Work Order" status until the charges are approved.</p>
+                            <p className="mt-1 text-sm">Extra charges, painted ceilings, accent walls, or sprinklers will set this job to "Pending Work Order" status until approved or notification is sent.</p>
                           </div>
                         </div>
                       </div>
                     )}
-                    
-                    <div>
-                      <label htmlFor="extra_charges_description" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                        Description {formData.has_extra_charges && <span className="text-red-500">*</span>}
-                      </label>
-                      <textarea
-                        id="extra_charges_description"
-                        name="extra_charges_description"
-                        rows={3}
-                        required={formData.has_extra_charges}
-                        value={formData.extra_charges_description}
-                        onChange={handleInputChange}
-                        className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Describe the extra charges"
-                      />
-                    </div>
-                    
-                    
-                    <div>
-                      <label htmlFor="extra_hours" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                        Extra Hours {formData.has_extra_charges && <span className="text-red-500">*</span>}
-                      </label>
-                      <input
-                        type="number"
-                        id="extra_hours"
-                        name="extra_hours"
-                        min="0.25"
-                        step="0.25"
-                        required={formData.has_extra_charges}
-                        value={formData.extra_hours}
-                        onChange={handleInputChange}
-                        className="w-full h-12 sm:h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                      />
-                      {formData.has_extra_charges && formData.extra_hours !== undefined && formData.extra_hours <= 0 && (
-                        <p className="mt-1 text-sm text-red-500">Extra hours must be greater than 0</p>
-                      )}
-                    </div>
+
+                    <ExtraChargesSection
+                      propertyId={job?.property?.id || null}
+                      lineItems={extraChargesItems}
+                      onAddLineItem={handleAddExtraCharge}
+                      onRemoveLineItem={handleRemoveExtraCharge}
+                      language="en"
+                      disabled={saving}
+                    />
                   </div>
                 )}
+              </div>
+
+              {/* Before Images */}
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
+                  Before Images {isSubcontractor && <span className="text-red-500">*</span>}
+                </h2>
+                
+                <div className="space-y-4">
+                  <div>
+                    <ImageUpload
+                      jobId={jobId || ''}
+                      workOrderId={existingWorkOrder?.id || ''}
+                      folder="before"
+                      onUploadComplete={(filePath) => handleUploadComplete(filePath, 'before')}
+                      onError={handleUploadError}
+                      onImageDelete={handleImageDelete}
+                      required={isSubcontractor}
+                    />
+                    {isSubcontractor && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Before images are required for all work orders.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Other Files */}
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Other Files</h2>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Additional Files (All File Types)
+                    </label>
+                    <ImageUpload
+                      jobId={jobId || ''}
+                      workOrderId={existingWorkOrder?.id || ''}
+                      folder="other"
+                      onUploadComplete={handleUploadComplete}
+                      onError={handleUploadError}
+                      onImageDelete={handleImageDelete}
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Additional Comments */}
@@ -3054,6 +2866,7 @@ const NewWorkOrder = () => {
                 
                 <ImageGallery
                   workOrderId={workOrderId}
+                  jobId={jobId || null}
                   folder="before"
                   key={refreshImages}
                 />

@@ -1,9 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, X, DollarSign, Save, Trash2, ArrowLeft, GripVertical, FileText, ShieldCheck } from 'lucide-react';
+import { Plus, X, DollarSign, Save, Trash2, ArrowLeft, GripVertical, FileText, ShieldCheck, HelpCircle, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../utils/supabase';
 import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
+import { DeleteHandler } from '../utils/deleteHandler';
+import { 
+  getBillingCategoryDisplayName, 
+  validateCategoryFlags, 
+  isDefaultCategory,
+  getCategoryBadgeInfo,
+  groupBillingCategories
+} from '../utils/billingCategoryHelpers';
 
 interface JobCategory {
   id: string;
@@ -22,6 +30,8 @@ interface PropertyBillingCategory {
   description: string | null;
   sort_order: number;
   include_in_work_order?: boolean;
+  is_extra_charge?: boolean;     // ✨ NEW: Phase 1
+  archived_at?: string | null;   // ✨ NEW: Phase 1
   created_at: string;
   updated_at: string;
 }
@@ -58,6 +68,7 @@ interface CategoryLineItems {
 export function BillingDetailsForm() {
   const { propertyId } = useParams<{ propertyId: string }>();
   const navigate = useNavigate();
+  const ENABLE_LEGACY_EXTRA_CHARGES_DEFAULTS = false;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [jobCategories, setJobCategories] = useState<JobCategory[]>([]);
@@ -217,50 +228,54 @@ export function BillingDetailsForm() {
 
       setPropertyBillingCategories(currentCategories);
 
-      // Check if Extra Charges category exists
+      // Check if Extra Charges category exists (legacy)
       const hasExtraCharges = currentCategories.some(cat => cat.name === 'Extra Charges');
       let extraChargesCategoryId: string | null = null;
       
-      // If Extra Charges doesn't exist, create it
-      if (!hasExtraCharges) {
-        const { data: extraChargesCategory, error: insertError } = await supabase
-          .from('billing_categories')
-          .insert([
-            {
-              property_id: propertyId,
-              name: 'Extra Charges',
-              description: 'Additional charges for special services or materials',
-              sort_order: 4
-            }
-          ])
-          .select()
-          .single();
+      if (ENABLE_LEGACY_EXTRA_CHARGES_DEFAULTS) {
+        // If Extra Charges doesn't exist, create it
+        if (!hasExtraCharges) {
+          const { data: extraChargesCategory, error: insertError } = await supabase
+            .from('billing_categories')
+            .insert([
+              {
+                property_id: propertyId,
+                name: 'Extra Charges',
+                description: 'Additional charges for special services or materials',
+                sort_order: 4
+              }
+            ])
+            .select()
+            .single();
 
-        if (insertError) throw insertError;
-        extraChargesCategoryId = extraChargesCategory.id;
-        
-        // Update the categories list with the new Extra Charges category
-        setPropertyBillingCategories(prev => [...prev, extraChargesCategory]);
-        currentCategories.push(extraChargesCategory); // Keep currentCategories in sync
+          if (insertError) throw insertError;
+          extraChargesCategoryId = extraChargesCategory.id;
+          
+          // Update the categories list with the new Extra Charges category
+          setPropertyBillingCategories(prev => [...prev, extraChargesCategory]);
+          currentCategories.push(extraChargesCategory); // Keep currentCategories in sync
 
-        // Create default billing details for Extra Charges
-        const { error: billingDetailsError } = await supabase
-          .from('billing_details')
-          .insert([
-            {
-              property_id: propertyId,
-              category_id: extraChargesCategoryId,
-              unit_size_id: unitSizes[0]?.id, // Use first unit size as default
-              bill_amount: 40,
-              sub_pay_amount: 20,
-              profit_amount: null,
-              is_hourly: true
-            }
-          ]);
+          // Create default billing details for Extra Charges
+          const { error: billingDetailsError } = await supabase
+            .from('billing_details')
+            .insert([
+              {
+                property_id: propertyId,
+                category_id: extraChargesCategoryId,
+                unit_size_id: unitSizes[0]?.id, // Use first unit size as default
+                bill_amount: 40,
+                sub_pay_amount: 20,
+                profit_amount: null,
+                is_hourly: true
+              }
+            ]);
 
-        if (billingDetailsError) throw billingDetailsError;
-      } else {
-        // If category exists, check if it has billing details
+          if (billingDetailsError) throw billingDetailsError;
+        } else {
+          // If category exists, check if it has billing details
+          extraChargesCategoryId = currentCategories.find(cat => cat.name === 'Extra Charges')?.id || null;
+        }
+      } else if (hasExtraCharges) {
         extraChargesCategoryId = currentCategories.find(cat => cat.name === 'Extra Charges')?.id || null;
       }
 
@@ -273,8 +288,8 @@ export function BillingDetailsForm() {
       if (fetchDetailsError) throw fetchDetailsError;
       setBillingDetails(billingDetailsData || []);
 
-      // If Extra Charges exists but has no billing details, create default ones
-      if (extraChargesCategoryId && !billingDetailsData?.some(detail => detail.category_id === extraChargesCategoryId)) {
+      // If Extra Charges exists but has no billing details, create default ones (legacy only)
+      if (ENABLE_LEGACY_EXTRA_CHARGES_DEFAULTS && extraChargesCategoryId && !billingDetailsData?.some(detail => detail.category_id === extraChargesCategoryId)) {
         const { error: billingDetailsError } = await supabase
           .from('billing_details')
           .insert([
@@ -392,42 +407,53 @@ export function BillingDetailsForm() {
   };
 
   const handleDeleteCategory = async (propertyBillingCategoryId: string) => {
+    const categoryToDelete = propertyBillingCategories.find(cat => cat.id === propertyBillingCategoryId);
+    const categoryName = categoryToDelete?.name || 'category';
 
-    setLoading(true);
-    setError(null);
+    const success = await DeleteHandler.handleDelete(
+      propertyBillingCategoryId,
+      async () => {
+        // Delete associated billing details first
+        const { error: deleteBillingDetailsError } = await supabase
+          .from('billing_details')
+          .delete()
+          .eq('category_id', propertyBillingCategoryId);
 
-    try {
-      const { error: deleteBillingDetailsError } = await supabase
-        .from('billing_details')
-        .delete()
-        .eq('category_id', propertyBillingCategoryId);
+        if (deleteBillingDetailsError) {
+          console.error('Error deleting associated billing details:', deleteBillingDetailsError);
+          throw new Error('Failed to delete associated billing details');
+        }
 
-      if (deleteBillingDetailsError) {
-        console.error('Error deleting associated billing details:', deleteBillingDetailsError);
+        // Delete the category itself
+        const { error: deletePBCError } = await supabase
+          .from('billing_categories')
+          .delete()
+          .eq('id', propertyBillingCategoryId)
+          .eq('property_id', propertyId);
+
+        if (deletePBCError) {
+          console.error('Error deleting property billing category:', deletePBCError);
+          throw deletePBCError;
+        }
+      },
+      {
+        entityType: `billing category "${categoryName}"`,
+        scope: 'property',
+        skipConfirmation: true, // Skip browser confirm - we have our own styled modal
+        onSuccess: async () => {
+          // Refresh data from server to ensure UI is in sync
+          await fetchPropertyBillingData();
+          setHasChanges(true);
+        },
+        onError: (error) => {
+          console.error('Category deletion failed:', error);
+          setError(error.message || 'Failed to delete billing category entry.');
+        }
       }
+    );
 
-      const { error: deletePBCError } = await supabase
-        .from('billing_categories')
-        .delete()
-        .eq('id', propertyBillingCategoryId)
-        .eq('property_id', propertyId);
-
-      if (deletePBCError) {
-        console.error('Error deleting property billing category:', deletePBCError);
-        throw deletePBCError;
-      }
-
-
-      await fetchPropertyBillingData();
-
+    if (success) {
       setShowDeleteConfirm(null);
-      setHasChanges(true);
-
-    } catch (err) {
-      console.error('Error in handleDeleteCategory:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete billing category entry.');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -496,19 +522,32 @@ export function BillingDetailsForm() {
 
     try {
       // Save category settings (including include_in_work_order and sort_order)
-      const categoryUpdates = propertyBillingCategories.map(cat => {
-        // Enforce include_in_work_order=true for default categories
-        const isDefault = jobCategories.find(jc => jc.name === cat.name)?.is_default;
-        
-        return {
-          id: cat.id,
-          property_id: propertyId,
-          name: cat.name,
-          description: cat.description,
-          sort_order: cat.sort_order, // Ensure current sort order is saved
-          include_in_work_order: isDefault ? true : cat.include_in_work_order
-        };
-      });
+      const categoryUpdates = propertyBillingCategories
+        .filter(cat => !cat.archived_at) // Don't update archived categories
+        .map(cat => {
+          // Enforce include_in_work_order=true for default categories
+          const isDefault = jobCategories.find(jc => jc.name === cat.name)?.is_default;
+          
+          // Validate mutual exclusivity
+          const validationError = validateCategoryFlags(
+            cat.is_extra_charge || false,
+            cat.include_in_work_order || false
+          );
+          
+          if (validationError) {
+            throw new Error(validationError);
+          }
+          
+          return {
+            id: cat.id,
+            property_id: propertyId,
+            name: cat.name,
+            description: cat.description,
+            sort_order: cat.sort_order,
+            include_in_work_order: isDefault ? true : (cat.is_extra_charge ? false : cat.include_in_work_order),
+            is_extra_charge: cat.is_extra_charge || false
+          };
+        });
 
       const { error: catError } = await supabase
         .from('billing_categories')
@@ -516,8 +555,22 @@ export function BillingDetailsForm() {
 
       if (catError) throw catError;
 
-      const updates: any[] = [];
+      // IMPROVED FIX: Build current state and compare with DB to find what to delete
+      // First, get all existing billing details for this property
+      const { data: existingDetails, error: fetchError } = await supabase
+        .from('billing_details')
+        .select('id, property_id, category_id, unit_size_id')
+        .eq('property_id', propertyId);
 
+      if (fetchError) {
+        console.error('Error fetching existing billing details:', fetchError);
+        throw new Error('Failed to fetch existing billing details');
+      }
+
+      const updates: any[] = [];
+      const currentKeys = new Set<string>();
+
+      // Build updates array and track which records we're keeping
       for (const propertyBillingCategoryId in categoryLineItems) {
         const items = categoryLineItems[propertyBillingCategoryId] || [];
         items.forEach((lineItem, index) => {
@@ -535,6 +588,10 @@ export function BillingDetailsForm() {
           // For hourly rates, we don't calculate profit here as it will be based on actual hours worked
           const profitAmount = lineItem.isHourly ? null : billAmountNum - subPayAmountNum;
 
+          // Create unique key for this line item
+          const key = `${propertyId}-${propertyBillingCategoryId}-${lineItem.unitSizeId}`;
+          currentKeys.add(key);
+
           updates.push({
             property_id: propertyId,
             category_id: propertyBillingCategoryId,
@@ -548,7 +605,28 @@ export function BillingDetailsForm() {
         });
       }
 
-      // Use upsert instead of delete-then-insert to avoid conflicts
+      // Find records to delete (exist in DB but not in current state)
+      const idsToDelete = (existingDetails || [])
+        .filter(detail => {
+          const key = `${detail.property_id}-${detail.category_id}-${detail.unit_size_id}`;
+          return !currentKeys.has(key);
+        })
+        .map(detail => detail.id);
+
+      // Delete only the records that were removed
+      if (idsToDelete.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('billing_details')
+          .delete()
+          .in('id', idsToDelete);
+
+        if (deleteError) {
+          console.error('Error deleting removed billing details:', deleteError);
+          throw new Error('Failed to delete removed items. Please try again.');
+        }
+      }
+
+      // Upsert current line items (insert new or update existing)
       if (updates.length > 0) {
         const { error: upsertError } = await supabase
           .from('billing_details')
@@ -557,17 +635,23 @@ export function BillingDetailsForm() {
             ignoreDuplicates: false 
           });
 
-        if (upsertError) throw upsertError;
+        if (upsertError) {
+          console.error('Error saving billing details:', upsertError);
+          throw new Error('Failed to save billing details');
+        }
       }
 
       setHasChanges(false);
+      toast.success('Billing details saved successfully');
       
       // Navigate back to property details page
       navigate(`/dashboard/properties/${propertyId}`);
 
     } catch (err) {
       console.error('Error saving billing details:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save billing details.');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save billing details.';
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -614,7 +698,18 @@ export function BillingDetailsForm() {
                 .from('billing_categories')
                 .upsert(categoryUpdates, { onConflict: 'id' });
               if (catError) throw catError;
+              
+              // IMPROVED FIX: Use surgical delete for auto-save too
+              const { data: existingDetails, error: fetchError } = await supabase
+                .from('billing_details')
+                .select('id, property_id, category_id, unit_size_id')
+                .eq('property_id', propertyId);
+
+              if (fetchError) throw fetchError;
+
               const updates: any[] = [];
+              const currentKeys = new Set<string>();
+
               for (const cid in categoryLineItems) {
                 const items = categoryLineItems[cid] || [];
                 items.forEach((li, idx) => {
@@ -624,6 +719,10 @@ export function BillingDetailsForm() {
                   const billAmountNum = parseFloat(li.billAmount);
                   const subPayAmountNum = parseFloat(li.subPayAmount);
                   const profitAmount = li.isHourly ? null : billAmountNum - subPayAmountNum;
+                  
+                  const key = `${propertyId}-${cid}-${li.unitSizeId}`;
+                  currentKeys.add(key);
+
                   updates.push({
                     property_id: propertyId,
                     category_id: cid,
@@ -636,6 +735,23 @@ export function BillingDetailsForm() {
                   });
                 });
               }
+
+              // Delete only removed items
+              const idsToDelete = (existingDetails || [])
+                .filter(detail => {
+                  const key = `${detail.property_id}-${detail.category_id}-${detail.unit_size_id}`;
+                  return !currentKeys.has(key);
+                })
+                .map(detail => detail.id);
+
+              if (idsToDelete.length > 0) {
+                const { error: deleteError } = await supabase
+                  .from('billing_details')
+                  .delete()
+                  .in('id', idsToDelete);
+                if (deleteError) throw deleteError;
+              }
+
               if (updates.length > 0) {
                 const { error: upsertError } = await supabase
                   .from('billing_details')
@@ -867,11 +983,35 @@ export function BillingDetailsForm() {
           </div>
         </div>
 
+        {/* Billing Category Setup Instructions */}
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
+                Billing Category Setup
+              </p>
+              <ul className="text-xs text-blue-600 dark:text-blue-300 space-y-1.5 list-disc list-inside">
+                <li><strong>Drag and Drop:</strong> Use the grip handle to reorder categories</li>
+                <li><strong>Show on Work Order:</strong> Category appears as separate section in work order form</li>
+                <li><strong>Extra Charge:</strong> Category items available in unified Extra Charges dropdown (Phase 2)</li>
+                <li><strong>Note:</strong> Extra Charge and Show on Work Order are mutually exclusive</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
         <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
           <div className="space-y-4">
             {propertyBillingCategories.map(pbc => {
               const propertyBillingCategoryId = pbc.id;
               const isDefault = jobCategories.find(jc => jc.name === pbc.name)?.is_default;
+              const displayName = getBillingCategoryDisplayName(pbc);
+              const badgeInfo = getCategoryBadgeInfo(pbc);
+              const isArchived = !!pbc.archived_at;
+              
+              // Don't show archived categories in main list
+              if (isArchived) return null;
 
               return (
                 <div 
@@ -893,40 +1033,106 @@ export function BillingDetailsForm() {
                       <div className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                         <GripVertical className="h-5 w-5" />
                       </div>
-                      <div>
-                        <h3 className="text-gray-900 dark:text-white font-medium">{pbc.name}</h3>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-gray-900 dark:text-white font-medium">
+                            {displayName}
+                          </h3>
+                          {badgeInfo && (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                              badgeInfo.variant === 'default' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' :
+                              badgeInfo.variant === 'secondary' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' :
+                              'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'
+                            }`}>
+                              {badgeInfo.text}
+                            </span>
+                          )}
+                        </div>
+                        {pbc.is_extra_charge && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Internal Name: <span className="font-mono">{pbc.name}</span>
+                          </p>
+                        )}
                         {pbc.description && (
                           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{pbc.description}</p>
                         )}
                       </div>
                     </div>
                     <div className="flex items-center space-x-4">
+                      {/* Show on Work Order checkbox */}
                       {isDefault ? (
                         <div className="flex items-center space-x-2 mr-2 text-blue-600 dark:text-blue-400" title="Default category - Automatically included in Work Order">
                           <ShieldCheck className="h-5 w-5" />
                           <span className="text-sm font-medium">Included</span>
                         </div>
                       ) : (
-                        <label className="flex items-center space-x-2 cursor-pointer mr-2">
-                          <input
-                            type="checkbox"
-                            checked={pbc.include_in_work_order || false}
-                            onChange={(e) => handleCategoryChange(pbc.id, 'include_in_work_order', e.target.checked)}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
-                          />
-                          <span className="text-sm text-gray-600 dark:text-gray-400">Show on Work Order</span>
-                        </label>
+                        <>
+                          <label className={`flex items-center space-x-2 mr-2 ${
+                            pbc.is_extra_charge ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                          }`}>
+                            <input
+                              type="checkbox"
+                              checked={pbc.include_in_work_order || false}
+                              disabled={pbc.is_extra_charge}
+                              onChange={(e) => {
+                                if (pbc.is_extra_charge) {
+                                  toast.error('Cannot enable "Show on Work Order" while Extra Charge is active. Uncheck Extra Charge first.');
+                                  return;
+                                }
+                                handleCategoryChange(pbc.id, 'include_in_work_order', e.target.checked);
+                              }}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
+                            />
+                            <span className="text-sm text-gray-600 dark:text-gray-400">Show on Work Order</span>
+                            {pbc.is_extra_charge && (
+                              <div className="relative group">
+                                <HelpCircle className="h-4 w-4 text-gray-400" />
+                                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg z-50">
+                                  Disabled when Extra Charge is checked. Extra Charge items appear in unified dropdown.
+                                </div>
+                              </div>
+                            )}
+                          </label>
+                          
+                          {/* Extra Charge checkbox */}
+                          <label className={`flex items-center space-x-2 mr-2 cursor-pointer`}>
+                            <input
+                              type="checkbox"
+                              checked={pbc.is_extra_charge || false}
+                              onChange={(e) => {
+                                const newValue = e.target.checked;
+                                
+                                // If enabling Extra Charge, disable Show on Work Order
+                                if (newValue) {
+                                  handleCategoryChange(pbc.id, 'is_extra_charge', true);
+                                  handleCategoryChange(pbc.id, 'include_in_work_order', false);
+                                } else {
+                                  handleCategoryChange(pbc.id, 'is_extra_charge', false);
+                                }
+                              }}
+                              className="rounded border-gray-300 text-yellow-600 focus:ring-yellow-500 h-4 w-4"
+                            />
+                            <span className="text-sm text-gray-600 dark:text-gray-400">Extra Charge</span>
+                            <div className="relative group">
+                              <HelpCircle className="h-4 w-4 text-gray-400" />
+                              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block w-64 p-2 bg-gray-900 text-white text-xs rounded shadow-lg z-50">
+                                When checked, this category's items will appear in the unified Extra Charges dropdown (Phase 2)
+                              </div>
+                            </div>
+                          </label>
+                        </>
                       )}
+                      
                       <button
                         onClick={() => setShowDeleteConfirm(propertyBillingCategoryId)}
-                      disabled={isDefault}
-                      className={`text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 ${
-                        isDefault ? 'opacity-30 cursor-not-allowed' : ''
-                      }`}
-                      title={isDefault ? 'Default categories cannot be removed' : 'Delete category'}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                        disabled={isDefault}
+                        className={`text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 ${
+                          isDefault ? 'opacity-30 cursor-not-allowed' : ''
+                        }`}
+                        title={isDefault ? 'Default categories cannot be removed' : 'Delete category'}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </div>
 
@@ -1044,6 +1250,86 @@ export function BillingDetailsForm() {
           </button>
         </div>
 
+        {/* Archived Extra Charges Reference Section */}
+        {propertyBillingCategories.some(pbc => pbc.archived_at && pbc.name === 'Extra Charges') && (
+          <div className="mt-12 border-t-4 border-gray-200 dark:border-gray-700 pt-8">
+            <div className="flex items-center gap-3 mb-4">
+              <FileText className="h-5 w-5 text-gray-500" />
+              <h3 className="text-lg font-semibold text-gray-600 dark:text-gray-400">
+                LEGACY | DO NOT USE
+              </h3>
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 border border-gray-300 dark:border-gray-600">
+                LEGACY | DO NOT USE
+              </span>
+            </div>
+            
+            <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-4">
+              <p className="text-sm text-amber-900 dark:text-amber-200">
+                ⚠️ This section shows the original Extra Charges setup before Phase 1 migration. 
+                It is preserved for <strong>reference and verification purposes only</strong>.
+                <br />
+                <strong>Do not edit these values.</strong> This section will be removed after Phase 2 verification.
+              </p>
+            </div>
+
+            {propertyBillingCategories
+              .filter(pbc => pbc.archived_at && pbc.name === 'Extra Charges')
+              .map(archivedCategory => (
+                <div 
+                  key={archivedCategory.id}
+                  className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-900/20 relative"
+                  style={{ opacity: 0.6, filter: 'grayscale(0.5)', pointerEvents: 'none' }}
+                >
+                  <div className="absolute inset-0 bg-gray-200 dark:bg-gray-800 opacity-10 rounded-lg"></div>
+                  
+                  <div className="flex items-center gap-4 mb-4">
+                    <span className="text-gray-400">::</span>
+                    <h4 className="text-md font-semibold text-gray-700 dark:text-gray-500">
+                      {archivedCategory.name}
+                    </h4>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-600">
+                      ARCHIVED {archivedCategory.archived_at ? new Date(archivedCategory.archived_at).toLocaleDateString() : ''}
+                    </span>
+                  </div>
+
+                  <div className="ml-10 space-y-2">
+                    {categoryLineItems[archivedCategory.id]?.length > 0 ? (
+                      categoryLineItems[archivedCategory.id].map((lineItem) => {
+                        const unitSize = unitSizes.find(u => u.id === lineItem.unitSizeId);
+                        return (
+                          <div 
+                            key={lineItem.id} 
+                            className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-500 py-2"
+                          >
+                            <span className="w-32 font-medium">{unitSize?.unit_size_label || 'Unknown'}</span>
+                            <span>Bill: ${lineItem.billAmount}</span>
+                            <span>Sub: ${lineItem.subPayAmount}</span>
+                            {lineItem.isHourly && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-600">
+                                Hourly
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-sm text-gray-500 italic py-2">
+                        No line items were configured in the original Extra Charges section.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+            <div className="mt-4 text-xs text-gray-500 dark:text-gray-400 space-y-1">
+              <p>📅 Archived during Phase 1 migration</p>
+              <p>📦 Line items preserved for reference</p>
+              <p>🔒 This section will be removed after successful Phase 2 implementation</p>
+            </div>
+          </div>
+        )}
+
+        {/* Modals */}
         {showAddCategoryModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-xl p-8 w-full max-w-2xl transform transition-all">
@@ -1078,6 +1364,7 @@ export function BillingDetailsForm() {
                         <option value="">Select a category...</option>
                         {jobCategories
                           .filter(category => {
+                            if (category.name === 'Extra Charges') return false;
                             // Only show categories that aren't already added to this property
                             return !propertyBillingCategories.some(pbc => 
                               pbc.name.toLowerCase() === category.name.toLowerCase()
@@ -1090,6 +1377,7 @@ export function BillingDetailsForm() {
                           ))}
                       </select>
                       {jobCategories.filter(category => 
+                        category.name !== 'Extra Charges' &&
                         !propertyBillingCategories.some(pbc => 
                           pbc.name.toLowerCase() === category.name.toLowerCase()
                         )

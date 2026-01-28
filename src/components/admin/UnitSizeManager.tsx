@@ -173,7 +173,7 @@ export function UnitSizeManager() {
         </button>
         <button
           onClick={() => setIsAdding(true)}
-          className="flex items-center px-4 py-2 text-sm font-medium text白 bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+          className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
         >
           <Plus className="w-4 h-4 mr-2" />
           Add Unit Size
@@ -218,7 +218,7 @@ export function UnitSizeManager() {
             type="submit"
             disabled={processingId === 'new'}
             onClick={() => document.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))}
-            className="px-3 py-1.5 text-sm font-medium text白 bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+            className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
           >
             {processingId === 'new' ? 'Creating...' : 'Create Unit Size'}
           </button>

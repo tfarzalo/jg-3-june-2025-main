@@ -4,6 +4,7 @@ import Lightbox from 'yet-another-react-lightbox';
 import 'yet-another-react-lightbox/styles.css';
 import { supabase } from '../utils/supabase';
 import { getPreviewUrl, PreviewResult } from '../utils/storagePreviews';
+import { FILE_CATEGORY_LABELS, FOLDER_KEY_TO_CATEGORY, LEGACY_CATEGORY_ALIASES } from '../utils/fileCategories';
 
 interface WorkOrderFile {
   id: string;
@@ -16,12 +17,13 @@ interface WorkOrderFile {
 }
 
 interface ImageGalleryProps {
-  workOrderId: string;
+  workOrderId?: string | null;
+  jobId?: string | null;
   folder: 'before' | 'sprinkler' | 'other' | 'job_files';
   allowDelete?: boolean;
 }
 
-export function ImageGallery({ workOrderId, folder, allowDelete = false }: ImageGalleryProps) {
+export function ImageGallery({ workOrderId, jobId, folder, allowDelete = false }: ImageGalleryProps) {
   const [files, setFiles] = useState<WorkOrderFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +33,7 @@ export function ImageGallery({ workOrderId, folder, allowDelete = false }: Image
 
   useEffect(() => {
     fetchFiles();
-  }, [workOrderId, folder]);
+  }, [workOrderId, jobId, folder]);
 
   // Cleanup blob URLs on unmount
   useEffect(() => {
@@ -49,83 +51,37 @@ export function ImageGallery({ workOrderId, folder, allowDelete = false }: Image
       setLoading(true);
       setError(null);
 
-      // Map folder prop to display name
-      const folderDisplayMap = {
-        before: 'Before Images',
-        sprinkler: 'Sprinkler Images',
-        other: 'Other Files',
-        job_files: 'Job Files',
-      };
-      const subfolderName = folderDisplayMap[folder];
+      const category = FOLDER_KEY_TO_CATEGORY[folder] || 'other_files';
+      const categoryAliases = LEGACY_CATEGORY_ALIASES[category] || [category];
+      const folderLabel = FILE_CATEGORY_LABELS[category];
 
-      console.log('[ImageGallery] Starting file fetch', { workOrderId, folder, subfolderName });
+      console.log('[ImageGallery] Starting file fetch', { workOrderId, jobId, folder, category, folderLabel });
 
-      // 1. Find the subfolder under the work order folder
-      const { data: subfolder, error: subfolderError } = await supabase
-        .from('files')
-        .select('id, name, path')
-        .eq('name', subfolderName)
-        .eq('folder_id', workOrderId)
-        .maybeSingle();
-        
-      console.log('[ImageGallery] Subfolder lookup', { 
-        subfolderName, 
-        workOrderId, 
-        subfolder, 
-        subfolderError 
-      });
-      
-      if (subfolderError) {
-        console.error('[ImageGallery] ❌ Subfolder lookup error:', subfolderError);
-        throw subfolderError;
-      }
-      
-      let subfolderRecord = subfolder;
-      if (!subfolderRecord || !subfolderRecord.id) {
-        if (folder === 'job_files') {
-          const { data: legacySubfolder } = await supabase
-            .from('files')
-            .select('id, name, path')
-            .eq('name', 'Other Files')
-            .eq('folder_id', workOrderId)
-            .maybeSingle();
-          if (!legacySubfolder?.id) {
-            setFiles([]);
-            setLoading(false);
-            return;
-          }
-          subfolderRecord = legacySubfolder as any;
-        } else {
-          setFiles([]);
-          setLoading(false);
-          return;
-        }
-      }
-
-      console.log('[ImageGallery] ✅ Found subfolder:', subfolderRecord);
-
-      // 2. Fetch files from the subfolder with the correct category
-      const query = supabase
+      let query = supabase
         .from('files')
         .select('*')
-        .eq('folder_id', subfolderRecord.id)
+        .in('category', categoryAliases)
         .order('created_at', { ascending: false });
 
-      // Job Files uploads often have no category; only filter by category for the image-specific buckets
-      if (folder !== 'job_files') {
-        query.eq('category', folder);
+      if (workOrderId && jobId) {
+        query = query.or(`work_order_id.eq.${workOrderId},job_id.eq.${jobId}`);
+      } else if (workOrderId) {
+        query = query.eq('work_order_id', workOrderId);
+      } else if (jobId) {
+        query = query.eq('job_id', jobId);
+      } else {
+        setFiles([]);
+        setLoading(false);
+        return;
       }
 
       const { data, error } = await query;
-        
-      console.log('[ImageGallery] File fetch query params:', { 
-        subfolderId: subfolderRecord.id, 
-        category: folder
-      });
-      console.log('[ImageGallery] File fetch results:', { 
+
+      console.log('[ImageGallery] File fetch query params:', { workOrderId, jobId, category: categoryAliases });
+      console.log('[ImageGallery] File fetch results:', {
         fileCount: data?.length || 0,
         files: data?.map(f => ({ id: f.id, name: f.name, path: f.path, category: f.category })),
-        error 
+        error
       });
 
       if (error) {
@@ -134,63 +90,9 @@ export function ImageGallery({ workOrderId, folder, allowDelete = false }: Image
       }
 
       if (!data || data.length === 0) {
-        console.log('[ImageGallery] ⚠️ No files found in DB; attempting storage fallback');
-        const storagePath = (subfolderRecord.path || '').replace(/^\/+/, '');
-        try {
-          const { data: objects, error: listError } = await supabase
-            .storage
-            .from('files')
-            .list(storagePath, { limit: 100 });
-          if (listError) {
-            console.error('[ImageGallery] ❌ Storage list error:', listError);
-            setFiles([]);
-            setLoading(false);
-            return;
-          }
-          if (!objects || objects.length === 0) {
-            console.log('[ImageGallery] ⚠️ No objects found in storage for path:', storagePath);
-            setFiles([]);
-            setLoading(false);
-            return;
-          }
-          const filesWithPreviews = await Promise.all(objects.map(async (obj) => {
-            try {
-              const fullPath = `${storagePath}/${obj.name}`.replace(/\/+/g, '/');
-              const previewResult = await getPreviewUrl(supabase, 'files', fullPath);
-              return {
-                id: `${subfolderRecord.id}:${obj.name}`,
-                file_path: fullPath,
-                file_name: obj.name,
-                file_type: 'file',
-                file_size: 0,
-                created_at: new Date().toISOString(),
-                previewResult
-              } as WorkOrderFile;
-            } catch (error) {
-              console.error('[ImageGallery] ❌ Error generating preview for storage object:', obj.name, error);
-              const { data: urlData } = supabase.storage
-                .from('files')
-                .getPublicUrl(`${storagePath}/${obj.name}`);
-              return {
-                id: `${subfolderRecord.id}:${obj.name}`,
-                file_path: `${storagePath}/${obj.name}`,
-                file_name: obj.name,
-                file_type: 'file',
-                file_size: 0,
-                created_at: new Date().toISOString(),
-                previewResult: { kind: 'signed' as const, url: urlData.publicUrl }
-              } as WorkOrderFile;
-            }
-          }));
-          setFiles(filesWithPreviews);
-          setLoading(false);
-          return;
-        } catch (fallbackErr) {
-          console.error('[ImageGallery] ❌ Storage fallback failed:', fallbackErr);
-          setFiles([]);
-          setLoading(false);
-          return;
-        }
+        setFiles([]);
+        setLoading(false);
+        return;
       }
 
       console.log('[ImageGallery] 📸 Processing', data.length, 'files for preview URLs');
@@ -198,12 +100,12 @@ export function ImageGallery({ workOrderId, folder, allowDelete = false }: Image
       // Generate preview URLs for all files
       const filesWithPreviews = await Promise.all((data || []).map(async (file) => {
         try {
-          console.log('[ImageGallery] Getting preview for:', file.path);
-          const previewResult = await getPreviewUrl(supabase, 'files', file.path);
+          console.log('[ImageGallery] Getting preview for:', file.storage_path || file.path);
+          const previewResult = await getPreviewUrl(supabase, 'files', file.storage_path || file.path);
           console.log('[ImageGallery] ✅ Preview URL generated for:', file.name);
           return {
             id: file.id,
-            file_path: file.path,
+            file_path: file.storage_path || file.path,
             file_name: file.name,
             file_type: file.type,
             file_size: file.size,
@@ -211,14 +113,14 @@ export function ImageGallery({ workOrderId, folder, allowDelete = false }: Image
             previewResult
           };
         } catch (error) {
-          console.error('[ImageGallery] ❌ Error getting preview URL for file:', file.path, error);
+          console.error('[ImageGallery] ❌ Error getting preview URL for file:', file.storage_path || file.path, error);
           // Fallback to public URL if preview fails
           const { data: urlData } = supabase.storage
             .from('files')
-            .getPublicUrl(file.path);
+            .getPublicUrl(file.storage_path || file.path);
           return {
             id: file.id,
-            file_path: file.path,
+            file_path: file.storage_path || file.path,
             file_name: file.name,
             file_type: file.type,
             file_size: file.size,

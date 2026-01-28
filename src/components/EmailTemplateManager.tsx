@@ -109,6 +109,15 @@ export function EmailTemplateManager() {
     { variable: '{{property_address}}', description: 'Full property address' },
     { variable: '{{unit_number}}', description: 'Unit number' },
     { variable: '{{ap_contact_name}}', description: 'AP Contact name for personalization' },
+    { variable: '{{approval_link}}', description: 'Approval link URL (extra charges only)' },
+    { variable: '{{approval_button}}', description: 'Approval button (extra charges only)' },
+    { variable: '{{extra_charges_description}}', description: 'Extra charges description' },
+    { variable: '{{extra_hours}}', description: 'Extra charges hours (legacy)' },
+    { variable: '{{estimated_cost}}', description: 'Estimated extra charges amount (plain number)' },
+    { variable: '{{extra_charges.bill_amount}}', description: 'Extra charges amount (formatted)' },
+    { variable: '{{extra_charges.bill_amount_plain}}', description: 'Extra charges amount (plain number)' },
+    { variable: '{{extra_charges.sub_pay_amount}}', description: 'Extra charges sub pay amount (formatted)' },
+    { variable: '{{extra_charges.profit_amount}}', description: 'Extra charges profit amount (formatted)' },
   ];
 
   useEffect(() => {

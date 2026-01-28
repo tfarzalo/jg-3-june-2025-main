@@ -36,6 +36,7 @@ export function PropertyEditForm() {
   const [notificationContactSource, setNotificationContactSource] = useState<string>('community_manager');
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [propertyGroups, setPropertyGroups] = useState<PropertyManagementGroup[]>([]);
+  const [originalPropertyName, setOriginalPropertyName] = useState('');
   
   const [formData, setFormData] = useState({
     property_name: '',
@@ -159,6 +160,7 @@ export function PropertyEditForm() {
       if (error) throw error;
       if (!data) throw new Error('Property not found');
       
+      setOriginalPropertyName(data.property_name || '');
       setFormData({
         property_name: data.property_name || '',
         property_management_group_id: data.property_management_group_id || '',
@@ -402,6 +404,26 @@ export function PropertyEditForm() {
         } catch (paintError) {
           console.error('Error saving additional data:', paintError);
           // Continue with navigation even if paint schemes/contacts fail to save
+        }
+      }
+
+      if (propertyId && originalPropertyName && formData.property_name.trim() !== originalPropertyName.trim()) {
+        const shouldUpdateFolder = window.confirm('Update folder display name too?');
+        if (shouldUpdateFolder) {
+          const { data: folderData } = await supabase
+            .from('files')
+            .select('id')
+            .eq('property_id', propertyId)
+            .is('folder_id', null)
+            .eq('type', 'folder/directory')
+            .order('created_at', { ascending: true })
+            .maybeSingle();
+          if (folderData?.id) {
+            await supabase.rpc('rename_folder', {
+              p_folder_id: folderData.id,
+              p_new_name: formData.property_name.trim()
+            });
+          }
         }
       }
 

@@ -9,6 +9,8 @@ import { PropertyLink } from './shared/PropertyLink';
 import { useAuth } from '../contexts/AuthProvider';
 import { optimizeImage } from '../lib/utils/imageOptimization';
 import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
+import { buildStoragePath } from '../utils/storagePaths';
+import { FILE_CATEGORY_PATHS } from '../utils/fileCategories';
 
 interface Property {
   id: string;
@@ -342,7 +344,7 @@ export function JobEditForm() {
       const { data: folderId, error: folderError } = await supabase.rpc('get_upload_folder', {
         p_property_id: formData.property_id,
         p_job_id: jobId,
-        p_folder_type: 'other'
+        p_folder_type: 'other_files'
       });
 
       if (folderError || !folderId) {
@@ -351,17 +353,15 @@ export function JobEditForm() {
         return;
       }
 
-      const { data: folderInfo, error: folderInfoError } = await supabase
-        .from('files')
-        .select('path')
-        .eq('id', folderId)
-        .single();
-
-      if (folderInfoError || !folderInfo?.path) {
-        console.error('Error getting folder path:', folderInfoError);
-        setError('Unable to resolve upload folder path. Please try again.');
-        return;
-      }
+      const category = 'other_files';
+      const categoryPath = FILE_CATEGORY_PATHS[category];
+      const { data: workOrderData } = await supabase
+        .from('work_orders')
+        .select('id')
+        .eq('job_id', jobId)
+        .eq('is_active', true)
+        .maybeSingle();
+      const workOrderId = workOrderData?.id || null;
 
       // Compute next index for auto-naming in 'other' category
       let nextIndex = 1
@@ -371,9 +371,9 @@ export function JobEditForm() {
           .select('name')
           .eq('folder_id', folderId)
           .eq('job_id', jobId)
-          .eq('category', 'other')
+          .eq('category', category)
         let maxIdx = 0
-        const rx = /^wo-\d+_other_(\d+)\./
+        const rx = /^wo-\d+_other_files_(\d+)\./
         if (existing && Array.isArray(existing)) {
           for (const row of existing as any[]) {
             const m = typeof row.name === 'string' ? row.name.toLowerCase().match(rx) : null
@@ -392,11 +392,16 @@ export function JobEditForm() {
           const optimized = await optimizeImage(file);
           const ext = optimized.suggestedExt || (file.name.split('.').pop() || 'bin');
           const woLabel = `wo-${String(workOrderNum).padStart(6, '0')}`;
-          const autoName = `${woLabel}_other_${nextIndex}.${ext}`;
+          const autoName = `${woLabel}_other_files_${nextIndex}.${ext}`;
           nextIndex += 1
           const sanitizedFilename = sanitizeFilename(autoName);
-
-          const normalizedStoragePath = `${folderInfo.path.replace(/^\/+/, '')}/${sanitizedFilename}`.replace(/\/+/g, '/');
+          const normalizedStoragePath = buildStoragePath({
+            propertyId: formData.property_id,
+            workOrderId,
+            jobIdFallback: jobId,
+            category: categoryPath,
+            filename: sanitizedFilename
+          });
 
           // Upload file to storage
           const uploadFile = new File([optimized.blob], sanitizedFilename, { type: optimized.mime })
@@ -427,7 +432,11 @@ export function JobEditForm() {
               property_id: formData.property_id,
               job_id: jobId,
               folder_id: folderId,
-              category: 'other'
+              category,
+              work_order_id: workOrderId,
+              storage_path: normalizedStoragePath,
+              original_filename: file.name,
+              bucket: 'files'
             });
 
           if (dbError) {

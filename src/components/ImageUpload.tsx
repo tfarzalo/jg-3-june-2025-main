@@ -3,7 +3,8 @@ import { supabase } from '../utils/supabase';
 import { useAuth } from '../contexts/AuthProvider';
 import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
-import { joinPathSegments } from '../utils/storagePaths';
+import { buildStoragePath } from '../utils/storagePaths';
+import { FILE_CATEGORY_PATHS, FOLDER_KEY_TO_CATEGORY, LEGACY_CATEGORY_ALIASES } from '../utils/fileCategories';
 import { getPreviewUrl, uploadAndPreview, PreviewResult } from '../utils/storagePreviews';
 import { optimizeImage } from '../lib/utils/imageOptimization';
 
@@ -111,12 +112,23 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   useEffect(() => {
     const fetchImages = async () => {
       try {
-        const { data, error } = await supabase
-          .from('files')
-          .select('*')
-          .eq('job_id', jobId)
-          .eq('category', folder)
-          .order('created_at', { ascending: false });
+    const category = FOLDER_KEY_TO_CATEGORY[folder];
+    const categoryAliases = LEGACY_CATEGORY_ALIASES[category] || [category];
+    let query = supabase
+      .from('files')
+      .select('*')
+      .in('category', categoryAliases)
+      .order('created_at', { ascending: false });
+
+    if (workOrderId && jobId) {
+      query = query.or(`work_order_id.eq.${workOrderId},job_id.eq.${jobId}`);
+    } else if (workOrderId) {
+      query = query.eq('work_order_id', workOrderId);
+    } else {
+      query = query.eq('job_id', jobId);
+    }
+
+    const { data, error } = await query;
 
         if (error) throw error;
 
@@ -331,7 +343,10 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     setIsUploading(true);
     
     try {
-      console.log('📤 Starting upload process:', { jobId, folder, fileCount: files.length });
+      const category = FOLDER_KEY_TO_CATEGORY[folder];
+      const categoryPath = FILE_CATEGORY_PATHS[category];
+      const categoryAliases = LEGACY_CATEGORY_ALIASES[category] || [category];
+      console.log('📤 Starting upload process:', { jobId, workOrderId, folder, category, fileCount: files.length });
 
       // Get job and property details
       const { data: jobData, error: jobError } = await supabase
@@ -362,14 +377,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
       // Get folder ID using RPC function (returns UUID)
       console.log('📁 Getting upload folder...');
-      const { data: folderData, error: folderError } = await supabase.rpc(
-        'get_upload_folder',
-        {
-          p_property_id: jobData.property_id,
-          p_job_id: jobId,
-          p_folder_type: folder
-        }
-      );
+      const { data: folderData, error: folderError } = await supabase.rpc('get_upload_folder', {
+        p_property_id: jobData.property_id,
+        p_job_id: jobId,
+        p_folder_type: category
+      });
 
       if (folderError) {
         console.error('❌ get_upload_folder error:', folderError);
@@ -399,31 +411,13 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       console.log('✅ Upload folder ID:', folderData);
       const subfolderId = folderData;
 
-      // Get the actual folder path from the database to ensure consistency
-      const { data: folderInfo, error: folderInfoError } = await supabase
-        .from('files')
-        .select('path')
-        .eq('id', subfolderId)
-        .single();
-
-      if (folderInfoError || !folderInfo) {
-        console.error('❌ Failed to get folder path:', folderInfoError);
-        const errorMsg = 'Failed to determine upload folder path';
-        if (onError) onError(errorMsg);
-        throw new Error(errorMsg);
-      }
-
-      // Remove leading slash from folder path if present
-      const folderPath = folderInfo.path.startsWith('/') ? folderInfo.path.substring(1) : folderInfo.path;
-      console.log('📁 Using folder path from database:', folderPath);
-
       // Precompute auto-naming start index
       const { data: existingForFolder } = await supabase
         .from('files')
         .select('name')
         .eq('job_id', jobId)
         .eq('folder_id', subfolderId)
-        .eq('category', folder);
+          .in('category', categoryAliases);
       const nameRegex = new RegExp(`^wo-\\d+_${folder}_(\\d+)\\.`)
       let maxIndex = 0
       if (existingForFolder && Array.isArray(existingForFolder)) {
@@ -450,8 +444,13 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           nextIndex += 1
           const fileName = baseAutoName
 
-          // Build the storage path using the actual folder path from database
-          const fileStoragePath = `${folderPath}/${fileName}`;
+          const fileStoragePath = buildStoragePath({
+            propertyId: jobData.property_id,
+            workOrderId,
+            jobIdFallback: jobId,
+            category: categoryPath,
+            filename: fileName
+          });
           const filePath = fileStoragePath;
 
           console.log('  📍 Storage path:', fileStoragePath);
@@ -489,7 +488,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               property_id: jobData.property_id,
               job_id: jobId,
               folder_id: subfolderId,
-              category: folder
+              category,
+              work_order_id: workOrderId || null,
+              storage_path: fileStoragePath,
+              original_filename: originalFile.name,
+              bucket: 'files'
             })
             .select()
             .single();

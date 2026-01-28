@@ -2,21 +2,29 @@ import * as React from "react";
 import { supabase } from "../../utils/supabase";
 import { Button } from "../ui/Button";
 
-function googleAddUrl(icsUrl: string) {
-  return `https://calendar.google.com/calendar/u/0/r?cid=${encodeURIComponent(icsUrl)}`;
-}
-
 function webcalUrl(icsUrl: string) {
   // Safari/Apple Calendar uses webcal:// or webcals:// (secure)
-  // Try webcal:// first as it's more compatible with older macOS versions
   return icsUrl.replace(/^https:\/\//, "webcal://").replace(/^http:\/\//, "webcal://");
 }
 
 export default function SubscribeCalendarsModal() {
   const [open, setOpen] = React.useState(false);
   const [token, setToken] = React.useState<string>("");
+  const [copiedUrl, setCopiedUrl] = React.useState<string | null>(null);
 
-  const base = `https://tbwtfimnbmvbgesidbxh.supabase.co/functions/v1/calendar-feed`;
+  // Use environment variable for Supabase URL - works for local dev and production
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://tbwtfimnbmvbgesidbxh.supabase.co';
+  const base = `${supabaseUrl}/functions/v1/calendar-feed`;
+
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedUrl(label);
+      setTimeout(() => setCopiedUrl(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
 
   // Helper function to get or create token without RLS dependency
   const getOrCreateToken = async () => {
@@ -108,60 +116,114 @@ export default function SubscribeCalendarsModal() {
             {/* Section: Events */}
             <section>
               <h3 className="font-semibold mb-2 text-gray-900 dark:text-white">Events</h3>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">ICS URL (copy this if links don't work)</label>
-              <input
-                readOnly
-                value={urls.events}
-                onFocus={(e) => e.currentTarget.select()}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white mb-2 text-sm font-mono"
-              />
-              <div className="flex flex-wrap gap-2">
-                <a className="underline text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200" href={webcalUrl(urls.events)}>
-                  📱 Apple Calendar Feed
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Calendar Feed URL</label>
+              <div className="flex gap-2 mb-2">
+                <input
+                  readOnly
+                  value={urls.events}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-mono"
+                />
+                <button
+                  onClick={() => copyToClipboard(urls.events, 'events')}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors text-sm font-medium"
+                >
+                  {copiedUrl === 'events' ? '✓ Copied!' : 'Copy'}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                <a 
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 transition-colors text-sm font-medium" 
+                  href={webcalUrl(urls.events)}
+                >
+                  � Subscribe in Apple Calendar
                 </a>
-                <a className="underline text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200" target="_blank" rel="noreferrer" href={googleAddUrl(urls.events)}>
-                  📧 Google Calendar Feed
-                </a>
+              </div>
+              <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-800">
+                <p className="text-xs font-semibold text-blue-900 dark:text-blue-200 mb-1">� For Google Calendar:</p>
+                <ol className="text-xs text-blue-800 dark:text-blue-300 space-y-1 ml-4 list-decimal">
+                  <li>Copy the URL above</li>
+                  <li>Open <a href="https://calendar.google.com" target="_blank" rel="noreferrer" className="underline">Google Calendar</a></li>
+                  <li>Click the <strong>+</strong> next to "Other calendars"</li>
+                  <li>Select <strong>"From URL"</strong></li>
+                  <li>Paste the URL and click "Add calendar"</li>
+                </ol>
               </div>
             </section>
 
             {/* Section: Events + Job Requests */}
             <section>
               <h3 className="font-semibold mb-2 text-gray-900 dark:text-white">Events & Job Requests</h3>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">ICS URL (copy this if links don't work)</label>
-              <input
-                readOnly
-                value={urls.eventsAndRequests}
-                onFocus={(e) => e.currentTarget.select()}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white mb-2 text-sm font-mono"
-              />
-              <div className="flex flex-wrap gap-2">
-                <a className="underline text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200" href={webcalUrl(urls.eventsAndRequests)}>
-                  📱 Apple Calendar Feed
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Calendar Feed URL</label>
+              <div className="flex gap-2 mb-2">
+                <input
+                  readOnly
+                  value={urls.eventsAndRequests}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-mono"
+                />
+                <button
+                  onClick={() => copyToClipboard(urls.eventsAndRequests, 'eventsAndRequests')}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors text-sm font-medium"
+                >
+                  {copiedUrl === 'eventsAndRequests' ? '✓ Copied!' : 'Copy'}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                <a 
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 transition-colors text-sm font-medium" 
+                  href={webcalUrl(urls.eventsAndRequests)}
+                >
+                  � Subscribe in Apple Calendar
                 </a>
-                <a className="underline text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200" target="_blank" rel="noreferrer" href={googleAddUrl(urls.eventsAndRequests)}>
-                  📧 Google Calendar Feed
-                </a>
+              </div>
+              <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-800">
+                <p className="text-xs font-semibold text-blue-900 dark:text-blue-200 mb-1">� For Google Calendar:</p>
+                <ol className="text-xs text-blue-800 dark:text-blue-300 space-y-1 ml-4 list-decimal">
+                  <li>Copy the URL above</li>
+                  <li>Open <a href="https://calendar.google.com" target="_blank" rel="noreferrer" className="underline">Google Calendar</a></li>
+                  <li>Click the <strong>+</strong> next to "Other calendars"</li>
+                  <li>Select <strong>"From URL"</strong></li>
+                  <li>Paste the URL and click "Add calendar"</li>
+                </ol>
               </div>
             </section>
 
             {/* Section: Completed Jobs */}
             <section>
               <h3 className="font-semibold mb-2 text-gray-900 dark:text-white">Completed Jobs</h3>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">ICS URL (copy this if links don't work)</label>
-              <input
-                readOnly
-                value={urls.completed}
-                onFocus={(e) => e.currentTarget.select()}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white mb-2 text-sm font-mono"
-              />
-              <div className="flex flex-wrap gap-2">
-                <a className="underline text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200" href={webcalUrl(urls.completed)}>
-                  📱 Apple Calendar Feed
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Calendar Feed URL</label>
+              <div className="flex gap-2 mb-2">
+                <input
+                  readOnly
+                  value={urls.completed}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm font-mono"
+                />
+                <button
+                  onClick={() => copyToClipboard(urls.completed, 'completed')}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors text-sm font-medium"
+                >
+                  {copiedUrl === 'completed' ? '✓ Copied!' : 'Copy'}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2 mb-2">
+                <a 
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded-md hover:bg-gray-800 transition-colors text-sm font-medium" 
+                  href={webcalUrl(urls.completed)}
+                >
+                  � Subscribe in Apple Calendar
                 </a>
-                <a className="underline text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200" target="_blank" rel="noreferrer" href={googleAddUrl(urls.completed)}>
-                  📧 Google Calendar Feed
-                </a>
+              </div>
+              <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-800">
+                <p className="text-xs font-semibold text-blue-900 dark:text-blue-200 mb-1">� For Google Calendar:</p>
+                <ol className="text-xs text-blue-800 dark:text-blue-300 space-y-1 ml-4 list-decimal">
+                  <li>Copy the URL above</li>
+                  <li>Open <a href="https://calendar.google.com" target="_blank" rel="noreferrer" className="underline">Google Calendar</a></li>
+                  <li>Click the <strong>+</strong> next to "Other calendars"</li>
+                  <li>Select <strong>"From URL"</strong></li>
+                  <li>Paste the URL and click "Add calendar"</li>
+                </ol>
               </div>
             </section>
           </div>

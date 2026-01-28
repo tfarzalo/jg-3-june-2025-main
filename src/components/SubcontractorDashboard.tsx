@@ -221,7 +221,8 @@ export function SubcontractorDashboard() {
         setTomorrowJobs(tomorrowData || []);
 
         // Set initial tab based on pending jobs
-        const hasPendingJobs = (todayData || []).some(j => j.assignment_status === 'pending' || !j.assignment_status);
+        const hasPendingJobs = [...(todayData || []), ...(tomorrowData || [])]
+          .some(j => j.assignment_status === 'pending' || !j.assignment_status);
         setActiveTab(hasPendingJobs ? 'pending' : 'accepted');
       } catch (err) {
         console.error('Error fetching initial jobs:', err);
@@ -273,6 +274,13 @@ export function SubcontractorDashboard() {
       setDisplayedJobs(jobs);
     }
   }, [selectedDate]);
+
+  const handleAssignmentDecision = useCallback(async (decision: 'accepted' | 'declined') => {
+    if (decision === 'accepted') {
+      setActiveTab('accepted');
+    }
+    await refreshJobsForSelectedDate();
+  }, [refreshJobsForSelectedDate]);
 
   useEffect(() => {
     // Show loading screen for 4 seconds
@@ -862,7 +870,7 @@ export function SubcontractorDashboard() {
                             workOrderNum={job.work_order_num}
                             propertyName={job.property?.property_name}
                             scheduledDate={job.scheduled_date}
-                            onDecision={refreshJobsForSelectedDate}
+                            onDecision={handleAssignmentDecision}
                           />
                         </div>
                       ) : (

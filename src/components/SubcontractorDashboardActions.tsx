@@ -11,7 +11,7 @@ interface Props {
   workOrderNum: number;
   propertyName?: string | null;
   scheduledDate?: string | null;
-  onDecision?: () => void;
+  onDecision?: (decision: 'accepted' | 'declined') => void;
 }
 
 export function SubcontractorDashboardActions({ jobId, workOrderNum, propertyName, scheduledDate, onDecision }: Props) {
@@ -62,7 +62,7 @@ export function SubcontractorDashboardActions({ jobId, workOrderNum, propertyNam
       await sendAdminNotifications(decision, subName || 'Subcontractor');
 
       toast.success(decision === 'accepted' ? 'Assignment accepted' : 'Assignment declined');
-      onDecision?.();
+      onDecision?.(decision);
       setShowDecline(false);
       setDeclineReason('');
       setDeclineText('');

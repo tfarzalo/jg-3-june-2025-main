@@ -1,0 +1,247 @@
+/* Mobile-First Responsive Utilities */
+
+/* Touch-friendly interactive elements */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Prevent text overflow in mobile */
+.mobile-text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .mobile-text-truncate {
+    max-width: 150px;
+  }
+}
+
+/* Mobile-optimized card layouts */
+.mobile-card {
+  @apply rounded-lg border border-gray-200 dark:border-gray-700 p-4 bg-white dark:bg-gray-800;
+}
+
+/* Mobile-friendly spacing */
+.mobile-spacing {
+  @apply px-4 py-3;
+}
+
+@media (min-width: 640px) {
+  .mobile-spacing {
+    @apply px-6 py-4;
+  }
+}
+
+/* Stack elements vertically on mobile */
+.mobile-stack {
+  @apply flex flex-col space-y-3;
+}
+
+@media (min-width: 768px) {
+  .mobile-stack {
+    @apply flex-row space-y-0 space-x-4;
+  }
+}
+
+/* Mobile-optimized grid */
+.mobile-grid {
+  @apply grid grid-cols-1 gap-4;
+}
+
+@media (min-width: 640px) {
+  .mobile-grid {
+    @apply grid-cols-2;
+  }
+}
+
+@media (min-width: 1024px) {
+  .mobile-grid {
+    @apply grid-cols-3;
+  }
+}
+
+/* Hide on mobile, show on desktop */
+.desktop-only {
+  @apply hidden lg:block;
+}
+
+/* Hide on desktop, show on mobile */
+.mobile-only {
+  @apply block lg:hidden;
+}
+
+/* Mobile-friendly buttons */
+.mobile-btn {
+  @apply px-4 py-3 text-base font-medium rounded-lg transition-colors;
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+.mobile-btn-primary {
+  @apply mobile-btn bg-blue-600 hover:bg-blue-700 text-white;
+}
+
+.mobile-btn-secondary {
+  @apply mobile-btn bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white;
+}
+
+/* Mobile-friendly form inputs */
+.mobile-input {
+  @apply w-full px-4 py-3 text-base border border-gray-300 dark:border-gray-600 rounded-lg;
+  min-height: 44px;
+}
+
+/* Prevent zoom on iOS when input is focused */
+@media screen and (-webkit-min-device-pixel-ratio: 0) {
+  select,
+  textarea,
+  input {
+    font-size: 16px !important;
+  }
+}
+
+/* Mobile-safe sticky headers */
+.mobile-sticky-header {
+  @apply sticky top-0 z-10 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700;
+}
+
+/* Mobile-optimized table alternative (card-based) */
+.mobile-table-card {
+  @apply block lg:hidden;
+}
+
+.mobile-table-card > div {
+  @apply mb-4 p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800;
+}
+
+/* Desktop table (hidden on mobile) */
+.desktop-table {
+  @apply hidden lg:table;
+}
+
+/* Responsive text sizes */
+.text-responsive-sm {
+  @apply text-sm sm:text-base;
+}
+
+.text-responsive-base {
+  @apply text-base sm:text-lg;
+}
+
+.text-responsive-lg {
+  @apply text-lg sm:text-xl;
+}
+
+.text-responsive-xl {
+  @apply text-xl sm:text-2xl;
+}
+
+.text-responsive-2xl {
+  @apply text-2xl sm:text-3xl;
+}
+
+/* Safe area insets for iOS notch/island */
+@supports (padding: max(0px)) {
+  .safe-area-inset-top {
+    padding-top: max(env(safe-area-inset-top), 0px);
+  }
+  
+  .safe-area-inset-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+  
+  .safe-area-inset-left {
+    padding-left: max(env(safe-area-inset-left), 0px);
+  }
+  
+  .safe-area-inset-right {
+    padding-right: max(env(safe-area-inset-right), 0px);
+  }
+}
+
+/* Smooth scrolling for mobile */
+@media (max-width: 1024px) {
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Mobile-friendly modals */
+.mobile-modal {
+  @apply fixed inset-0 z-50 flex items-end sm:items-center justify-center;
+}
+
+.mobile-modal-content {
+  @apply w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl bg-white dark:bg-gray-800 max-h-[90vh] overflow-y-auto;
+}
+
+/* Mobile dropdown improvements */
+.mobile-dropdown {
+  @apply absolute right-0 mt-2 w-screen max-w-[calc(100vw-2rem)] sm:w-auto sm:min-w-[280px];
+}
+
+/* Horizontal scroll container for mobile */
+.mobile-scroll-x {
+  @apply overflow-x-auto -mx-4 px-4;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.mobile-scroll-x::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+/* Mobile-friendly badge */
+.mobile-badge {
+  @apply inline-flex items-center px-2.5 py-1 text-xs sm:text-sm font-medium rounded-full;
+}
+
+/* Improved tap highlight */
+* {
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Disable text selection on UI elements */
+button,
+.no-select {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Mobile-friendly spacing utilities */
+.mobile-p-4 {
+  @apply p-3 sm:p-4;
+}
+
+.mobile-px-4 {
+  @apply px-3 sm:px-4;
+}
+
+.mobile-py-4 {
+  @apply py-3 sm:py-4;
+}
+
+.mobile-gap-4 {
+  @apply gap-3 sm:gap-4;
+}
+
+/* Mobile-friendly z-index layers */
+.z-mobile-menu {
+  z-index: 100;
+}
+
+.z-mobile-overlay {
+  z-index: 90;
+}
+
+.z-mobile-modal {
+  z-index: 110;
+}

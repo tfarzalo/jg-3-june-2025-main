@@ -9,6 +9,8 @@ import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
 import { optimizeImage } from '../lib/utils/imageOptimization';
 import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
+import { buildStoragePath } from '../utils/storagePaths';
+import { FILE_CATEGORY_PATHS } from '../utils/fileCategories';
 
 interface Property {
   id: string;
@@ -281,6 +283,8 @@ export function JobRequestForm() {
 
     try {
       const targetFolderType = 'job_files';
+      const category = 'job_files';
+      const categoryPath = FILE_CATEGORY_PATHS[category];
 
       // Ensure the Work Order and Job Files subfolder exist and get definitive IDs/paths
       const { data: jobFilesFolderId, error: jobFilesErr } = await supabase.rpc('get_upload_folder', {
@@ -293,23 +297,13 @@ export function JobRequestForm() {
         throw new Error('Failed to ensure Job Files folder');
       }
 
-      // Resolve the canonical path for the Job Files folder (with retry in case of immediate creation lag)
-      let folderPath = '';
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const { data: folderInfo, error: folderInfoError } = await supabase
-          .from('files')
-          .select('path')
-          .eq('id', jobFilesFolderId)
-          .maybeSingle();
-        if (!folderInfoError && folderInfo?.path) {
-          folderPath = folderInfo.path;
-          break;
-        }
-        await new Promise(res => setTimeout(res, 200));
-      }
-      if (!folderPath) {
-        throw new Error('Failed to resolve Job Files folder path after retries');
-      }
+      const { data: workOrderData } = await supabase
+        .from('work_orders')
+        .select('id')
+        .eq('job_id', jobId)
+        .eq('is_active', true)
+        .maybeSingle();
+      const workOrderId = workOrderData?.id || null;
 
       // Compute starting index for auto naming in 'other' category
       let nextIndex = 1
@@ -319,9 +313,9 @@ export function JobRequestForm() {
           .select('name')
           .eq('folder_id', jobFilesFolderId)
           .eq('job_id', jobId)
-          .eq('category', targetFolderType)
+          .eq('category', category)
         let maxIdx = 0
-        const rx = /^wo-\d+_other_(\d+)\./
+        const rx = /^wo-\d+_job_files_(\d+)\./
         if (existing && Array.isArray(existing)) {
           for (const row of existing as any[]) {
             const m = typeof row.name === 'string' ? row.name.toLowerCase().match(rx) : null
@@ -340,10 +334,16 @@ export function JobRequestForm() {
           const optimized = file.type.startsWith('image/') ? await optimizeImage(file) : { blob: file, mime: file.type || 'application/octet-stream', suggestedExt: '', width: 0, height: 0, originalSize: file.size, optimizedSize: file.size }
           const ext = optimized.suggestedExt || (file.name.split('.').pop() || 'bin')
           const woLabel = `wo-${String(workOrderNum).padStart(6, '0')}`
-          const autoName = `${woLabel}_other_${nextIndex}.${ext}`
+          const autoName = `${woLabel}_job_files_${nextIndex}.${ext}`
           nextIndex += 1
           const sanitizedFilename = sanitizeFilename(autoName);
-          const normalizedStoragePath = `${folderPath.replace(/^\/+/, '')}/${sanitizedFilename}`.replace(/\/+/g, '/');
+          const normalizedStoragePath = buildStoragePath({
+            propertyId: formData.property_id,
+            workOrderId,
+            jobIdFallback: jobId,
+            category: categoryPath,
+            filename: sanitizedFilename
+          });
 
           const uploadFile = new File([optimized.blob], sanitizedFilename, { type: optimized.mime })
           const { error: storageError } = await supabase.storage
@@ -371,7 +371,11 @@ export function JobRequestForm() {
               property_id: formData.property_id,
               job_id: jobId,
               folder_id: jobFilesFolderId,
-              category: 'other'
+              category,
+              work_order_id: workOrderId,
+              storage_path: normalizedStoragePath,
+              original_filename: file.name,
+              bucket: 'files'
             });
           if (dbError) {
             console.error('DB insert failed for file:', sanitizedFilename, dbError);

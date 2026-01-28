@@ -317,7 +317,9 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
     const allJobs = Object.values(state.jobsByPhase).flat();
     return allJobs.filter(job => {
       if (!job.scheduled_date) return false;
-      return job.scheduled_date === todayString;
+      // Extract date portion from timestamptz: "2026-01-23T00:00:00-05:00" → "2026-01-23"
+      const jobDateOnly = job.scheduled_date.split('T')[0];
+      return jobDateOnly === todayString;
     });
   }, [state.jobsByPhase]);
 

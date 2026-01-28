@@ -11,6 +11,7 @@ interface FileItem {
   type: string;
   folder_id: string | null;
   path: string;
+  storage_path?: string | null;
   size: number;
   created_at: string;
   previewUrl?: string | null;
@@ -70,7 +71,7 @@ export const PropertyFilesPreview: React.FC<PropertyFilesPreviewProps> = ({ prop
     try {
       let query = supabase
         .from('files')
-        .select('id, name, type, folder_id, path, size, created_at')
+        .select('id, name, type, folder_id, path, storage_path, size, created_at')
         .eq('property_id', propertyId);
 
       // Filter by current folder
@@ -105,7 +106,7 @@ export const PropertyFilesPreview: React.FC<PropertyFilesPreviewProps> = ({ prop
         let previewUrl = null;
         if (file.type.startsWith('image/')) {
           try {
-            const previewResult = await getPreviewUrl(supabase, 'files', file.path);
+            const previewResult = await getPreviewUrl(supabase, 'files', file.storage_path || file.path);
             previewUrl = previewResult.url;
           } catch (error) {
             console.error('Error generating preview URL for file:', file.path, error);

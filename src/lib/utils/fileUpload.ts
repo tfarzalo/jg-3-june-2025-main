@@ -1,5 +1,7 @@
 import { supabase } from '../../utils/supabase';
 import { optimizeImage } from './imageOptimization';
+import { buildStoragePath } from '../../utils/storagePaths';
+import { FILE_CATEGORY_PATHS } from '../../utils/fileCategories';
 
 export interface FileUploadResult {
   success: boolean;
@@ -76,12 +78,15 @@ export async function uploadPropertyUnitMap(
 
     // Create the file path in the Property Files folder
     // Sanitize property name to avoid spaces in file paths
-    const sanitizedPropertyName = propertyName.replace(/[^a-zA-Z0-9\-_]/g, '_');
     const optimized = await optimizeImage(file);
     const ext = optimized.suggestedExt || (file.name.split('.').pop() || 'jpg');
     const baseName = `unit-map-${Date.now()}`;
     const fileName = `${baseName}.${ext}`;
-    const filePath = `${sanitizedPropertyName}/Property_Files/${fileName}`;
+    const filePath = buildStoragePath({
+      propertyId,
+      category: FILE_CATEGORY_PATHS.property_files,
+      filename: fileName
+    });
 
     console.log('[uploadPropertyUnitMap] Uploading to storage:', filePath);
 
@@ -139,7 +144,10 @@ export async function uploadPropertyUnitMap(
         type: optimized.mime,
         uploaded_by: (await supabase.auth.getUser()).data.user?.id,
         property_id: propertyId,
-        folder_id: propertyFilesFolderId
+        folder_id: propertyFilesFolderId,
+        category: 'property_files',
+        original_filename: file.name,
+        bucket: 'files'
       })
       .select()
       .single();

@@ -1,0 +1,149 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║                                                                      ║
+║         🧪 ONE-TIME EMAIL TRIGGER - TESTING GUIDE                   ║
+║                                                                      ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+You have TWO options to test the daily agenda email:
+
+═══════════════════════════════════════════════════════════════════════
+OPTION 1: Schedule for 10:40 AM ET Today
+═══════════════════════════════════════════════════════════════════════
+
+This will schedule a one-time job to run at 10:40 AM ET (3:40 PM UTC).
+
+STEPS:
+──────────────────────────────────────────────────────────────────────
+
+1. Connect to your database:
+   supabase db remote connect
+
+2. Run the one-time trigger SQL:
+   \i trigger_email_today_1040am.sql
+
+   OR copy/paste the contents manually
+
+3. Verify the job is scheduled:
+   SELECT * FROM cron.job WHERE jobname = 'daily-agenda-email-test-once';
+
+4. Wait until 10:40 AM ET
+
+5. Check if email was sent:
+   SELECT * FROM daily_summary_log ORDER BY sent_at DESC LIMIT 1;
+
+6. Clean up (remove the one-time job):
+   SELECT cron.unschedule('daily-agenda-email-test-once');
+
+
+═══════════════════════════════════════════════════════════════════════
+OPTION 2: Trigger Immediately (Right Now)
+═══════════════════════════════════════════════════════════════════════
+
+This will send the email RIGHT NOW, no waiting.
+
+STEPS:
+──────────────────────────────────────────────────────────────────────
+
+1. Connect to your database:
+   supabase db remote connect
+
+2. Run the immediate trigger SQL:
+   \i trigger_email_immediately.sql
+
+   OR copy/paste the contents manually
+
+3. Check result immediately:
+   SELECT * FROM daily_summary_log ORDER BY sent_at DESC LIMIT 1;
+
+4. Exit:
+   \q
+
+5. Check function logs:
+   supabase functions logs daily-agenda-cron-trigger --tail
+
+
+═══════════════════════════════════════════════════════════════════════
+WHAT TO EXPECT
+═══════════════════════════════════════════════════════════════════════
+
+When the trigger runs:
+
+✓ daily-agenda-cron-trigger function is called
+✓ It validates the CRON_SECRET from cron_config
+✓ It calls send-daily-agenda-email function
+✓ Emails are sent to all users with daily_email_enabled = true
+✓ Results are logged to daily_summary_log table
+
+You should see a new row in daily_summary_log with:
+  - sent_at: Timestamp of send
+  - success: true (if successful)
+  - recipient_count: Number of emails sent
+  - triggered_by: 'one_time_test' or 'manual_test_immediate'
+
+
+═══════════════════════════════════════════════════════════════════════
+CHECKING RESULTS
+═══════════════════════════════════════════════════════════════════════
+
+In psql:
+  -- View the most recent send
+  SELECT * FROM daily_summary_log ORDER BY sent_at DESC LIMIT 1;
+
+  -- View all sends today
+  SELECT * FROM daily_summary_log WHERE sent_at::date = CURRENT_DATE;
+
+From terminal:
+  # View cron trigger logs
+  supabase functions logs daily-agenda-cron-trigger --tail
+
+  # View email function logs
+  supabase functions logs send-daily-agenda-email --tail
+
+
+═══════════════════════════════════════════════════════════════════════
+TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════════════
+
+If emails don't send:
+
+1. Check if any users have daily_email_enabled = true:
+   SELECT id, email, daily_email_enabled FROM profiles 
+   WHERE daily_email_enabled = true;
+
+2. Check function logs for errors:
+   supabase functions logs daily-agenda-cron-trigger --limit 50
+   supabase functions logs send-daily-agenda-email --limit 50
+
+3. Check the daily_summary_log for error messages:
+   SELECT * FROM daily_summary_log ORDER BY sent_at DESC LIMIT 5;
+
+4. Verify config is still set:
+   SELECT * FROM cron_config;
+
+
+═══════════════════════════════════════════════════════════════════════
+RECOMMENDATION
+═══════════════════════════════════════════════════════════════════════
+
+I recommend OPTION 2 (trigger immediately) for testing because:
+  ✓ You can see results right away
+  ✓ Easier to debug if something goes wrong
+  ✓ No need to wait or clean up scheduled jobs
+  ✓ Same exact code path as the daily cron will use
+
+
+═══════════════════════════════════════════════════════════════════════
+READY TO TEST?
+═══════════════════════════════════════════════════════════════════════
+
+For immediate test:
+  supabase db remote connect
+  \i trigger_email_immediately.sql
+  \q
+
+For scheduled 10:40 AM ET test:
+  supabase db remote connect
+  \i trigger_email_today_1040am.sql
+  \q
+
+═══════════════════════════════════════════════════════════════════════

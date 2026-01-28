@@ -140,6 +140,7 @@ interface ExportConfig {
     accentWallCount: boolean;
     hasExtraCharges: boolean;
     extraChargesDescription: boolean;
+    extraChargesLineItems: boolean;
     extraHours: boolean;
     additionalComments: boolean;
     // Billing/Invoice Information
@@ -320,6 +321,7 @@ export function JobListingPage({
         accentWallCount: false,
         hasExtraCharges: false,
         extraChargesDescription: false,
+        extraChargesLineItems: false,
         extraHours: false,
         additionalComments: false,
         // Billing/Invoice Information
@@ -472,7 +474,7 @@ export function JobListingPage({
           'invoiceSent', 'invoicePaid', 'invoiceSentDate', 'invoicePaidDate',
           'baseBillToCustomer', 'basePayToSubcontractor', 'baseProfit',
           'additionalServicesBillToCustomer', 'additionalServicesPayToSubcontractor', 'additionalServicesProfit', 'additionalServicesDetails',
-        'extraChargesBillToCustomer', 'extraChargesPayToSubcontractor', 'extraChargesProfit',
+        'extraChargesBillToCustomer', 'extraChargesPayToSubcontractor', 'extraChargesProfit', 'extraChargesLineItems',
         'totalBillToCustomer', 'totalPayToSubcontractor', 'totalProfit'
         ];
         billingFields.forEach(field => {
@@ -484,7 +486,7 @@ export function JobListingPage({
           'sprinklersPainted', 'paintedCeilings', 'ceilingRoomsCount', 'paintedPatio',
           'paintedGarage', 'paintedCabinets', 'paintedCrownMolding', 'paintedFrontDoor',
           'cabinetRemovalRepair', 'ceilingLightsRepair', 'hasAccentWall', 'accentWallType',
-          'accentWallCount', 'hasExtraCharges', 'extraChargesDescription', 'extraHours',
+          'accentWallCount', 'hasExtraCharges', 'extraChargesDescription', 'extraChargesLineItems', 'extraHours',
           'additionalComments'
         ];
         workOrderFields.forEach(field => {
@@ -493,6 +495,36 @@ export function JobListingPage({
       }
       return { ...prev, columns: newColumns };
     });
+  };
+
+  const calculateExtraChargesTotals = (lineItems: any[]) => {
+    return lineItems.reduce(
+      (acc, item) => {
+        const quantity = Number(item.quantity) || 0;
+        const billRate = Number(item.billRate) || 0;
+        const subRate = Number(item.subRate) || 0;
+        const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
+        const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
+        acc.bill += billAmount;
+        acc.sub += subAmount;
+        if (item.isHourly) acc.hours += quantity;
+        return acc;
+      },
+      { bill: 0, sub: 0, hours: 0 }
+    );
+  };
+
+  const formatExtraChargeLineItems = (lineItems: any[]) => {
+    if (!lineItems.length) return 'N/A';
+    return lineItems
+      .map((item) => {
+        const quantity = Number(item.quantity) || 0;
+        const rate = Number(item.billRate) || 0;
+        const unitLabel = item.isHourly ? 'hrs' : 'units';
+        const rateText = rate ? ` @ $${rate.toFixed(2)}` : '';
+        return `${item.categoryName}: ${item.detailName} (${quantity} ${unitLabel}${rateText})`;
+      })
+      .join('; ');
   };
 
   const exportToCSV = async () => {
@@ -602,7 +634,7 @@ export function JobListingPage({
       const needsBillingData = Object.entries(exportConfig.columns).some(([key, val]) => 
         ['baseBillToCustomer', 'basePayToSubcontractor', 'baseProfit',
          'additionalServicesBillToCustomer', 'additionalServicesPayToSubcontractor', 'additionalServicesProfit',
-         'extraChargesBillToCustomer', 'extraChargesPayToSubcontractor', 'extraChargesProfit',
+         'extraChargesBillToCustomer', 'extraChargesPayToSubcontractor', 'extraChargesProfit', 'extraChargesLineItems',
          'totalBillToCustomer', 'totalPayToSubcontractor', 'totalProfit'].includes(key) && val
       );
 
@@ -669,7 +701,7 @@ export function JobListingPage({
     );
 
     let workOrdersMap: Record<string, any> = {};
-    if (hasWorkOrderFields) {
+    if (hasWorkOrderFields || needsBillingData) {
       const { data: workOrdersData } = await supabase
         .from('work_orders')
         .select('*')
@@ -687,6 +719,11 @@ export function JobListingPage({
       const row: Record<string, string> = {};
       const workOrder = workOrdersMap[job.id];
       const jobDetails = jobDetailsMap[job.id]; // Full job details with billing breakdown
+      const extraChargeLineItems = Array.isArray(jobDetails?.work_order?.extra_charges_line_items)
+        ? jobDetails.work_order.extra_charges_line_items
+        : (Array.isArray(workOrder?.extra_charges_line_items) ? workOrder.extra_charges_line_items : []);
+      const hasExtraChargeItems = extraChargeLineItems.length > 0;
+      const extraChargeTotals = hasExtraChargeItems ? calculateExtraChargesTotals(extraChargeLineItems) : { bill: null, sub: null, hours: null };
       
       // Job Information
       if (exportConfig.columns.workOrder) row['Work Order #'] = formatWorkOrderNumber(job.work_order_num);
@@ -722,8 +759,16 @@ export function JobListingPage({
       if (exportConfig.columns.accentWallType) row['Accent Wall Type'] = workOrder?.accent_wall_type || 'N/A';
       if (exportConfig.columns.accentWallCount) row['Accent Wall Count'] = workOrder?.accent_wall_count ? String(workOrder.accent_wall_count) : 'N/A';
       if (exportConfig.columns.hasExtraCharges) row['Has Extra Charges'] = workOrder?.has_extra_charges === true ? 'Yes' : workOrder?.has_extra_charges === false ? 'No' : 'N/A';
-      if (exportConfig.columns.extraChargesDescription) row['Extra Charges Description'] = workOrder?.extra_charges_description || 'N/A';
-      if (exportConfig.columns.extraHours) row['Extra Hours'] = workOrder?.extra_hours ? String(workOrder.extra_hours) : 'N/A';
+      if (exportConfig.columns.extraChargesDescription) {
+        row['Extra Charges Description'] = hasExtraChargeItems ? 'Itemized Extra Charges' : (workOrder?.extra_charges_description || 'N/A');
+      }
+      if (exportConfig.columns.extraChargesLineItems) {
+        row['Extra Charges Line Items'] = formatExtraChargeLineItems(extraChargeLineItems);
+      }
+      if (exportConfig.columns.extraHours) {
+        const hoursValue = hasExtraChargeItems ? extraChargeTotals.hours : workOrder?.extra_hours;
+        row['Extra Hours'] = (hoursValue ?? null) !== null ? String(hoursValue) : 'N/A';
+      }
       if (exportConfig.columns.additionalComments) row['Additional Comments'] = workOrder?.additional_comments || 'N/A';
       
       // Billing/Invoice Information
@@ -759,20 +804,19 @@ export function JobListingPage({
       if (exportConfig.columns.additionalServicesProfit) row['Additional Services Profit'] = additionalServicesProfit !== null ? `$${additionalServicesProfit.toFixed(2)}` : 'N/A';
       
       // Extra Charges
-      const extraChargesBillAmount = jobDetails?.extra_charges_details?.bill_amount ?? null;
-      const extraChargesSubPayAmount = jobDetails?.extra_charges_details?.sub_pay_amount ?? null;
+      const extraChargesBillAmount = hasExtraChargeItems
+        ? extraChargeTotals.bill
+        : (jobDetails?.extra_charges_details?.bill_amount ?? null);
+      const extraChargesSubPayAmount = hasExtraChargeItems
+        ? extraChargeTotals.sub
+        : (jobDetails?.extra_charges_details?.sub_pay_amount ?? null);
       const extraChargesProfit = (extraChargesBillAmount !== null && extraChargesSubPayAmount !== null) 
         ? extraChargesBillAmount - extraChargesSubPayAmount 
         : null;
-      
-      // Combined Extra Charges (including Additional Services) for export display
-      const combinedExtraBill = (extraChargesBillAmount ?? 0) + (additionalServicesBillAmount ?? 0);
-      const combinedExtraSubPay = (extraChargesSubPayAmount ?? 0) + (additionalServicesSubPayAmount ?? 0);
-      const combinedExtraProfit = combinedExtraBill - combinedExtraSubPay;
 
-      if (exportConfig.columns.extraChargesBillToCustomer) row['Extra Charges Bill to Customer'] = combinedExtraBill > 0 ? `$${combinedExtraBill.toFixed(2)}` : 'N/A';
-      if (exportConfig.columns.extraChargesPayToSubcontractor) row['Extra Charges Pay to Subcontractor'] = combinedExtraSubPay > 0 ? `$${combinedExtraSubPay.toFixed(2)}` : 'N/A';
-      if (exportConfig.columns.extraChargesProfit) row['Extra Charges Profit'] = combinedExtraProfit !== 0 ? `$${combinedExtraProfit.toFixed(2)}` : 'N/A';
+      if (exportConfig.columns.extraChargesBillToCustomer) row['Extra Charges Bill to Customer'] = extraChargesBillAmount !== null ? `$${extraChargesBillAmount.toFixed(2)}` : 'N/A';
+      if (exportConfig.columns.extraChargesPayToSubcontractor) row['Extra Charges Pay to Subcontractor'] = extraChargesSubPayAmount !== null ? `$${extraChargesSubPayAmount.toFixed(2)}` : 'N/A';
+      if (exportConfig.columns.extraChargesProfit) row['Extra Charges Profit'] = extraChargesProfit !== null ? `$${extraChargesProfit.toFixed(2)}` : 'N/A';
       
       // Grand Totals - matching the BillingBreakdownV2 calculation exactly
       const totalBillToCustomer = 
@@ -892,7 +936,7 @@ export function JobListingPage({
       const needsBillingData = Object.entries(exportConfig.columns).some(([key, val]) => 
         ['baseBillToCustomer', 'basePayToSubcontractor', 'baseProfit',
          'additionalServicesBillToCustomer', 'additionalServicesPayToSubcontractor', 'additionalServicesProfit',
-         'extraChargesBillToCustomer', 'extraChargesPayToSubcontractor', 'extraChargesProfit',
+         'extraChargesBillToCustomer', 'extraChargesPayToSubcontractor', 'extraChargesProfit', 'extraChargesLineItems',
          'totalBillToCustomer', 'totalPayToSubcontractor', 'totalProfit'].includes(key) && val
       );
 
@@ -946,7 +990,7 @@ export function JobListingPage({
       );
 
       let workOrdersMap: Record<string, any> = {};
-      if (hasWorkOrderFields) {
+      if (hasWorkOrderFields || needsBillingData) {
         const { data: workOrdersData } = await supabase
           .from('work_orders')
           .select('*')
@@ -997,6 +1041,7 @@ export function JobListingPage({
         accentWallCount: { header: 'Accent Cnt', width: 16 },
         hasExtraCharges: { header: 'Extra Chgs', width: 16 },
         extraChargesDescription: { header: 'Extra Desc', width: 25 },
+        extraChargesLineItems: { header: 'Extra Chgs Items', width: 45 },
         extraHours: { header: 'Extra Hrs', width: 16 },
         additionalComments: { header: 'Comments', width: 30 },
         invoiceSent: { header: 'Inv Sent', width: 16 },
@@ -1031,6 +1076,11 @@ export function JobListingPage({
       const data = filteredJobs.map(job => {
         const workOrder = workOrdersMap[job.id];
         const jobDetails = jobDetailsMap[job.id];
+        const extraChargeLineItems = Array.isArray(jobDetails?.work_order?.extra_charges_line_items)
+          ? jobDetails.work_order.extra_charges_line_items
+          : (Array.isArray(workOrder?.extra_charges_line_items) ? workOrder.extra_charges_line_items : []);
+        const hasExtraChargeItems = extraChargeLineItems.length > 0;
+        const extraChargeTotals = hasExtraChargeItems ? calculateExtraChargesTotals(extraChargeLineItems) : { bill: null, sub: null, hours: null };
         
         // Calculate billing values
         const baseBillAmount = jobDetails?.billing_details?.bill_amount ?? null;
@@ -1048,8 +1098,12 @@ export function JobListingPage({
           ? additionalServicesBillAmount - additionalServicesSubPayAmount 
           : null;
         
-        const extraChargesBillAmount = jobDetails?.extra_charges_details?.bill_amount ?? null;
-        const extraChargesSubPayAmount = jobDetails?.extra_charges_details?.sub_pay_amount ?? null;
+        const extraChargesBillAmount = hasExtraChargeItems
+          ? extraChargeTotals.bill
+          : (jobDetails?.extra_charges_details?.bill_amount ?? null);
+        const extraChargesSubPayAmount = hasExtraChargeItems
+          ? extraChargeTotals.sub
+          : (jobDetails?.extra_charges_details?.sub_pay_amount ?? null);
         const extraChargesProfit = (extraChargesBillAmount !== null && extraChargesSubPayAmount !== null) 
           ? extraChargesBillAmount - extraChargesSubPayAmount 
           : null;
@@ -1090,8 +1144,11 @@ export function JobListingPage({
           accentWallType: workOrder?.accent_wall_type || 'N/A',
           accentWallCount: workOrder?.accent_wall_count ? String(workOrder.accent_wall_count) : 'N/A',
           hasExtraCharges: workOrder?.has_extra_charges === true ? 'Yes' : workOrder?.has_extra_charges === false ? 'No' : 'N/A',
-          extraChargesDescription: workOrder?.extra_charges_description || 'N/A',
-          extraHours: workOrder?.extra_hours ? String(workOrder.extra_hours) : 'N/A',
+          extraChargesDescription: hasExtraChargeItems ? 'Itemized Extra Charges' : (workOrder?.extra_charges_description || 'N/A'),
+          extraChargesLineItems: formatExtraChargeLineItems(extraChargeLineItems),
+          extraHours: ((hasExtraChargeItems ? extraChargeTotals.hours : workOrder?.extra_hours) ?? null) !== null
+            ? String(hasExtraChargeItems ? extraChargeTotals.hours : workOrder?.extra_hours)
+            : 'N/A',
           additionalComments: workOrder?.additional_comments || 'N/A',
           invoiceSent: job.invoice_sent === true ? 'Yes' : job.invoice_sent === false ? 'No' : 'N/A',
           invoicePaid: job.invoice_paid === true ? 'Yes' : job.invoice_paid === false ? 'No' : 'N/A',
@@ -2030,7 +2087,7 @@ export function JobListingPage({
                           'additionalComments', 'invoiceSent', 'invoicePaid', 'invoiceSentDate', 'invoicePaidDate',
                           'baseBillToCustomer', 'basePayToSubcontractor', 'baseProfit',
                           'additionalServicesBillToCustomer', 'additionalServicesPayToSubcontractor', 'additionalServicesProfit',
-                          'extraChargesBillToCustomer', 'extraChargesPayToSubcontractor', 'extraChargesProfit',
+                          'extraChargesBillToCustomer', 'extraChargesPayToSubcontractor', 'extraChargesProfit', 'extraChargesLineItems',
                           'totalBillToCustomer', 'totalPayToSubcontractor', 'totalProfit'].includes(key) && val
                         ).length} selected)
                       </span>
@@ -2144,7 +2201,7 @@ export function JobListingPage({
                           'sprinklersPainted', 'paintedCeilings', 'ceilingRoomsCount', 'paintedPatio',
                           'paintedGarage', 'paintedCabinets', 'paintedCrownMolding', 'paintedFrontDoor',
                           'cabinetRemovalRepair', 'ceilingLightsRepair', 'hasAccentWall', 'accentWallType',
-                          'accentWallCount', 'hasExtraCharges', 'extraChargesDescription', 'extraHours',
+                          'accentWallCount', 'hasExtraCharges', 'extraChargesDescription', 'extraChargesLineItems', 'extraHours',
                           'additionalComments'].includes(key) && val
                         ).length} selected)
                       </span>
@@ -2298,6 +2355,12 @@ export function JobListingPage({
                             onChange={(e) => setExportConfig(prev => ({...prev, columns: { ...prev.columns, extraChargesDescription: e.target.checked }}))}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
                           <span className="text-sm text-gray-700 dark:text-gray-300">Extra Charges Description</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input type="checkbox" checked={exportConfig.columns.extraChargesLineItems}
+                            onChange={(e) => setExportConfig(prev => ({...prev, columns: { ...prev.columns, extraChargesLineItems: e.target.checked }}))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">Extra Charges Line Items</span>
                         </label>
                         <label className="flex items-center space-x-2">
                           <input type="checkbox" checked={exportConfig.columns.extraHours}
@@ -2466,6 +2529,12 @@ export function JobListingPage({
                                 onChange={(e) => setExportConfig(prev => ({...prev, columns: { ...prev.columns, extraChargesProfit: e.target.checked }}))}
                                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
                               <span className="text-sm text-gray-700 dark:text-gray-300">Profit</span>
+                            </label>
+                            <label className="flex items-center space-x-2">
+                              <input type="checkbox" checked={exportConfig.columns.extraChargesLineItems}
+                                onChange={(e) => setExportConfig(prev => ({...prev, columns: { ...prev.columns, extraChargesLineItems: e.target.checked }}))}
+                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+                              <span className="text-sm text-gray-700 dark:text-gray-300">Extra Charges Line Items</span>
                             </label>
                           </div>
                         </div>

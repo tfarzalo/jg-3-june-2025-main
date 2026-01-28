@@ -229,11 +229,16 @@ export type File = {
   id: string;
   name: string;
   path: string;
+  storage_path?: string | null;
+  original_filename?: string | null;
+  bucket?: string | null;
   size: number;
   type: string;
   uploaded_by: string;
   property_id: string | null;
   job_id: string | null;
+  work_order_id?: string | null;
+  category?: string | null;
   folder_id: string | null;
   created_at: string;
   updated_at: string;

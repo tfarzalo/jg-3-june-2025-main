@@ -43,3 +43,46 @@ export function joinPathSegments(...segs: string[]): string {
     .map(s => s.replace(/^\/+|\/+$/g, '')) // trim leading/trailing slashes per segment
     .join('/');
 }
+
+export function sanitizeFilename(filename: string): string {
+  if (!filename) return '';
+  const justName = filename.split('/').pop() || filename;
+  const parts = justName.split('.');
+  if (parts.length <= 1) {
+    return sanitizeForStorage(justName);
+  }
+  const ext = parts.pop() as string;
+  const base = parts.join('.');
+  const safeBase = sanitizeForStorage(base);
+  const safeExt = sanitizeForStorage(ext);
+  return safeExt ? `${safeBase}.${safeExt}` : safeBase;
+}
+
+export function buildStoragePath(params: {
+  propertyId: string;
+  workOrderId?: string | null;
+  jobIdFallback?: string | null;
+  category: string;
+  filename: string;
+}): string {
+  const { propertyId, workOrderId, jobIdFallback, category, filename } = params;
+  const safeName = sanitizeFilename(filename);
+  const uniquePrefix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const finalName = safeName ? `${uniquePrefix}_${safeName}` : uniquePrefix;
+  const woId = workOrderId || jobIdFallback || '';
+  const categorySegment = category;
+
+  if (!propertyId) {
+    return joinPathSegments('unknown', categorySegment, finalName);
+  }
+
+  if (categorySegment === 'property-files' || categorySegment === 'property_files') {
+    return joinPathSegments('properties', propertyId, 'property-files', finalName);
+  }
+
+  if (woId) {
+    return joinPathSegments('properties', propertyId, 'work-orders', woId, categorySegment, finalName);
+  }
+
+  return joinPathSegments('properties', propertyId, categorySegment, finalName);
+}

@@ -1,4 +1,6 @@
 import * as React from "react";
+import { addDays, parseISO } from "date-fns";
+import { formatInTimeZone, zonedTimeToUtc } from "date-fns-tz";
 import { createCalendarEvent } from "../../services/calendarEvents";
 import type { CalendarEventInsert } from "../../types/calendar";
 import { Button } from "../ui/Button";
@@ -12,6 +14,17 @@ type Props = {
 export default function EventModal({ onCreated, defaultDate, canCreate }: Props) {
   const [open, setOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
+  const timeZone = "America/New_York";
+  const toUtcISO = React.useCallback(
+    (dateStr: string, timeStr: string) =>
+      zonedTimeToUtc(`${dateStr}T${timeStr}`, timeZone).toISOString(),
+    [timeZone]
+  );
+  const nextDateInZone = React.useCallback(
+    (dateStr: string) =>
+      formatInTimeZone(addDays(parseISO(dateStr), 1), timeZone, "yyyy-MM-dd"),
+    [timeZone]
+  );
   
   // Get Eastern Time date
   const getEasternDate = () => {
@@ -24,8 +37,12 @@ export default function EventModal({ onCreated, defaultDate, canCreate }: Props)
     details: "",
     color: "#3b82f6",
     is_all_day: false,
-    start_date: defaultDate ? defaultDate.toISOString().slice(0,10) : getEasternDate().toISOString().slice(0,10),
-    end_date: defaultDate ? defaultDate.toISOString().slice(0,10) : getEasternDate().toISOString().slice(0,10),
+    start_date: defaultDate
+      ? formatInTimeZone(defaultDate, timeZone, "yyyy-MM-dd")
+      : formatInTimeZone(getEasternDate(), timeZone, "yyyy-MM-dd"),
+    end_date: defaultDate
+      ? formatInTimeZone(defaultDate, timeZone, "yyyy-MM-dd")
+      : formatInTimeZone(getEasternDate(), timeZone, "yyyy-MM-dd"),
     start_time: "",
     end_time: "",
     // Recurring event fields
@@ -84,23 +101,21 @@ export default function EventModal({ onCreated, defaultDate, canCreate }: Props)
       
       if (formData.is_all_day) {
         // All-day events: start at 00:00 Eastern, end at next day 00:00 Eastern
-        startISO = new Date(`${start_date}T00:00:00-05:00`).toISOString();
-        const endBase = new Date(new Date(`${end_date}T00:00:00-05:00`).getTime() + 24*60*60*1000);
-        endISO = endBase.toISOString();
+        startISO = toUtcISO(start_date, "00:00:00");
+        endISO = toUtcISO(nextDateInZone(end_date), "00:00:00");
       } else {
         // Timed events: use provided times or default to 1 hour duration
         if (start_time && end_time) {
-          startISO = new Date(`${start_date}T${start_time}:00-05:00`).toISOString();
-          endISO = new Date(`${end_date}T${end_time}:00-05:00`).toISOString();
+          startISO = toUtcISO(start_date, `${start_time}:00`);
+          endISO = toUtcISO(end_date, `${end_time}:00`);
         } else if (start_time) {
           // Only start time provided, default to 1 hour duration
-          startISO = new Date(`${start_date}T${start_time}:00-05:00`).toISOString();
-          const endBase = new Date(new Date(startISO).getTime() + 60*60*1000);
-          endISO = endBase.toISOString();
+          startISO = toUtcISO(start_date, `${start_time}:00`);
+          endISO = new Date(new Date(startISO).getTime() + 60 * 60 * 1000).toISOString();
         } else {
           // No times provided, default to 12:01 AM - 11:59 PM Eastern (full day)
-          startISO = new Date(`${start_date}T00:01:00-05:00`).toISOString();
-          endISO = new Date(`${end_date}T23:59:00-05:00`).toISOString();
+          startISO = toUtcISO(start_date, "00:01:00");
+          endISO = toUtcISO(end_date, "23:59:00");
         }
       }
 
@@ -116,7 +131,9 @@ export default function EventModal({ onCreated, defaultDate, canCreate }: Props)
         recurrence_type: formData.is_recurring ? formData.recurrence_type : undefined,
         recurrence_interval: formData.is_recurring ? formData.recurrence_interval : undefined,
         recurrence_days: formData.is_recurring && formData.recurrence_type === 'weekly' ? formData.recurrence_days : undefined,
-        recurrence_end_date: formData.is_recurring && formData.recurrence_end_date ? new Date(`${formData.recurrence_end_date}T23:59:59-05:00`).toISOString() : undefined,
+        recurrence_end_date: formData.is_recurring && formData.recurrence_end_date
+          ? toUtcISO(formData.recurrence_end_date, "23:59:59")
+          : undefined,
       };
 
       const inserted = await createCalendarEvent(payload);
@@ -128,8 +145,8 @@ export default function EventModal({ onCreated, defaultDate, canCreate }: Props)
         details: "",
         color: "#3b82f6",
         is_all_day: false,
-        start_date: getEasternDate().toISOString().slice(0,10),
-        end_date: getEasternDate().toISOString().slice(0,10),
+        start_date: formatInTimeZone(getEasternDate(), timeZone, "yyyy-MM-dd"),
+        end_date: formatInTimeZone(getEasternDate(), timeZone, "yyyy-MM-dd"),
         start_time: "",
         end_time: "",
         // Recurring event fields

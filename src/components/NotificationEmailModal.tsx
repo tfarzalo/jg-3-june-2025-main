@@ -236,48 +236,23 @@ const NotificationEmailModal: React.FC<NotificationEmailModalProps> = ({
         const currentUserId = sessionData?.session?.user?.id;
 
         if (currentUserId) {
-          // Get the Pending Work Order phase ID
-          const { data: pendingPhaseData } = await supabase
+          // Get the current phase ID
+          const { data: phaseData } = await supabase
             .from('job_phases')
             .select('id')
             .eq('job_phase_label', 'Pending Work Order')
             .single();
 
-          if (pendingPhaseData) {
+          if (phaseData) {
             // Log activity as a phase change (to same phase) to track the notification
             await supabase.from('job_phase_changes').insert({
               job_id: job.id,
-              from_phase_id: pendingPhaseData.id,
-              to_phase_id: pendingPhaseData.id,
+              from_phase_id: phaseData.id,
+              to_phase_id: phaseData.id,
               changed_by: currentUserId,
               changed_at: new Date().toISOString(),
               notes: `${getNotificationTypeLabel()} notification email sent to ${recipientEmail}`
             });
-
-            // Auto-advance to Work Order phase since notification emails don't require approval
-            const { data: workOrderPhase } = await supabase
-              .from('job_phases')
-              .select('id')
-              .eq('job_phase_label', 'Work Order')
-              .single();
-
-            if (workOrderPhase) {
-              // Update the job phase to Work Order
-              await supabase
-                .from('jobs')
-                .update({ current_phase_id: workOrderPhase.id })
-                .eq('id', job.id);
-
-              // Log the phase change
-              await supabase.from('job_phase_changes').insert({
-                job_id: job.id,
-                from_phase_id: pendingPhaseData.id,
-                to_phase_id: workOrderPhase.id,
-                changed_by: currentUserId,
-                changed_at: new Date().toISOString(),
-                notes: `${getNotificationTypeLabel()} notification email sent to ${recipientEmail} - automatically advanced to Work Order phase`
-              });
-            }
           }
         }
       }

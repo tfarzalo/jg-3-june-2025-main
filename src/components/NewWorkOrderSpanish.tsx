@@ -13,6 +13,8 @@ import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
 import { formatCurrency } from '../lib/utils/formatUtils';
 import { supabase } from '../utils/supabase';
+import ExtraChargesSection from './ExtraChargesSection';
+import { ExtraChargeLineItem } from '../types/extraCharges';
 
 
 interface Job {
@@ -137,6 +139,9 @@ interface NewWorkOrderSpanishProps {
   dynamicServices?: any[];
   dynamicFormValues?: any;
   setDynamicFormValues?: any;
+  extraChargesItems: ExtraChargeLineItem[];
+  handleAddExtraCharge: (item: ExtraChargeLineItem) => void;
+  handleRemoveExtraCharge: (id: string) => void;
 }
 
 const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
@@ -166,7 +171,10 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
   unitSizes = [],
   dynamicServices,
   dynamicFormValues,
-  setDynamicFormValues
+  setDynamicFormValues,
+  extraChargesItems,
+  handleAddExtraCharge,
+  handleRemoveExtraCharge
 }) => {
   // Debug logging
   console.log('NewWorkOrderSpanish - Props Debug:', {
@@ -198,13 +206,8 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
       formData.accent_wall_count !== undefined && 
       formData.accent_wall_count >= 0
     )) &&
-    // Extra Charges requirements - hours must be greater than 0 when checkbox is checked
-    (!formData.has_extra_charges || (
-      formData.extra_charges_description && 
-      formData.extra_charges_description.trim() !== '' && 
-      formData.extra_hours !== undefined && 
-      formData.extra_hours > 0
-    ))
+    // Extra Charges requirements - at least one line item when checkbox is checked
+    (!formData.has_extra_charges || extraChargesItems.length > 0)
   );
 
   if (loading) {
@@ -892,107 +895,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
             )}
           </div>
 
-          {/* Dynamic Additional Services */}
-              {dynamicServices.length > 0 && (
-                <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Servicios Adicionales</h2>
-                  <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
-                    {dynamicServices.map(service => {
-                      const value = dynamicFormValues[service.id] || { checked: false, quantity: 1, billingDetailId: '' };
-                      
-                      return (
-                        <div key={service.id} className="space-y-3 p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center">
-                              <input
-                                type="checkbox"
-                                id={`service_${service.id}`}
-                                checked={value.checked}
-                                onChange={(e) => {
-                                  const checked = e.target.checked;
-                                  let defaultOptionId = '';
-                                  // Try to auto-select option matching job unit size
-                                  if (checked && job?.unit_size?.id) {
-                                    const match = service.options.find(o => o.unit_size_id === job.unit_size?.id);
-                                    if (match) defaultOptionId = match.id;
-                                  }
-                                  // Fallback to first option
-                                  if (checked && !defaultOptionId && service.options.length > 0) {
-                                    defaultOptionId = service.options[0].id;
-                                  }
-
-                                  setDynamicFormValues(prev => ({
-                                    ...prev,
-                                    [service.id]: {
-                                      ...prev[service.id],
-                                      checked,
-                                      quantity: prev[service.id]?.quantity || 1,
-                                      billingDetailId: defaultOptionId
-                                    }
-                                  }));
-                                }}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                              />
-                              <label htmlFor={`service_${service.id}`} className="ml-2 block text-sm font-medium text-gray-900 dark:text-white">
-                                {service.name}
-                              </label>
-                            </div>
-                          </div>
-
-                          {value.checked && (
-                            <div className="ml-6 space-y-3">
-                              <div>
-                                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                  Cantidad
-                                </label>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  value={value.quantity}
-                                  onChange={(e) => {
-                                    const qty = parseInt(e.target.value) || 0;
-                                    setDynamicFormValues(prev => ({
-                                      ...prev,
-                                      [service.id]: { ...prev[service.id], quantity: qty }
-                                    }));
-                                  }}
-                                  className="w-full h-9 px-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded text-sm text-gray-900 dark:text-white"
-                                />
-                              </div>
-                              
-                              {service.options.length > 1 && (
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                                    Tamaño / Tipo
-                                  </label>
-                                  <select
-                                    value={value.billingDetailId}
-                                    onChange={(e) => {
-                                      setDynamicFormValues(prev => ({
-                                        ...prev,
-                                        [service.id]: { ...prev[service.id], billingDetailId: e.target.value }
-                                      }));
-                                    }}
-                                    className="w-full h-9 px-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded text-sm text-gray-900 dark:text-white"
-                                  >
-                                    {service.options.map(opt => (
-                                      <option key={opt.id} value={opt.id}>
-                                        {opt.unit_sizes?.[0]?.unit_size_label || 'Estándar'}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Extra Charges */}
+              {/* Extra Charges (Itemized) */}
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
             <div className="flex items-center mb-6">
               <input
@@ -1000,15 +903,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                 id="has_extra_charges"
                 name="has_extra_charges"
                 checked={formData.has_extra_charges}
-                onChange={(e) => {
-                  const target = e.target as HTMLInputElement;
-                  const checked = target.checked;
-                  // Use the same direct state update pattern as English version
-                  const syntheticEvent = {
-                    target: { name: 'has_extra_charges', value: checked.toString(), type: 'checkbox', checked }
-                  } as React.ChangeEvent<HTMLInputElement>;
-                  handleInputChange(syntheticEvent);
-                }}
+                onChange={(e) => setFormData(prev => ({ ...prev, has_extra_charges: e.target.checked }))}
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
               <label htmlFor="has_extra_charges" className="ml-2 text-lg font-semibold text-gray-900 dark:text-white">
@@ -1029,50 +924,15 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                     </div>
                   </div>
                 )}
-                
-                <div>
-                  <label htmlFor="extra_charges_description" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Descripción {formData.has_extra_charges && <span className="text-red-500">*</span>}
-                  </label>
-                  <textarea
-                    id="extra_charges_description"
-                    name="extra_charges_description"
-                    rows={3}
-                    required={formData.has_extra_charges}
-                    value={formData.extra_charges_description}
-                    onChange={handleInputChange}
-                    className={`w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      formData.has_extra_charges && (!formData.extra_charges_description || formData.extra_charges_description.trim() === '')
-                        ? 'border-red-500 dark:border-red-500'
-                        : 'border-gray-300 dark:border-[#2D3B4E]'
-                    }`}
-                    placeholder="Describir los cargos adicionales"
-                  />
-                </div>
-                
-                <div>
-                  <label htmlFor="extra_hours" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Horas Adicionales {formData.has_extra_charges && <span className="text-red-500">*</span>}
-                  </label>
-                  <input
-                    type="number"
-                    id="extra_hours"
-                    name="extra_hours"
-                    min="0.25"
-                    step="0.25"
-                    required={formData.has_extra_charges}
-                    value={formData.extra_hours}
-                    onChange={handleInputChange}
-                    className={`w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      formData.has_extra_charges && (!formData.extra_hours || formData.extra_hours <= 0)
-                        ? 'border-red-500 dark:border-red-500'
-                        : 'border-gray-300 dark:border-[#2D3B4E]'
-                    }`}
-                  />
-                  {formData.has_extra_charges && formData.extra_hours !== undefined && formData.extra_hours <= 0 && (
-                    <p className="mt-1 text-sm text-red-500">Las horas adicionales deben ser mayores a 0</p>
-                  )}
-                </div>
+
+                <ExtraChargesSection
+                  propertyId={job?.property?.id || null}
+                  lineItems={extraChargesItems}
+                  onAddLineItem={handleAddExtraCharge}
+                  onRemoveLineItem={handleRemoveExtraCharge}
+                  language="es"
+                  disabled={saving}
+                />
               </div>
             )}
           </div>
@@ -1139,6 +999,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
             
             <ImageGallery
               workOrderId={workOrderId}
+              jobId={jobId || null}
               folder="before"
               key={refreshImages}
             />

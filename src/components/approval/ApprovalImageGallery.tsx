@@ -23,12 +23,36 @@ export function ApprovalImageGallery({ images, supabaseUrl }: ApprovalImageGalle
     return null;
   }
 
+  const normalizeBucket = (imageType?: string) => {
+    const lowered = (imageType || '').toLowerCase();
+    if (lowered.includes('before')) return 'before';
+    if (lowered.includes('sprinkler')) return 'sprinkler';
+    if (lowered.includes('other')) return 'other';
+    return 'other';
+  };
+
+  const bucketOrder = ['before', 'sprinkler', 'other'] as const;
+  const bucketLabels: Record<(typeof bucketOrder)[number], string> = {
+    before: 'Before Images',
+    sprinkler: 'Sprinkler Images',
+    other: 'Other Files'
+  };
+
+  const imagesByBucket = bucketOrder.map((bucket) => ({
+    bucket,
+    label: bucketLabels[bucket],
+    items: images.filter((image) => normalizeBucket(image.image_type) === bucket)
+  }));
+
+  const orderedImages = imagesByBucket.flatMap((group) => group.items);
+  const indexById = new Map(orderedImages.map((image, index) => [image.id, index]));
+
   const handleImageClick = (index: number) => {
     setCurrentImageIndex(index);
     setLightboxOpen(true);
   };
 
-  const imageUrls = images.map(img => 
+  const imageUrls = orderedImages.map(img => 
     img.public_url || `${supabaseUrl}/storage/v1/object/public/job-images/${img.file_path}`
   );
 
@@ -40,40 +64,55 @@ export function ApprovalImageGallery({ images, supabaseUrl }: ApprovalImageGalle
           Job Photos ({images.length})
         </h2>
         
-        <div className="grid grid-cols-2 gap-4">
-          {images.map((image, index) => {
-            const imageUrl = image.public_url || `${supabaseUrl}/storage/v1/object/public/job-images/${image.file_path}`;
-            
+        <div className="space-y-6">
+          {imagesByBucket.map((group) => {
+            if (group.items.length === 0) return null;
             return (
-              <div
-                key={image.id}
-                className="relative group cursor-pointer overflow-hidden rounded-lg border-2 border-gray-200 hover:border-blue-500 transition-all duration-200"
-                onClick={() => handleImageClick(index)}
-              >
-                <div className="aspect-square relative">
-                  <img
-                    src={imageUrl}
-                    alt={image.image_type || 'Job photo'}
-                    className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
-                    loading="lazy"
-                  />
-                  
-                  {/* Overlay on hover */}
-                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity duration-200 flex items-center justify-center">
-                    <div className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-center">
-                      <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                      </svg>
-                      <p className="text-sm font-medium">Click to enlarge</p>
-                    </div>
-                  </div>
+              <div key={group.bucket}>
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-base font-semibold text-gray-900">{group.label}</h3>
+                  <span className="text-xs text-gray-500">
+                    {group.items.length} photo{group.items.length !== 1 ? 's' : ''}
+                  </span>
                 </div>
-                
-                {/* Image label */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
-                  <p className="text-white text-sm font-medium truncate">
-                    {image.image_type || 'Photo'}
-                  </p>
+                <div className="grid grid-cols-2 gap-4">
+                  {group.items.map((image) => {
+                    const imageUrl = image.public_url || `${supabaseUrl}/storage/v1/object/public/job-images/${image.file_path}`;
+                    const index = indexById.get(image.id) ?? 0;
+                    return (
+                      <div
+                        key={image.id}
+                        className="relative group cursor-pointer overflow-hidden rounded-lg border-2 border-gray-200 hover:border-blue-500 transition-all duration-200"
+                        onClick={() => handleImageClick(index)}
+                      >
+                        <div className="aspect-square relative">
+                          <img
+                            src={imageUrl}
+                            alt={image.file_name || image.image_type || 'Job photo'}
+                            className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                            loading="lazy"
+                          />
+                          
+                          {/* Overlay on hover */}
+                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity duration-200 flex items-center justify-center">
+                            <div className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-center">
+                              <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                              </svg>
+                              <p className="text-sm font-medium">Click to enlarge</p>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Image label */}
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
+                          <p className="text-white text-sm font-medium truncate">
+                            {image.file_name || image.image_type || 'Photo'}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -89,7 +128,7 @@ export function ApprovalImageGallery({ images, supabaseUrl }: ApprovalImageGalle
       {lightboxOpen && (
         <ApprovalLightbox
           images={imageUrls}
-          imageNames={images.map(img => img.image_type || img.file_name)}
+          imageNames={orderedImages.map(img => img.image_type || img.file_name)}
           currentIndex={currentImageIndex}
           onClose={() => setLightboxOpen(false)}
           onNavigate={setCurrentImageIndex}

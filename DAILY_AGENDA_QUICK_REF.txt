@@ -1,0 +1,192 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║                   📧 DAILY AGENDA AUTOMATION                         ║
+║                        QUICK REFERENCE                               ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ 🚀 SETUP (Run Once)                                                  │
+└──────────────────────────────────────────────────────────────────────┘
+
+Run the guided setup script:
+  ./setup-daily-agenda-automation.sh
+
+Or follow the quick start guide:
+  cat QUICK_START_DAILY_AGENDA.md
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ ⏰ CURRENT SCHEDULE                                                  │
+└──────────────────────────────────────────────────────────────────────┘
+
+Schedule:  7:00 AM EST / 12:00 PM UTC
+Frequency: Daily
+Cron:      0 12 * * *
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ 📊 MONITORING                                                        │
+└──────────────────────────────────────────────────────────────────────┘
+
+# View email send log
+SELECT * FROM daily_summary_log ORDER BY sent_at DESC LIMIT 10;
+
+# View cron job status
+SELECT * FROM cron.job WHERE jobname = 'daily-agenda-email-cron';
+
+# View cron execution history
+SELECT * FROM cron.job_run_details 
+WHERE jobid = (SELECT jobid FROM cron.job WHERE jobname = 'daily-agenda-email-cron')
+ORDER BY start_time DESC LIMIT 10;
+
+# View function logs
+supabase functions logs daily-agenda-cron-trigger --tail
+supabase functions logs send-daily-agenda-email --tail
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ 🔧 COMMON TASKS                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+
+# Test email send (via UI)
+App → Settings → Daily Agenda Email Settings → Send Test Email
+
+# Test email send (via API)
+curl -X POST https://YOUR_PROJECT.supabase.co/functions/v1/daily-agenda-cron-trigger \
+  -H "Authorization: Bearer YOUR_CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"test": true}'
+
+# Change schedule (in psql)
+SELECT cron.unschedule('daily-agenda-email-cron');
+SELECT cron.schedule('daily-agenda-email-cron', 'NEW_CRON_EXPR', '...');
+
+# Pause cron job
+SELECT cron.unschedule('daily-agenda-email-cron');
+
+# Resume cron job
+-- Re-run the schedule SQL from migration file
+
+# Redeploy functions
+supabase functions deploy daily-agenda-cron-trigger
+supabase functions deploy send-daily-agenda-email
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ 📁 KEY FILES                                                         │
+└──────────────────────────────────────────────────────────────────────┘
+
+Migrations:
+  supabase/migrations/20260123_daily_summary_tracking.sql
+  supabase/migrations/20260123_setup_daily_cron.sql
+
+Functions:
+  supabase/functions/daily-agenda-cron-trigger/index.ts
+  supabase/functions/send-daily-agenda-email/index.ts
+
+UI:
+  src/components/DailyAgendaEmailSettings.tsx
+
+Documentation:
+  DAILY_AGENDA_AUTOMATION_SETUP_GUIDE.md
+  QUICK_START_DAILY_AGENDA.md
+  setup-daily-agenda-automation.sh
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ 🔐 SECRETS                                                           │
+└──────────────────────────────────────────────────────────────────────┘
+
+Required Secrets:
+  - CRON_SECRET (generated during setup)
+  - RESEND_API_KEY (already set)
+
+View secrets:
+  supabase secrets list
+
+Set secrets:
+  supabase secrets set CRON_SECRET=your-secret-here
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ 🐛 TROUBLESHOOTING                                                   │
+└──────────────────────────────────────────────────────────────────────┘
+
+Problem: Emails not sending
+1. Check cron job is scheduled:
+   SELECT * FROM cron.job WHERE jobname = 'daily-agenda-email-cron';
+   
+2. Check cron execution history:
+   SELECT * FROM cron.job_run_details WHERE jobid = (
+     SELECT jobid FROM cron.job WHERE jobname = 'daily-agenda-email-cron'
+   ) ORDER BY start_time DESC LIMIT 5;
+   
+3. Check function logs:
+   supabase functions logs daily-agenda-cron-trigger --limit 50
+   
+4. Check database config:
+   SHOW app.supabase_url;
+   SHOW app.cron_secret;
+
+Problem: Cron job not found
+- Run the cron setup migration:
+  supabase db push supabase/migrations/20260123_setup_daily_cron.sql
+
+Problem: Function not found
+- Deploy the function:
+  supabase functions deploy daily-agenda-cron-trigger
+
+Problem: Unauthorized error
+- Check CRON_SECRET is set:
+  supabase secrets list
+- Verify database config matches secret:
+  SHOW app.cron_secret;
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ ⚙️ ARCHITECTURE                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+
+Flow:
+  1. pg_cron triggers at scheduled time (12:00 UTC daily)
+  2. Calls daily-agenda-cron-trigger function with CRON_SECRET
+  3. Trigger function validates secret
+  4. Trigger function calls send-daily-agenda-email function
+  5. Email function queries users with email enabled
+  6. Email function sends emails via Resend
+  7. Trigger function logs results to daily_summary_log table
+
+Components:
+  ┌──────────────┐
+  │   pg_cron    │ (Database scheduler)
+  └──────┬───────┘
+         │ triggers daily at 12:00 UTC
+         ▼
+  ┌──────────────────────────────┐
+  │ daily-agenda-cron-trigger    │ (Edge Function)
+  │ - Validates CRON_SECRET      │
+  │ - Logs execution             │
+  └──────┬───────────────────────┘
+         │ calls
+         ▼
+  ┌──────────────────────────────┐
+  │ send-daily-agenda-email      │ (Edge Function)
+  │ - Queries enabled users      │
+  │ - Fetches job data           │
+  │ - Sends emails via Resend    │
+  └──────┬───────────────────────┘
+         │ writes to
+         ▼
+  ┌──────────────────────────────┐
+  │ daily_summary_log            │ (Database Table)
+  │ - Tracks all sends           │
+  │ - success/failure            │
+  │ - timestamps                 │
+  └──────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ 📞 SUPPORT                                                           │
+└──────────────────────────────────────────────────────────────────────┘
+
+For detailed setup instructions:
+  cat DAILY_AGENDA_AUTOMATION_SETUP_GUIDE.md
+
+For quick setup:
+  cat QUICK_START_DAILY_AGENDA.md
+
+Run guided setup:
+  ./setup-daily-agenda-automation.sh
+
+═══════════════════════════════════════════════════════════════════════

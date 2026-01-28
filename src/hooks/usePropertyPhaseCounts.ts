@@ -1,14 +1,34 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../utils/supabase';
 
-const TARGETS = [
-  { key: 'jobRequests', match: /(job\s*request)/i },
-  { key: 'workOrders',  match: /(work\s*order)/i },
-  { key: 'pendingWorkOrders', match: /(pending\s*work\s*order)/i },
-  { key: 'completed',   match: /(completed|complete)/i },
-  { key: 'cancelled',   match: /(cancel{1,2}ed)/i }, // handles canceled/cancelled
-  { key: 'invoicing',   match: /(invoicing|invoice)/i },
-] as const;
+const normalize = (label?: string) =>
+  (label ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+const matchesPhase = (key: keyof Omit<PhaseCounts, 'totalJobs' | 'loading' | 'error'>, label?: string) => {
+  const value = normalize(label);
+  if (!value) return false;
+  switch (key) {
+    case 'jobRequests':
+      return /(^| )job request(s)?( |$)/.test(value);
+    case 'pendingWorkOrders':
+      return /(^| )pending work order(s)?( |$)/.test(value);
+    case 'workOrders':
+      return /(^| )work order(s)?( |$)/.test(value) && !/pending/.test(value);
+    case 'completed':
+      return /(^| )completed( |$)/.test(value);
+    case 'cancelled':
+      return /(^| )cancell?ed( |$)/.test(value);
+    case 'invoicing':
+      return /(^| )invoic(ing|e)( |$)/.test(value);
+    default:
+      return false;
+  }
+};
+
+const isArchivedPhase = (label?: string) => {
+  const value = normalize(label);
+  return /(^| )archived( |$)/.test(value);
+};
 
 export type PhaseCounts = {
   jobRequests: { count: number; color: string };
@@ -52,14 +72,16 @@ export function usePropertyPhaseCounts(propertyId?: string): PhaseCounts {
         return;
       }
 
+      const keys = ['jobRequests', 'workOrders', 'pendingWorkOrders', 'completed', 'cancelled', 'invoicing'] as const;
+      const archivedPhaseId = phases?.find(ph => isArchivedPhase(ph.job_phase_label))?.id ?? null;
       const byKey = Object.fromEntries(
-        TARGETS.map(t => {
-          const row = phases?.find(ph => t.match.test(ph.job_phase_label ?? ''));
-          return [t.key, row];
+        keys.map(k => {
+          const row = phases?.find(ph => matchesPhase(k, ph.job_phase_label));
+          return [k, row];
         })
       );
 
-      const targets = (['jobRequests','workOrders','pendingWorkOrders','completed','cancelled','invoicing'] as const).map(async k => {
+      const targets = keys.map(async k => {
         const phaseId = byKey[k]?.id ?? null;
         const color = byKey[k]?.color_dark_mode ?? NEUTRAL;
         if (!phaseId) return { key: k, count: 0, color };
@@ -79,15 +101,21 @@ export function usePropertyPhaseCounts(propertyId?: string): PhaseCounts {
         return acc;
       }, {} as any);
 
-      // Calculate total jobs across all phases
-      const totalCount = results.reduce((sum, r) => sum + r.count, 0);
-      next.totalJobs = { count: totalCount, color: '#6B7280' }; // Neutral gray color for total
+      let totalQuery = supabase
+        .from('jobs')
+        .select('id', { count: 'exact', head: true })
+        .eq('property_id', propertyId);
+      if (archivedPhaseId) {
+        totalQuery = totalQuery.neq('current_phase_id', archivedPhaseId);
+      }
+      const { count: totalCount } = await totalQuery;
+      next.totalJobs = { count: totalCount ?? 0, color: '#6B7280' }; // Neutral gray color for total
 
-      setState({
-        ...(state as any),
+      setState(s => ({
+        ...s,
         ...next,
         loading: false,
-      });
+      }));
     };
 
     fetchCounts();

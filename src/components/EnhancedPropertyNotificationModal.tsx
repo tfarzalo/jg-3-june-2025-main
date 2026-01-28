@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import { supabase } from '../utils/supabase';
 import { formatDisplayDate } from '../lib/dateUtils';
+import { ExtraChargeLineItem } from '../types/extraCharges';
 
 interface Job {
   id: string;
@@ -43,6 +44,12 @@ interface Job {
     bill_amount?: number;
     sub_pay_amount?: number;
     profit_amount?: number;
+  };
+  work_order?: {
+    has_extra_charges?: boolean;
+    extra_charges_description?: string;
+    extra_hours?: number;
+    extra_charges_line_items?: ExtraChargeLineItem[];
   };
 }
 
@@ -208,8 +215,9 @@ export function EnhancedPropertyNotificationModal({
   const [sending, setSending] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [apContactName, setApContactName] = useState('');
-  const [pendingApproval, setPendingApproval] = useState<{ expiresAt: string } | null>(null);
+  const [pendingApproval, setPendingApproval] = useState<{ tokenId: string; expiresAt: string; sentAt: string } | null>(null);
   const [countdownTime, setCountdownTime] = useState('');
+  const isApprovalBlocked = notificationType === 'extra_charges' && Boolean(pendingApproval);
 
   const steps = useMemo(
     () => [
@@ -506,13 +514,13 @@ export function EnhancedPropertyNotificationModal({
   const checkPendingApproval = useCallback(async () => {
     if (!job || notificationType !== 'extra_charges') {
       setPendingApproval(null);
-      return;
+      return null;
     }
 
     try {
       const { data, error } = await supabase
         .from('approval_tokens')
-        .select('id, expires_at, used_at')
+        .select('id, expires_at, used_at, created_at')
         .eq('job_id', job.id)
         .eq('approval_type', 'extra_charges')
         .is('used_at', null)
@@ -522,19 +530,22 @@ export function EnhancedPropertyNotificationModal({
 
       if (error || !data) {
         setPendingApproval(null);
-        return;
+        return null;
       }
 
       const expiresAt = new Date(data.expires_at);
       if (expiresAt.getTime() <= Date.now()) {
         setPendingApproval(null);
-        return;
+        return null;
       }
 
-      setPendingApproval({ expiresAt: data.expires_at });
+      const pending = { tokenId: data.id, expiresAt: data.expires_at, sentAt: data.created_at };
+      setPendingApproval(pending);
+      return pending;
     } catch (error) {
       console.error('Error checking pending approval:', error);
       setPendingApproval(null);
+      return null;
     }
   }, [job, notificationType]);
 
@@ -556,6 +567,25 @@ export function EnhancedPropertyNotificationModal({
       setEmailSignature(processed.signature);
     }
   }, [selectedTemplate, processTemplate]);
+
+  useEffect(() => {
+    if (!selectedTemplate) return;
+    const sections = selectedTemplate.included_sections ?? [];
+    const buckets: ImageBucket[] = [];
+    if (sections.includes('before_images')) buckets.push('before');
+    if (sections.includes('sprinkler_images')) buckets.push('sprinkler');
+    if (sections.includes('other_images')) buckets.push('other');
+
+    if (buckets.length === 0) {
+      setSelectedImageIds([]);
+      return;
+    }
+
+    const ids = jobImages
+      .filter((img) => buckets.includes(img.normalizedType))
+      .map((img) => img.id);
+    setSelectedImageIds(ids);
+  }, [selectedTemplate, jobImages]);
 
   useEffect(() => {
     if (!pendingApproval) {
@@ -587,6 +617,17 @@ export function EnhancedPropertyNotificationModal({
 
   const selectAllImages = () => setSelectedImageIds(jobImages.map((img) => img.id));
   const clearImages = () => setSelectedImageIds([]);
+  const getIdsForBucket = (bucket: ImageBucket) =>
+    jobImages.filter((img) => img.normalizedType === bucket).map((img) => img.id);
+  const addImagesForBucket = (bucket: ImageBucket) => {
+    const ids = getIdsForBucket(bucket);
+    if (ids.length === 0) return;
+    setSelectedImageIds((prev) => Array.from(new Set([...prev, ...ids])));
+  };
+  const removeImagesForBucket = (bucket: ImageBucket) => {
+    const ids = new Set(getIdsForBucket(bucket));
+    setSelectedImageIds((prev) => prev.filter((id) => !ids.has(id)));
+  };
 
   const buildJobDetailsRows = () => [
     { label: 'Property', value: jobDetailsData.property_name || '—' },
@@ -621,8 +662,32 @@ export function EnhancedPropertyNotificationModal({
       })));
     }
 
-    // Add Extra Charges (Labor)
-    if (job?.extra_charges_details) {
+    const extraChargeLineItems = Array.isArray(job?.work_order?.extra_charges_line_items)
+      ? job?.work_order?.extra_charges_line_items
+      : [];
+
+    if (extraChargeLineItems.length > 0) {
+      items.push(
+        ...extraChargeLineItems.map((item) => {
+          const quantity = Number(item.quantity) || 0;
+          const billRate = Number(item.billRate) || 0;
+          const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
+          const descriptionBase = `${item.categoryName || 'Extra Charges'} - ${item.detailName || 'Item'}`;
+          const description = item.notes ? `${descriptionBase} (${item.notes})` : descriptionBase;
+          return {
+            description,
+            hours: item.isHourly ? quantity : undefined,
+            quantity: item.isHourly ? undefined : quantity,
+            unit: item.isHourly ? 'hrs' : 'units',
+            bill_amount: billAmount,
+            sub_pay_amount: Number(item.calculatedSubAmount ?? (quantity * Number(item.subRate || 0))) || undefined,
+            profit_amount:
+              billAmount -
+              (Number(item.calculatedSubAmount ?? (quantity * Number(item.subRate || 0))) || 0),
+          };
+        })
+      );
+    } else if (job?.extra_charges_details) {
       const details = job.extra_charges_details;
       items.push({
         description: details.description || 'Extra Charges',
@@ -668,6 +733,14 @@ export function EnhancedPropertyNotificationModal({
 
     const total = items.reduce((sum, item) => sum + (item.bill_amount || 0), 0);
 
+    const formatQty = (item: { hours?: number; quantity?: number; unit?: string }) => {
+      if (typeof item.hours === 'number') return `${item.hours} hrs`;
+      if (typeof item.quantity === 'number') {
+        return item.unit ? `${item.quantity} ${item.unit}` : `${item.quantity}`;
+      }
+      return '—';
+    };
+
     return (
       <div>
         <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-2">Billing Details</h4>
@@ -676,7 +749,7 @@ export function EnhancedPropertyNotificationModal({
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
                 <th className="px-4 py-2 text-left font-semibold">Description</th>
-                <th className="px-4 py-2 text-right font-semibold">Hours</th>
+                <th className="px-4 py-2 text-right font-semibold">Qty / Hours</th>
                 <th className="px-4 py-2 text-right font-semibold">Amount</th>
               </tr>
             </thead>
@@ -684,7 +757,9 @@ export function EnhancedPropertyNotificationModal({
               {items.map((item, idx) => (
                 <tr key={`${item.description}-${idx}`} className="bg-white dark:bg-gray-800">
                   <td className="px-4 py-2 text-gray-900 dark:text-white">{item.description}</td>
-                  <td className="px-4 py-2 text-right text-gray-600 dark:text-gray-300">{item.hours ?? '—'}</td>
+                  <td className="px-4 py-2 text-right text-gray-600 dark:text-gray-300">
+                    {formatQty(item)}
+                  </td>
                   <td className="px-4 py-2 text-right font-semibold text-gray-900 dark:text-white">
                     {formatCurrency(item.bill_amount)}
                   </td>
@@ -727,6 +802,13 @@ export function EnhancedPropertyNotificationModal({
   const buildSectionHtml = () => {
     const sections: string[] = [];
     const rows = buildJobDetailsRows();
+    const formatQty = (item: { hours?: number; quantity?: number; unit?: string }) => {
+      if (typeof item.hours === 'number') return `${item.hours} hrs`;
+      if (typeof item.quantity === 'number') {
+        return item.unit ? `${item.quantity} ${item.unit}` : `${item.quantity}`;
+      }
+      return '';
+    };
 
     if (safeSections.includes('job_details') && rows.length) {
       const rowsHtml = rows
@@ -753,7 +835,7 @@ export function EnhancedPropertyNotificationModal({
             (item) => `
               <tr>
                 <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;">${escapeHtml(item.description || '')}</td>
-                <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;text-align:right;">${item.hours ?? ''}</td>
+                <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;text-align:right;">${escapeHtml(formatQty(item))}</td>
                 <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;">${formatCurrency(item.bill_amount)}</td>
               </tr>
             `
@@ -766,7 +848,7 @@ export function EnhancedPropertyNotificationModal({
             <thead>
               <tr style="background:#f9fafb;">
                 <th style="padding:12px 16px;text-align:left;">Description</th>
-                <th style="padding:12px 16px;text-align:right;">Hours</th>
+                <th style="padding:12px 16px;text-align:right;">Qty / Hours</th>
                 <th style="padding:12px 16px;text-align:right;">Amount</th>
               </tr>
             </thead>
@@ -930,6 +1012,12 @@ export function EnhancedPropertyNotificationModal({
       let approvalLink: string | undefined;
 
       if (notificationType === 'extra_charges') {
+        const activeApproval = await checkPendingApproval();
+        if (activeApproval) {
+          toast.error('An approval email is already active. Wait for it to expire before sending a new one.');
+          setSending(false);
+          return;
+        }
         const tokenRecord = await createApprovalToken({ isPreview: false });
         approvalLink = `${window.location.origin}/approval/${tokenRecord.token}`;
         await checkPendingApproval();
@@ -1040,6 +1128,55 @@ export function EnhancedPropertyNotificationModal({
           </div>
         )}
       </div>
+      {jobImages.length > 0 && (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {(['before', 'sprinkler', 'other'] as ImageBucket[]).map((bucket) => {
+            const bucketIds = getIdsForBucket(bucket);
+            const allSelected = bucketIds.length > 0 && bucketIds.every((id) => selectedImageIds.includes(id));
+            const anySelected = bucketIds.some((id) => selectedImageIds.includes(id));
+            const label = IMAGE_TYPE_LABELS[bucket];
+            return (
+              <div
+                key={bucket}
+                className="flex items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+              >
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium">{label}</span>
+                  <span className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    {bucketIds.length} file{bucketIds.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => addImagesForBucket(bucket)}
+                    disabled={bucketIds.length === 0 || allSelected}
+                    className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                      allSelected
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-200'
+                        : 'bg-gray-100 text-gray-700 hover:bg-green-100 hover:text-green-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-green-900/40 dark:hover:text-green-200'
+                    } disabled:opacity-50`}
+                  >
+                    {allSelected ? 'Included' : 'Include'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeImagesForBucket(bucket)}
+                    disabled={bucketIds.length === 0 || !anySelected}
+                    className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                      !anySelected
+                        ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200'
+                        : 'bg-gray-100 text-gray-700 hover:bg-red-100 hover:text-red-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-red-900/40 dark:hover:text-red-200'
+                    } disabled:opacity-50`}
+                  >
+                    {!anySelected ? 'Excluded' : 'Exclude'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {loading ? (
         <div className="flex items-center space-x-2 rounded-md border border-dashed border-gray-300 dark:border-gray-600 p-4 text-sm text-gray-500 dark:text-gray-300">
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
@@ -1229,6 +1366,9 @@ export function EnhancedPropertyNotificationModal({
 
         <div>
           <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Included Sections</h4>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+            These sections appear in the email. Image selection below controls what appears on the approval page.
+          </p>
           {safeSections.length === 0 ? (
             <p className="text-sm text-gray-500 dark:text-gray-400">No additional sections will be included.</p>
           ) : (
@@ -1247,14 +1387,26 @@ export function EnhancedPropertyNotificationModal({
     );
   };
 
-  const renderReviewStep = () => (
+  const renderReviewStep = () => {
+    const formatSentAt = (sentAt: string) =>
+      new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      }).format(new Date(sentAt));
+
+    return (
     <div className="space-y-6">
       {pendingApproval && countdownTime && (
         <div className="flex items-center space-x-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
           <AlertCircle className="h-5 w-5" />
           <div>
-            <p className="text-sm font-medium">Pending approval</p>
-            <p className="text-xs">A previous approval link is active for {countdownTime}.</p>
+            <p className="text-sm font-medium">Approval email already sent</p>
+            <p className="text-xs">
+              Sent {formatSentAt(pendingApproval.sentAt)}. A new approval can be sent in {countdownTime}.
+            </p>
           </div>
         </div>
       )}
@@ -1279,8 +1431,31 @@ export function EnhancedPropertyNotificationModal({
         <div className="prose prose-sm max-w-none text-gray-900 dark:text-gray-100 dark:prose-invert" dangerouslySetInnerHTML={{ __html: emailContent.replace(/\n/g, '<br/>') }} />
         {renderJobDetailsPreview()}
         {renderBillingPreview()}
+        {(() => {
+          const bucketCounts: { bucket: ImageBucket; label: string; count: number }[] = [
+            { bucket: 'before', label: IMAGE_TYPE_LABELS.before, count: selectedImages.filter((img) => img.normalizedType === 'before').length },
+            { bucket: 'sprinkler', label: IMAGE_TYPE_LABELS.sprinkler, count: selectedImages.filter((img) => img.normalizedType === 'sprinkler').length },
+            { bucket: 'other', label: IMAGE_TYPE_LABELS.other, count: selectedImages.filter((img) => img.normalizedType === 'other').length }
+          ];
+          const includedBuckets = bucketCounts.filter((entry) => entry.count > 0);
+          if (!includedBuckets.length) return null;
+          return (
+            <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800 dark:border-blue-900/40 dark:bg-blue-900/30 dark:text-blue-200">
+              <span className="font-semibold">Included Image Groups:</span>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {includedBuckets.map((entry) => (
+                  <span
+                    key={entry.bucket}
+                    className="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-blue-700 shadow-sm dark:bg-blue-900/60 dark:text-blue-100"
+                  >
+                    {entry.label} · {entry.count}
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
         {renderImagePreview('before', 'before_images')}
-        {renderImagePreview('after', 'after_images')}
         {renderImagePreview('sprinkler', 'sprinkler_images')}
         {renderImagePreview('other', 'other_images')}
         {notificationType === 'extra_charges' && selectedImages.length > 0 && (
@@ -1291,7 +1466,8 @@ export function EnhancedPropertyNotificationModal({
         <div className="prose prose-sm max-w-none text-gray-900 dark:text-gray-100 dark:prose-invert" dangerouslySetInnerHTML={{ __html: emailSignature.replace(/\n/g, '<br/>') }} />
       </div>
     </div>
-  );
+    );
+  };
 
   if (!isOpen) return null;
 
@@ -1365,7 +1541,8 @@ export function EnhancedPropertyNotificationModal({
               <button
                 type="button"
                 onClick={handleSendEmail}
-                disabled={sending || !selectedTemplate || !recipientEmail}
+                disabled={sending || !selectedTemplate || !recipientEmail || isApprovalBlocked}
+                title={isApprovalBlocked ? 'An approval email is already active. Wait for it to expire to send a new one.' : undefined}
                 className="inline-flex items-center rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-green-300"
               >
                 {sending ? <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <Send className="mr-2 h-4 w-4" />}

@@ -370,6 +370,7 @@ export function useJobDetails(jobId: string | undefined) {
               has_extra_charges,
               extra_charges_description,
               extra_hours,
+              extra_charges_line_items,
               additional_comments,
               is_active
             )
@@ -471,6 +472,19 @@ export function useJobDetails(jobId: string | undefined) {
           data.job_phase.color_dark_mode = phaseData.color_dark_mode;
           data.job_phase.color_light_mode = phaseData.color_light_mode;
           console.log('Job phase colors fetched:', phaseData);
+        }
+      }
+
+      // Ensure extra charge line items are present (RPC may omit JSONB field)
+      if (data?.work_order?.id && data.work_order.extra_charges_line_items === undefined) {
+        const { data: extraChargesData, error: extraChargesError } = await supabase
+          .from('work_orders')
+          .select('extra_charges_line_items')
+          .eq('id', data.work_order.id)
+          .maybeSingle();
+
+        if (!extraChargesError && extraChargesData) {
+          data.work_order.extra_charges_line_items = extraChargesData.extra_charges_line_items ?? null;
         }
       }
 

@@ -101,6 +101,8 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
   const base = billing.billing_details;
   const extra = billing.extra_charges_details ?? null;
   const items = billing.additional_services ?? [];
+  const extraLineItems = billing.extra_charges_line_items ?? [];
+  const hasExtraLineItems = extraLineItems.length > 0;
 
   // Prepare unified list
   const unifiedItems: UnifiedChargeItem[] = [
@@ -115,8 +117,27 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
       sub_pay_amount: i.sub_pay_amount,
       profit_amount: i.profit_amount
     })),
+    // Map Extra Charges (Itemized)
+    ...extraLineItems.map(item => {
+      const quantity = Number(item.quantity) || 0;
+      const billRate = Number(item.billRate) || 0;
+      const subRate = Number(item.subRate) || 0;
+      const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
+      const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
+      return {
+        id: `extra-${item.id}`,
+        label: `Extra Charges - ${item.categoryName}: ${item.detailName}`,
+        unit_label: item.isHourly ? 'Hours' : 'Units',
+        quantity_or_hours: quantity,
+        is_hours: item.isHourly,
+        rate: billRate,
+        bill_amount: billAmount,
+        sub_pay_amount: subAmount,
+        profit_amount: billAmount - subAmount
+      };
+    }),
     // Map Extra Charges (Labor)
-    ...(extra ? [{
+    ...(!hasExtraLineItems && extra ? [{
       id: 'extra-labor',
       label: extra.description || 'Extra Charges (Labor)',
       unit_label: 'Hours',

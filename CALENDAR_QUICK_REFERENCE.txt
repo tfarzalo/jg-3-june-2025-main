@@ -1,0 +1,167 @@
+╔════════════════════════════════════════════════════════════════╗
+║        🎯 CALENDAR FEED - QUICK DEPLOYMENT GUIDE               ║
+╚════════════════════════════════════════════════════════════════╝
+
+✅ WHAT'S ALREADY DONE:
+  • Frontend code updated (SubscribeCalendarsModal.tsx)
+  • Apple Calendar links fixed (webcal:// protocol)
+  • Google Calendar links fixed (proper encoding)
+  • Environment variables configured
+
+📝 WHAT YOU NEED TO DO:
+
+1️⃣  REPLACE EDGE FUNCTION CODE
+    File: supabase/functions/calendar-feed/index.ts
+    Action: Delete all content and paste new code from chat
+
+2️⃣  DEPLOY
+    Command: ./deploy-calendar-feed.sh
+    Or: supabase functions deploy calendar-feed
+
+3️⃣  TEST
+    • npm run dev
+    • Click "Subscribe to Calendars"
+    • Test Apple and Google buttons
+
+╔════════════════════════════════════════════════════════════════╗
+║                    🎨 JOB TITLE FORMAT                         ║
+╚════════════════════════════════════════════════════════════════╝
+
+WO#2024-0156 • 742 Main St Unit 3B • Paint • Mike Rodriguez
+
+Components:
+  1. Work Order #
+  2. Address + Unit
+  3. Job Type (Paint/Callback/Repair)
+  4. Subcontractor (or ⚠️ NEEDS ASSIGNMENT)
+
+╔════════════════════════════════════════════════════════════════╗
+║                  📊 ASSIGNMENT STATES                          ║
+╚════════════════════════════════════════════════════════════════╝
+
+Unassigned  → ⚠️ NEEDS ASSIGNMENT (TENTATIVE)
+Declined    → ⚠️ NEEDS ASSIGNMENT (TENTATIVE)
+Pending     → Subcontractor Name (TENTATIVE)
+Accepted    → Subcontractor Name (CONFIRMED)
+
+╔════════════════════════════════════════════════════════════════╗
+║                    🔗 FEED TYPES                               ║
+╚════════════════════════════════════════════════════════════════╝
+
+scope=events                    → Calendar events only
+scope=events_and_job_requests   → Events + open jobs
+scope=completed_jobs            → Finished jobs
+scope=subcontractor             → Specific subcontractor
+
+╔════════════════════════════════════════════════════════════════╗
+║                  🔧 KEY IMPROVEMENTS                           ║
+╚════════════════════════════════════════════════════════════════╝
+
+✅ UID Stability       → No duplicate events on updates
+✅ SEQUENCE Tracking   → Calendar apps recognize updates
+✅ All-Day Format      → Jobs show on correct date
+✅ Assignment Status   → Clear who's assigned/accepted
+✅ Update Sync         → Changes propagate automatically
+
+╔════════════════════════════════════════════════════════════════╗
+║              🧪 TESTING CHECKLIST                              ║
+╚════════════════════════════════════════════════════════════════╝
+
+Frontend:
+  [ ] "Subscribe to Calendars" button appears
+  [ ] Modal opens with three feeds
+  [ ] ICS URLs are copyable
+  [ ] Buttons are styled (black Apple, blue Google)
+
+Links:
+  [ ] Apple Calendar button opens Calendar app
+  [ ] Google Calendar button opens Google Calendar
+  [ ] Manual subscription works with copied URL
+
+Display:
+  [ ] Job title shows WO# • Address • Type • Subcontractor
+  [ ] Unassigned jobs show ⚠️ NEEDS ASSIGNMENT
+  [ ] Event titles use user's original text
+  [ ] Jobs have full details in description
+
+Updates:
+  [ ] Update job → wait 15min → calendar updates
+  [ ] No duplicate events created
+  [ ] Assignment changes reflect in calendar
+
+╔════════════════════════════════════════════════════════════════╗
+║                🐛 QUICK TROUBLESHOOTING                        ║
+╚════════════════════════════════════════════════════════════════╝
+
+Apple Calendar not opening?
+  → Check link uses webcal:// not https://
+  → Try manual subscription with copied URL
+
+Google Calendar not working?
+  → Try different browser
+  → Make sure logged into Google account
+
+Jobs not showing?
+  → Check scheduled_date is set
+  → Check status is Open/Scheduled/Pending
+
+Updates not syncing?
+  → Apple: Wait 15-60 minutes or force refresh
+  → Google: Can take 8-24 hours
+
+╔════════════════════════════════════════════════════════════════╗
+║                 📞 FILES TO CHECK                              ║
+╚════════════════════════════════════════════════════════════════╝
+
+Frontend:
+  src/components/calendar/SubscribeCalendarsModal.tsx ✅ DONE
+
+Backend:
+  supabase/functions/calendar-feed/index.ts ⚠️ NEEDS UPDATE
+
+Environment:
+  .env (VITE_SUPABASE_URL) ✅ DONE
+
+╔════════════════════════════════════════════════════════════════╗
+║              🚀 DEPLOYMENT COMMANDS                            ║
+╚════════════════════════════════════════════════════════════════╝
+
+Quick:
+  ./deploy-calendar-feed.sh
+
+Manual:
+  supabase functions deploy calendar-feed
+
+Test locally:
+  npm run dev
+
+╔════════════════════════════════════════════════════════════════╗
+║                ✅ SUCCESS INDICATORS                           ║
+╚════════════════════════════════════════════════════════════════╝
+
+You'll know it works when:
+  ✓ Apple button → Opens Calendar app
+  ✓ Google button → Opens Google Calendar  
+  ✓ Jobs show proper format
+  ✓ Unassigned jobs have warning emoji
+  ✓ Updates sync without duplicates
+  ✓ Events show user's title
+
+╔════════════════════════════════════════════════════════════════╗
+║               📚 FULL DOCUMENTATION                            ║
+╚════════════════════════════════════════════════════════════════╝
+
+See these files for complete details:
+  • CALENDAR_FEED_FINAL_SUMMARY.md (complete guide)
+  • CALENDAR_FEED_DEPLOYMENT_INSTRUCTIONS.md (step-by-step)
+
+╔════════════════════════════════════════════════════════════════╗
+║                    🎉 YOU'RE READY!                            ║
+╚════════════════════════════════════════════════════════════════╝
+
+Just 3 steps:
+  1. Replace calendar-feed/index.ts with new code
+  2. Deploy: ./deploy-calendar-feed.sh
+  3. Test: npm run dev
+
+Everything is configured to work on local AND production! 🚀

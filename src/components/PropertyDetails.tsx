@@ -110,6 +110,7 @@ interface BillingCategory {
   id: string;
   name: string;
   sort_order: number;
+  is_extra_charge?: boolean | null;
 }
 
 interface BillingDetail {
@@ -184,7 +185,7 @@ export function PropertyDetails() {
           // First try to get the file from the database to get the correct path
           const { data: fileData, error: fileError } = await supabase
             .from('files')
-            .select('path, name')
+            .select('path, storage_path, name')
             .eq('id', property.unit_map_file_id)
             .single();
 
@@ -192,7 +193,7 @@ export function PropertyDetails() {
           
           // If we found the file in the database, use its path
           if (fileData && !fileError) {
-            filePath = fileData.path;
+            filePath = fileData.storage_path || fileData.path;
           }
 
           console.log('Attempting to load unit map with path:', filePath);
@@ -375,7 +376,7 @@ export function PropertyDetails() {
         // Fetch billing data
         const { data: categoryData, error: categoryError } = await supabase
           .from('billing_categories')
-          .select('*')
+          .select('id,name,sort_order,is_extra_charge')
           .eq('property_id', propertyId)
           .order('sort_order');
 
@@ -1419,9 +1420,42 @@ export function PropertyDetails() {
             </h3>
             <div className="overflow-x-auto">
               <div className="space-y-4 min-w-max">
-                {categories.map(category => (
+                {categories
+                  .filter(category => !category.is_extra_charge)
+                  .map(category => (
                   <div key={category.id} className="bg-gray-50 dark:bg-[#0F172A] rounded-lg p-4 border border-gray-200 dark:border-gray-700">
                     <h5 className="text-gray-900 dark:text-white font-bold mb-3 text-sm uppercase tracking-wide">{category.name}</h5>
+                    <div className="space-y-2">
+                      {categoryDetails[category.id]?.map(detail => (
+                        <div key={detail.unit_size_id} className="flex justify-between items-center text-sm py-2 px-3 bg-white dark:bg-gray-800 rounded-md">
+                          <div className="flex-1">
+                            <span className="text-gray-600 dark:text-gray-400 font-medium">
+                              {unitSizes[detail.unit_size_id]}
+                            </span>
+                          </div>
+                          <div className="flex space-x-6">
+                            <span className="text-gray-600 dark:text-gray-400">Bill: <span className="font-bold">${detail.bill_amount}</span></span>
+                            <span className="text-gray-600 dark:text-gray-400">Sub Pay: <span className="font-bold">${detail.sub_pay_amount}</span></span>
+                            {!detail.is_hourly && (
+                              <span className="text-green-600 dark:text-green-400 font-bold">Profit: ${detail.profit_amount}</span>
+                            )}
+                            {detail.is_hourly && (
+                              <span className="text-blue-600 dark:text-blue-400 font-bold">Hourly Rate</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                {categories
+                  .filter(category => category.is_extra_charge && category.name !== 'Extra Charges')
+                  .map(category => (
+                  <div key={category.id} className="bg-amber-50/60 dark:bg-amber-900/10 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                    <h5 className="text-gray-900 dark:text-white font-bold mb-3 text-sm uppercase tracking-wide">
+                      Extra Charges - {category.name}
+                    </h5>
                     <div className="space-y-2">
                       {categoryDetails[category.id]?.map(detail => (
                         <div key={detail.unit_size_id} className="flex justify-between items-center text-sm py-2 px-3 bg-white dark:bg-gray-800 rounded-md">

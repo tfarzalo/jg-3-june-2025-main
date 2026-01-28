@@ -728,12 +728,15 @@ export function Calendar() {
     }
     
     return jobs.filter(job => {
-      // job.scheduled_date is already a YYYY-MM-DD string in the database
       // Convert the calendar Date to YYYY-MM-DD in Eastern Time for comparison
       const calendarDateEastern = formatInTimeZone(date, 'America/New_York', 'yyyy-MM-dd');
       
-      // Simple string comparison - no need to parse job.scheduled_date as Date
-      return job.scheduled_date === calendarDateEastern;
+      // Extract just the date portion from the database timestamptz
+      // job.scheduled_date comes as "2026-01-23T00:00:00-05:00" from database
+      const jobDateOnly = job.scheduled_date.split('T')[0]; // Extract "2026-01-23"
+      
+      // Now we can compare date strings directly
+      return jobDateOnly === calendarDateEastern;
     });
   };
 

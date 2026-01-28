@@ -1,3 +1,5 @@
+import type { ExtraChargeLineItem } from '../../types/extraCharges';
+
 export type AdditionalService = {
   code: string;                 // e.g. 'painted_ceilings' | 'accent_wall'
   label: string;                // e.g. "Painted Ceilings" | "Accent Wall — Paint Over"
@@ -29,5 +31,6 @@ export type JobBillingPayload = {
     profit_amount: number;
     section_name: string;
   } | null;
+  extra_charges_line_items?: ExtraChargeLineItem[];
   additional_services?: AdditionalService[];
 };

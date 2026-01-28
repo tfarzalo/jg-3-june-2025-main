@@ -58,6 +58,7 @@ import { FLAGS } from '../config/flags';
 import { BillingBreakdownV2 } from '../features/jobs/JobDetails/BillingBreakdownV2';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
+import { ExtraChargeLineItem } from '../types/extraCharges';
 import ImageUpload from './ImageUpload';
 import { PropertyMap } from './PropertyMap';
 import { ImageGallery } from './ImageGallery';
@@ -127,6 +128,7 @@ interface WorkOrder {
   has_extra_charges: boolean;
   extra_charges_description?: string;
   extra_hours?: number;
+  extra_charges_line_items?: ExtraChargeLineItem[];
   additional_comments?: string;
 }
 
@@ -221,6 +223,8 @@ export function JobDetails() {
   const unitSizeId = job?.unit_size?.id ?? null;
   const propertyName = job?.property?.name ?? '—';
   const workOrderNum = job?.work_order_num ?? '—';
+  const workOrderId = job?.work_order?.id ?? null;
+  const jobIdForFiles = job?.id ?? null;
 
 
   
@@ -248,7 +252,6 @@ export function JobDetails() {
   const [sendingEmail, setSendingEmail] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | undefined>(undefined);
   const [showApproveButton, setShowApproveButton] = useState(false);
-  const [workOrderFolderId, setWorkOrderFolderId] = useState<string | null>(null);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [showEnhancedNotificationModal, setShowEnhancedNotificationModal] = useState(false);
   const [notificationType, setNotificationType] = useState<'sprinkler_paint' | 'drywall_repairs' | 'extra_charges' | null>(null);
@@ -262,6 +265,10 @@ export function JobDetails() {
     amountBill: number;
     amountSub: number;
   }>>([]);
+  const supplementalBillingLines = useMemo(
+    () => additionalBillingLines.filter(line => !line.key.startsWith('additional_')),
+    [additionalBillingLines]
+  );
   const [billingWarnings, setBillingWarnings] = useState<string[]>([]);
   const [accentWallDisplayLabel, setAccentWallDisplayLabel] = useState<string | null>(null);
   const [updatingInvoiceStatus, setUpdatingInvoiceStatus] = useState(false);
@@ -272,6 +279,12 @@ export function JobDetails() {
     approver_email: string | null;
     decline_reason: string | null;
   } | null>(null);
+  const [pendingApproval, setPendingApproval] = useState<{
+    id: string;
+    expiresAt: string;
+    sentAt: string;
+  } | null>(null);
+  const [pendingApprovalCountdown, setPendingApprovalCountdown] = useState('');
   const [reactivatedFromDecline, setReactivatedFromDecline] = useState(false);
   const effectiveApprovalDecision = useMemo(() => {
     if (reactivatedFromDecline) return null;
@@ -311,9 +324,9 @@ export function JobDetails() {
 
   const hasDrywallSignal = useMemo(() => {
     const text = `${job?.work_order?.additional_comments ?? ''} ${job?.work_order?.extra_charges_description ?? ''}`.toLowerCase();
-    const drywallInAdditional = additionalBillingLines.some(line => /drywall/i.test(line.label));
+    const drywallInAdditional = supplementalBillingLines.some(line => /drywall/i.test(line.label));
     return /dry\s*wall/i.test(text) || drywallInAdditional;
-  }, [job?.work_order?.additional_comments, job?.work_order?.extra_charges_description, additionalBillingLines]);
+  }, [job?.work_order?.additional_comments, job?.work_order?.extra_charges_description, supplementalBillingLines]);
 
   // Initialize recipient email with property AP contact when job loads
   useEffect(() => {
@@ -358,22 +371,60 @@ export function JobDetails() {
     }
   }, [jobId]);
 
+  const fetchPendingApproval = useCallback(async () => {
+    if (!jobId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('approval_tokens')
+        .select('id, expires_at, created_at, used_at')
+        .eq('job_id', jobId)
+        .eq('approval_type', 'extra_charges')
+        .is('used_at', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error || !data) {
+        setPendingApproval(null);
+        return;
+      }
+
+      const expiresAt = new Date(data.expires_at);
+      if (expiresAt.getTime() <= Date.now()) {
+        setPendingApproval(null);
+        return;
+      }
+
+      setPendingApproval({
+        id: data.id,
+        expiresAt: data.expires_at,
+        sentAt: data.created_at
+      });
+    } catch (err) {
+      console.error('Error fetching pending approval:', err);
+      setPendingApproval(null);
+    }
+  }, [jobId]);
+
   // Fetch approval decision when component mounts or job changes
   useEffect(() => {
     fetchApprovalDecision();
-  }, [fetchApprovalDecision, job]);
+    fetchPendingApproval();
+  }, [fetchApprovalDecision, fetchPendingApproval, job]);
 
   // Refetch approval decision when page becomes visible (e.g., after declining on external page)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         fetchApprovalDecision();
+        fetchPendingApproval();
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [fetchApprovalDecision]);
+  }, [fetchApprovalDecision, fetchPendingApproval]);
 
   // Listen for approval/decline events from ApprovalPage popup/tab
   useEffect(() => {
@@ -431,6 +482,7 @@ export function JobDetails() {
           const approvalType = (payload.new as any)?.approval_type || (payload.old as any)?.approval_type;
           if (approvalType === 'extra_charges') {
             fetchApprovalDecision();
+            fetchPendingApproval();
             refetchJob(); // keep banner + phase badge in sync
           }
         }
@@ -440,7 +492,29 @@ export function JobDetails() {
     return () => {
       channel.unsubscribe();
     };
-  }, [jobId, fetchApprovalDecision, refetchJob]);
+  }, [jobId, fetchApprovalDecision, fetchPendingApproval, refetchJob]);
+
+  useEffect(() => {
+    if (!pendingApproval) {
+      setPendingApprovalCountdown('');
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const timeLeft = new Date(pendingApproval.expiresAt).getTime() - Date.now();
+      if (timeLeft <= 0) {
+        setPendingApproval(null);
+        setPendingApprovalCountdown('');
+        clearInterval(interval);
+      } else {
+        const minutes = Math.floor(timeLeft / 60000);
+        const seconds = Math.floor((timeLeft % 60000) / 1000);
+        setPendingApprovalCountdown(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [pendingApproval]);
 
   // Add effect to calculate and update total billing amount
   useEffect(() => {
@@ -453,11 +527,11 @@ export function JobDetails() {
       // Get extra charges amount from the calculated extra_charges_details
       const extraChargesBillAmount = job.extra_charges_details?.bill_amount ?? 0;
       
-      // Get additional services amount from additionalBillingLines
-      const additionalServicesAmount = additionalBillingLines.reduce((sum, line) => sum + line.amountBill, 0);
+      // Get supplemental billing amount (ceilings/accent walls)
+      const supplementalAmount = supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0);
       
       // Calculate total billing amount (same as "Total to Invoice" calculation)
-      const totalBillingAmount = standardBillAmount + extraChargesBillAmount + additionalServicesAmount;
+      const totalBillingAmount = standardBillAmount + extraChargesBillAmount + supplementalAmount;
 
 
       try {
@@ -474,7 +548,7 @@ export function JobDetails() {
     };
 
     calculateAndUpdateTotalBilling();
-  }, [job, jobId, additionalBillingLines]);
+  }, [job, jobId, supplementalBillingLines]);
 
   // Fetch additional billing lines for ceilings and accent walls
   useEffect(() => {
@@ -541,29 +615,6 @@ export function JobDetails() {
     }
     
     fetchSubcontractors();
-  }, [job]);
-
-  useEffect(() => {
-    const fetchWorkOrderFolderId = async () => {
-      if (!job?.property?.id || !job?.id || !job?.work_order_num) {
-        return;
-      }
-      const woName = `WO-${String(job.work_order_num).padStart(6, '0')}`;
-      const { data: folder, error } = await supabase
-        .from('files')
-        .select('id')
-        .eq('property_id', job.property.id)
-        .eq('job_id', job.id)
-        .in('type', ['folder/directory', 'folder/job'])
-        .eq('name', woName)
-        .maybeSingle();
-      if (!error && folder?.id) {
-        setWorkOrderFolderId(folder.id);
-      } else {
-        setWorkOrderFolderId(null);
-      }
-    };
-    fetchWorkOrderFolderId();
   }, [job]);
 
   useEffect(() => {
@@ -933,7 +984,7 @@ export function JobDetails() {
       }
       
       // Add extra charges if available
-      if (job?.work_order?.has_extra_charges) {
+      if (hasExtraChargesForApproval) {
         // Check if we need a new page
         if (y > pageHeight - 100) {
           doc.addPage();
@@ -941,40 +992,28 @@ export function JobDetails() {
         }
         
         y += 5;
-        doc.text(`Has Extra Charges: Yes`, margin, y);
-        y += 10;
-        if (job?.work_order?.extra_charges_description) {
-          const splitDescription = doc.splitTextToSize(job?.work_order?.extra_charges_description ?? '', 170);
-          doc.text(splitDescription, margin, y);
-          y += splitDescription.length * 7;
-        }
-        doc.text(`Extra Hours: ${job?.work_order?.extra_hours || 'N/A'}`, margin, y);
-        y += 10;
-      }
-      
-      // Add Additional Services if available
-      const additionalServicesFiltered = additionalBillingLines.filter(line => 
-        !['painted_ceilings', 'accent_wall'].includes(line.key) && 
-        !line.label.startsWith('Regular Paint')
-      );
+        doc.text('Extra Charges:', margin, y);
+        y += 8;
 
-      if (additionalServicesFiltered.length > 0) {
-        // Check if we need a new page
-        if (y > pageHeight - 100) {
-          doc.addPage();
-          y = 20;
+        if (extraChargeLineItems.length > 0) {
+          extraChargeLineItems.forEach(item => {
+            const quantity = Number(item.quantity) || 0;
+            const billRate = Number(item.billRate) || 0;
+            const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
+            const lineText = `${item.categoryName} - ${item.detailName} (${quantity} ${item.isHourly ? 'hrs' : 'units'}) = ${formatCurrency(billAmount)}`;
+            const splitLine = doc.splitTextToSize(lineText, 170);
+            doc.text(splitLine, margin, y);
+            y += splitLine.length * 7;
+          });
+        } else {
+          if (job?.work_order?.extra_charges_description) {
+            const splitDescription = doc.splitTextToSize(job?.work_order?.extra_charges_description ?? '', 170);
+            doc.text(splitDescription, margin, y);
+            y += splitDescription.length * 7;
+          }
+          doc.text(`Extra Hours: ${job?.work_order?.extra_hours || 'N/A'}`, margin, y);
+          y += 10;
         }
-        
-        y += 5;
-        doc.text('Additional Services:', margin, y);
-        y += 10;
-        
-        additionalServicesFiltered.forEach(service => {
-          const serviceText = `${service.label} (Qty: ${service.qty})`;
-          const splitService = doc.splitTextToSize(serviceText, 170);
-          doc.text(splitService, margin, y);
-          y += splitService.length * 7;
-        });
       }
 
       // Add additional comments if available
@@ -1045,10 +1084,10 @@ export function JobDetails() {
       
       y += 8;
 
-      // Additional Services & Extra Charges (Unified)
+      // Supplemental Billing Lines + Extra Charges (Unified)
       const unifiedExtraItems = [
-        // Map Additional Services
-        ...(additionalBillingLines || []).map(line => ({
+        // Map supplemental billing lines (ceilings/accent walls)
+        ...(supplementalBillingLines || []).map(line => ({
           description: line.label,
           qty_or_hours: line.qty,
           unit: line.unitLabel || 'items',
@@ -1058,8 +1097,26 @@ export function JobDetails() {
           profit: line.amountBill - line.amountSub,
           is_hours: false
         })),
-        // Map Extra Charges (Labor)
-        ...(job?.work_order?.has_extra_charges && job?.work_order?.extra_hours && job?.work_order?.extra_hours > 0 ? [{
+        // Map Extra Charges (Itemized)
+        ...(extraChargeLineItems || []).map(item => {
+          const quantity = Number(item.quantity) || 0;
+          const billRate = Number(item.billRate) || 0;
+          const subRate = Number(item.subRate) || 0;
+          const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
+          const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
+          return {
+            description: `Extra Charges - ${item.categoryName}: ${item.detailName}`,
+            qty_or_hours: quantity,
+            unit: item.isHourly ? 'hrs' : 'units',
+            rate: billRate,
+            amount: billAmount,
+            sub_pay: subAmount,
+            profit: billAmount - subAmount,
+            is_hours: item.isHourly
+          };
+        }),
+        // Legacy Extra Charges (Labor)
+        ...(!extraChargesFromItems && job?.work_order?.has_extra_charges && job?.work_order?.extra_hours && job?.work_order?.extra_hours > 0 ? [{
           description: job?.work_order?.extra_charges_description || 'Extra Charges (Labor)',
           qty_or_hours: Number(job?.work_order?.extra_hours) || 0,
           unit: 'hrs',
@@ -1252,6 +1309,10 @@ export function JobDetails() {
     if (!job) return;
     
     try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!userData.user) throw new Error('User not found');
+
       // Get the Work Order phase ID
       const { data: phaseData, error: phaseError } = await supabase
         .from('job_phases')
@@ -1270,6 +1331,19 @@ export function JobDetails() {
 
       if (updateError) throw updateError;
 
+      // Log the phase change
+      const { error: phaseChangeError } = await supabase
+        .from('job_phase_changes')
+        .insert({
+          job_id: job.id,
+          changed_by: userData.user.id,
+          from_phase_id: job?.job_phase?.id,
+          to_phase_id: phaseData.id,
+          change_reason: 'Extra charges approved manually - job advanced to Work Order'
+        });
+
+      if (phaseChangeError) console.error('Error logging phase change:', phaseChangeError);
+
       // Refresh the job data
       await refetchJob();
       
@@ -1277,10 +1351,10 @@ export function JobDetails() {
       await fetchApprovalDecision();
       
       setShowApproveButton(false);
-      alert('Extra charges approved successfully!');
+      toast.success('Extra charges approved successfully!');
     } catch (error) {
       console.error('Error approving extra charges:', error);
-      alert('Failed to approve extra charges. Please try again.');
+      toast.error('Failed to approve extra charges. Please try again.');
     }
   };
 
@@ -1451,7 +1525,7 @@ export function JobDetails() {
       doc.setFontSize(8);
       
       // Define columns based on user role (Admin/Management sees more)
-      const showFullBreakdown = isAdmin || isJGManagement;
+      const showFullBreakdown = false;
       
       if (showFullBreakdown) {
         doc.text('Description', margin, y);
@@ -1498,10 +1572,10 @@ export function JobDetails() {
       
       y += 5;
 
-      // Additional Services & Extra Charges (Unified)
+      // Supplemental Billing Lines + Extra Charges (Unified)
       const unifiedExtraItems = [
-        // Map Additional Services
-        ...(additionalBillingLines || []).map(line => ({
+        // Map supplemental billing lines (ceilings/accent walls)
+        ...(supplementalBillingLines || []).map(line => ({
           description: line.label,
           qty_or_hours: line.qty,
           unit: line.unitLabel || 'items',
@@ -1511,8 +1585,26 @@ export function JobDetails() {
           profit: line.amountBill - line.amountSub,
           is_hours: false
         })),
-        // Map Extra Charges (Labor)
-        ...(job?.work_order?.has_extra_charges && job?.work_order?.extra_hours && job?.work_order?.extra_hours > 0 ? [{
+        // Map Extra Charges (Itemized)
+        ...(extraChargeLineItems || []).map(item => {
+          const quantity = Number(item.quantity) || 0;
+          const billRate = Number(item.billRate) || 0;
+          const subRate = Number(item.subRate) || 0;
+          const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
+          const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
+          return {
+            description: `Extra Charges - ${item.categoryName}: ${item.detailName}`,
+            qty_or_hours: quantity,
+            unit: item.isHourly ? 'hrs' : 'units',
+            rate: billRate,
+            amount: billAmount,
+            sub_pay: subAmount,
+            profit: billAmount - subAmount,
+            is_hours: item.isHourly
+          };
+        }),
+        // Legacy Extra Charges (Labor)
+        ...(!extraChargesFromItems && job?.work_order?.has_extra_charges && job?.work_order?.extra_hours && job?.work_order?.extra_hours > 0 ? [{
           description: job?.work_order?.extra_charges_description || 'Extra Charges (Labor)',
           qty_or_hours: Number(job?.work_order?.extra_hours) || 0,
           unit: 'hrs',
@@ -1743,6 +1835,79 @@ export function JobDetails() {
     }
   };
 
+  const extraChargeLineItems = useMemo(
+    () => (Array.isArray(job?.work_order?.extra_charges_line_items) ? job.work_order.extra_charges_line_items : []),
+    [job?.work_order?.extra_charges_line_items]
+  );
+
+  const extraChargeItemTotals = useMemo(() => {
+    return extraChargeLineItems.reduce(
+      (acc, item) => {
+        const quantity = Number(item.quantity) || 0;
+        const billRate = Number(item.billRate) || 0;
+        const subRate = Number(item.subRate) || 0;
+        const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
+        const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
+        acc.bill += billAmount;
+        acc.sub += subAmount;
+        return acc;
+      },
+      { bill: 0, sub: 0 }
+    );
+  }, [extraChargeLineItems]);
+
+  const extraChargesFromItems = extraChargeLineItems.length > 0;
+
+  // Use extra charges details from the job data; fall back to work order + hourly rates if the structured payload is missing
+  const rawExtraHours = job?.extra_charges_details?.hours ?? job?.work_order?.extra_hours ?? 0;
+  const extraHours = Number(rawExtraHours) || 0;
+  const extraChargesDescription = extraChargesFromItems
+    ? 'Itemized Extra Charges'
+    : (job?.extra_charges_details?.description ?? job?.work_order?.extra_charges_description ?? '');
+  const extraHourlyRate = job?.extra_charges_details?.hourly_rate ?? job?.hourly_billing_details?.bill_amount ?? 0;
+  const extraSubPayRate = job?.extra_charges_details?.sub_pay_rate ?? job?.hourly_billing_details?.sub_pay_amount ?? 0;
+  const legacyExtraChargesAmount = job?.extra_charges_details?.bill_amount ?? (extraHours > 0 ? extraHours * extraHourlyRate : 0);
+  const legacyExtraChargesSubPay = job?.extra_charges_details?.sub_pay_amount ?? (extraHours > 0 ? extraHours * extraSubPayRate : 0);
+  const extraChargesAmount = extraChargesFromItems ? extraChargeItemTotals.bill : legacyExtraChargesAmount;
+  const extraChargesSubPay = extraChargesFromItems ? extraChargeItemTotals.sub : legacyExtraChargesSubPay;
+  const derivedExtraCharges = extraChargesFromItems
+    ? {
+        description: 'Itemized Extra Charges',
+        hours: 0,
+        hourly_rate: 0,
+        sub_pay_rate: 0,
+        bill_amount: extraChargeItemTotals.bill,
+        sub_pay_amount: extraChargeItemTotals.sub,
+        profit_amount: extraChargeItemTotals.bill - extraChargeItemTotals.sub,
+        section_name: 'Extra Charges',
+      }
+    : (job?.extra_charges_details ?? (
+        job?.work_order?.has_extra_charges && (extraHours > 0 || extraHourlyRate > 0)
+          ? {
+              description: extraChargesDescription || 'Extra Charges',
+              hours: extraHours,
+              hourly_rate: extraHourlyRate,
+              sub_pay_rate: extraSubPayRate,
+              bill_amount: legacyExtraChargesAmount,
+              sub_pay_amount: legacyExtraChargesSubPay,
+              profit_amount: legacyExtraChargesAmount - legacyExtraChargesSubPay,
+              section_name: 'Extra Charges',
+            }
+          : null
+      ));
+  const hasExtraChargesForApproval = Boolean(
+    job?.work_order?.has_extra_charges ||
+    extraChargeLineItems.length > 0 ||
+    derivedExtraCharges
+  );
+  const notificationJob = useMemo(() => {
+    if (!job) return job;
+    return {
+      ...job,
+      extra_charges_details: derivedExtraCharges ?? job.extra_charges_details,
+    };
+  }, [job, derivedExtraCharges]);
+
   if (jobLoading || phasesLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -1788,30 +1953,6 @@ export function JobDetails() {
   const profitAmount = (job.billing_details?.bill_amount !== null && job.billing_details?.sub_pay_amount !== null && job.billing_details?.bill_amount !== undefined && job.billing_details?.sub_pay_amount !== undefined)
     ? job.billing_details.bill_amount - job.billing_details.sub_pay_amount
     : null;
-
-
-  // Use extra charges details from the job data; fall back to work order + hourly rates if the structured payload is missing
-  const rawExtraHours = job.extra_charges_details?.hours ?? job.work_order?.extra_hours ?? 0;
-  const extraHours = Number(rawExtraHours) || 0;
-  const extraChargesDescription = job.extra_charges_details?.description ?? job.work_order?.extra_charges_description ?? '';
-  const extraHourlyRate = job.extra_charges_details?.hourly_rate ?? job.hourly_billing_details?.bill_amount ?? 0;
-  const extraSubPayRate = job.extra_charges_details?.sub_pay_rate ?? job.hourly_billing_details?.sub_pay_amount ?? 0;
-  const extraChargesAmount = job.extra_charges_details?.bill_amount ?? (extraHours > 0 ? extraHours * extraHourlyRate : 0);
-  const extraChargesSubPay = job.extra_charges_details?.sub_pay_amount ?? (extraHours > 0 ? extraHours * extraSubPayRate : 0);
-  const derivedExtraCharges = job.extra_charges_details ?? (
-    job.work_order?.has_extra_charges && (extraHours > 0 || extraHourlyRate > 0)
-      ? {
-          description: extraChargesDescription || 'Extra Charges',
-          hours: extraHours,
-          hourly_rate: extraHourlyRate,
-          sub_pay_rate: extraSubPayRate,
-          bill_amount: extraChargesAmount,
-          sub_pay_amount: extraChargesSubPay,
-          profit_amount: extraChargesAmount - extraChargesSubPay,
-          section_name: 'Extra Charges',
-        }
-      : null
-  );
   
 
   // Filter out 'Pending Work Order', 'Cancelled', and 'Archived' from the phases array used for navigation
@@ -2072,14 +2213,14 @@ export function JobDetails() {
             )}
 
             {/* Job Files display for Job Request phase */}
-            {isJobRequest && workOrderFolderId && (
+            {isJobRequest && jobIdForFiles && (
               <div className="mt-6">
                 <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center">
                   <Image className="h-4 w-4 mr-2 text-blue-500" />
                   Job Files
                 </h3>
                 <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                  <ImageGallery workOrderId={workOrderFolderId} folder="job_files" />
+                  <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="job_files" />
                 </div>
               </div>
             )}
@@ -2191,7 +2332,7 @@ export function JobDetails() {
         {job.work_order && (
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow-lg mb-6">
             {/* Extra Charges Status - Shows different UI based on approval decision */}
-            {job?.work_order?.has_extra_charges && (
+            {hasExtraChargesForApproval && (
               <div>
                 {/* Cancelled after decline - Re-activate option only */}
                 {isCancelled && effectiveApprovalDecision?.decision === 'declined' && (
@@ -2306,8 +2447,14 @@ export function JobDetails() {
             )}
 
             {(() => {
-              const needsExtraChargesApproval = !effectiveApprovalDecision?.decision && isPendingWorkOrder && !!derivedExtraCharges;
-              const showBlueVariant = !needsExtraChargesApproval && (job.work_order?.has_sprinklers || hasDrywallSignal);
+              const needsExtraChargesApproval =
+                isPendingWorkOrder && !effectiveApprovalDecision?.decision && hasExtraChargesForApproval;
+              const hasActiveApprovalEmail = needsExtraChargesApproval && Boolean(pendingApproval);
+              const showBlueVariant =
+                isPendingWorkOrder &&
+                !needsExtraChargesApproval &&
+                !hasExtraChargesForApproval &&
+                (job.work_order?.has_sprinklers || hasDrywallSignal);
               if (!hasWorkOrder || (!needsExtraChargesApproval && !showBlueVariant)) return null;
               const containerClasses = needsExtraChargesApproval
                 ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700/30 text-yellow-900 dark:text-yellow-200'
@@ -2315,10 +2462,16 @@ export function JobDetails() {
               const iconClasses = needsExtraChargesApproval
                 ? 'text-yellow-600 dark:text-yellow-400'
                 : 'text-blue-600 dark:text-blue-400';
-              const heading = needsExtraChargesApproval ? 'Extra Charges Approval Needed' : 'Notification Needed';
+              const heading = needsExtraChargesApproval
+                ? (hasActiveApprovalEmail ? 'Approval Email Already Sent' : 'Extra Charges Approval Needed')
+                : 'Notification Needed';
               const itemLabel = job.work_order?.has_sprinklers ? 'Sprinkler Paint' : 'Drywall Repairs';
               const message = needsExtraChargesApproval
-                ? 'Extra charges need approval. Recommended: send approval email.'
+                ? (hasActiveApprovalEmail
+                    ? `An approval email was sent ${pendingApproval?.sentAt ? formatDate(pendingApproval.sentAt) : 'recently'}. A new approval can be sent in ${pendingApprovalCountdown || 'a moment'}.`
+                    : (job.work_order?.has_sprinklers
+                        ? 'Extra charges need approval. The sprinkler update should be included in the approval email via template sections.'
+                        : 'Extra charges need approval. Recommended: send approval email.'))
                 : `Notification email needed: ${itemLabel}`;
               const recommended: 'extra_charges' | 'sprinkler_paint' | 'drywall_repairs' =
                 needsExtraChargesApproval ? 'extra_charges' : (job.work_order?.has_sprinklers ? 'sprinkler_paint' : 'drywall_repairs');
@@ -2335,7 +2488,9 @@ export function JobDetails() {
                             setNotificationType(recommended);
                             setShowEnhancedNotificationModal(true);
                           }}
-                          className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                          disabled={hasActiveApprovalEmail}
+                          title={hasActiveApprovalEmail ? 'An approval email is already active. Wait for it to expire to send a new one.' : undefined}
+                          className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <Mail className="h-4 w-4 mr-2" />
                           Prepare Email
@@ -2430,8 +2585,8 @@ export function JobDetails() {
                 {hasWorkOrder && job.work_order?.has_sprinklers && job.work_order?.id && (
                   <div className="mt-4">
                     <h4 className="text-base font-medium text-gray-700 dark:text-gray-200 mb-2">Sprinkler Images</h4>
-                    {workOrderFolderId && (
-                      <ImageGallery workOrderId={workOrderFolderId} folder="sprinkler" />
+                    {jobIdForFiles && (
+                      <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="sprinkler" />
                     )}
                   </div>
                 )}
@@ -2520,63 +2675,82 @@ export function JobDetails() {
             )}
 
             {/* Extra Charges Section */}
-            {hasWorkOrder && job.work_order?.has_extra_charges && (
+            {hasWorkOrder && hasExtraChargesForApproval && (
               <div className="mb-8">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
                   <AlertCircle className="h-5 w-5 mr-2 text-blue-500" />
                   Extra Charges
                 </h3>
                 <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className={`p-3 rounded-lg border ${job?.work_order?.has_extra_charges ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className={`p-3 rounded-lg border ${hasExtraChargesForApproval ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
                       <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Has Extra Charges</span>
-                      <p className={`text-sm font-bold ${job?.work_order?.has_extra_charges ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {job?.work_order?.has_extra_charges ? 'Yes' : 'No'}
+                      <p className={`text-sm font-bold ${hasExtraChargesForApproval ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {hasExtraChargesForApproval ? 'Yes' : 'No'}
                       </p>
                     </div>
-                    <div className={`p-3 rounded-lg border ${typeof job?.work_order?.extra_hours === 'number' && job?.work_order?.extra_hours > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Extra Hours</span>
-                      <p className={`text-lg font-bold mt-1 ${typeof job?.work_order?.extra_hours === 'number' && job?.work_order?.extra_hours > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {typeof job?.work_order?.extra_hours === 'number' ? job?.work_order?.extra_hours : 'N/A'}
+                    <div className={`p-3 rounded-lg border ${extraChargesAmount > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
+                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Extra Charges</span>
+                      <p className={`text-lg font-bold mt-1 ${extraChargesAmount > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {formatCurrency(extraChargesAmount)}
+                      </p>
+                    </div>
+                    <div className={`p-3 rounded-lg border ${extraChargeLineItems.length > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
+                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Line Items</span>
+                      <p className={`text-lg font-bold mt-1 ${extraChargeLineItems.length > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {extraChargeLineItems.length}
                       </p>
                     </div>
                   </div>
-                  {job?.work_order?.extra_charges_description && (
-                    <div className="p-3 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30 mt-6">
-                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Description</span>
-                      <p className={`text-lg font-bold mt-1 ${job?.work_order?.extra_charges_description ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {job?.work_order?.extra_charges_description || 'N/A'}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
 
-            {/* Additional Services Section */}
-            {hasWorkOrder && additionalBillingLines.filter(line => 
-              !['painted_ceilings', 'accent_wall'].includes(line.key) && 
-              !line.label.startsWith('Regular Paint')
-            ).length > 0 && (
-              <div className="mb-8">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                  <ClipboardList className="h-5 w-5 mr-2 text-blue-500" />
-                  Additional Services
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                  {additionalBillingLines
-                    .filter(line => 
-                      !['painted_ceilings', 'accent_wall'].includes(line.key) && 
-                      !line.label.startsWith('Regular Paint')
-                    )
-                    .map((line) => (
-                    <div key={line.key} className={`p-3 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30 flex flex-col justify-center`}>
-                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">{line.label}</span>
-                      <p className="text-lg font-bold mt-1 text-green-800 dark:text-green-200">
-                        {line.unitLabel ? `${line.unitLabel} • ` : ''}Qty: {line.qty}
-                      </p>
+                  {extraChargeLineItems.length > 0 ? (
+                    <div className="mt-6 space-y-3">
+                      {extraChargeLineItems.map(item => {
+                        const quantity = Number(item.quantity) || 0;
+                        const billRate = Number(item.billRate) || 0;
+                        const subRate = Number(item.subRate) || 0;
+                        const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
+                        const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
+                        return (
+                          <div key={item.id} className="p-3 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30">
+                            <div className="flex justify-between items-start gap-4">
+                              <div>
+                                <div className="text-sm font-medium text-gray-600 dark:text-gray-400">Extra Charges - {item.categoryName}</div>
+                                <div className="text-lg font-bold mt-1 text-green-800 dark:text-green-200">{item.detailName}</div>
+                                {item.notes && (
+                                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">Notes: {item.notes}</div>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                <div className="text-sm text-gray-600 dark:text-gray-400">
+                                  {quantity} {item.isHourly ? 'hrs' : 'units'} × {formatCurrency(billRate)}
+                                </div>
+                                <div className="text-sm text-gray-600 dark:text-gray-400">Sub: {formatCurrency(subAmount)}</div>
+                                <div className="text-lg font-bold text-green-800 dark:text-green-200">{formatCurrency(billAmount)}</div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
+                  ) : (
+                    <>
+                      <div className={`p-3 rounded-lg border ${typeof job?.work_order?.extra_hours === 'number' && job?.work_order?.extra_hours > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center mt-6`}>
+                        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Extra Hours</span>
+                        <p className={`text-lg font-bold mt-1 ${typeof job?.work_order?.extra_hours === 'number' && job?.work_order?.extra_hours > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                          {typeof job?.work_order?.extra_hours === 'number' ? job?.work_order?.extra_hours : 'N/A'}
+                        </p>
+                      </div>
+                      {job?.work_order?.extra_charges_description && (
+                        <div className="p-3 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30 mt-4">
+                          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Description</span>
+                          <p className={`text-lg font-bold mt-1 ${job?.work_order?.extra_charges_description ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                            {job?.work_order?.extra_charges_description || 'N/A'}
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -2606,8 +2780,8 @@ export function JobDetails() {
                     <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                       Before Images
                     </h4>
-                    {workOrderFolderId && (
-                      <ImageGallery workOrderId={workOrderFolderId} folder="before" />
+                    {jobIdForFiles && (
+                      <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="before" />
                     )}
                   </div>
                   
@@ -2615,8 +2789,8 @@ export function JobDetails() {
                     <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                       Other Files
                     </h4>
-                    {workOrderFolderId && (
-                      <ImageGallery workOrderId={workOrderFolderId} folder="other" />
+                    {jobIdForFiles && (
+                      <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="other" />
                     )}
                   </div>
 
@@ -2624,8 +2798,8 @@ export function JobDetails() {
                     <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                       Job Files
                     </h4>
-                    {workOrderFolderId && (
-                      <ImageGallery workOrderId={workOrderFolderId} folder="job_files" />
+                    {jobIdForFiles && (
+                      <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="job_files" />
                     )}
                   </div>
                 </div>
@@ -2677,7 +2851,8 @@ export function JobDetails() {
                   billing_details: job.billing_details,
                   hourly_billing_details: job.hourly_billing_details,
                   extra_charges_details: derivedExtraCharges,
-                  additional_services: additionalBillingLines.map(line => ({
+                  extra_charges_line_items: extraChargeLineItems,
+                  additional_services: supplementalBillingLines.map(line => ({
                     code: line.key,
                     label: line.label,
                     unit_label: line.unitLabel,
@@ -2698,7 +2873,7 @@ export function JobDetails() {
                     <p className="text-lg font-semibold text-green-600 dark:text-green-400 mt-1">
                       {formatCurrency(
                         (job.billing_details?.bill_amount ?? 0) + extraChargesAmount + 
-                        additionalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)
+                        supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)
                       )}
                     </p>
                   </div>
@@ -2709,7 +2884,7 @@ export function JobDetails() {
                     <p className="text-lg font-semibold text-blue-600 dark:text-blue-400 mt-1">
                       {formatCurrency(
                         (job.billing_details?.sub_pay_amount ?? 0) + extraChargesSubPay + 
-                        additionalBillingLines.reduce((sum, line) => sum + line.amountSub, 0)
+                        supplementalBillingLines.reduce((sum, line) => sum + line.amountSub, 0)
                       )}
                     </p>
                   </div>
@@ -2721,59 +2896,120 @@ export function JobDetails() {
                       {formatCurrency(
                         ((job.billing_details?.bill_amount ?? 0) - (job.billing_details?.sub_pay_amount ?? 0)) + 
                         (extraChargesAmount - extraChargesSubPay) +
-                        additionalBillingLines.reduce((sum, line) => sum + (line.amountBill - line.amountSub), 0)
+                        supplementalBillingLines.reduce((sum, line) => sum + (line.amountBill - line.amountSub), 0)
                       )}
                     </p>
                   </div>
                 </div>
 
-                {/* Extra Charges Section - Show if work order has extra hours */}
-                {hasWorkOrder && job?.work_order?.has_extra_charges && job?.work_order?.extra_hours > 0 && (
+                {/* Extra Charges Section */}
+                {hasWorkOrder && hasExtraChargesForApproval && extraChargesAmount > 0 && (
                   <div className="mt-8">
                     <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Extra Charges Breakdown</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                      <div className="p-3 rounded-lg border border-green-500/50">
-                        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Amount</span>
-                        <p className="text-lg font-semibold text-green-600 dark:text-green-400 mt-1">
-                          {formatCurrency(extraChargesAmount)}
-                        </p>
-                      </div>
-                      <div className="p-3 rounded-lg border border-blue-500/50">
-                        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Hours</span>
-                        <p className="text-lg font-semibold text-blue-600 dark:text-blue-400 mt-1">
-                          {extraHours}
-                        </p>
-                      </div>
-                      <div className="p-3 rounded-lg border border-purple-500/50">
-                        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Description</span>
-                        <p className="text-lg font-semibold text-purple-600 dark:text-purple-400 mt-1">
-                          {extraChargesDescription || 'N/A'}
-                        </p>
-                      </div>
-                    </div>
+                    {extraChargeLineItems.length > 0 ? (
+                      <>
+                        <div className="space-y-3">
+                          {extraChargeLineItems.map((item) => {
+                            const quantity = Number(item.quantity) || 0;
+                            const billRate = Number(item.billRate) || 0;
+                            const subRate = Number(item.subRate) || 0;
+                            const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
+                            const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
+                            return (
+                              <div key={item.id} className="flex justify-between items-start p-3 bg-gray-50 dark:bg-[#0F172A] rounded-lg">
+                                <div className="flex-1">
+                                  <div className="font-medium text-gray-900 dark:text-white">
+                                    Extra Charges - {item.categoryName}: {item.detailName}
+                                  </div>
+                                  <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                    {quantity} {item.isHourly ? 'hrs' : 'units'} × {formatCurrency(billRate)}
+                                  </div>
+                                  {item.notes && (
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">
+                                      Notes: {item.notes}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                                    Sub: {formatCurrency(subAmount)}
+                                  </div>
+                                  <div className="font-semibold text-gray-900 dark:text-white">
+                                    {formatCurrency(billAmount)}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg mt-4">
+                          <div className="p-3 rounded-lg border border-green-500/50">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Bill</span>
+                            <p className="text-lg font-semibold text-green-600 dark:text-green-400 mt-1">
+                              {formatCurrency(extraChargesAmount)}
+                            </p>
+                          </div>
+                          <div className="p-3 rounded-lg border border-blue-500/50">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Sub Pay</span>
+                            <p className="text-lg font-semibold text-blue-600 dark:text-blue-400 mt-1">
+                              {formatCurrency(extraChargesSubPay)}
+                            </p>
+                          </div>
+                          <div className="p-3 rounded-lg border border-purple-500/50">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Profit</span>
+                            <p className="text-lg font-semibold text-purple-600 dark:text-purple-400 mt-1">
+                              {formatCurrency(extraChargesAmount - extraChargesSubPay)}
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
+                          <div className="p-3 rounded-lg border border-green-500/50">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Amount</span>
+                            <p className="text-lg font-semibold text-green-600 dark:text-green-400 mt-1">
+                              {formatCurrency(extraChargesAmount)}
+                            </p>
+                          </div>
+                          <div className="p-3 rounded-lg border border-blue-500/50">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Hours</span>
+                            <p className="text-lg font-semibold text-blue-600 dark:text-blue-400 mt-1">
+                              {extraHours}
+                            </p>
+                          </div>
+                          <div className="p-3 rounded-lg border border-purple-500/50">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Description</span>
+                            <p className="text-lg font-semibold text-purple-600 dark:text-purple-400 mt-1">
+                              {extraChargesDescription || 'N/A'}
+                            </p>
+                          </div>
+                        </div>
 
-                    {/* Hourly Rate Information */}
-                    <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg">
-                      <div className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                        <div className="flex justify-between">
-                          <span>Hourly Rate:</span>
-                          <span className="font-medium">{formatCurrency(job.hourly_billing_details?.bill_amount || 0)}/hour</span>
+                        {/* Hourly Rate Information */}
+                        <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg">
+                          <div className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                            <div className="flex justify-between">
+                              <span>Hourly Rate:</span>
+                              <span className="font-medium">{formatCurrency(job.hourly_billing_details?.bill_amount || 0)}/hour</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Subcontractor Rate:</span>
+                              <span className="font-medium">{formatCurrency(job.hourly_billing_details?.sub_pay_amount || 0)}/hour</span>
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex justify-between">
-                          <span>Subcontractor Rate:</span>
-                          <span className="font-medium">{formatCurrency(job.hourly_billing_details?.sub_pay_amount || 0)}/hour</span>
-                        </div>
-                      </div>
-                    </div>
+                      </>
+                    )}
                   </div>
                 )}
 
-                {/* Additional Billing Lines for Ceilings and Accent Walls */}
-                {additionalBillingLines.length > 0 && (
+                {/* Billing Lines for Ceilings and Accent Walls */}
+                {supplementalBillingLines.length > 0 && (
                   <div className="mt-8">
-                    <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Additional Services</h3>
+                    <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Ceilings & Accent Walls</h3>
                     <div className="space-y-3">
-                      {additionalBillingLines.map((line) => (
+                      {supplementalBillingLines.map((line) => (
                         <div key={line.key} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-[#0F172A] rounded-lg">
                           <div className="flex-1">
                             <span className="font-medium text-gray-900 dark:text-white">{line.label}</span>
@@ -2795,40 +3031,13 @@ export function JobDetails() {
                   </div>
                 )}
 
-                {/* Extra Charges Section */}
-                {extraChargesAmount > 0 && (
-                  <div className="mt-8">
-                    <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Extra Charges</h3>
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center p-3 bg-gray-50 dark:bg-[#0F172A] rounded-lg">
-                        <div className="flex-1">
-                          <span className="font-medium text-gray-900 dark:text-white">
-                            {extraChargesDescription || 'Extra Charges'}
-                          </span>
-                          <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">
-                            ({formatCurrency(extraHourlyRate)}/hr)
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm text-gray-600 dark:text-gray-400">
-                            {extraHours} hrs × {formatCurrency(extraHourlyRate)}
-                          </div>
-                          <div className="font-semibold text-gray-900 dark:text-white">
-                            {formatCurrency(extraChargesAmount)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 {/* Total to Invoice */}
                 <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
                   <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Total to Invoice</h3>
                   <span className="text-xl font-bold text-green-600 dark:text-green-400">
                     {formatCurrency(
                       (job.billing_details?.bill_amount ?? 0) + extraChargesAmount + 
-                      additionalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)
+                      supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)
                     )}
                   </span>
                 </div>
@@ -2841,7 +3050,7 @@ export function JobDetails() {
                       <span className="text-base font-semibold text-gray-900 dark:text-white">
                         {formatCurrency(
                           (job.billing_details?.bill_amount ?? 0) + extraChargesAmount + 
-                          additionalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)
+                          supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)
                         )}
                       </span>
                     </div>
@@ -2850,7 +3059,7 @@ export function JobDetails() {
                       <span className="text-base font-semibold text-gray-900 dark:text-white">
                         {formatCurrency(
                           (job.billing_details?.sub_pay_amount ?? 0) + (job.extra_charges_details?.sub_pay_amount ?? 0) +
-                          additionalBillingLines.reduce((sum, line) => sum + line.amountSub, 0)
+                          supplementalBillingLines.reduce((sum, line) => sum + line.amountSub, 0)
                         )}
                       </span>
                     </div>
@@ -2860,7 +3069,7 @@ export function JobDetails() {
                         {formatCurrency(
                           ((job.billing_details?.bill_amount ?? 0) - (job.billing_details?.sub_pay_amount ?? 0)) + 
                           ((job.extra_charges_details?.bill_amount ?? 0) - (job.extra_charges_details?.sub_pay_amount ?? 0)) +
-                          additionalBillingLines.reduce((sum, line) => sum + (line.amountBill - line.amountSub), 0)
+                          supplementalBillingLines.reduce((sum, line) => sum + (line.amountBill - line.amountSub), 0)
                         )}
                       </span>
                     </div>
@@ -3163,10 +3372,10 @@ export function JobDetails() {
               setShowNotificationModal(false);
               setNotificationType(null);
             }}
-            job={job}
+            job={notificationJob}
             notificationType={notificationType}
             onSent={handleNotificationSent}
-            additionalServices={additionalBillingLines.map(line => ({
+            additionalServices={supplementalBillingLines.map(line => ({
               label: line.label,
               quantity: line.qty,
               unit_label: line.unitLabel,
@@ -3186,7 +3395,7 @@ export function JobDetails() {
             job={job}
             notificationType={notificationType}
             onSent={handleNotificationSent}
-            additionalServices={additionalBillingLines.map(line => ({
+            additionalServices={supplementalBillingLines.map(line => ({
               label: line.label,
               quantity: line.qty,
               unit_label: line.unitLabel,

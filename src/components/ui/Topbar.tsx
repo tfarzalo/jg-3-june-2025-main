@@ -28,6 +28,7 @@ import { TestChatButton } from '../chat/TestChatButton';
 import { ChatMenuEnhanced } from '../chat/ChatMenuEnhanced';
 import { getAvatarProps } from '../../utils/avatarUtils';
 import { useNotifications, Notification as UserNotification } from '../../hooks/useNotifications';
+import { MobileNav } from '../mobile/MobileNav';
 
 interface Profile {
   id: string;
@@ -268,14 +269,14 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
 
   return (
     <>
-      <div className="h-16 bg-white dark:bg-[#0F172A] border-b border-gray-200 dark:border-[#1E293B] px-4 lg:px-6 flex items-center justify-between">
+      <div className="h-16 bg-white dark:bg-[#0F172A] border-b border-gray-200 dark:border-[#1E293B] px-3 sm:px-4 lg:px-6 flex items-center justify-between">
         {/* Left side - Mobile menu button and logo */}
-        <div className="flex items-center space-x-2 lg:space-x-4">
+        <div className="flex items-center space-x-2 lg:space-x-4 min-w-0 flex-1">
           {/* Mobile menu button - only show on mobile for non-subcontractors */}
           {!isSubcontractor && !showOnlyProfile && (
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-[#1E293B] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors"
+              className="lg:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-[#1E293B] text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
               aria-label="Open menu"
             >
               <Menu className="h-6 w-6" />
@@ -284,7 +285,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
 
           {/* Logo - show for subcontractors or on mobile */}
           {(isSubcontractor || window.innerWidth < 1024) && (
-            <div className="flex items-center">
+            <div className="flex items-center flex-shrink-0">
               <img
                 src="https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png"
                 alt="JG Painting"
@@ -330,13 +331,14 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
         </div>
 
         {/* Right side - User info and controls */}
-        <div className="flex items-center space-x-2 lg:space-x-4">
+        <div className="flex items-center space-x-1 sm:space-x-2 lg:space-x-4 flex-shrink-0">
           {/* Theme toggle */}
           <Button
             variant="ghost"
             size="sm"
             onClick={toggleTheme}
-            className="text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white p-2"
+            className="text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white p-2 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+            aria-label="Toggle theme"
           >
             {theme === 'dark' ? (
               <Sun className="h-5 w-5" />
@@ -346,49 +348,51 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
           </Button>
 
           {/* Chat Menu - For all users including subcontractors */}
-          <ChatMenuEnhanced />
+          <div className="touch-manipulation">
+            <ChatMenuEnhanced />
+          </div>
 
           {/* Notification Bell - Only show for non-subcontractors */}
           {!isSubcontractor && !showOnlyProfile && (
             <div className="relative" ref={notificationRef}>
               <button
                 onClick={() => setNotificationOpen(!notificationOpen)}
-                className="relative text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors p-2"
+                className="relative text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors p-2 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
                 aria-label="Notifications"
               >
                 <Bell className="h-5 w-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                    {unreadCount}
+                  <span className="absolute top-1 right-1 h-4 w-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-medium">
+                    {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}
               </button>
 
               {notificationOpen && (
-                <div className="absolute right-0 mt-2 w-[480px] max-w-[calc(100vw-2rem)] bg-white dark:bg-[#1E293B] rounded-lg shadow-lg z-50 overflow-hidden">
-                  <div className="px-4 py-2 border-b border-gray-200 dark:border-[#2D3B4E] flex items-center justify-between">
-                    <h3 className="font-medium text-gray-900 dark:text-white">Notifications</h3>
+                <div className="absolute right-0 mt-2 w-full sm:w-[480px] max-w-[calc(100vw-1rem)] sm:max-w-[480px] bg-white dark:bg-[#1E293B] rounded-lg shadow-lg z-50 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-200 dark:border-[#2D3B4E] flex items-center justify-between">
+                    <h3 className="font-medium text-gray-900 dark:text-white text-base">Notifications</h3>
                     {notifications.length > 0 && (
-                      <div className="flex items-center space-x-3 text-xs font-medium">
+                      <div className="flex items-center space-x-2 text-xs font-medium">
                         <button
                           onClick={handleMarkAllAsRead}
-                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                          className="text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap touch-manipulation py-2"
                         >
-                          Mark all as read
+                          Mark all read
                         </button>
                         <span className="text-gray-300 dark:text-gray-600">|</span>
                         <button
                           onClick={clearList}
-                          className="text-red-500 hover:underline"
+                          className="text-red-500 hover:underline whitespace-nowrap touch-manipulation py-2"
                         >
-                          Clear list
+                          Clear
                         </button>
                       </div>
                     )}
                   </div>
-                  <div className="max-h-96 overflow-y-auto" ref={notificationListRef}>
+                  <div className="max-h-[60vh] sm:max-h-96 overflow-y-auto" ref={notificationListRef}>
                     {notifications.length === 0 ? (
-                      <div className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 text-center">
+                      <div className="px-4 py-8 text-sm text-gray-500 dark:text-gray-400 text-center">
                         No notifications
                       </div>
                     ) : (
@@ -526,8 +530,8 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
           )}
 
           {/* User info and dropdown */}
-          <div className="flex items-center space-x-2 lg:space-x-4 text-gray-500 dark:text-gray-400">
-            <span className="text-sm hidden lg:block">
+          <div className="flex items-center space-x-1 sm:space-x-2 lg:space-x-4 text-gray-500 dark:text-gray-400">
+            <span className="text-sm hidden xl:block truncate max-w-[200px]">
               {new Date().toLocaleDateString('en-US', { 
                 weekday: 'long', 
                 year: 'numeric', 
@@ -538,10 +542,10 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
             
             <div className="relative" ref={dropdownRef}>
               <div 
-                className="flex items-center space-x-2 cursor-pointer"
+                className="flex items-center space-x-2 cursor-pointer touch-manipulation min-h-[44px] p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-[#1E293B] transition-colors"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
               >
-                <span className="text-gray-900 dark:text-white text-sm hidden lg:block">
+                <span className="text-gray-900 dark:text-white text-sm hidden sm:block truncate max-w-[120px]">
                   {profile?.full_name || session?.user.user_metadata.email?.split('@')[0] || 'User'}
                 </span>
                 {(() => {
@@ -555,19 +559,19 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                     <img 
                       src={avatarProps.avatarUrl}
                       alt={profile?.full_name || 'User'} 
-                      className="h-8 w-8 rounded-full object-cover"
+                      className="h-8 w-8 rounded-full object-cover flex-shrink-0"
                       onError={(e) => {
                         // Fallback to initials if image fails to load
                         const target = e.target as HTMLImageElement;
                         target.style.display = 'none';
                         const parent = target.parentElement;
                         if (parent) {
-                          parent.innerHTML = `<div class="h-8 w-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-medium">${avatarProps.initials}</div>`;
+                          parent.innerHTML = `<div class="h-8 w-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0">${avatarProps.initials}</div>`;
                         }
                       }}
                     />
                   ) : (
-                    <div className="h-8 w-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                    <div className="h-8 w-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
                       {avatarProps.initials}
                     </div>
                   );
@@ -575,9 +579,9 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
               </div>
               
               {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-[#1E293B] rounded-lg shadow-lg z-50 overflow-hidden">
-                  <div className="px-4 py-2 border-b border-gray-200 dark:border-[#2D3B4E]">
-                    <p className="font-medium text-gray-900 dark:text-white">
+                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-[#1E293B] rounded-lg shadow-lg z-50 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-200 dark:border-[#2D3B4E]">
+                    <p className="font-medium text-gray-900 dark:text-white truncate">
                       {profile?.full_name || 'User'}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
@@ -588,7 +592,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                     <>
                       <Link
                         to="/dashboard/profile"
-                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D3B4E]"
+                        className="block px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D3B4E] transition-colors touch-manipulation"
                         onClick={() => setDropdownOpen(false)}
                       >
                         <User className="h-4 w-4 inline-block mr-2" />
@@ -597,7 +601,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                       {isAdmin && (
                         <Link
                           to="/dashboard/settings"
-                          className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D3B4E]"
+                          className="block px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D3B4E] transition-colors touch-manipulation"
                           onClick={() => setDropdownOpen(false)}
                         >
                           <Settings className="h-4 w-4 inline-block mr-2" />
@@ -609,7 +613,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                   )}
                   <button
                     onClick={handleSignOut}
-                    className="block w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-[#2D3B4E]"
+                    className="block w-full text-left px-4 py-3 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-[#2D3B4E] transition-colors touch-manipulation"
                   >
                     <LogOut className="h-4 w-4 inline-block mr-2" />
                     Sign out
@@ -633,10 +637,10 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
           {/* Mobile Menu Panel */}
           <div 
             ref={mobileMenuRef}
-            className="fixed left-0 top-0 h-full w-80 max-w-[85vw] bg-white dark:bg-[#0F172A] shadow-xl transform transition-transform"
+            className="fixed left-0 top-0 h-full w-80 max-w-[85vw] bg-white dark:bg-[#0F172A] shadow-xl transform transition-transform overflow-y-auto"
           >
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1E293B]">
+            <div className="sticky top-0 z-10 flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1E293B] bg-white dark:bg-[#0F172A]">
               <img
                 src="https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png"
                 alt="JG Painting"
@@ -644,37 +648,41 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
               />
               <button
                 onClick={() => setMobileMenuOpen(false)}
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-[#1E293B] text-gray-500 dark:text-gray-400"
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-[#1E293B] text-gray-500 dark:text-gray-400 transition-colors touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                aria-label="Close menu"
               >
                 <X className="h-6 w-6" />
               </button>
             </div>
 
             {/* Navigation Items */}
-            <div className="p-4 space-y-2">
+            <div className="p-4 space-y-4">
               {/* Search */}
               <button
                 onClick={() => {
                   setSearchOpen(true);
                   setMobileMenuOpen(false);
                 }}
-                className="w-full flex items-center px-4 py-3 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
+                className="w-full flex items-center px-4 py-3 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors touch-manipulation min-h-[44px]"
               >
-                <Search className="h-5 w-5 mr-3" />
-                Search
+                <Search className="h-5 w-5 mr-3 flex-shrink-0" />
+                <span className="truncate">Search</span>
               </button>
 
               {/* Quick Actions */}
-              <div className="space-y-1">
+              <div className="space-y-2 pb-4 border-b border-gray-200 dark:border-[#1E293B]">
+                <div className="px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                  Quick Actions
+                </div>
                 <button 
                   onClick={() => {
                     navigate('/dashboard/sub-scheduler');
                     setMobileMenuOpen(false);
                   }}
-                  className="w-full flex items-center px-4 py-3 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
+                  className="w-full flex items-center px-4 py-3 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors touch-manipulation min-h-[44px]"
                 >
-                  <Calendar className="h-5 w-5 mr-3" />
-                  Schedule
+                  <Calendar className="h-5 w-5 mr-3 flex-shrink-0" />
+                  <span className="truncate">Schedule</span>
                 </button>
                 
                 <button 
@@ -682,10 +690,10 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                     navigate('/dashboard/jobs/new');
                     setMobileMenuOpen(false);
                   }}
-                  className="w-full flex items-center px-4 py-3 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
+                  className="w-full flex items-center px-4 py-3 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors touch-manipulation min-h-[44px]"
                 >
-                  <Plus className="h-5 w-5 mr-3" />
-                  New Job
+                  <Plus className="h-5 w-5 mr-3 flex-shrink-0" />
+                  <span className="truncate">New Job</span>
                 </button>
                 
                 <button 
@@ -693,74 +701,15 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                     navigate('/dashboard/properties/new');
                     setMobileMenuOpen(false);
                   }}
-                  className="w-full flex items-center px-4 py-3 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
+                  className="w-full flex items-center px-4 py-3 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors touch-manipulation min-h-[44px]"
                 >
-                  <Plus className="h-5 w-5 mr-3" />
-                  New Property
+                  <Plus className="h-5 w-5 mr-3 flex-shrink-0" />
+                  <span className="truncate">New Property</span>
                 </button>
               </div>
 
               {/* Navigation Links */}
-              <div className="pt-4 border-t border-gray-200 dark:border-[#1E293B]">
-                <div className="space-y-1">
-                  <Link
-                    to="/dashboard"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
-                  >
-                    Dashboard
-                  </Link>
-                  <Link
-                    to="/dashboard/jobs"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
-                  >
-                    All Jobs
-                  </Link>
-                  <Link
-                    to="/dashboard/jobs/requests"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
-                  >
-                    Job Requests
-                  </Link>
-                  <Link
-                    to="/dashboard/jobs/work-orders"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
-                  >
-                    Work Orders
-                  </Link>
-                  <Link
-                    to="/dashboard/properties"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
-                  >
-                    Properties
-                  </Link>
-                  <Link
-                    to="/dashboard/users"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
-                  >
-                    Users
-                  </Link>
-                  <Link
-                    to="/messaging"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
-                  >
-                    Messaging
-                  </Link>
-                  <Link
-                    to="/dashboard/settings"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block px-4 py-3 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors"
-                  >
-                    Admin Settings
-                  </Link>
-                </div>
-              </div>
+              <MobileNav onClose={() => setMobileMenuOpen(false)} />
             </div>
           </div>
         </div>

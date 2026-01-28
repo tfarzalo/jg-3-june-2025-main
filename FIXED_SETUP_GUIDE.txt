@@ -1,0 +1,175 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║                                                                      ║
+║         📧 DAILY AGENDA AUTOMATION - FIXED SETUP GUIDE              ║
+║                  (Permission Issue Resolved)                        ║
+║                                                                      ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+🔧 WHAT WAS FIXED:
+   The permission error is now resolved! Instead of using database 
+   parameters (which require superuser access), we now use a secure
+   configuration table that works perfectly with Supabase.
+
+═══════════════════════════════════════════════════════════════════════
+  UPDATED SETUP STEPS (7 Steps - 15 minutes)
+═══════════════════════════════════════════════════════════════════════
+
+STEP 1: Generate CRON_SECRET
+────────────────────────────────────────────────────────────────────
+
+  cd /Users/timothyfarzalo/Desktop/jg-january-2026
+  openssl rand -base64 32
+
+  SAVE THIS OUTPUT - You'll need it in Step 4!
+  (It will look like: x7F9kL2mN8pQ3wR5tY6uI1oP4sA8dG7kJ9)
+
+  Then set it in Supabase:
+  
+  supabase secrets set CRON_SECRET=<paste-the-secret-here>
+
+  Verify:
+  
+  supabase secrets list
+
+
+STEP 2: Deploy Tracking Table
+────────────────────────────────────────────────────────────────────
+
+  supabase db push supabase/migrations/20260123_daily_summary_tracking.sql
+
+  ✓ This creates the daily_summary_log table
+
+
+STEP 3: Deploy Cron Setup Migration
+────────────────────────────────────────────────────────────────────
+
+  supabase db push supabase/migrations/20260123_setup_daily_cron.sql
+
+  ✓ This creates the cron_config table and schedules the job
+
+
+STEP 4: Set Configuration Values
+────────────────────────────────────────────────────────────────────
+
+  Connect to your database:
+  
+  supabase db remote connect
+
+  Then run these SQL commands (replace the placeholder values):
+
+  -- Set your Supabase URL (replace YOUR_PROJECT_ID)
+  INSERT INTO cron_config (key, value) 
+  VALUES ('supabase_url', 'https://YOUR_PROJECT_ID.supabase.co') 
+  ON CONFLICT (key) 
+  DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
+
+  -- Set your CRON_SECRET from Step 1 (replace YOUR_CRON_SECRET)
+  INSERT INTO cron_config (key, value) 
+  VALUES ('cron_secret', 'YOUR_CRON_SECRET') 
+  ON CONFLICT (key) 
+  DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
+
+  -- Verify they're set
+  SELECT key, 
+         CASE WHEN key = 'cron_secret' THEN '***REDACTED***' ELSE value END as value,
+         updated_at 
+  FROM cron_config 
+  ORDER BY key;
+
+  You should see both supabase_url and cron_secret listed.
+
+  Exit psql:
+  
+  \q
+
+
+STEP 5: Deploy Cron Trigger Function
+────────────────────────────────────────────────────────────────────
+
+  supabase functions deploy daily-agenda-cron-trigger
+
+  Verify:
+  
+  supabase functions list
+
+  ✓ You should see daily-agenda-cron-trigger in the list
+
+
+STEP 6: Test the Setup
+────────────────────────────────────────────────────────────────────
+
+  METHOD 1 - Via UI (easiest):
+  1. Open your app
+  2. Go to: Settings → Daily Agenda Email Settings
+  3. Enable yourself as a recipient
+  4. Click "Send Test Email"
+  5. Check your inbox
+
+  METHOD 2 - Via API:
+  
+  curl -X POST https://YOUR_PROJECT_ID.supabase.co/functions/v1/daily-agenda-cron-trigger \
+    -H "Authorization: Bearer YOUR_CRON_SECRET" \
+    -H "Content-Type: application/json" \
+    -d '{"test": true}'
+
+
+STEP 7: Verify Everything
+────────────────────────────────────────────────────────────────────
+
+  Connect to database:
+  
+  supabase db remote connect
+
+  Check cron job is scheduled:
+  
+  SELECT * FROM cron.job WHERE jobname = 'daily-agenda-email-cron';
+
+  Check tracking log:
+  
+  SELECT * FROM daily_summary_log ORDER BY sent_at DESC LIMIT 5;
+
+  Check config is set:
+  
+  SELECT * FROM cron_config;
+
+  Exit:
+  
+  \q
+
+
+═══════════════════════════════════════════════════════════════════════
+
+✅ SETUP COMPLETE!
+
+Your daily agenda emails will now send automatically at 7:00 AM EST 
+every day. No manual intervention required!
+
+═══════════════════════════════════════════════════════════════════════
+
+📊 MONITORING:
+
+  View function logs:
+  supabase functions logs daily-agenda-cron-trigger --tail
+
+  Check recent sends:
+  SELECT * FROM daily_summary_log ORDER BY sent_at DESC LIMIT 10;
+
+  Check cron status:
+  SELECT * FROM cron.job WHERE jobname = 'daily-agenda-email-cron';
+
+  Check cron execution history:
+  SELECT * FROM cron.job_run_details 
+  WHERE jobid = (SELECT jobid FROM cron.job WHERE jobname = 'daily-agenda-email-cron')
+  ORDER BY start_time DESC LIMIT 10;
+
+═══════════════════════════════════════════════════════════════════════
+
+🔧 QUICK REFERENCE:
+
+  All configuration SQL commands are also in:
+  set_cron_config.sql
+
+  Full documentation:
+  DAILY_AGENDA_AUTOMATION_SETUP_GUIDE.md
+
+═══════════════════════════════════════════════════════════════════════
