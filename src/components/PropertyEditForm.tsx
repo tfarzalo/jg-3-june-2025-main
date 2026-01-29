@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Building2, ArrowLeft, MapPin, Plus, ZoomIn, Trash2 } from 'lucide-react';
+import { Building2, ArrowLeft, MapPin, Plus, Minus, ZoomIn, Trash2 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { useLeafletMap } from '../hooks/useLeafletMap';
 import { PaintColorsEditor } from './properties/PaintColorsEditor';
@@ -20,6 +20,7 @@ interface PropertyContact {
   position: string;
   name: string;
   email: string;
+  secondary_email?: string;
   phone: string;
   is_new?: boolean;
 }
@@ -34,6 +35,8 @@ export function PropertyEditForm() {
   const [contacts, setContacts] = useState<PropertyContact[]>([]);
   const [subcontractorContactSource, setSubcontractorContactSource] = useState<string>('community_manager');
   const [notificationContactSource, setNotificationContactSource] = useState<string>('community_manager');
+  const [secondaryEmailVisibility, setSecondaryEmailVisibility] = useState<Record<string, boolean>>({});
+  const [propertySecondaryEmailVisibility, setPropertySecondaryEmailVisibility] = useState<Record<string, boolean>>({});
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [propertyGroups, setPropertyGroups] = useState<PropertyManagementGroup[]>([]);
   const [originalPropertyName, setOriginalPropertyName] = useState('');
@@ -56,14 +59,17 @@ export function PropertyEditForm() {
     community_manager_name: '',
     community_manager_email: '',
     community_manager_phone: '',
+    community_manager_secondary_email: '',
     maintenance_supervisor_name: '',
     maintenance_supervisor_email: '',
     maintenance_supervisor_phone: '',
+    maintenance_supervisor_secondary_email: '',
     maintenance_supervisor_title: '',
     point_of_contact: '',
     primary_contact_name: '',
     primary_contact_phone: '',
     primary_contact_role: '',
+    primary_contact_secondary_email: '',
     subcontractor_a: '',
     subcontractor_b: '',
     community_manager_title: '',
@@ -72,6 +78,7 @@ export function PropertyEditForm() {
     ap_name: '',
     ap_email: '',
     ap_phone: '',
+    ap_secondary_email: '',
     billing_notes: '',
     extra_charges_notes: '',
     occupied_regular_paint_fees: '',
@@ -177,20 +184,24 @@ export function PropertyEditForm() {
         community_manager_name: data.community_manager_name || '',
         community_manager_email: data.community_manager_email || '',
         community_manager_phone: data.community_manager_phone || '',
+        community_manager_secondary_email: data.community_manager_secondary_email || '',
         maintenance_supervisor_name: data.maintenance_supervisor_name || '',
         maintenance_supervisor_email: data.maintenance_supervisor_email || '',
         maintenance_supervisor_phone: data.maintenance_supervisor_phone || '',
+        maintenance_supervisor_secondary_email: data.maintenance_supervisor_secondary_email || '',
         maintenance_supervisor_title: data.maintenance_supervisor_title || '',
         point_of_contact: data.point_of_contact || '',
         primary_contact_name: data.primary_contact_name || '',
         primary_contact_phone: data.primary_contact_phone || '',
         primary_contact_role: data.primary_contact_role || '',
+        primary_contact_secondary_email: data.primary_contact_secondary_email || '',
         subcontractor_a: data.subcontractor_a || '',
         subcontractor_b: data.subcontractor_b || '',
         community_manager_title: data.community_manager_title || '',
         ap_name: data.ap_name || '',
         ap_email: data.ap_email || '',
         ap_phone: data.ap_phone || '',
+        ap_secondary_email: data.ap_secondary_email || '',
         billing_notes: data.billing_notes || '',
         extra_charges_notes: data.extra_charges_notes || '',
         occupied_regular_paint_fees: data.occupied_regular_paint_fees || '',
@@ -385,12 +396,13 @@ export function PropertyEditForm() {
           if (deleteError) throw deleteError;
 
           // 2. Insert current contacts
-          if (contacts.length > 0) {
+            if (contacts.length > 0) {
             const contactsToInsert = contacts.map(c => ({
               property_id: propertyId,
               position: c.position,
               name: c.name,
               email: c.email,
+              secondary_email: c.secondary_email || null,
               phone: c.phone
             }));
 
@@ -450,6 +462,7 @@ export function PropertyEditForm() {
         position: '',
         name: '',
         email: '',
+        secondary_email: '',
         phone: '',
         is_new: true
       }
@@ -467,6 +480,10 @@ export function PropertyEditForm() {
     if (subcontractorContactSource === id) {
       setSubcontractorContactSource('community_manager');
     }
+    setSecondaryEmailVisibility(prev => {
+      const { [id]: _, ...rest } = prev;
+      return rest;
+    });
   };
 
   const handleSubcontractorContactChange = (source: string) => {
@@ -477,6 +494,48 @@ export function PropertyEditForm() {
     setNotificationContactSource(source);
     toast.success('Email notifications contact updated');
   };
+
+  const toggleSecondaryEmailField = (contactId: string) => {
+    setSecondaryEmailVisibility(prev => ({
+      ...prev,
+      [contactId]: !prev[contactId]
+    }));
+  };
+
+  const togglePropertySecondaryEmailField = (key: string) => {
+    setPropertySecondaryEmailVisibility(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+
+  useEffect(() => {
+    setSecondaryEmailVisibility(prev => {
+      let next: Record<string, boolean> | null = null;
+      contacts.forEach(contact => {
+        if (contact.secondary_email && !prev[contact.id]) {
+          if (!next) next = { ...prev };
+          next[contact.id] = true;
+        }
+      });
+      return next ? next : prev;
+    });
+  }, [contacts]);
+
+  useEffect(() => {
+    setPropertySecondaryEmailVisibility(prev => ({
+      ...prev,
+      community_manager: prev.community_manager || !!formData.community_manager_secondary_email,
+      maintenance_supervisor: prev.maintenance_supervisor || !!formData.maintenance_supervisor_secondary_email,
+      ap: prev.ap || !!formData.ap_secondary_email,
+      primary_contact: prev.primary_contact || !!formData.primary_contact_secondary_email
+    }));
+  }, [
+    formData.community_manager_secondary_email,
+    formData.maintenance_supervisor_secondary_email,
+    formData.ap_secondary_email,
+    formData.primary_contact_secondary_email
+  ]);
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#0F172A] p-6">
@@ -768,9 +827,23 @@ export function PropertyEditForm() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="community_manager_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Email
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="community_manager_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                      Email
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => togglePropertySecondaryEmailField('community_manager')}
+                      className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none"
+                      aria-label="Toggle secondary email field"
+                    >
+                      {propertySecondaryEmailVisibility.community_manager ? (
+                        <Minus className="h-4 w-4" />
+                      ) : (
+                        <Plus className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                   <input
                     type="email"
                     id="community_manager_email"
@@ -780,6 +853,21 @@ export function PropertyEditForm() {
                     className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                {(propertySecondaryEmailVisibility.community_manager || !!formData.community_manager_secondary_email) && (
+                  <div>
+                    <label htmlFor="community_manager_secondary_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                      Secondary Email
+                    </label>
+                    <input
+                      type="email"
+                      id="community_manager_secondary_email"
+                      name="community_manager_secondary_email"
+                      value={formData.community_manager_secondary_email}
+                      onChange={handleChange}
+                      className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                )}
                 <div>
                   <label htmlFor="community_manager_phone" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                     Phone
@@ -847,9 +935,23 @@ export function PropertyEditForm() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="maintenance_supervisor_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Email
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="maintenance_supervisor_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                      Email
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => togglePropertySecondaryEmailField('maintenance_supervisor')}
+                      className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none"
+                      aria-label="Toggle secondary email field"
+                    >
+                      {propertySecondaryEmailVisibility.maintenance_supervisor ? (
+                        <Minus className="h-4 w-4" />
+                      ) : (
+                        <Plus className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                   <input
                     type="email"
                     id="maintenance_supervisor_email"
@@ -859,6 +961,21 @@ export function PropertyEditForm() {
                     className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                {(propertySecondaryEmailVisibility.maintenance_supervisor || !!formData.maintenance_supervisor_secondary_email) && (
+                  <div>
+                    <label htmlFor="maintenance_supervisor_secondary_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                      Secondary Email
+                    </label>
+                    <input
+                      type="email"
+                      id="maintenance_supervisor_secondary_email"
+                      name="maintenance_supervisor_secondary_email"
+                      value={formData.maintenance_supervisor_secondary_email}
+                      onChange={handleChange}
+                      className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                )}
                 <div>
                   <label htmlFor="maintenance_supervisor_phone" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                     Phone
@@ -933,7 +1050,21 @@ export function PropertyEditForm() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Email</label>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Email</label>
+                      <button
+                        type="button"
+                        onClick={() => toggleSecondaryEmailField(contact.id)}
+                        className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none"
+                        aria-label="Toggle secondary email field"
+                      >
+                        {secondaryEmailVisibility[contact.id] ? (
+                          <Minus className="h-4 w-4" />
+                        ) : (
+                          <Plus className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
                     <input
                       type="email"
                       value={contact.email || ''}
@@ -942,6 +1073,18 @@ export function PropertyEditForm() {
                       placeholder="Email"
                     />
                   </div>
+                  {(secondaryEmailVisibility[contact.id] || !!contact.secondary_email) && (
+                    <div className="mt-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Secondary Email</label>
+                      <input
+                        type="email"
+                        value={contact.secondary_email || ''}
+                        onChange={(e) => handleContactChange(contact.id, 'secondary_email', e.target.value)}
+                        className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Secondary Email"
+                      />
+                    </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Phone</label>
                     <input
@@ -1150,9 +1293,23 @@ export function PropertyEditForm() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="ap_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Email
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="ap_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                      Email
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => togglePropertySecondaryEmailField('ap')}
+                      className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none"
+                      aria-label="Toggle secondary email field"
+                    >
+                      {propertySecondaryEmailVisibility.ap ? (
+                        <Minus className="h-4 w-4" />
+                      ) : (
+                        <Plus className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                   <input
                     type="email"
                     id="ap_email"
@@ -1162,6 +1319,21 @@ export function PropertyEditForm() {
                     className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                {(propertySecondaryEmailVisibility.ap || !!formData.ap_secondary_email) && (
+                  <div>
+                    <label htmlFor="ap_secondary_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                      Secondary Email
+                    </label>
+                    <input
+                      type="email"
+                      id="ap_secondary_email"
+                      name="ap_secondary_email"
+                      value={formData.ap_secondary_email}
+                      onChange={handleChange}
+                      className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                )}
                 <div>
                   <label htmlFor="ap_phone" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                     Phone

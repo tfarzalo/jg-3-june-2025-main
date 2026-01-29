@@ -31,6 +31,8 @@ const PublicApprovalPage = lazy(() => import('./pages/PublicApprovalPage'));
 const AssignmentDecisionPage = lazy(() => import('./pages/AssignmentDecisionPage'));
 const ApprovalPreviewPage = lazy(() => import('./pages/ApprovalPreviewPage'));
 const MessagingPage = lazy(() => import('./pages/MessagingPage'));
+const SubcontractorDashboardPreview = lazy(() => import('./components/SubcontractorDashboardPreview'));
+const NewWorkOrderPreview = lazy(() => import('./components/NewWorkOrderPreview'));
 const LeadForm = lazy(() => import('./pages/LeadForm').then(module => ({ default: module.LeadForm })));
 const SmsConsentPage = lazy(() => import('./pages/SmsConsentPage'));
 const FileEditorPage = lazy(() => import('./pages/FileEditorPage'));
@@ -154,10 +156,24 @@ const ProtectedLayout = () => (
                 </MainLayout>
               </Suspense>
             } />
+            <Route path="/preview/jobs/:jobId/new-work-order" element={
+              <Suspense fallback={<LoadingSpinner />}>
+                <MainLayout>
+                  <NewWorkOrderPreview />
+                </MainLayout>
+              </Suspense>
+            } />
             <Route path="/dashboard/subcontractor/edit/:userId" element={
               <Suspense fallback={<LoadingSpinner />}>
                 <MainLayout>
                   <SubcontractorEditPage />
+                </MainLayout>
+              </Suspense>
+            } />
+            <Route path="/preview/subcontractor-dashboard" element={
+              <Suspense fallback={<LoadingSpinner />}>
+                <MainLayout>
+                  <SubcontractorDashboardPreview />
                 </MainLayout>
               </Suspense>
             } />

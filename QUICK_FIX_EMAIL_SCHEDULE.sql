@@ -18,10 +18,14 @@ DECLARE
   minute_val INTEGER;
   cron_expr TEXT;
   utc_time TIME;
+  timezone_val TEXT;
 BEGIN
+  -- Always interpret the configured time as Eastern Time (ET)
+  timezone_val := 'America/New_York';
+
   -- Convert ET time to actual UTC time
   utc_time := (
-    (CURRENT_DATE + NEW.send_time_utc) AT TIME ZONE NEW.send_time_timezone AT TIME ZONE 'UTC'
+    (CURRENT_DATE + NEW.send_time_utc) AT TIME ZONE timezone_val AT TIME ZONE 'UTC'
   )::time;
   
   hour_val := EXTRACT(HOUR FROM utc_time);
@@ -55,8 +59,8 @@ BEGIN
     $cmd$
   );
   
-  RAISE NOTICE '✅ Cron rescheduled: % % → % UTC (cron: %)', 
-    NEW.send_time_utc, NEW.send_time_timezone, utc_time, cron_expr;
+  RAISE NOTICE '✅ Cron rescheduled: % ET → % UTC (cron: %)', 
+    NEW.send_time_utc, utc_time, cron_expr;
   
   RETURN NEW;
 END;
@@ -82,15 +86,19 @@ CREATE TRIGGER trigger_update_cron_schedule_update
   EXECUTE FUNCTION update_daily_email_cron_schedule();
 
 -- Step 3: Force reschedule with correct timezone conversion
-UPDATE daily_email_config SET updated_at = NOW();
+UPDATE daily_email_config
+SET send_time_utc = (send_time_utc + interval '1 minute')::time;
+
+UPDATE daily_email_config
+SET send_time_utc = (send_time_utc - interval '1 minute')::time;
 
 -- Step 4: Verify the fix
 SELECT 
   send_time_utc as "Set Time (ET)",
   (
-    (CURRENT_DATE + send_time_utc) AT TIME ZONE send_time_timezone AT TIME ZONE 'UTC'
+    (CURRENT_DATE + send_time_utc) AT TIME ZONE 'America/New_York' AT TIME ZONE 'UTC'
   )::time as "Actual UTC Time",
-  send_time_timezone as "Timezone"
+  'America/New_York' as "Timezone"
 FROM daily_email_config;
 
 SELECT 

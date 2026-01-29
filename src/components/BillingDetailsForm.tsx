@@ -359,6 +359,10 @@ export function BillingDetailsForm() {
       }
 
       // Create new property billing category
+      const nextSortOrder =
+        propertyBillingCategories
+          .filter(cat => !cat.archived_at)
+          .reduce((max, cat) => Math.max(max, cat.sort_order || 0), 0) + 1;
       const { data: newPropertyBillingCategory, error: insertPBCError } = await supabase
         .from('billing_categories')
         .insert([
@@ -366,7 +370,7 @@ export function BillingDetailsForm() {
             property_id: propertyId, 
             name: selectedCategory.name,
             description: selectedCategory.description,
-            sort_order: selectedCategory.sort_order,
+            sort_order: nextSortOrder,
             include_in_work_order: includeInWorkOrder
           }
         ])
@@ -522,9 +526,8 @@ export function BillingDetailsForm() {
 
     try {
       // Save category settings (including include_in_work_order and sort_order)
-      const categoryUpdates = propertyBillingCategories
-        .filter(cat => !cat.archived_at) // Don't update archived categories
-        .map(cat => {
+      const orderedCategories = propertyBillingCategories.filter(cat => !cat.archived_at);
+      const categoryUpdates = orderedCategories.map((cat, index) => {
           // Enforce include_in_work_order=true for default categories
           const isDefault = jobCategories.find(jc => jc.name === cat.name)?.is_default;
           
@@ -543,7 +546,7 @@ export function BillingDetailsForm() {
             property_id: propertyId,
             name: cat.name,
             description: cat.description,
-            sort_order: cat.sort_order,
+            sort_order: index + 1,
             include_in_work_order: isDefault ? true : (cat.is_extra_charge ? false : cat.include_in_work_order),
             is_extra_charge: cat.is_extra_charge || false
           };
@@ -643,9 +646,7 @@ export function BillingDetailsForm() {
 
       setHasChanges(false);
       toast.success('Billing details saved successfully');
-      
-      // Navigate back to property details page
-      navigate(`/dashboard/properties/${propertyId}`);
+      await fetchPropertyBillingData();
 
     } catch (err) {
       console.error('Error saving billing details:', err);

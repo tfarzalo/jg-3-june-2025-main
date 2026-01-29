@@ -72,6 +72,7 @@ export function JobRequestForm() {
     unit_size_id: '',
     job_category_id: '',
     job_type_id: '',
+    purchase_order: '',
     description: '',
     scheduled_date: getCurrentDateInEastern(),
   });
@@ -413,7 +414,8 @@ export function JobRequestForm() {
         p_job_type_id: formData.job_type_id,
         p_description: formData.description || '', // Ensure description is not null
         p_scheduled_date: scheduledDate,
-        p_job_category_id: formData.job_category_id || null
+        p_job_category_id: formData.job_category_id || null,
+        p_purchase_order: formData.purchase_order?.trim() || null
       });
 
       if (error) {
@@ -577,6 +579,21 @@ export function JobRequestForm() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label htmlFor="purchase_order" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                  Purchase Order (PO#)
+                </label>
+                <input
+                  type="text"
+                  id="purchase_order"
+                  name="purchase_order"
+                  value={formData.purchase_order}
+                  onChange={handleChange}
+                  placeholder="Optional"
+                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
 
               <div>

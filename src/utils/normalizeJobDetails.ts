@@ -54,6 +54,7 @@ export type JobDetailsNormalized = {
   unit_number?: string | null;
   description?: string | null;
   scheduled_date?: string | null;
+  purchase_order?: string | null;
   assigned_to?: string | null;
   assignment_status?: string | null;
   assignment_decision_at?: string | null;
@@ -78,7 +79,7 @@ export type JobDetailsNormalized = {
 export function normalizeJobDetails(d: any): JobDetailsNormalized {
   const property = {
     id: d?.property?.id ?? null,
-    name: d?.property?.name ?? '—',
+    name: d?.property?.name ?? d?.property?.property_name ?? '—',
     address: d?.property?.address ?? null,
     city: d?.property?.city ?? null,
     state: d?.property?.state ?? null,
@@ -92,13 +93,13 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
 
   const unit_size = {
     id: d?.unit_size?.id ?? null,
-    label: d?.unit_size?.label ?? '—',
+    label: d?.unit_size?.label ?? d?.unit_size?.unit_size_label ?? '—',
   };
 
   const job_phase: JobPhase | null = d?.job_phase
     ? {
         id: d?.job_phase?.id ?? null,
-        label: d?.job_phase?.label ?? d?.job_phase?.name ?? 'Unknown Phase',
+        label: d?.job_phase?.label ?? d?.job_phase?.job_phase_label ?? d?.job_phase?.name ?? 'Unknown Phase',
         color_light_mode: d?.job_phase?.color_light_mode,
         color_dark_mode: d?.job_phase?.color_dark_mode,
       }
@@ -141,6 +142,7 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
     unit_number: d?.unit_number ?? null,
     description: d?.description ?? null,
     scheduled_date: d?.scheduled_date ?? null,
+    purchase_order: d?.purchase_order ?? null,
     assigned_to: d?.assigned_to ?? null,
     assignment_status: d?.assignment_status ?? null,
     assignment_decision_at: d?.assignment_decision_at ?? null,
@@ -154,7 +156,7 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
     property,
     unit_size,
     job_type: d?.job_type
-      ? { id: d?.job_type?.id ?? null, label: d?.job_type?.label ?? '—' }
+      ? { id: d?.job_type?.id ?? null, label: d?.job_type?.label ?? d?.job_type?.job_type_label ?? '—' }
       : null,
     job_phase,
     work_order,

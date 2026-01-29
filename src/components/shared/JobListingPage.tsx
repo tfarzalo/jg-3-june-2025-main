@@ -21,7 +21,6 @@ import Papa from 'papaparse';
 import jsPDF from 'jspdf';
 import { supabase } from '@/utils/supabase';
 import { toast } from 'sonner';
-import { getAdditionalBillingLines } from '../../lib/billing/additional';
 
 export interface Job {
   id: string;
@@ -98,6 +97,7 @@ export interface Job {
     extra_hours?: number;
     additional_comments?: string;
   }>;
+  purchase_order?: string | null;
 }
 
 interface ExportConfig {
@@ -114,6 +114,7 @@ interface ExportConfig {
     unitNumber: boolean;
     unitSize: boolean;
     jobType: boolean;
+    purchaseOrder: boolean;
     scheduledDate: boolean;
     lastModificationDate: boolean;
     description: boolean;
@@ -152,9 +153,6 @@ interface ExportConfig {
     baseBillToCustomer: boolean;
     basePayToSubcontractor: boolean;
     baseProfit: boolean;
-    additionalServicesBillToCustomer: boolean;
-    additionalServicesPayToSubcontractor: boolean;
-    additionalServicesProfit: boolean;
     extraChargesBillToCustomer: boolean;
     extraChargesPayToSubcontractor: boolean;
     extraChargesProfit: boolean;
@@ -196,6 +194,7 @@ const JOB_EXPORT_SELECT = `
   created_at,
   updated_at,
   description,
+  purchase_order,
   total_billing_amount,
   invoice_sent,
   invoice_paid,
@@ -295,6 +294,7 @@ export function JobListingPage({
         unitNumber: true,
         unitSize: true,
         jobType: true,
+        purchaseOrder: false,
         scheduledDate: true,
         lastModificationDate: false,
         description: false,
@@ -333,9 +333,6 @@ export function JobListingPage({
         baseBillToCustomer: false,
         basePayToSubcontractor: false,
         baseProfit: false,
-        additionalServicesBillToCustomer: false,
-        additionalServicesPayToSubcontractor: false,
-        additionalServicesProfit: false,
         extraChargesBillToCustomer: false,
         extraChargesPayToSubcontractor: false,
         extraChargesProfit: false,
@@ -464,7 +461,7 @@ export function JobListingPage({
       if (section === 'jobInfo') {
         const jobFields: (keyof typeof newColumns)[] = [
           'workOrder', 'phase', 'property', 'address', 'unitNumber', 'unitSize',
-          'jobType', 'scheduledDate', 'lastModificationDate', 'description', 'assignedTo', 'jobStatus'
+          'jobType', 'purchaseOrder', 'scheduledDate', 'lastModificationDate', 'description', 'assignedTo', 'jobStatus'
         ];
         jobFields.forEach(field => {
           newColumns[field] = checked;
@@ -473,9 +470,8 @@ export function JobListingPage({
         const billingFields: (keyof typeof newColumns)[] = [
           'invoiceSent', 'invoicePaid', 'invoiceSentDate', 'invoicePaidDate',
           'baseBillToCustomer', 'basePayToSubcontractor', 'baseProfit',
-          'additionalServicesBillToCustomer', 'additionalServicesPayToSubcontractor', 'additionalServicesProfit', 'additionalServicesDetails',
-        'extraChargesBillToCustomer', 'extraChargesPayToSubcontractor', 'extraChargesProfit', 'extraChargesLineItems',
-        'totalBillToCustomer', 'totalPayToSubcontractor', 'totalProfit'
+          'extraChargesBillToCustomer', 'extraChargesPayToSubcontractor', 'extraChargesProfit', 'extraChargesLineItems',
+          'totalBillToCustomer', 'totalPayToSubcontractor', 'totalProfit'
         ];
         billingFields.forEach(field => {
           newColumns[field] = checked;
@@ -548,6 +544,7 @@ export function JobListingPage({
           property: Array.isArray(job.property) ? job.property[0] : job.property,
           unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
           job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
+          purchase_order: job.purchase_order,
           job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase
         }));
 
@@ -633,14 +630,12 @@ export function JobListingPage({
       // Check if we need to fetch full billing data
       const needsBillingData = Object.entries(exportConfig.columns).some(([key, val]) => 
         ['baseBillToCustomer', 'basePayToSubcontractor', 'baseProfit',
-         'additionalServicesBillToCustomer', 'additionalServicesPayToSubcontractor', 'additionalServicesProfit',
          'extraChargesBillToCustomer', 'extraChargesPayToSubcontractor', 'extraChargesProfit', 'extraChargesLineItems',
          'totalBillToCustomer', 'totalPayToSubcontractor', 'totalProfit'].includes(key) && val
       );
 
       // Fetch full job details for each job if billing data is needed
     let jobDetailsMap: Record<string, any> = {};
-    let additionalServicesMap: Record<string, any[]> = {};
     
     if (needsBillingData) {
       try {
@@ -655,24 +650,13 @@ export function JobListingPage({
               const { data, error } = await supabase.rpc('get_job_details', { p_job_id: job.id });
               if (error) {
                 console.error(`Error fetching details for job ${job.id}:`, error);
-                return { jobId: job.id, data: null, additionalServices: [] };
+                return { jobId: job.id, data: null };
               }
               
-              // If we have work_order data, compute additional services
-              let additionalServices: any[] = [];
-              if (data?.work_order) {
-                try {
-                  const { lines } = await getAdditionalBillingLines(supabase, data.work_order);
-                  additionalServices = lines;
-                } catch (err) {
-                  console.error(`Error computing additional services for job ${job.id}:`, err);
-                }
-              }
-              
-              return { jobId: job.id, data, additionalServices };
+              return { jobId: job.id, data };
             } catch (err) {
               console.error(`Exception fetching details for job ${job.id}:`, err);
-              return { jobId: job.id, data: null, additionalServices: [] };
+              return { jobId: job.id, data: null };
             }
           });
           
@@ -680,7 +664,6 @@ export function JobListingPage({
           batchResults.forEach(result => {
             if (result.data) {
               jobDetailsMap[result.jobId] = result.data;
-              additionalServicesMap[result.jobId] = result.additionalServices;
             }
           });
         }
@@ -733,6 +716,7 @@ export function JobListingPage({
       if (exportConfig.columns.unitNumber) row['Unit #'] = job.unit_number || 'N/A';
       if (exportConfig.columns.unitSize) row['Unit Size'] = job.unit_size.unit_size_label || 'N/A';
       if (exportConfig.columns.jobType) row['Job Type'] = job.job_type.job_type_label || 'N/A';
+      if (exportConfig.columns.purchaseOrder) row['PO#'] = job.purchase_order || 'None';
       if (exportConfig.columns.scheduledDate) row['Scheduled Date'] = job.scheduled_date ? formatDate(job.scheduled_date) : 'N/A';
       if (exportConfig.columns.lastModificationDate) row['Last Modification Date'] = job.updated_at ? formatDate(job.updated_at) : 'N/A';
       if (exportConfig.columns.description) row['Description'] = job.description || 'N/A';
@@ -787,22 +771,6 @@ export function JobListingPage({
       if (exportConfig.columns.basePayToSubcontractor) row['Base Pay to Subcontractor'] = baseSubPayAmount !== null ? `$${baseSubPayAmount.toFixed(2)}` : 'N/A';
       if (exportConfig.columns.baseProfit) row['Base Profit'] = baseProfit !== null ? `$${baseProfit.toFixed(2)}` : 'N/A';
       
-      // Additional Services (computed from getAdditionalBillingLines)
-      const additionalServices = additionalServicesMap[job.id] || [];
-      const additionalServicesBillAmount = additionalServices.length > 0 
-        ? additionalServices.reduce((sum: number, svc: any) => sum + (svc.amountBill ?? 0), 0) 
-        : null;
-      const additionalServicesSubPayAmount = additionalServices.length > 0 
-        ? additionalServices.reduce((sum: number, svc: any) => sum + (svc.amountSub ?? 0), 0) 
-        : null;
-      const additionalServicesProfit = (additionalServicesBillAmount !== null && additionalServicesSubPayAmount !== null) 
-        ? additionalServicesBillAmount - additionalServicesSubPayAmount 
-        : null;
-      
-      if (exportConfig.columns.additionalServicesBillToCustomer) row['Additional Services Bill to Customer'] = additionalServicesBillAmount !== null ? `$${additionalServicesBillAmount.toFixed(2)}` : 'N/A';
-      if (exportConfig.columns.additionalServicesPayToSubcontractor) row['Additional Services Pay to Subcontractor'] = additionalServicesSubPayAmount !== null ? `$${additionalServicesSubPayAmount.toFixed(2)}` : 'N/A';
-      if (exportConfig.columns.additionalServicesProfit) row['Additional Services Profit'] = additionalServicesProfit !== null ? `$${additionalServicesProfit.toFixed(2)}` : 'N/A';
-      
       // Extra Charges
       const extraChargesBillAmount = hasExtraChargeItems
         ? extraChargeTotals.bill
@@ -821,16 +789,14 @@ export function JobListingPage({
       // Grand Totals - matching the BillingBreakdownV2 calculation exactly
       const totalBillToCustomer = 
         (baseBillAmount ?? 0) + 
-        (additionalServicesBillAmount ?? 0) + 
         (extraChargesBillAmount ?? 0);
       const totalPayToSubcontractor = 
         (baseSubPayAmount ?? 0) + 
-        (additionalServicesSubPayAmount ?? 0) + 
         (extraChargesSubPayAmount ?? 0);
       const totalProfit = totalBillToCustomer - totalPayToSubcontractor;
       
       // Only show N/A if ALL billing components are null
-      const hasBillingData = baseBillAmount !== null || additionalServicesBillAmount !== null || extraChargesBillAmount !== null;
+      const hasBillingData = baseBillAmount !== null || extraChargesBillAmount !== null;
       
       if (exportConfig.columns.totalBillToCustomer) row['Total Bill to Customer'] = hasBillingData ? `$${totalBillToCustomer.toFixed(2)}` : 'N/A';
       if (exportConfig.columns.totalPayToSubcontractor) row['Total Pay to Subcontractor'] = hasBillingData ? `$${totalPayToSubcontractor.toFixed(2)}` : 'N/A';
@@ -935,14 +901,12 @@ export function JobListingPage({
       // Check if we need to fetch full billing data
       const needsBillingData = Object.entries(exportConfig.columns).some(([key, val]) => 
         ['baseBillToCustomer', 'basePayToSubcontractor', 'baseProfit',
-         'additionalServicesBillToCustomer', 'additionalServicesPayToSubcontractor', 'additionalServicesProfit',
          'extraChargesBillToCustomer', 'extraChargesPayToSubcontractor', 'extraChargesProfit', 'extraChargesLineItems',
          'totalBillToCustomer', 'totalPayToSubcontractor', 'totalProfit'].includes(key) && val
       );
 
       // Fetch full job details for each job if billing data is needed
       let jobDetailsMap: Record<string, any> = {};
-      let additionalServicesMap: Record<string, any[]> = {};
       
       if (needsBillingData) {
         const batchSize = 10;
@@ -952,22 +916,12 @@ export function JobListingPage({
             try {
               const { data, error } = await supabase.rpc('get_job_details', { p_job_id: job.id });
               if (error) {
-                return { jobId: job.id, data: null, additionalServices: [] };
+                return { jobId: job.id, data: null };
               }
               
-              let additionalServices: any[] = [];
-              if (data?.work_order) {
-                try {
-                  const { lines } = await getAdditionalBillingLines(supabase, data.work_order);
-                  additionalServices = lines;
-                } catch (err) {
-                  console.error(`Error computing additional services for job ${job.id}:`, err);
-                }
-              }
-              
-              return { jobId: job.id, data, additionalServices };
+              return { jobId: job.id, data };
             } catch (err) {
-              return { jobId: job.id, data: null, additionalServices: [] };
+              return { jobId: job.id, data: null };
             }
           });
           
@@ -975,7 +929,6 @@ export function JobListingPage({
           batchResults.forEach(result => {
             if (result.data) {
               jobDetailsMap[result.jobId] = result.data;
-              additionalServicesMap[result.jobId] = result.additionalServices;
             }
           });
         }
@@ -1018,6 +971,7 @@ export function JobListingPage({
         unitNumber: { header: 'Unit #', width: 15 },
         unitSize: { header: 'Size', width: 15 },
         jobType: { header: 'Type', width: 20 },
+        purchaseOrder: { header: 'PO#', width: 20 },
         scheduledDate: { header: 'Scheduled', width: 22 },
         lastModificationDate: { header: 'Modified', width: 22 },
         description: { header: 'Description', width: 30 },
@@ -1051,10 +1005,6 @@ export function JobListingPage({
         baseBillToCustomer: { header: 'Base Bill', width: 20 },
         basePayToSubcontractor: { header: 'Base Pay', width: 20 },
         baseProfit: { header: 'Base Profit', width: 20 },
-        additionalServicesBillToCustomer: { header: 'Add Svc Bill', width: 20 },
-        additionalServicesPayToSubcontractor: { header: 'Add Svc Pay', width: 20 },
-        additionalServicesProfit: { header: 'Add Svc Profit', width: 20 },
-        additionalServicesDetails: { header: 'Add Svc Details', width: 40 },
         extraChargesBillToCustomer: { header: 'Extra Bill', width: 20 },
         extraChargesPayToSubcontractor: { header: 'Extra Pay', width: 20 },
         extraChargesProfit: { header: 'Extra Profit', width: 20 },
@@ -1087,17 +1037,6 @@ export function JobListingPage({
         const baseSubPayAmount = jobDetails?.billing_details?.sub_pay_amount ?? null;
         const baseProfit = (baseBillAmount !== null && baseSubPayAmount !== null) ? baseBillAmount - baseSubPayAmount : null;
         
-        const additionalServices = additionalServicesMap[job.id] || [];
-        const additionalServicesBillAmount = additionalServices.length > 0 
-          ? additionalServices.reduce((sum: number, svc: any) => sum + (svc.amountBill ?? 0), 0) 
-          : null;
-        const additionalServicesSubPayAmount = additionalServices.length > 0 
-          ? additionalServices.reduce((sum: number, svc: any) => sum + (svc.amountSub ?? 0), 0) 
-          : null;
-        const additionalServicesProfit = (additionalServicesBillAmount !== null && additionalServicesSubPayAmount !== null) 
-          ? additionalServicesBillAmount - additionalServicesSubPayAmount 
-          : null;
-        
         const extraChargesBillAmount = hasExtraChargeItems
           ? extraChargeTotals.bill
           : (jobDetails?.extra_charges_details?.bill_amount ?? null);
@@ -1108,10 +1047,10 @@ export function JobListingPage({
           ? extraChargesBillAmount - extraChargesSubPayAmount 
           : null;
         
-        const totalBillToCustomer = (baseBillAmount ?? 0) + (additionalServicesBillAmount ?? 0) + (extraChargesBillAmount ?? 0);
-        const totalPayToSubcontractor = (baseSubPayAmount ?? 0) + (additionalServicesSubPayAmount ?? 0) + (extraChargesSubPayAmount ?? 0);
+        const totalBillToCustomer = (baseBillAmount ?? 0) + (extraChargesBillAmount ?? 0);
+        const totalPayToSubcontractor = (baseSubPayAmount ?? 0) + (extraChargesSubPayAmount ?? 0);
         const totalProfit = totalBillToCustomer - totalPayToSubcontractor;
-        const hasBillingData = baseBillAmount !== null || additionalServicesBillAmount !== null || extraChargesBillAmount !== null;
+        const hasBillingData = baseBillAmount !== null || extraChargesBillAmount !== null;
         
         // Map each column key to its value
         const valueMap: Record<string, string> = {
@@ -1122,6 +1061,7 @@ export function JobListingPage({
           unitNumber: job.unit_number || 'N/A',
           unitSize: job.unit_size.unit_size_label || 'N/A',
           jobType: job.job_type.job_type_label || 'N/A',
+          purchaseOrder: job.purchase_order || 'N/A',
           scheduledDate: job.scheduled_date ? formatDate(job.scheduled_date) : 'N/A',
           lastModificationDate: job.updated_at ? formatDate(job.updated_at) : 'N/A',
           description: job.description || 'N/A',
@@ -1157,15 +1097,6 @@ export function JobListingPage({
           baseBillToCustomer: baseBillAmount !== null ? `$${baseBillAmount.toFixed(2)}` : 'N/A',
           basePayToSubcontractor: baseSubPayAmount !== null ? `$${baseSubPayAmount.toFixed(2)}` : 'N/A',
           baseProfit: baseProfit !== null ? `$${baseProfit.toFixed(2)}` : 'N/A',
-          additionalServicesBillToCustomer: additionalServicesBillAmount !== null ? `$${additionalServicesBillAmount.toFixed(2)}` : 'N/A',
-          additionalServicesPayToSubcontractor: additionalServicesSubPayAmount !== null ? `$${additionalServicesSubPayAmount.toFixed(2)}` : 'N/A',
-          additionalServicesProfit: additionalServicesProfit !== null ? `$${additionalServicesProfit.toFixed(2)}` : 'N/A',
-          additionalServicesDetails: additionalServices.length > 0 
-            ? additionalServices
-                .filter((svc: any) => !['painted_ceilings', 'accent_wall'].includes(svc.key) && !svc.label.startsWith('Regular Paint'))
-                .map((svc: any) => `${svc.label} (Qty: ${svc.qty})`)
-                .join('; ') 
-            : 'N/A',
           extraChargesBillToCustomer: extraChargesBillAmount !== null ? `$${extraChargesBillAmount.toFixed(2)}` : 'N/A',
           extraChargesPayToSubcontractor: extraChargesSubPayAmount !== null ? `$${extraChargesSubPayAmount.toFixed(2)}` : 'N/A',
           extraChargesProfit: extraChargesProfit !== null ? `$${extraChargesProfit.toFixed(2)}` : 'N/A',
@@ -1575,6 +1506,7 @@ export function JobListingPage({
       job.unit_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
       job.unit_size.unit_size_label.toLowerCase().includes(searchTerm.toLowerCase()) ||
       job.job_type.job_type_label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (job.purchase_order?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
       formatWorkOrderNumber(job.work_order_num).toLowerCase().includes(searchTerm.toLowerCase())
     )
   );
@@ -1778,6 +1710,11 @@ export function JobListingPage({
                   </button>
                 </th>
                 <th scope="col" className="px-6 py-4 text-left w-24 sm:w-auto">
+                  <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    PO#
+                  </span>
+                </th>
+                <th scope="col" className="px-6 py-4 text-left w-24 sm:w-auto">
                   <button
                     onClick={() => handleSort('scheduled_date')}
                     className="group inline-flex items-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider hover:text-gray-700 dark:hover:text-white"
@@ -1872,6 +1809,11 @@ export function JobListingPage({
                   </td>
                   <td className="px-6 py-4 w-24 sm:w-auto">
                     <div className="text-gray-600 dark:text-gray-400 text-xs sm:text-sm whitespace-nowrap">
+                      {job.purchase_order || 'None'}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 w-24 sm:w-auto">
+                    <div className="text-gray-600 dark:text-gray-400 text-xs sm:text-sm whitespace-nowrap">
                       {formatDate(job.scheduled_date)}
                     </div>
                   </td>
@@ -1902,7 +1844,7 @@ export function JobListingPage({
               ))}
               {sortedAndFilteredJobs.length === 0 && (
                 <tr>
-                  <td colSpan={hideAmountColumn ? (showInvoiceColumns ? 10 : 8) : (showInvoiceColumns ? 11 : 9)} className="px-6 py-4 text-center text-gray-600 dark:text-gray-400">
+              <td colSpan={hideAmountColumn ? (showInvoiceColumns ? 11 : 9) : (showInvoiceColumns ? 12 : 10)} className="px-6 py-4 text-center text-gray-600 dark:text-gray-400">
                     No jobs found
                   </td>
                 </tr>
@@ -2086,7 +2028,6 @@ export function JobListingPage({
                           'accentWallCount', 'hasExtraCharges', 'extraChargesDescription', 'extraHours',
                           'additionalComments', 'invoiceSent', 'invoicePaid', 'invoiceSentDate', 'invoicePaidDate',
                           'baseBillToCustomer', 'basePayToSubcontractor', 'baseProfit',
-                          'additionalServicesBillToCustomer', 'additionalServicesPayToSubcontractor', 'additionalServicesProfit',
                           'extraChargesBillToCustomer', 'extraChargesPayToSubcontractor', 'extraChargesProfit', 'extraChargesLineItems',
                           'totalBillToCustomer', 'totalPayToSubcontractor', 'totalProfit'].includes(key) && val
                         ).length} selected)
@@ -2163,6 +2104,12 @@ export function JobListingPage({
                             onChange={(e) => setExportConfig(prev => ({...prev, columns: { ...prev.columns, jobType: e.target.checked }}))}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
                           <span className="text-sm text-gray-700 dark:text-gray-300">Job Type</span>
+                        </label>
+                        <label className="flex items-center space-x-2">
+                          <input type="checkbox" checked={exportConfig.columns.purchaseOrder}
+                            onChange={(e) => setExportConfig(prev => ({...prev, columns: { ...prev.columns, purchaseOrder: e.target.checked }}))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">PO#</span>
                         </label>
                         <label className="flex items-center space-x-2">
                           <input type="checkbox" checked={exportConfig.columns.scheduledDate}
@@ -2391,7 +2338,6 @@ export function JobListingPage({
                         ({Object.entries(exportConfig.columns).filter(([key, val]) => 
                           ['invoiceSent', 'invoicePaid', 'invoiceSentDate', 'invoicePaidDate',
                           'baseBillToCustomer', 'basePayToSubcontractor', 'baseProfit',
-                          'additionalServicesBillToCustomer', 'additionalServicesPayToSubcontractor', 'additionalServicesProfit',
                           'extraChargesBillToCustomer', 'extraChargesPayToSubcontractor', 'extraChargesProfit',
                           'totalBillToCustomer', 'totalPayToSubcontractor', 'totalProfit'].includes(key) && val
                         ).length} selected)
@@ -2477,31 +2423,6 @@ export function JobListingPage({
                             <label className="flex items-center space-x-2">
                               <input type="checkbox" checked={exportConfig.columns.baseProfit}
                                 onChange={(e) => setExportConfig(prev => ({...prev, columns: { ...prev.columns, baseProfit: e.target.checked }}))}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
-                              <span className="text-sm text-gray-700 dark:text-gray-300">Profit</span>
-                            </label>
-                          </div>
-                        </div>
-
-                        {/* Additional Services Section */}
-                        <div>
-                          <h5 className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2 uppercase tracking-wide">Additional Services</h5>
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                            <label className="flex items-center space-x-2">
-                              <input type="checkbox" checked={exportConfig.columns.additionalServicesBillToCustomer}
-                                onChange={(e) => setExportConfig(prev => ({...prev, columns: { ...prev.columns, additionalServicesBillToCustomer: e.target.checked }}))}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
-                              <span className="text-sm text-gray-700 dark:text-gray-300">Bill to Customer</span>
-                            </label>
-                            <label className="flex items-center space-x-2">
-                              <input type="checkbox" checked={exportConfig.columns.additionalServicesPayToSubcontractor}
-                                onChange={(e) => setExportConfig(prev => ({...prev, columns: { ...prev.columns, additionalServicesPayToSubcontractor: e.target.checked }}))}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
-                              <span className="text-sm text-gray-700 dark:text-gray-300">Pay to Subcontractor</span>
-                            </label>
-                            <label className="flex items-center space-x-2">
-                              <input type="checkbox" checked={exportConfig.columns.additionalServicesProfit}
-                                onChange={(e) => setExportConfig(prev => ({...prev, columns: { ...prev.columns, additionalServicesProfit: e.target.checked }}))}
                                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
                               <span className="text-sm text-gray-700 dark:text-gray-300">Profit</span>
                             </label>

@@ -90,7 +90,7 @@ export function DailyAgendaEmailSettings() {
       
       if (data) {
         setEmailConfig(data);
-        // Convert UTC time to local time for display
+        // Treat the stored time as Eastern Time (ET) for display
         const utcTime = data.send_time_utc;
         // Parse HH:MM:SS to HH:MM for input
         const timeOnly = utcTime.substring(0, 5);
@@ -446,7 +446,7 @@ export function DailyAgendaEmailSettings() {
             <div className="text-sm text-blue-900 dark:text-blue-200">
               <p className="font-semibold mb-1">How it works:</p>
               <ul className="list-disc list-inside space-y-1 text-blue-800 dark:text-blue-300">
-                <li>Emails are sent automatically at {sendTime} (your local time) every day</li>
+                <li>Emails are sent automatically at {sendTime} Eastern Time (ET) every day</li>
                 <li>Email content includes job counts and details for the current day</li>
                 <li>Use the test feature above to preview the email format</li>
                 <li>Only users with the toggle enabled will receive daily emails</li>

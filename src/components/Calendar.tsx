@@ -57,6 +57,7 @@ interface Job {
   };
   assigned_to: string | null;
   assigned_to_name: string | null;
+  purchase_order?: string | null;
 }
 
 interface JobPhase {
@@ -590,6 +591,7 @@ export function Calendar() {
           ),
           unit_number,
           description,
+          purchase_order,
           scheduled_date,
           job_phase:current_phase_id (
             job_phase_label,
@@ -619,6 +621,7 @@ export function Calendar() {
           ),
           unit_number,
           description,
+          purchase_order,
           scheduled_date,
           job_phase:current_phase_id (
             job_phase_label,
@@ -648,6 +651,7 @@ export function Calendar() {
           description: job.description,
           scheduled_date: job.scheduled_date,
           assigned_to: job.assigned_to,
+          purchase_order: job.purchase_order,
           property: Array.isArray(job.property) && job.property.length > 0 
             ? job.property[0] 
             : (job.property as unknown as { id: string; property_name: string }) || { id: 'unknown', property_name: 'Unknown Property' },
@@ -673,6 +677,7 @@ export function Calendar() {
           description: job.description,
           scheduled_date: job.scheduled_date,
           assigned_to: job.assigned_to,
+          purchase_order: job.purchase_order,
           property: Array.isArray(job.property) && job.property.length > 0 
             ? job.property[0] 
             : (job.property as unknown as { id: string; property_name: string }) || { id: 'unknown', property_name: 'Unknown Property' },
@@ -1077,11 +1082,14 @@ export function Calendar() {
                             />
                           </div>
                           <div className="text-gray-600 dark:text-gray-400 truncate">
-                            <PropertyLink 
-                              propertyId={job.property.id}
-                              propertyName={job.property.property_name}
-                            />
-                          </div>
+                          <PropertyLink 
+                            propertyId={job.property.id}
+                            propertyName={job.property.property_name}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          PO#: {job.purchase_order || 'None'}
+                        </p>
                         </button>
                       ))}
                       
@@ -1171,6 +1179,9 @@ export function Calendar() {
                           </p>
                           <p className="text-xs text-gray-500 dark:text-gray-500">
                             Unit #{job.unit_number}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            PO#: {job.purchase_order || 'None'}
                           </p>
                         </div>
                         <span
@@ -1319,6 +1330,15 @@ export function Calendar() {
                 <p className="text-gray-900 dark:text-white flex items-center">
                   <Clock className="h-4 w-4 mr-2 text-gray-400" />
                   {formatJobDate(selectedJob.scheduled_date)}
+                </p>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400">
+                  Purchase Order
+                </label>
+                <p className="text-gray-900 dark:text-white">
+                  {selectedJob.purchase_order || 'None'}
                 </p>
               </div>
               

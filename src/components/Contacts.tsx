@@ -14,6 +14,7 @@ import {
   Tag,
   Eye,
   CheckCircle,
+  Check,
   XCircle,
   Clock,
   AlertCircle,
@@ -41,6 +42,7 @@ interface Contact {
   first_name: string;
   last_name: string;
   email: string;
+  secondary_email: string;
   phone: string;
   company: string;
   job_title: string;
@@ -108,6 +110,9 @@ export function Contacts() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showNewContactForm, setShowNewContactForm] = useState(false);
+  const [secondaryEmailEditorContactId, setSecondaryEmailEditorContactId] = useState<string | null>(null);
+  const [secondaryEmailDraft, setSecondaryEmailDraft] = useState('');
+  const [secondaryEmailSavingContactId, setSecondaryEmailSavingContactId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchContacts();
@@ -125,13 +130,14 @@ export function Contacts() {
 
       if (error) throw error;
 
-      const formattedContacts: Contact[] = data.map((item: any) => ({
-        lead_id: item.lead_id || '',
-        contact_id: item.contact_id,
-        first_name: item.first_name || '',
-        last_name: item.last_name || '',
-        email: item.email || '',
-        phone: item.phone || '',
+        const formattedContacts: Contact[] = data.map((item: any) => ({
+          lead_id: item.lead_id || '',
+          contact_id: item.contact_id,
+          first_name: item.first_name || '',
+          last_name: item.last_name || '',
+          email: item.email || '',
+          secondary_email: item.secondary_email || '',
+          phone: item.phone || '',
         company: item.company || '',
         job_title: item.job_title || '',
         status_name: item.status_name || 'Manual Contact',
@@ -238,6 +244,43 @@ export function Contacts() {
     } catch (error) {
       console.error('Error updating contact assignment:', error);
       toast.error('Failed to update contact assignment');
+    }
+  };
+
+  const startSecondaryEmailEditor = (contact: Contact) => {
+    setSecondaryEmailEditorContactId(contact.contact_id);
+    setSecondaryEmailDraft(contact.secondary_email || '');
+  };
+
+  const cancelSecondaryEmailEdit = () => {
+    setSecondaryEmailEditorContactId(null);
+    setSecondaryEmailDraft('');
+  };
+
+  const saveSecondaryEmail = async (contactId: string) => {
+    setSecondaryEmailSavingContactId(contactId);
+    const trimmedEmail = secondaryEmailDraft.trim();
+
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ secondary_email: trimmedEmail || null })
+        .eq('id', contactId);
+
+      if (error) throw error;
+
+      setContacts(prev =>
+        prev.map(contact =>
+          contact.contact_id === contactId ? { ...contact, secondary_email: trimmedEmail } : contact
+        )
+      );
+      toast.success('Secondary email saved');
+      cancelSecondaryEmailEdit();
+    } catch (err) {
+      console.error('Error saving secondary email:', err);
+      toast.error('Failed to save secondary email');
+    } finally {
+      setSecondaryEmailSavingContactId(null);
     }
   };
 
@@ -387,18 +430,77 @@ export function Contacts() {
 
             {/* Contact Info */}
             <div className="space-y-2 mb-4">
-              {contact.email && (
-                <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+            {contact.email && (
+              <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
+                <div className="flex items-center">
                   <Mail className="h-4 w-4 mr-2" />
                   <a href={`mailto:${contact.email}`} className="hover:text-purple-600" onClick={(e) => e.stopPropagation()}>
                     {contact.email}
                   </a>
                 </div>
-              )}
-              {contact.phone && (
-                <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                  <Phone className="h-4 w-4 mr-2" />
-                  <a href={`tel:${contact.phone}`} className="hover:text-purple-600" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    startSecondaryEmailEditor(contact);
+                  }}
+                  className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                  title="Add or edit secondary email"
+                >
+                  {contact.secondary_email ? (
+                    <Edit className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Plus className="h-4 w-4 text-gray-500" />
+                  )}
+                </button>
+              </div>
+            )}
+            {contact.secondary_email && (
+              <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                <Mail className="h-4 w-4 mr-2" />
+                <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Secondary:</span>
+                <span className="ml-1">{contact.secondary_email}</span>
+              </div>
+            )}
+            {secondaryEmailEditorContactId === contact.contact_id && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  saveSecondaryEmail(contact.contact_id);
+                }}
+                className="flex items-center space-x-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="email"
+                  value={secondaryEmailDraft}
+                  onChange={(e) => setSecondaryEmailDraft(e.target.value)}
+                  className="flex-1 h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Secondary Email"
+                />
+                <button
+                  type="submit"
+                  disabled={secondaryEmailSavingContactId === contact.contact_id}
+                  className="inline-flex items-center px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-white"
+                >
+                  <Check className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    cancelSecondaryEmailEdit();
+                  }}
+                  className="inline-flex items-center px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </form>
+            )}
+            {contact.phone && (
+              <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                <Phone className="h-4 w-4 mr-2" />
+                <a href={`tel:${contact.phone}`} className="hover:text-purple-600" onClick={(e) => e.stopPropagation()}>
                     {contact.phone}
                   </a>
                 </div>

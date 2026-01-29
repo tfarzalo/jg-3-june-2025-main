@@ -30,6 +30,7 @@ interface Contact {
   first_name: string;
   last_name: string;
   email: string;
+  secondary_email: string;
   phone: string;
   company: string;
   job_title: string;
@@ -177,6 +178,7 @@ export function ContactDetail() {
         first_name: data.first_name || '',
         last_name: data.last_name || '',
         email: data.email || '',
+        secondary_email: data.secondary_email || '',
         phone: data.phone || '',
         company: data.company || '',
         job_title: data.job_title || '',

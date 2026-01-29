@@ -53,6 +53,67 @@ const NotificationEmailModal: React.FC<NotificationEmailModalProps> = ({
     }
   }, [isOpen, job, notificationType]);
 
+  const resolveSecondaryEmail = async (
+    propertyId: string,
+    recipient: string,
+    propertyData?: {
+      community_manager_email?: string | null;
+      community_manager_secondary_email?: string | null;
+      maintenance_supervisor_email?: string | null;
+      maintenance_supervisor_secondary_email?: string | null;
+      ap_email?: string | null;
+      ap_secondary_email?: string | null;
+      primary_contact_email?: string | null;
+      primary_contact_secondary_email?: string | null;
+    } | null
+  ) => {
+    if (!recipient) return '';
+    let propertyRecord = propertyData || null;
+
+    if (!propertyRecord) {
+      const { data, error } = await supabase
+        .from('properties')
+        .select(`
+          community_manager_email,
+          community_manager_secondary_email,
+          maintenance_supervisor_email,
+          maintenance_supervisor_secondary_email,
+          ap_email,
+          ap_secondary_email,
+          primary_contact_email,
+          primary_contact_secondary_email
+        `)
+        .eq('id', propertyId)
+        .single();
+      if (!error) {
+        propertyRecord = data;
+      }
+    }
+
+    if (propertyRecord) {
+      if (propertyRecord.community_manager_email === recipient) {
+        return propertyRecord.community_manager_secondary_email || '';
+      }
+      if (propertyRecord.maintenance_supervisor_email === recipient) {
+        return propertyRecord.maintenance_supervisor_secondary_email || '';
+      }
+      if (propertyRecord.ap_email === recipient) {
+        return propertyRecord.ap_secondary_email || '';
+      }
+      if (propertyRecord.primary_contact_email === recipient) {
+        return propertyRecord.primary_contact_secondary_email || '';
+      }
+    }
+
+    const { data: contact } = await supabase
+      .from('property_contacts')
+      .select('secondary_email')
+      .eq('property_id', propertyId)
+      .eq('email', recipient)
+      .maybeSingle();
+    return contact?.secondary_email || '';
+  };
+
   const loadTemplate = async () => {
     try {
       setLoading(true);
@@ -95,14 +156,24 @@ const NotificationEmailModal: React.FC<NotificationEmailModalProps> = ({
       }
       const { data: prop, error } = await supabase
         .from('properties')
-        .select('primary_contact_email, ap_email')
+        .select(`
+          primary_contact_email,
+          ap_email,
+          community_manager_email,
+          maintenance_supervisor_email,
+          community_manager_secondary_email,
+          maintenance_supervisor_secondary_email,
+          ap_secondary_email,
+          primary_contact_secondary_email
+        `)
         .eq('id', job.property.id)
         .single();
       const preferred = error
         ? (job?.property?.primary_contact_email || job?.property?.ap_email || '')
         : (prop?.primary_contact_email || prop?.ap_email || '');
+      const secondaryEmail = await resolveSecondaryEmail(job.property.id, preferred, prop);
       setRecipientEmail(preferred);
-      setCcEmails('');
+      setCcEmails(secondaryEmail || '');
       setBccEmails('');
     } catch {
       const preferred =

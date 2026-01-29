@@ -324,7 +324,8 @@ export function JobImportManager() {
           p_job_type_id: result.parsedData.job_type_id,
           p_description: result.data['Description'] || '',
           p_scheduled_date: result.parsedData.scheduled_date,
-          p_job_category_id: result.parsedData.job_category_id
+          p_job_category_id: result.parsedData.job_category_id,
+          p_purchase_order: (result.data['Purchase Order'] as string | undefined)?.trim() || null
         });
 
         if (error) {

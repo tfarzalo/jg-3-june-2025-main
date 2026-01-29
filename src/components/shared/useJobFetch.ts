@@ -88,6 +88,7 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
           invoice_paid,
           invoice_sent_date,
           invoice_paid_date,
+          purchase_order,
           property:properties (
             id,
             property_name,
@@ -189,6 +190,7 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
             invoice_paid: job.invoice_paid,
             invoice_sent_date: job.invoice_sent_date,
             invoice_paid_date: job.invoice_paid_date,
+            purchase_order: job.purchase_order,
             property: Array.isArray(job.property) ? job.property[0] : job.property,
             unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
             job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,

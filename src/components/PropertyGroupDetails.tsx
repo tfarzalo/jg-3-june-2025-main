@@ -115,9 +115,16 @@ export function PropertyGroupDetails() {
   }
 
   return (
-    <div className="p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen smooth-scroll">
+    <div className="p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
+      {/* Header Section */}
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center space-x-3">
+          <button
+            onClick={() => navigate('/dashboard/property-groups')}
+            className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+          >
+            <ArrowLeft className="h-6 w-6" />
+          </button>
           <Building2 className="h-8 w-8 text-gray-600 dark:text-gray-400" />
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
             {group.company_name}
@@ -176,15 +183,20 @@ export function PropertyGroupDetails() {
 
       <div className="space-y-8">
         {/* Top Row: Group Information and Location */}
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
-          {/* Group Information - 2/4 width */}
-          <div id="group-info" className="xl:col-span-2 bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-            <div className="flex items-center mb-4">
-              <Building2 className="h-6 w-6 text-blue-600 dark:text-blue-400 mr-3" />
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Group Information</h2>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          {/* Group Information */}
+          <div id="group-info" className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 px-6 py-4">
+              <h2 className="text-xl font-semibold text-white flex items-center">
+                <Building2 className="h-5 w-5 mr-2" />
+                Group Information
+              </h2>
             </div>
             
-            <div className="space-y-4">
+            {/* Content */}
+            <div className="p-6">
+              <div className="space-y-4">
               <div className="flex items-start">
                 <MapPin className="h-5 w-5 text-gray-500 dark:text-gray-400 mt-1 mr-3 flex-shrink-0" />
                 <div>
@@ -199,15 +211,21 @@ export function PropertyGroupDetails() {
               </div>
             </div>
           </div>
+          </div>
 
-          {/* Location Map - 2/4 width */}
-          <div id="location" className="xl:col-span-2 bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-            <div className="flex items-center mb-4">
-              <MapPin className="h-6 w-6 text-blue-600 dark:text-blue-400 mr-3" />
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Group Location</h2>
+          {/* Location Map */}
+          <div id="location" className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 dark:from-green-700 dark:to-green-800 px-6 py-4">
+              <h2 className="text-xl font-semibold text-white flex items-center">
+                <MapPin className="h-5 w-5 mr-2" />
+                Group Location
+              </h2>
             </div>
             
-            {group && group.address ? (
+            {/* Content */}
+            <div className="p-6">
+              {group && group.address ? (
               <PropertyMap 
                 address={formattedAddress}
                 className="w-full h-72 xl:h-80 rounded-lg overflow-hidden"
@@ -229,13 +247,18 @@ export function PropertyGroupDetails() {
         {/* Second Row: Contacts and Properties */}
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           {/* Contact Information */}
-          <div id="contacts" className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-            <div className="flex items-center mb-4">
-              <User className="h-6 w-6 text-blue-600 dark:text-blue-400 mr-3" />
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Contact Information</h2>
+          <div id="contacts" className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-purple-600 to-purple-700 dark:from-purple-700 dark:to-purple-800 px-6 py-4">
+              <h2 className="text-xl font-semibold text-white flex items-center">
+                <User className="h-5 w-5 mr-2" />
+                Contact Information
+              </h2>
             </div>
             
-            <div className="space-y-4">
+            {/* Content */}
+            <div className="p-6">
+              <div className="space-y-4">
               <div className="flex items-start">
                 <User className="h-5 w-5 text-gray-500 dark:text-gray-400 mt-1 mr-3 flex-shrink-0" />
                 <div>
@@ -261,12 +284,17 @@ export function PropertyGroupDetails() {
           </div>
 
           {/* Properties */}
-          <div id="properties" className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-            <div className="flex items-center mb-4">
-              <Building className="h-6 w-6 text-blue-600 dark:text-blue-400 mr-3" />
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Properties ({group.properties?.length || 0})</h2>
+          <div id="properties" className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-orange-600 to-orange-700 dark:from-orange-700 dark:to-orange-800 px-6 py-4">
+              <h2 className="text-xl font-semibold text-white flex items-center">
+                <Building className="h-5 w-5 mr-2" />
+                Properties ({group.properties?.length || 0})
+              </h2>
             </div>
             
+            {/* Content */}
+            <div className="p-6">
             <div className="space-y-4 max-h-80 overflow-y-auto">
               {group.properties && group.properties.length > 0 ? (
                 group.properties.map(property => (
@@ -294,6 +322,9 @@ export function PropertyGroupDetails() {
             </div>
           </div>
         </div>
+      </div>
+      </div>
+      </div>
       </div>
     </div>
   );

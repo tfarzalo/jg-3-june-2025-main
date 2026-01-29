@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { 
+import {
   Building2, 
   Pencil, 
   MapPin, 
@@ -13,6 +13,8 @@ import {
   ClipboardCheck,
   FileText,
   X,
+  Check,
+  Edit,
   Save,
   Trash2,
   ArrowLeft,
@@ -57,20 +59,24 @@ interface Property {
   community_manager_email: string;
   community_manager_phone: string;
   community_manager_title: string | null;
+  community_manager_secondary_email?: string | null;
   maintenance_supervisor_name: string;
   maintenance_supervisor_email: string;
   maintenance_supervisor_phone: string;
   maintenance_supervisor_title: string | null;
+  maintenance_supervisor_secondary_email?: string | null;
   point_of_contact: string;
   primary_contact_name: string;
   primary_contact_phone: string;
   primary_contact_role: string;
   primary_contact_email?: string | null;
+  primary_contact_secondary_email?: string | null;
   subcontractor_a: string;
   subcontractor_b: string;
   ap_name: string;
   ap_email: string;
   ap_phone: string;
+  ap_secondary_email?: string | null;
   billing_notes: string;
   extra_charges_notes: string;
   occupied_regular_paint_fees: string;
@@ -157,6 +163,7 @@ interface PropertyContact {
   name: string | null;
   email: string | null;
   phone: string | null;
+  secondary_email?: string | null;
 }
 
 export function PropertyDetails() {
@@ -173,6 +180,12 @@ export function PropertyDetails() {
   const [updates, setUpdates] = useState<PropertyUpdate[]>([]);
   const [paintSchemes, setPaintSchemes] = useState<PaintScheme[]>([]);
   const [contacts, setContacts] = useState<PropertyContact[]>([]);
+  const [editingSecondaryEmailContactId, setEditingSecondaryEmailContactId] = useState<string | null>(null);
+  const [secondaryEmailDraft, setSecondaryEmailDraft] = useState('');
+  const [secondaryEmailSavingContactId, setSecondaryEmailSavingContactId] = useState<string | null>(null);
+  const [editingPropertySecondaryEmailField, setEditingPropertySecondaryEmailField] = useState<string | null>(null);
+  const [propertySecondaryEmailDraft, setPropertySecondaryEmailDraft] = useState('');
+  const [propertySecondaryEmailSavingField, setPropertySecondaryEmailSavingField] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [unitMapUrl, setUnitMapUrl] = useState<string | null>(null);
   const [notificationContactSource, setNotificationContactSource] = useState<string>('community_manager');
@@ -305,6 +318,69 @@ export function PropertyDetails() {
     } else {
       const contact = contacts.find(c => c.id === source);
       updateNotificationEmail(contact?.email || null);
+    }
+  };
+
+  const cancelSecondaryEmailEdit = () => {
+    setEditingSecondaryEmailContactId(null);
+    setSecondaryEmailDraft('');
+  };
+
+  const cancelPropertySecondaryEmailEdit = () => {
+    setEditingPropertySecondaryEmailField(null);
+    setPropertySecondaryEmailDraft('');
+  };
+
+  const handleSaveSecondaryEmail = async (contactId: string) => {
+    setSecondaryEmailSavingContactId(contactId);
+    const trimmedEmail = secondaryEmailDraft.trim();
+
+    try {
+      const { error } = await supabase
+        .from('property_contacts')
+        .update({ secondary_email: trimmedEmail || null })
+        .eq('id', contactId);
+
+      if (error) throw error;
+
+      setContacts(prev =>
+        prev.map(contact =>
+          contact.id === contactId
+            ? { ...contact, secondary_email: trimmedEmail || null }
+            : contact
+        )
+      );
+      toast.success('Secondary email saved');
+      cancelSecondaryEmailEdit();
+    } catch (err) {
+      console.error('Error saving secondary email:', err);
+      toast.error('Unable to save secondary email');
+    } finally {
+      setSecondaryEmailSavingContactId(null);
+    }
+  };
+
+  const handleSavePropertySecondaryEmail = async (field: string) => {
+    if (!propertyId) return;
+    setPropertySecondaryEmailSavingField(field);
+    const trimmedEmail = propertySecondaryEmailDraft.trim();
+
+    try {
+      const { error } = await supabase
+        .from('properties')
+        .update({ [field]: trimmedEmail || null })
+        .eq('id', propertyId);
+
+      if (error) throw error;
+
+      setProperty(prev => (prev ? { ...prev, [field]: trimmedEmail || null } as Property : prev));
+      toast.success('Secondary email saved');
+      cancelPropertySecondaryEmailEdit();
+    } catch (err) {
+      console.error('Error saving secondary email:', err);
+      toast.error('Unable to save secondary email');
+    } finally {
+      setPropertySecondaryEmailSavingField(null);
     }
   };
 
@@ -898,34 +974,45 @@ export function PropertyDetails() {
         {/* Top Row: Header Information */}
         <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
           {/* Property Location Map - 2/4 width */}
-          <div className="xl:col-span-2 bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-            <div className="flex items-center mb-4">
-              <MapPin className="h-6 w-6 text-blue-600 dark:text-blue-400 mr-3" />
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Property Location</h2>
+          <div className="xl:col-span-2 bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 px-6 py-4">
+              <h2 className="text-xl font-semibold text-white flex items-center">
+                <MapPin className="h-5 w-5 mr-2" />
+                Property Location
+              </h2>
             </div>
             
-            {property && property.address ? (
-              <PropertyMap 
-                address={formattedAddress}
-                className="w-full h-72 xl:h-80 rounded-lg overflow-hidden"
-              />
-            ) : (
-              <div className="flex items-center justify-center h-72 xl:h-80 bg-gray-50 dark:bg-[#0F172A] rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
-                <div className="text-center">
-                  <MapPin className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-500 dark:text-gray-400 font-medium">No address available</p>
+            {/* Content */}
+            <div className="p-6">
+              {property && property.address ? (
+                <PropertyMap 
+                  address={formattedAddress}
+                  className="w-full h-72 xl:h-80 rounded-lg overflow-hidden"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-72 xl:h-80 bg-gray-50 dark:bg-[#0F172A] rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+                  <div className="text-center">
+                    <MapPin className="h-12 w-12 text-gray-400 mx-auto mb-2" />
+                    <p className="text-gray-500 dark:text-gray-400 font-medium">No address available</p>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           {/* Basic Information - 1/4 width */}
-          <div id="basic-info" className="xl:col-span-1 bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-              <Building2 className="h-5 w-5 text-blue-600 dark:text-blue-400 mr-2" />
-              Basic Info
-            </h3>
-            <div className="space-y-4">
+          <div id="basic-info" className="xl:col-span-1 bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-purple-600 to-purple-700 dark:from-purple-700 dark:to-purple-800 px-6 py-4">
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                <Building2 className="h-5 w-5 mr-2" />
+                Basic Info
+              </h3>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6 space-y-4">
               <div className="flex items-start">
                 <MapPin className="h-4 w-4 text-gray-500 dark:text-gray-400 mt-1 mr-3 flex-shrink-0" />
                 <div className="min-w-0 flex-1">
@@ -1007,10 +1094,69 @@ export function PropertyDetails() {
                               </div>
                             )}
                             {contact.email && (
-                              <div className="flex items-center">
-                                <Mail className="h-3 w-3 text-gray-500 dark:text-gray-400 mr-2 flex-shrink-0" />
-                                <span className="text-gray-600 dark:text-gray-300 text-sm">{contact.email}</span>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center">
+                                  <Mail className="h-3 w-3 text-gray-500 dark:text-gray-400 mr-2 flex-shrink-0" />
+                                  <span className="text-gray-600 dark:text-gray-300 text-sm">{contact.email}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    cancelPropertySecondaryEmailEdit();
+                                    setEditingSecondaryEmailContactId(contact.id);
+                                    setSecondaryEmailDraft(contact.secondary_email || '');
+                                  }}
+                                  className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                                  title="Add or edit secondary email"
+                                >
+                                  {contact.secondary_email ? (
+                                    <Edit className="h-3 w-3 text-green-600" />
+                                  ) : (
+                                    <Plus className="h-3 w-3 text-gray-500" />
+                                  )}
+                                </button>
                               </div>
+                            )}
+                            {contact.secondary_email && (
+                              <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                                <Mail className="h-3 w-3 mr-2 flex-shrink-0 text-gray-500" />
+                                <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Secondary:</span>
+                                <span className="ml-1 text-gray-600 dark:text-gray-300 text-sm">{contact.secondary_email}</span>
+                              </div>
+                            )}
+                            {editingSecondaryEmailContactId === contact.id && (
+                              <form
+                                onSubmit={async (e) => {
+                                  e.preventDefault();
+                                  await handleSaveSecondaryEmail(contact.id);
+                                }}
+                                className="flex items-center space-x-2 mt-2"
+                              >
+                                <input
+                                  type="email"
+                                  value={secondaryEmailDraft}
+                                  onChange={(e) => setSecondaryEmailDraft(e.target.value)}
+                                  className="flex-1 h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  placeholder="Secondary Email"
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={secondaryEmailSavingContactId === contact.id}
+                                  className="inline-flex items-center px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-white"
+                                >
+                                  <Check className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    cancelSecondaryEmailEdit();
+                                  }}
+                                  className="inline-flex items-center px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </form>
                             )}
                             {contact.phone && (
                               <div className="flex items-center">
@@ -1028,12 +1174,17 @@ export function PropertyDetails() {
           </div>
 
           {/* Quick Stats - 1/4 width */}
-          <div className="xl:col-span-1 bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-              <Clipboard className="h-5 w-5 text-green-600 dark:text-green-400 mr-2" />
-              Quick Stats
-            </h3>
-            <div className="space-y-3">
+          <div className="xl:col-span-1 bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 dark:from-green-700 dark:to-green-800 px-6 py-4">
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                <Clipboard className="h-5 w-5 mr-2" />
+                Quick Stats
+              </h3>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6 space-y-3">
               {/* Top row - 2x3 grid */}
               <div className="grid grid-cols-2 gap-3">
                 <StatCard
@@ -1092,12 +1243,17 @@ export function PropertyDetails() {
         {/* Second Row: Property Unit Map & Contact Information */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Contact Information (now first) */}
-          <div id="contacts" className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800 order-2 lg:order-1">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6 flex items-center">
-              <User className="h-5 w-5 text-blue-600 dark:text-blue-400 mr-2" />
-              Contact Information
-            </h3>
-            <div className="space-y-6">
+          <div id="contacts" className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden order-2 lg:order-1">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 dark:from-indigo-700 dark:to-indigo-800 px-6 py-4">
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                <User className="h-5 w-5 mr-2" />
+                Contact Information
+              </h3>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6 space-y-6">
               {(property.community_manager_name || property.community_manager_email || property.community_manager_phone) && (
                 <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                   <h4 className="text-sm font-bold text-blue-800 dark:text-blue-200 mb-3 uppercase tracking-wide">
@@ -1122,10 +1278,69 @@ export function PropertyDetails() {
                       </div>
                     )}
                     {property.community_manager_email && (
-                      <div className="flex items-center">
-                        <Mail className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">{property.community_manager_email}</span>
-                      </div>
+                      <>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <Mail className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
+                            <span className="text-gray-900 dark:text-white text-sm">{property.community_manager_email}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              cancelSecondaryEmailEdit();
+                              setEditingPropertySecondaryEmailField('community_manager_secondary_email');
+                              setPropertySecondaryEmailDraft(property.community_manager_secondary_email || '');
+                            }}
+                            className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                            title="Add or edit secondary email"
+                          >
+                            {property.community_manager_secondary_email ? (
+                              <Edit className="h-3 w-3 text-green-600" />
+                            ) : (
+                              <Plus className="h-3 w-3 text-gray-500" />
+                            )}
+                          </button>
+                        </div>
+                        {property.community_manager_secondary_email && (
+                          <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                            <Mail className="h-3 w-3 mr-2 flex-shrink-0 text-gray-500" />
+                            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Secondary:</span>
+                            <span className="ml-1 text-gray-900 dark:text-white text-sm">{property.community_manager_secondary_email}</span>
+                          </div>
+                        )}
+                        {editingPropertySecondaryEmailField === 'community_manager_secondary_email' && (
+                          <form
+                            onSubmit={async (e) => {
+                              e.preventDefault();
+                              await handleSavePropertySecondaryEmail('community_manager_secondary_email');
+                            }}
+                            className="flex items-center space-x-2 mt-2"
+                          >
+                            <input
+                              type="email"
+                              value={propertySecondaryEmailDraft}
+                              onChange={(e) => setPropertySecondaryEmailDraft(e.target.value)}
+                              className="flex-1 h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder="Secondary Email"
+                            />
+                            <button
+                              type="submit"
+                              disabled={propertySecondaryEmailSavingField === 'community_manager_secondary_email'}
+                              className="inline-flex items-center px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-white"
+                            >
+                              <Check className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelPropertySecondaryEmailEdit}
+                              className="inline-flex items-center px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </form>
+                        )}
+                      </>
                     )}
                     {property.community_manager_phone && (
                       <div className="flex items-center">
@@ -1161,10 +1376,69 @@ export function PropertyDetails() {
                       </div>
                     )}
                     {property.maintenance_supervisor_email && (
-                      <div className="flex items-center">
-                        <Mail className="h-4 w-4 text-green-600 dark:text-green-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">{property.maintenance_supervisor_email}</span>
-                      </div>
+                      <>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <Mail className="h-4 w-4 text-green-600 dark:text-green-400 mr-2 flex-shrink-0" />
+                            <span className="text-gray-900 dark:text-white text-sm">{property.maintenance_supervisor_email}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              cancelSecondaryEmailEdit();
+                              setEditingPropertySecondaryEmailField('maintenance_supervisor_secondary_email');
+                              setPropertySecondaryEmailDraft(property.maintenance_supervisor_secondary_email || '');
+                            }}
+                            className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                            title="Add or edit secondary email"
+                          >
+                            {property.maintenance_supervisor_secondary_email ? (
+                              <Edit className="h-3 w-3 text-green-600" />
+                            ) : (
+                              <Plus className="h-3 w-3 text-gray-500" />
+                            )}
+                          </button>
+                        </div>
+                        {property.maintenance_supervisor_secondary_email && (
+                          <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                            <Mail className="h-3 w-3 mr-2 flex-shrink-0 text-gray-500" />
+                            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Secondary:</span>
+                            <span className="ml-1 text-gray-900 dark:text-white text-sm">{property.maintenance_supervisor_secondary_email}</span>
+                          </div>
+                        )}
+                        {editingPropertySecondaryEmailField === 'maintenance_supervisor_secondary_email' && (
+                          <form
+                            onSubmit={async (e) => {
+                              e.preventDefault();
+                              await handleSavePropertySecondaryEmail('maintenance_supervisor_secondary_email');
+                            }}
+                            className="flex items-center space-x-2 mt-2"
+                          >
+                            <input
+                              type="email"
+                              value={propertySecondaryEmailDraft}
+                              onChange={(e) => setPropertySecondaryEmailDraft(e.target.value)}
+                              className="flex-1 h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder="Secondary Email"
+                            />
+                            <button
+                              type="submit"
+                              disabled={propertySecondaryEmailSavingField === 'maintenance_supervisor_secondary_email'}
+                              className="inline-flex items-center px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-white"
+                            >
+                              <Check className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelPropertySecondaryEmailEdit}
+                              className="inline-flex items-center px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </form>
+                        )}
+                      </>
                     )}
                     {property.maintenance_supervisor_phone && (
                       <div className="flex items-center">
@@ -1199,10 +1473,69 @@ export function PropertyDetails() {
                       </div>
                     )}
                     {property.primary_contact_email && (
-                      <div className="flex items-center">
-                        <Mail className="h-4 w-4 text-purple-600 dark:text-purple-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">{property.primary_contact_email}</span>
-                      </div>
+                      <>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <Mail className="h-4 w-4 text-purple-600 dark:text-purple-400 mr-2 flex-shrink-0" />
+                            <span className="text-gray-900 dark:text-white text-sm">{property.primary_contact_email}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              cancelSecondaryEmailEdit();
+                              setEditingPropertySecondaryEmailField('primary_contact_secondary_email');
+                              setPropertySecondaryEmailDraft(property.primary_contact_secondary_email || '');
+                            }}
+                            className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                            title="Add or edit secondary email"
+                          >
+                            {property.primary_contact_secondary_email ? (
+                              <Edit className="h-3 w-3 text-green-600" />
+                            ) : (
+                              <Plus className="h-3 w-3 text-gray-500" />
+                            )}
+                          </button>
+                        </div>
+                        {property.primary_contact_secondary_email && (
+                          <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                            <Mail className="h-3 w-3 mr-2 flex-shrink-0 text-gray-500" />
+                            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Secondary:</span>
+                            <span className="ml-1 text-gray-900 dark:text-white text-sm">{property.primary_contact_secondary_email}</span>
+                          </div>
+                        )}
+                        {editingPropertySecondaryEmailField === 'primary_contact_secondary_email' && (
+                          <form
+                            onSubmit={async (e) => {
+                              e.preventDefault();
+                              await handleSavePropertySecondaryEmail('primary_contact_secondary_email');
+                            }}
+                            className="flex items-center space-x-2 mt-2"
+                          >
+                            <input
+                              type="email"
+                              value={propertySecondaryEmailDraft}
+                              onChange={(e) => setPropertySecondaryEmailDraft(e.target.value)}
+                              className="flex-1 h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder="Secondary Email"
+                            />
+                            <button
+                              type="submit"
+                              disabled={propertySecondaryEmailSavingField === 'primary_contact_secondary_email'}
+                              className="inline-flex items-center px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-white"
+                            >
+                              <Check className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelPropertySecondaryEmailEdit}
+                              className="inline-flex items-center px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </form>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -1232,12 +1565,18 @@ export function PropertyDetails() {
 
           {/* Property Unit Map (now second) */}
           {property.unit_map_file_path && unitMapUrl ? (
-            <div className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800 order-1 lg:order-2">
-              <div className="flex items-center mb-4">
-                <FileText className="h-5 w-5 text-indigo-600 dark:text-indigo-400 mr-2" />
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Property Unit Map</h3>
+            <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden order-1 lg:order-2">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-orange-600 to-orange-700 dark:from-orange-700 dark:to-orange-800 px-6 py-4">
+                <h3 className="text-lg font-semibold text-white flex items-center">
+                  <FileText className="h-5 w-5 mr-2" />
+                  Property Unit Map
+                </h3>
               </div>
-              <div className="relative w-full h-80 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden group cursor-pointer" style={{ pointerEvents: 'auto' }}>
+              
+              {/* Content */}
+              <div className="p-6">
+                <div className="relative w-full h-80 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden group cursor-pointer" style={{ pointerEvents: 'auto' }}>
                 <img 
                   src={unitMapUrl || ''}
                   alt="Property Unit Map" 
@@ -1250,7 +1589,7 @@ export function PropertyDetails() {
                     e.currentTarget.nextElementSibling?.classList.remove('hidden');
                   }}
                 />
-                <div className="hidden absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-800 pointer-events-none">
+                <div className="hidden absolute inset-0 items-center justify-center bg-gray-100 dark:bg-gray-800 pointer-events-none">
                   <div className="text-center">
                     <FileText className="h-8 w-8 mx-auto mb-2 text-gray-400" />
                     <p className="font-medium text-sm">Unable to load image</p>
@@ -1262,19 +1601,27 @@ export function PropertyDetails() {
                   <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white dark:bg-gray-800 rounded-full p-3 shadow-lg">
                     <ZoomIn className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                   </div>
+                  </div>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800 order-1 lg:order-2">
-              <div className="flex items-center mb-4">
-                <FileText className="h-5 w-5 text-gray-400 mr-2" />
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Property Unit Map</h3>
+            <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden order-1 lg:order-2">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-orange-600 to-orange-700 dark:from-orange-700 dark:to-orange-800 px-6 py-4">
+                <h3 className="text-lg font-semibold text-white flex items-center">
+                  <FileText className="h-5 w-5 mr-2" />
+                  Property Unit Map
+                </h3>
               </div>
-              <div className="flex items-center justify-center h-64 bg-gray-50 dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
-                <div className="text-center">
-                  <FileText className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                  <p className="text-gray-500 dark:text-gray-400 text-sm">No unit map uploaded</p>
+              
+              {/* Content */}
+              <div className="p-6">
+                <div className="flex items-center justify-center h-64 bg-gray-50 dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+                  <div className="text-center">
+                    <FileText className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                    <p className="text-gray-500 dark:text-gray-400 text-sm">No unit map uploaded</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1282,13 +1629,18 @@ export function PropertyDetails() {
         </div>
 
         {/* Compliance Information - Full Width */}
-        <div className="grid grid-cols-1">
-          <div id="compliance" className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6 flex items-center">
-              <ClipboardCheck className="h-5 w-5 text-green-600 dark:text-green-400 mr-2" />
+        <div id="compliance" className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 dark:from-emerald-700 dark:to-emerald-800 px-6 py-4">
+            <h3 className="text-lg font-semibold text-white flex items-center">
+              <ClipboardCheck className="h-5 w-5 mr-2" />
               Compliance Status
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          </div>
+          
+          {/* Content */}
+          <div className="p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {complianceItems.map(item => (
                 <div key={item.label} className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                   <div className="flex justify-between items-center">
@@ -1300,43 +1652,54 @@ export function PropertyDetails() {
                   <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                     {item.date ? `Date: ${formatComplianceDate(item.date)}` : 'No date set'}
                   </div>
-                </div>
-              ))}
+                </div>                ))}
+              </div>
             </div>
           </div>
-        </div>
 
         {/* Fourth Row: Paint Colors and Billing Information */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Paint Colors */}
-          <div id="paint-colors" className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6 flex items-center">
-              <Clipboard className="h-5 w-5 text-blue-600 dark:text-blue-400 mr-2" />
-              Paint Colors
-            </h3>
+          <div id="paint-colors" className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-teal-600 to-teal-700 dark:from-teal-700 dark:to-teal-800 px-6 py-4">
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                <Clipboard className="h-5 w-5 mr-2" />
+                Paint Colors
+              </h3>
+            </div>
             
-            {/* Paint Location */}
-            {property.paint_location && (
-              <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                <div className="flex items-center">
-                  <MapPin className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm font-bold text-blue-800 dark:text-blue-200 uppercase tracking-wide mb-1">Paint Storage Location</p>
-                    <p className="text-gray-900 dark:text-white text-sm">{property.paint_location}</p>
+            {/* Content */}
+            <div className="p-6">
+              {/* Paint Location */}
+              {property.paint_location && (
+                <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-center">
+                    <MapPin className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-blue-800 dark:text-blue-200 uppercase tracking-wide mb-1">Paint Storage Location</p>
+                      <p className="text-gray-900 dark:text-white text-sm">{property.paint_location}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-            
-            <PaintColorsViewer items={paintSchemes} />
+              )}
+              
+              <PaintColorsViewer items={paintSchemes} />
+            </div>
           </div>
 
-              {/* Billing Information */}
-              <div className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6 flex items-center">
-                  <Clipboard className="h-5 w-5 text-blue-600 dark:text-blue-400 mr-2" />
-                  Billing Information
-                </h3>
+          {/* Billing Information */}
+          <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-amber-600 to-amber-700 dark:from-amber-700 dark:to-amber-800 px-6 py-4">
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                <Clipboard className="h-5 w-5 mr-2" />
+                Billing Information
+              </h3>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6">
                 <div className="space-y-6">
                   {/* AP Contact */}
                   {(property.ap_name || property.ap_email || property.ap_phone) && (
@@ -1361,10 +1724,69 @@ export function PropertyDetails() {
                       </div>
                     )}
                     {property.ap_email && (
-                      <div className="flex items-center">
-                        <Mail className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">{property.ap_email}</span>
-                      </div>
+                      <>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <Mail className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
+                            <span className="text-gray-900 dark:text-white text-sm">{property.ap_email}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              cancelSecondaryEmailEdit();
+                              setEditingPropertySecondaryEmailField('ap_secondary_email');
+                              setPropertySecondaryEmailDraft(property.ap_secondary_email || '');
+                            }}
+                            className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                            title="Add or edit secondary email"
+                          >
+                            {property.ap_secondary_email ? (
+                              <Edit className="h-3 w-3 text-green-600" />
+                            ) : (
+                              <Plus className="h-3 w-3 text-gray-500" />
+                            )}
+                          </button>
+                        </div>
+                        {property.ap_secondary_email && (
+                          <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                            <Mail className="h-3 w-3 mr-2 flex-shrink-0 text-gray-500" />
+                            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Secondary:</span>
+                            <span className="ml-1 text-gray-900 dark:text-white text-sm">{property.ap_secondary_email}</span>
+                          </div>
+                        )}
+                        {editingPropertySecondaryEmailField === 'ap_secondary_email' && (
+                          <form
+                            onSubmit={async (e) => {
+                              e.preventDefault();
+                              await handleSavePropertySecondaryEmail('ap_secondary_email');
+                            }}
+                            className="flex items-center space-x-2 mt-2"
+                          >
+                            <input
+                              type="email"
+                              value={propertySecondaryEmailDraft}
+                              onChange={(e) => setPropertySecondaryEmailDraft(e.target.value)}
+                              className="flex-1 h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder="Secondary Email"
+                            />
+                            <button
+                              type="submit"
+                              disabled={propertySecondaryEmailSavingField === 'ap_secondary_email'}
+                              className="inline-flex items-center px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-white"
+                            >
+                              <Check className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelPropertySecondaryEmailEdit}
+                              className="inline-flex items-center px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </form>
+                        )}
+                      </>
                     )}
                     {property.ap_phone && (
                       <div className="flex items-center">
@@ -1413,11 +1835,17 @@ export function PropertyDetails() {
 
         {/* Fifth Row: Billing Details (Full Width) */}
         {categories.length > 0 && (
-          <div id="billing-details" className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6 flex items-center">
-              <Clipboard className="h-5 w-5 text-green-600 dark:text-green-400 mr-2" />
-              Billing Details
-            </h3>
+          <div id="billing-details" className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 dark:from-green-700 dark:to-green-800 px-6 py-4">
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                <Clipboard className="h-5 w-5 mr-2" />
+                Billing Details
+              </h3>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6">
             <div className="overflow-x-auto">
               <div className="space-y-4 min-w-max">
                 {categories
@@ -1481,76 +1909,84 @@ export function PropertyDetails() {
                 ))}
               </div>
             </div>
+            </div>
           </div>
         )}
 
         {/* Sixth Row: Callbacks (Full Width) */}
-        <div id="callbacks" className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
-              <Clipboard className="h-5 w-5 text-red-600 dark:text-red-400 mr-2" />
-              Callbacks
-            </h3>
-            <button
-              onClick={() => setShowCallbackForm(true)}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Callback
-            </button>
+        <div id="callbacks" className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-red-600 to-red-700 dark:from-red-700 dark:to-red-800 px-6 py-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                <Clipboard className="h-5 w-5 mr-2" />
+                Callbacks
+              </h3>
+              <button
+                onClick={() => setShowCallbackForm(true)}
+                className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-medium rounded-lg transition-colors flex items-center backdrop-blur-sm"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Callback
+              </button>
+            </div>
           </div>
+          
+          {/* Content */}
+          <div className="p-6">
 
-          {callbacks.length === 0 ? (
-            <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-              <Clipboard className="h-12 w-12 mx-auto mb-3 text-gray-400" />
-              <p className="font-medium">No callbacks recorded for this property</p>
-              <p className="text-sm">Click "Add Callback" to get started</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-[#0F172A]">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Painter</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Unit</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Reason</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Posted By</th>
-                    <th scope="col" className="px-6 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white dark:bg-[#1E293B] divide-y divide-gray-200 dark:divide-gray-700">
-                  {callbacks.map((callback) => (
-                    <tr key={callback.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {formatDate(callback.callback_date)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {callback.painter || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {callback.unit_number}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                        {callback.reason}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {callback.poster?.full_name || 'Unknown'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button
-                          onClick={() => setShowDeleteCallbackConfirm(callback.id)}
-                          className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
+            {callbacks.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                <Clipboard className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                <p className="font-medium">No callbacks recorded for this property</p>
+                <p className="text-sm">Click "Add Callback" to get started</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-[#0F172A]">
+                    <tr>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Painter</th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Unit</th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Reason</th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Posted By</th>
+                      <th scope="col" className="px-6 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody className="bg-white dark:bg-[#1E293B] divide-y divide-gray-200 dark:divide-gray-700">
+                    {callbacks.map((callback) => (
+                      <tr key={callback.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          {formatDate(callback.callback_date)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          {callback.painter || 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          {callback.unit_number}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                          {callback.reason}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          {callback.poster?.full_name || 'Unknown'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button
+                            onClick={() => setShowDeleteCallbackConfirm(callback.id)}
+                            className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
           {/* Add Callback Form */}
           {showCallbackForm && (
@@ -1659,66 +2095,75 @@ export function PropertyDetails() {
         </div>
 
         {/* Property Updates Section */}
-        <div id="notes-updates" className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow-lg lg:col-span-3">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
-              <FileText className="h-5 w-5 text-green-600 dark:text-green-400 mr-2" />
-              Notes and Important Updates
-            </h3>
-            <button
-              onClick={() => setShowUpdateForm(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              <Plus className="h-4 w-4 mr-2 inline-block" />
-              Add Update
-            </button>
+        <div id="notes-updates" className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-cyan-600 to-cyan-700 dark:from-cyan-700 dark:to-cyan-800 px-6 py-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                <FileText className="h-5 w-5 mr-2" />
+                Notes and Important Updates
+              </h3>
+              <button
+                onClick={() => setShowUpdateForm(true)}
+                className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-medium rounded-lg transition-colors backdrop-blur-sm"
+              >
+                <Plus className="h-4 w-4 mr-2 inline-block" />
+                Add Update
+              </button>
+            </div>
           </div>
+          
+          {/* Content */}
+          <div className="p-6">
 
-          {updates.length === 0 ? (
-            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-              No updates recorded for this property
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-[#0F172A]">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Update Type</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Note / Update</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Posted By</th>
-                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white dark:bg-[#1E293B] divide-y divide-gray-200 dark:divide-gray-700">
-                  {updates.map((update) => (
-                    <tr key={update.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {formatDate(update.update_date)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {update.update_type}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                        {update.note}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {update.poster?.full_name || 'Unknown'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button
-                          onClick={() => setShowDeleteUpdateConfirm(update.id)}
-                          className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
+            {updates.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                <FileText className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                <p className="font-medium">No updates recorded for this property</p>
+                <p className="text-sm">Click "Add Update" to get started</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-[#0F172A]">
+                    <tr>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Update Type</th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Note / Update</th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Posted By</th>
+                      <th scope="col" className="px-6 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody className="bg-white dark:bg-[#1E293B] divide-y divide-gray-200 dark:divide-gray-700">
+                    {updates.map((update) => (
+                      <tr key={update.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          {formatDate(update.update_date)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          {update.update_type}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                          {update.note}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          {update.poster?.full_name || 'Unknown'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <button
+                            onClick={() => setShowDeleteUpdateConfirm(update.id)}
+                            className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
           {/* Add Update Form */}
           {showUpdateForm && (
@@ -1820,128 +2265,140 @@ export function PropertyDetails() {
         </div>
 
         {/* Property Files Section */}
-        <div id="property-files" className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
-              <FolderOpen className="h-5 w-5 text-purple-600 dark:text-purple-400 mr-2" />
-              Property Files
-            </h3>
-            <button
-              onClick={() => navigate(`/dashboard/files?property_id=${propertyId}`)}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              Open File Manager
-            </button>
+        <div id="property-files" className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-purple-600 to-purple-700 dark:from-purple-700 dark:to-purple-800 px-6 py-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                <FolderOpen className="h-5 w-5 mr-2" />
+                Property Files
+              </h3>
+              <button
+                onClick={() => navigate(`/dashboard/files?property_id=${propertyId}`)}
+                className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-medium rounded-lg transition-colors backdrop-blur-sm"
+              >
+                Open File Manager
+              </button>
+            </div>
           </div>
-
-          <PropertyFilesPreview propertyId={propertyId} />
+          
+          {/* Content */}
+          <div className="p-6">
+            <PropertyFilesPreview propertyId={propertyId} />
+          </div>
         </div>
 
         {/* Property Job History (standalone, directly below Notes) */}
-        <div id="job-history" className="bg-white dark:bg-[#1E293B] rounded-xl p-6 shadow-lg border border-gray-100 dark:border-gray-800">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center">
-              <Clipboard className="h-5 w-5 text-blue-600 dark:text-blue-400 mr-2" />
+        <div id="job-history" className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 px-6 py-4">
+            <h3 className="text-lg font-semibold text-white flex items-center">
+              <Clipboard className="h-5 w-5 mr-2" />
               Property Job History
               {!jobsLoading && propertyJobs.length > 0 && (
-                <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
+                <span className="ml-2 text-sm font-normal text-white/80">
                   ({propertyJobs.length} jobs)
                 </span>
               )}
             </h3>
           </div>
+          
+          {/* Content */}
+          <div className="p-6">
 
-          {jobsLoading ? (
-            <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
-              <p className="font-medium">Loading job history...</p>
-            </div>
-          ) : propertyJobs.length === 0 ? (
-            <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-              <Clipboard className="h-12 w-12 mx-auto mb-3 text-gray-400" />
-              <p className="font-medium">No job history recorded for this property</p>
-              <p className="text-sm">Job requests and work orders will appear here</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-[#0F172A]">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Work Order #
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Job Phase
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Unit #
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Unit Size
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Job Type
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Description
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Scheduled Date
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white dark:bg-[#1E293B] divide-y divide-gray-200 dark:divide-gray-700">
-                  {propertyJobs.map((job) => (
-                    <tr key={job.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">
-                        {job.work_order_num ? (
-                          <Link 
-                            to={`/dashboard/jobs/${job.id}`}
-                            className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline"
-                          >
-                            WO-{String(job.work_order_num).padStart(6, '0')}
-                          </Link>
-                        ) : 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {job.job_phase ? (
-                          <span
-                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                            style={{
-                              backgroundColor: job.job_phase.color_dark_mode || '#4B5563',
-                              color: 'white'
-                            }}
-                          >
-                            {job.job_phase.job_phase_label}
-                          </span>
-                        ) : (
-                          <span className="text-sm text-gray-500 dark:text-gray-400">Unknown Phase</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">
-                        {job.unit_number || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {job.unit_size?.unit_size_label || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {job.job_type?.job_type_label || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                        <div className="max-w-xs truncate" title={job.description}>
-                          {job.description || 'N/A'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                        {job.scheduled_date ? formatDisplayDate(job.scheduled_date) : 'N/A'}
-                      </td>
+            {jobsLoading ? (
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
+                <p className="font-medium">Loading job history...</p>
+              </div>
+            ) : propertyJobs.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                <Clipboard className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                <p className="font-medium">No job history recorded for this property</p>
+                <p className="text-sm">Job requests and work orders will appear here</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-[#0F172A]">
+                    <tr>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Work Order #
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Job Phase
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Unit #
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Unit Size
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Job Type
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Description
+                      </th>
+                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Scheduled Date
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody className="bg-white dark:bg-[#1E293B] divide-y divide-gray-200 dark:divide-gray-700">
+                    {propertyJobs.map((job) => (
+                      <tr key={job.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">
+                          {job.work_order_num ? (
+                            <Link 
+                              to={`/dashboard/jobs/${job.id}`}
+                              className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline"
+                            >
+                              WO-{String(job.work_order_num).padStart(6, '0')}
+                            </Link>
+                          ) : 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {job.job_phase ? (
+                            <span
+                              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                              style={{
+                                backgroundColor: job.job_phase.color_dark_mode || '#4B5563',
+                                color: 'white'
+                              }}
+                            >
+                              {job.job_phase.job_phase_label}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-gray-500 dark:text-gray-400">Unknown Phase</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white font-medium">
+                          {job.unit_number || 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          {job.unit_size?.unit_size_label || 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          {job.job_type?.job_type_label || 'N/A'}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                          <div className="max-w-xs truncate" title={job.description}>
+                            {job.description || 'N/A'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          {job.scheduled_date ? formatDisplayDate(job.scheduled_date) : 'N/A'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
+      </div>
       </div>
       
       {/* Lightbox for Property Unit Map */}

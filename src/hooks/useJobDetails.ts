@@ -14,6 +14,7 @@ export interface Job {
   unit_number: string;
   description: string;
   scheduled_date: string;
+  purchase_order?: string | null;
   assigned_to: string | null;
   assignment_status?: string | null;
   assignment_decision_at?: string | null;
@@ -352,13 +353,14 @@ export function useJobDetails(jobId: string | undefined) {
               is_occupied,
               is_full_paint,
               unit_size,
-              job_category,
+              job_category_id,
               has_sprinklers,
               sprinklers_painted,
               painted_ceilings,
               ceiling_rooms_count,
               individual_ceiling_count,
               ceiling_display_label,
+              ceiling_billing_detail_id,
               painted_patio,
               painted_garage,
               painted_cabinets,
@@ -367,11 +369,12 @@ export function useJobDetails(jobId: string | undefined) {
               has_accent_wall,
               accent_wall_type,
               accent_wall_count,
+              accent_wall_billing_detail_id,
               has_extra_charges,
               extra_charges_description,
               extra_hours,
-              extra_charges_line_items,
               additional_comments,
+              additional_services,
               is_active
             )
           `)

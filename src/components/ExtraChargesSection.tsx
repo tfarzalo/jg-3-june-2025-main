@@ -32,8 +32,8 @@ export default function ExtraChargesSection({
 }: ExtraChargesSectionProps) {
   const text = {
     en: {
-      infoTitle: 'Extra Charges:',
-      infoBody: 'Add any additional charges beyond standard labor and materials. These will be itemized separately on the invoice.',
+      infoTitle: 'Extra Charges -',
+      infoBody: 'Add any additional charges not already included',
       addedTitle: 'Added Extra Charges:',
       addTitle: 'Add Extra Charge:',
       categoryLabel: 'Category *',
@@ -63,8 +63,8 @@ export default function ExtraChargesSection({
       selectCategoryAndItem: 'Please select both a category and line item option',
     },
     es: {
-      infoTitle: 'Cargos Adicionales:',
-      infoBody: 'Agregue cargos adicionales fuera de la mano de obra y materiales estándar. Se detallarán por separado en la factura.',
+      infoTitle: 'Cargos Adicionales -',
+      infoBody: 'Agregue cargos adicionales no incluidos',
       addedTitle: 'Cargos Adicionales Agregados:',
       addTitle: 'Agregar Cargo Adicional:',
       categoryLabel: 'Categoría *',

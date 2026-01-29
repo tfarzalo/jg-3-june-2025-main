@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, ArrowLeft, MapPin, ZoomIn, Upload, FileImage, Trash2, Plus } from 'lucide-react';
+import { Building2, ArrowLeft, MapPin, ZoomIn, Upload, FileImage, Trash2, Plus, Minus } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { useLeafletMap } from '../hooks/useLeafletMap';
 import { PaintColorsEditor } from './properties/PaintColorsEditor';
@@ -22,6 +22,7 @@ interface PropertyContact {
   position: string;
   name: string;
   email: string;
+  secondary_email?: string;
   phone: string;
   is_new?: boolean;
 }
@@ -38,6 +39,7 @@ export function PropertyForm() {
   const [contacts, setContacts] = useState<PropertyContact[]>([]);
   const [subcontractorContactSource, setSubcontractorContactSource] = useState<string>('community_manager');
   const [notificationContactSource, setNotificationContactSource] = useState<string>('community_manager');
+  const [secondaryEmailVisibility, setSecondaryEmailVisibility] = useState<Record<string, boolean>>({});
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [pendingUnitMapFile, setPendingUnitMapFile] = useState<File | null>(null);
   const [createdPropertyId, setCreatedPropertyId] = useState<string | null>(null);
@@ -259,6 +261,7 @@ export function PropertyForm() {
           position: c.position,
           name: c.name,
           email: c.email,
+          secondary_email: c.secondary_email || null,
           phone: c.phone
         }));
 
@@ -334,6 +337,7 @@ export function PropertyForm() {
         position: '',
         name: '',
         email: '',
+        secondary_email: '',
         phone: '',
         is_new: true
       }
@@ -351,6 +355,10 @@ export function PropertyForm() {
     if (subcontractorContactSource === id) {
       setSubcontractorContactSource('community_manager');
     }
+    setSecondaryEmailVisibility(prev => {
+      const { [id]: _, ...rest } = prev;
+      return rest;
+    });
   };
 
   const handleSubcontractorContactChange = (source: string) => {
@@ -361,6 +369,26 @@ export function PropertyForm() {
     setNotificationContactSource(source);
     toast.success('Email notifications contact updated');
   };
+
+  const toggleSecondaryEmailField = (contactId: string) => {
+    setSecondaryEmailVisibility(prev => ({
+      ...prev,
+      [contactId]: !prev[contactId]
+    }));
+  };
+
+  useEffect(() => {
+    setSecondaryEmailVisibility(prev => {
+      let next: Record<string, boolean> | null = null;
+      contacts.forEach(contact => {
+        if (contact.secondary_email && !prev[contact.id]) {
+          if (!next) next = { ...prev };
+          next[contact.id] = true;
+        }
+      });
+      return next ? next : prev;
+    });
+  }, [contacts]);
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#0F172A] p-6">
@@ -819,7 +847,21 @@ export function PropertyForm() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Email</label>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Email</label>
+                      <button
+                        type="button"
+                        onClick={() => toggleSecondaryEmailField(contact.id)}
+                        className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none"
+                        aria-label="Toggle secondary email field"
+                      >
+                        {secondaryEmailVisibility[contact.id] ? (
+                          <Minus className="h-4 w-4" />
+                        ) : (
+                          <Plus className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
                     <input
                       type="email"
                       value={contact.email || ''}
@@ -828,6 +870,18 @@ export function PropertyForm() {
                       placeholder="Email"
                     />
                   </div>
+                  {(secondaryEmailVisibility[contact.id] || !!contact.secondary_email) && (
+                    <div className="mt-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Secondary Email</label>
+                      <input
+                        type="email"
+                        value={contact.secondary_email || ''}
+                        onChange={(e) => handleContactChange(contact.id, 'secondary_email', e.target.value)}
+                        className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Secondary Email"
+                      />
+                    </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Phone</label>
                     <input

@@ -269,6 +269,85 @@ export function FileManager() {
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
 
   const isFolder = (type: string) => type === 'folder/directory' || type === 'folder/job' || type === 'folder/property';
+  const canonicalFolderNames = new Set([
+    ...Object.keys(FOLDER_NAME_TO_CATEGORY),
+    'Work Orders',
+    'Properties',
+    'JG Docs and Info',
+    'JG Docs & Info'
+  ]);
+  const normalizeCanonicalName = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return trimmed;
+    return trimmed
+      .replace(/&/g, 'and')
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+  };
+  const folderTypeRank: Record<string, number> = {
+    'folder/property': 3,
+    'folder/job': 2,
+    'folder/directory': 1
+  };
+
+  const pickPreferredFolder = (a: FileItem, b: FileItem, childCounts?: Map<string, number>) => {
+    if (childCounts) {
+      const aCount = childCounts.get(a.id) ?? 0;
+      const bCount = childCounts.get(b.id) ?? 0;
+      if (aCount !== bCount) return aCount > bCount ? a : b;
+    }
+
+    const rankA = folderTypeRank[a.type] || 0;
+    const rankB = folderTypeRank[b.type] || 0;
+    if (rankA !== rankB) return rankA > rankB ? a : b;
+
+    const aHasPath = !!(a.path || a.storage_path || a.display_path);
+    const bHasPath = !!(b.path || b.storage_path || b.display_path);
+    if (aHasPath !== bHasPath) return aHasPath ? a : b;
+
+    const aTime = new Date(a.updated_at || a.created_at || 0).getTime();
+    const bTime = new Date(b.updated_at || b.created_at || 0).getTime();
+    if (aTime !== bTime) return aTime > bTime ? a : b;
+
+    return a;
+  };
+
+  const dedupeCanonicalFolders = (list: FileItem[], childCounts?: Map<string, number>) => {
+    const byName = new Map<string, FileItem>();
+    const result: FileItem[] = [];
+    for (const item of list) {
+      if (!isFolder(item.type)) {
+        result.push(item);
+        continue;
+      }
+
+      const trimmedName = item.name?.trim() || '';
+      const isCanonical = canonicalFolderNames.has(trimmedName);
+      if (!isCanonical) {
+        result.push(item);
+        continue;
+      }
+
+      const key = normalizeCanonicalName(trimmedName);
+      const existing = byName.get(key);
+      if (!existing) {
+        byName.set(key, item);
+        result.push(item);
+        continue;
+      }
+
+      const preferred = pickPreferredFolder(existing, item, childCounts);
+      if (preferred !== existing) {
+        byName.set(key, preferred);
+        const index = result.findIndex(entry => entry.id === existing.id);
+        if (index >= 0) {
+          result[index] = preferred;
+        }
+      }
+    }
+
+    return result;
+  };
   const imageExts = new Set(['jpg','jpeg','png','gif','webp','bmp','tiff','svg']);
   const isImageByExt = (name?: string) => {
     if (!name) return false;
@@ -289,13 +368,29 @@ export function FileManager() {
         .from('files')
         .select(selectFields);
 
-      const { data: propsFolder } = await supabase
+      const { data: propsFolders } = await supabase
         .from('files')
-        .select('id')
+        .select('id, path, type')
         .eq('name', 'Properties')
         .is('folder_id', null)
-        .maybeSingle();
-      const propsFolderId = propsFolder?.id || null;
+        .returns<{ id: string; path?: string | null; type: string }[]>();
+      const propsFolderCandidates = Array.isArray(propsFolders) ? propsFolders : [];
+      const scorePropsPath = (path?: string | null) => {
+        const normalized = (path || '').replace(/\/+/g, '/');
+        if (normalized === '/Properties') return 3;
+        if (normalized === 'Properties') return 2;
+        if (normalized.toLowerCase().endsWith('/properties')) return 1;
+        return 0;
+      };
+      const propsFolderId = propsFolderCandidates
+        .sort((a, b) => {
+          const scoreA = scorePropsPath(a.path);
+          const scoreB = scorePropsPath(b.path);
+          if (scoreA !== scoreB) return scoreB - scoreA;
+          const typeA = folderTypeRank[a.type] || 0;
+          const typeB = folderTypeRank[b.type] || 0;
+          return typeB - typeA;
+        })[0]?.id || null;
 
       // Handle root folder and nested folders correctly
       if (currentFolderId === null) {
@@ -383,8 +478,30 @@ export function FileManager() {
         throw fetchError;
       }
 
+      let childCounts: Map<string, number> | undefined;
+      if (currentFolderId === null) {
+        const canonicalIds = (combinedData || [])
+          .filter(item => isFolder(item.type) && canonicalFolderNames.has(item.name?.trim() || ''))
+          .map(item => item.id);
+        if (canonicalIds.length > 1) {
+          const { data: childRows } = await supabase
+            .from('files')
+            .select('folder_id')
+            .in('folder_id', canonicalIds);
+          if (childRows?.length) {
+            childCounts = new Map<string, number>();
+            for (const row of childRows as { folder_id: string | null }[]) {
+              if (!row.folder_id) continue;
+              childCounts.set(row.folder_id, (childCounts.get(row.folder_id) || 0) + 1);
+            }
+          }
+        }
+      }
+
+      const dedupedData = dedupeCanonicalFolders(combinedData || [], childCounts);
+
       // Process the files to ensure correct paths and generate preview URLs
-      const processedData = await Promise.all((combinedData || []).map(async (file) => {
+      const processedData = await Promise.all(dedupedData.map(async (file) => {
         const filePath = resolveStoragePath(file.storage_path || file.path, file.name, file.job_id);
         
         // Generate preview URL for image files

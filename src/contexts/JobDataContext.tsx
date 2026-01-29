@@ -17,6 +17,7 @@ interface Job {
   invoice_paid?: boolean;
   invoice_sent_date?: string;
   invoice_paid_date?: string;
+  purchase_order?: string | null;
   property: {
     id: string;
     property_name: string;
@@ -230,6 +231,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
             created_at,
             updated_at,
             assigned_to,
+            purchase_order,
             ${isInvoicingPhase ? 'invoice_sent, invoice_paid, invoice_sent_date, invoice_paid_date,' : ''}
             property:properties (
               id,
@@ -279,6 +281,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
           created_at: job.created_at,
           updated_at: job.updated_at,
           assigned_to: job.assigned_to,
+          purchase_order: job.purchase_order,
           invoice_sent: job.invoice_sent,
           invoice_paid: job.invoice_paid,
           invoice_sent_date: job.invoice_sent_date,

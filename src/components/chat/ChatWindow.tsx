@@ -358,6 +358,28 @@ export function ChatWindow({ conversationId, currentUserId }: ChatWindowProps) {
           messages.map(message => {
             const isOwnMessage = message.sender_id === currentUserId;
             
+            // Format date/time with smart date labels
+            const messageDate = new Date(message.created_at);
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            
+            // Reset time to midnight for comparison
+            const messageDateOnly = new Date(messageDate.getFullYear(), messageDate.getMonth(), messageDate.getDate());
+            const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const yesterdayDateOnly = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+            
+            let dateLabel = '';
+            if (messageDateOnly.getTime() === todayDateOnly.getTime()) {
+              dateLabel = 'Today';
+            } else if (messageDateOnly.getTime() === yesterdayDateOnly.getTime()) {
+              dateLabel = 'Yesterday';
+            } else {
+              dateLabel = messageDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+            }
+            
+            const timeLabel = messageDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
             return (
               <div key={message.id} className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[200px] rounded-lg px-3 py-2 text-sm ${
@@ -371,7 +393,7 @@ export function ChatWindow({ conversationId, currentUserId }: ChatWindowProps) {
                       ? 'text-blue-100' 
                       : 'text-gray-500 dark:text-gray-400'
                   }`}>
-                    {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {dateLabel}, {timeLabel}
                   </p>
                 </div>
               </div>

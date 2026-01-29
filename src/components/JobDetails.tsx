@@ -157,6 +157,7 @@ interface Job {
     color_light_mode: string;
     color_dark_mode: string;
   };
+  purchase_order?: string | null;
   assigned_to?: string;
   assigned_to_name?: string;
   billing_details?: BillingDetails;
@@ -219,7 +220,7 @@ export function JobDetails() {
   };
 
   // Null-safe accessors to prevent crashes during slow loads
-  const phaseLabel = job?.job_phase?.label ?? job?.job_phase?.name ?? '—';
+  const phaseLabel = job?.job_phase?.label ?? '—';
   const unitSizeId = job?.unit_size?.id ?? null;
   const propertyName = job?.property?.name ?? '—';
   const workOrderNum = job?.work_order_num ?? '—';
@@ -902,6 +903,8 @@ export function JobDetails() {
     y += 10;
     doc.text(`Job Type: ${job?.job_type?.label ?? '—'}`, margin, y);
     y += 10;
+    doc.text(`Purchase Order: ${job?.purchase_order || 'None'}`, margin, y);
+    y += 10;
     doc.text(`Scheduled Date: ${formatDate(job?.scheduled_date ?? '')}`, margin, y);
     y += 10;
     doc.text(`Status: ${phaseLabel}`, margin, y);
@@ -1503,7 +1506,7 @@ export function JobDetails() {
       doc.text(`Property: ${job?.property?.name ?? '—'}`, margin, y);
       doc.text(`Unit: ${job?.unit_number ?? '—'}`, margin + 60, y);
       y += 5;
-      doc.text(`Address: ${formatAddress(job.property)}`, margin, y);
+      doc.text(`Address: ${job?.property?.address ?? ''}, ${job?.property?.city ?? ''}, ${job?.property?.state ?? ''} ${job?.property?.zip ?? ''}`, margin, y);
       y += 5;
       doc.text(`Job Type: ${job?.job_type?.label ?? '—'}`, margin, y);
       y += 5;
@@ -2012,27 +2015,29 @@ export function JobDetails() {
 
   return (
     <div className="p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center space-x-3">
+      <div className="mx-auto px-4">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center space-x-4">
             <button
               onClick={() => navigate(getBackNavigationPath('/dashboard/jobs', isSubcontractor))}
               className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
             >
               <ArrowLeft className="h-6 w-6" />
             </button>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              {formatWorkOrderNumber(job?.work_order_num ?? 0)}
-            </h1>
-                                    <span 
-                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                          style={{ 
-                            backgroundColor: getJobPhaseColor(),
-                            color: 'white'
-                          }}
-                        >
-              {phaseLabel}
-            </span>
+            <div className="flex items-center space-x-3">
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                {formatWorkOrderNumber(job?.work_order_num ?? 0)}
+              </h1>
+              <span 
+                className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold"
+                style={{ 
+                  backgroundColor: getJobPhaseColor(),
+                  color: 'white'
+                }}
+              >
+                {phaseLabel}
+              </span>
+            </div>
           </div>
           <div className="flex space-x-3">
             {canChangePhase && !isPendingWorkOrder && !isCancelled && (
@@ -2090,89 +2095,115 @@ export function JobDetails() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           {/* Job Details */}
-          <div className="lg:col-span-2 bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow-lg">
-            <div className="flex justify-between items-start mb-6">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Job Details</h2>
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  Job Type:
-                </span>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {job.job_type.label}
-                </span>
+          <div className="lg:col-span-2 bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+            {/* Header Section */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 px-6 py-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-white flex items-center">
+                  <FileText className="h-5 w-5 mr-2" />
+                  Job Details
+                </h2>
+                <div className="flex items-center space-x-2 bg-white/10 backdrop-blur-sm rounded-lg px-3 py-1.5">
+                  <span className="text-xs font-medium text-white/80">Job Type:</span>
+                  <span className="text-sm font-semibold text-white">{job.job_type.label}</span>
+                </div>
               </div>
             </div>
 
-            {(job.assignment_status === 'declined' || (job.assignment_status === 'pending' && job.assigned_to)) && (
-              <div className={`mb-4 rounded-lg border px-4 py-3 flex items-start space-x-3 ${job.assignment_status === 'declined' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-yellow-50 border-yellow-200 text-yellow-800'}`}>
-                <AlertCircle className="h-5 w-5 mt-0.5" />
-                <div className="text-sm">
-                  {job.assignment_status === 'declined' ? (
-                    <>
-                      <p className="font-semibold">Assignment was declined{job.assignment_decision_at ? ` on ${formatDate(job.assignment_decision_at)}` : ''}.</p>
-                      {job.declined_reason_code && (
-                        <p className="mt-1">Reason: {job.declined_reason_code}{job.declined_reason_text ? ` – ${job.declined_reason_text}` : ''}</p>
-                      )}
-                    </>
-                  ) : (
-                    <p className="font-semibold">Assignment pending acceptance by subcontractor.</p>
-                  )}
-              </div>
-            </div>
-            )}
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Property</h3>
-                <div className="flex items-start">
-                  <Building2 className="h-5 w-5 text-gray-500 dark:text-gray-400 mt-0.5 mr-2" />
-                  <div>
+            {/* Content Section */}
+            <div className="p-6">
+              {(job.assignment_status === 'declined' || (job.assignment_status === 'pending' && job.assigned_to)) && (
+                <div className={`mb-6 rounded-lg border px-4 py-3 flex items-start space-x-3 ${job.assignment_status === 'declined' ? 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/20 dark:border-red-800 dark:text-red-300' : 'bg-yellow-50 border-yellow-200 text-yellow-800 dark:bg-yellow-900/20 dark:border-yellow-800 dark:text-yellow-300'}`}>
+                  <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm">
+                    {job.assignment_status === 'declined' ? (
+                      <>
+                        <p className="font-semibold">Assignment was declined{job.assignment_decision_at ? ` on ${formatDate(job.assignment_decision_at)}` : ''}.</p>
+                        {job.declined_reason_code && (
+                          <p className="mt-1">Reason: {job.declined_reason_code}{job.declined_reason_text ? ` – ${job.declined_reason_text}` : ''}</p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="font-semibold">Assignment pending acceptance by subcontractor.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {/* Info Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Property */}
+                <div className="space-y-2">
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center">
+                    <Building2 className="h-4 w-4 mr-1.5" />
+                    Property
+                  </h3>
+                  <div className="pl-5">
                     <Link 
                       to={`/dashboard/properties/${job?.property?.id ?? ''}`}
-                      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium"
+                      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-semibold text-base block"
                     >
                       {job?.property?.name ?? '—'}
                     </Link>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1.5 leading-relaxed">
                       {job?.property?.address ?? '—'}
-                      {job?.property?.address_2 && <span>, {job?.property?.address_2}</span>}
                       <br />
                       {job?.property?.city ?? '—'}, {job?.property?.state ?? '—'} {job?.property?.zip ?? '—'}
                     </p>
-              </div>
-              </div>
-              </div>
-              
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Unit Information</h3>
+                  </div>
+                </div>
+                
+                {/* Unit Information */}
                 <div className="space-y-2">
-                  <div className="flex items-center">
-                    <MapPin className="h-5 w-5 text-gray-500 dark:text-gray-400 mr-2" />
-                    <span className="text-gray-900 dark:text-white">Unit #{job.unit_number}</span>
-                  </div>
-                  <div className="flex items-center">
-                    <ClipboardList className="h-5 w-5 text-gray-500 dark:text-gray-400 mr-2" />
-                    <span className="text-gray-900 dark:text-white">Size: {job.unit_size.label}</span>
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center">
+                    <MapPin className="h-4 w-4 mr-1.5" />
+                    Unit Information
+                  </h3>
+                  <div className="pl-5 space-y-2">
+                    <div className="flex items-center text-gray-900 dark:text-white">
+                      <span className="font-semibold">Unit #{job.unit_number}</span>
+                    </div>
+                    <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+                      <ClipboardList className="h-4 w-4 mr-2 text-gray-400" />
+                      <span>Size: {job.unit_size.label}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-              
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Schedule</h3>
-                <div className="flex items-center">
-                  <Calendar className="h-5 w-5 text-gray-500 dark:text-gray-400 mr-2" />
-                  <span className="text-gray-900 dark:text-white">
-                    {formatDate(job?.scheduled_date)}
-                  </span>
+                
+                {/* Schedule */}
+                <div className="space-y-2">
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center">
+                    <Calendar className="h-4 w-4 mr-1.5" />
+                    Scheduled Date
+                  </h3>
+                  <div className="pl-5">
+                    <span className="text-gray-900 dark:text-white font-medium">
+                      {formatDate(job?.scheduled_date)}
+                    </span>
+                  </div>
                 </div>
-              </div>
-              
-              <div>
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Assigned To</h3>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <User className="h-5 w-5 text-gray-500 dark:text-gray-400 mr-2" />
-                    <span className="text-gray-900 dark:text-white">
+                
+                {/* Purchase Order */}
+                <div className="space-y-2">
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center">
+                    <Clipboard className="h-4 w-4 mr-1.5" />
+                    Purchase Order
+                  </h3>
+                  <div className="pl-5">
+                    <span className="text-gray-900 dark:text-white font-medium">
+                      {job?.purchase_order || <span className="text-gray-400 italic">None</span>}
+                    </span>
+                  </div>
+                </div>
+                
+                {/* Assigned To */}
+                <div className="space-y-2 md:col-span-2">
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center">
+                    <User className="h-4 w-4 mr-1.5" />
+                    Assigned To
+                  </h3>
+                  <div className="pl-5 flex items-center justify-between">
+                    <span className="text-gray-900 dark:text-white font-medium">
                       {job.assigned_to ? (
                         (() => {
                           const assignedId = job.assigned_to;
@@ -2181,51 +2212,54 @@ export function JobDetails() {
                           return found?.full_name || 'Unknown';
                         })()
                       ) : (
-                        'Not assigned'
+                        <span className="text-gray-400 italic">Not assigned</span>
                       )}
                     </span>
+                    {canAssignSubcontractor && (
+                      <Link
+                        to={`/dashboard/sub-scheduler?jobId=${jobId}`}
+                        className="inline-flex items-center text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                      >
+                        {job.assigned_to ? 'Change' : 'Assign'}
+                        <ArrowRight className="h-4 w-4 ml-1" />
+                      </Link>
+                    )}
                   </div>
-                  {canAssignSubcontractor && (
-                    <Link
-                      to={`/dashboard/sub-scheduler?jobId=${jobId}`}
-                      className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
-                    >
-                      {job.assigned_to ? 'Change' : 'Assign'}
-                    </Link>
-                  )}
                 </div>
               </div>
             </div>
 
             {/* Property Map */}
-            <div className="mt-6 relative z-0">
-              <PropertyMap 
-                address={`${job?.property?.address ?? ''}${job?.property?.address_2 ? `, ${job?.property?.address_2}` : ''}, ${job?.property?.city ?? ''}, ${job?.property?.state ?? ''} ${job?.property?.zip ?? ''}`}
-                className="w-full h-[300px]"
-              />
+            <div className="px-6 pb-6">
+              <div className="relative z-0 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                <PropertyMap 
+                  address={`${job?.property?.address ?? ''}, ${job?.property?.city ?? ''}, ${job?.property?.state ?? ''} ${job?.property?.zip ?? ''}`}
+                  className="w-full h-[300px]"
+                />
+              </div>
             </div>
             
             {job.description && (
-              <div className="mt-6">
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Description</h3>
-                <p className="text-gray-900 dark:text-white whitespace-pre-wrap">{job.description}</p>
+              <div className="px-6 pb-6">
+                <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Description</h3>
+                <p className="text-gray-900 dark:text-white whitespace-pre-wrap bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">{job.description}</p>
               </div>
             )}
 
             {/* Job Files display for Job Request phase */}
             {isJobRequest && jobIdForFiles && (
-              <div className="mt-6">
-                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2 flex items-center">
-                  <Image className="h-4 w-4 mr-2 text-blue-500" />
+              <div className="px-6 pb-6">
+                <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 flex items-center">
+                  <Image className="h-4 w-4 mr-1.5 text-blue-500" />
                   Job Files
                 </h3>
-                <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
+                <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
                   <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="job_files" />
                 </div>
               </div>
             )}
             
-            <div className="mt-6 flex flex-wrap gap-4">
+            <div className="px-6 pb-6 flex flex-wrap gap-3">
               {/* Show Work Order button for admins/managers if no work order exists */}
               {(isAdmin || isJGManagement) && !hasWorkOrder && (
                 <Link
@@ -2251,92 +2285,120 @@ export function JobDetails() {
           </div>
 
           {/* Phase History */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow-lg">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Phase History</h2>
-              <button
-                onClick={() => setShowPhaseHistory(!showPhaseHistory)}
-                className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
-              >
-                {showPhaseHistory ? 'Show Less' : 'Show All'}
-              </button>
+          <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-purple-600 to-purple-700 dark:from-purple-700 dark:to-purple-800 px-6 py-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-semibold text-white flex items-center">
+                  <Clock className="h-5 w-5 mr-2" />
+                  Phase History
+                </h2>
+                <button
+                  onClick={() => setShowPhaseHistory(!showPhaseHistory)}
+                  className="text-sm text-white/80 hover:text-white font-medium transition-colors flex items-center"
+                >
+                  {showPhaseHistory ? (
+                    <>
+                      <ChevronUp className="h-4 w-4 mr-1" />
+                      Show Less
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="h-4 w-4 mr-1" />
+                      Show All
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
-            
-            {phaseChangesLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-              </div>
-            ) : phaseChangesError ? (
-              <div className="text-red-500 dark:text-red-400 text-sm">
-                {phaseChangesError}
-              </div>
-            ) : phaseChanges.length === 0 ? (
-              <div className="text-gray-500 dark:text-gray-400 text-center py-4">
-                No phase changes recorded
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {(showPhaseHistory ? phaseChanges : phaseChanges.slice(0, 3)).map((change, index) => (
-                  <div key={change.id} className="relative pb-4">
-                    {index < phaseChanges.length - 1 && (
-                      <div className="absolute left-4 top-4 h-full w-0.5 bg-gray-200 dark:bg-gray-700" style={{ marginLeft: '0.5px' }}></div>
-                    )}
-                    <div className="flex items-start">
-                      <div 
-                        className="rounded-full h-9 w-9 flex items-center justify-center flex-shrink-0 z-10"
-                        style={{ backgroundColor: change.to_phase_color || '#4B5563' }}
-                      >
-                        <Clock className="h-5 w-5 text-white" />
-                      </div>
-                      <div className="ml-4 flex-1">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-sm font-medium text-gray-900 dark:text-white">
-                            {change.to_phase_label}
-                          </h3>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            {formatDate(change.changed_at)}
-                          </span>
+
+            {/* Content */}
+            <div className="p-6">
+              {phaseChangesLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
+                </div>
+              ) : phaseChangesError ? (
+                <div className="text-red-500 dark:text-red-400 text-sm">
+                  {phaseChangesError}
+                </div>
+              ) : phaseChanges.length === 0 ? (
+                <div className="text-gray-500 dark:text-gray-400 text-center py-8">
+                  No phase changes recorded
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {(showPhaseHistory ? phaseChanges : phaseChanges.slice(0, 3)).map((change, index) => (
+                    <div key={change.id} className="relative pb-4">
+                      {index < (showPhaseHistory ? phaseChanges.length : Math.min(3, phaseChanges.length)) - 1 && (
+                        <div className="absolute left-4 top-10 h-full w-0.5 bg-gray-200 dark:bg-gray-700"></div>
+                      )}
+                      <div className="flex items-start">
+                        <div 
+                          className="rounded-full h-9 w-9 flex items-center justify-center flex-shrink-0 z-10 shadow-lg"
+                          style={{ backgroundColor: change.to_phase_color || '#4B5563' }}
+                        >
+                          <Clock className="h-4 w-4 text-white" />
                         </div>
-                        {change.from_phase_label && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                            From: {change.from_phase_label}
+                        <div className="ml-4 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                              {change.to_phase_label}
+                            </h3>
+                            <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                              {formatDate(change.changed_at)}
+                            </span>
+                          </div>
+                          {change.from_phase_label && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              From: <span className="font-medium">{change.from_phase_label}</span>
+                            </p>
+                          )}
+                          {change.change_reason && (
+                            <p className="text-sm text-gray-700 dark:text-gray-300 mt-2 bg-gray-50 dark:bg-gray-800/50 rounded px-2 py-1.5">
+                              {change.change_reason}
+                            </p>
+                          )}
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 flex items-center">
+                            <User className="h-3 w-3 mr-1" />
+                            {change.changed_by_name || 'Unknown'}
                           </p>
-                        )}
-                        {change.change_reason && (
-                          <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-                            {change.change_reason}
-                          </p>
-                        )}
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          By: {change.changed_by_name || 'Unknown'}
-                        </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-                
-                {!showPhaseHistory && phaseChanges.length > 3 && (
-                  <button
-                    onClick={() => setShowPhaseHistory(true)}
-                    className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 w-full text-center mt-2"
-                  >
-                    Show More History
-                  </button>
-                )}
-              </div>
-            )}
+                  ))}
+                  
+                  {!showPhaseHistory && phaseChanges.length > 3 && (
+                    <button
+                      onClick={() => setShowPhaseHistory(true)}
+                      className="text-sm text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 font-medium w-full text-center mt-4 py-2 border-t border-gray-200 dark:border-gray-700 pt-4"
+                    >
+                      View {phaseChanges.length - 3} More Changes
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Work Order Details - Always show if work order exists */}
         {job.work_order && (
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow-lg mb-6">
+          <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg mb-6 overflow-hidden">
+            {/* Header Section */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 px-6 py-4">
+              <h2 className="text-xl font-semibold text-white flex items-center">
+                <FileText className="h-5 w-5 mr-2" />
+                Work Order Details
+              </h2>
+            </div>
+
             {/* Extra Charges Status - Shows different UI based on approval decision */}
             {hasExtraChargesForApproval && (
               <div>
                 {/* Cancelled after decline - Re-activate option only */}
                 {isCancelled && effectiveApprovalDecision?.decision === 'declined' && (
-                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/30 text-red-800 dark:text-red-200 px-4 py-3 rounded-lg mb-6 relative z-[50]">
+                  <div className="bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-700/30 text-red-800 dark:text-red-200 px-6 py-4 relative z-[50]">
                     <div className="flex items-start">
                       <AlertTriangle className="h-5 w-5 mr-2 text-red-600 dark:text-red-400 mt-0.5" />
                       <div className="flex-1">
@@ -2370,7 +2432,7 @@ export function JobDetails() {
 
                 {/* DECLINED STATE - Red alert with resend/override options */}
                 {!isCancelled && effectiveApprovalDecision?.decision === 'declined' && (
-                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/30 text-red-800 dark:text-red-200 px-4 py-3 rounded-lg mb-6 relative z-[50]">
+                  <div className="bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-700/30 text-red-800 dark:text-red-200 px-6 py-4 relative z-[50]">
                     <div className="flex items-start">
                       <XCircle className="h-5 w-5 mr-2 text-red-600 dark:text-red-400 mt-0.5" />
                       <div className="flex-1">
@@ -2423,7 +2485,7 @@ export function JobDetails() {
 
                 {/* APPROVED STATE - Green success message */}
                 {effectiveApprovalDecision?.decision === 'approved' && (
-                  <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700/30 text-green-800 dark:text-green-200 px-4 py-3 rounded-lg mb-6 relative z-[50]">
+                  <div className="bg-green-50 dark:bg-green-900/20 border-b border-green-200 dark:border-green-700/30 text-green-800 dark:text-green-200 px-6 py-4 relative z-[50]">
                     <div className="flex items-start">
                       <CheckCircle className="h-5 w-5 mr-2 text-green-600 dark:text-green-400 mt-0.5" />
                       <div className="flex-1">
@@ -2457,8 +2519,8 @@ export function JobDetails() {
                 (job.work_order?.has_sprinklers || hasDrywallSignal);
               if (!hasWorkOrder || (!needsExtraChargesApproval && !showBlueVariant)) return null;
               const containerClasses = needsExtraChargesApproval
-                ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700/30 text-yellow-900 dark:text-yellow-200'
-                : 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/30 text-blue-800 dark:text-blue-200';
+                ? 'bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-300 dark:border-yellow-700/30 text-yellow-900 dark:text-yellow-200'
+                : 'bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-700/30 text-blue-800 dark:text-blue-200';
               const iconClasses = needsExtraChargesApproval
                 ? 'text-yellow-600 dark:text-yellow-400'
                 : 'text-blue-600 dark:text-blue-400';
@@ -2476,7 +2538,7 @@ export function JobDetails() {
               const recommended: 'extra_charges' | 'sprinkler_paint' | 'drywall_repairs' =
                 needsExtraChargesApproval ? 'extra_charges' : (job.work_order?.has_sprinklers ? 'sprinkler_paint' : 'drywall_repairs');
               return (
-                <div className={`${containerClasses} px-4 py-3 rounded-lg mb-6 relative z-[50]`}>
+                <div className={`${containerClasses} px-6 py-4 relative z-[50]`}>
                   <div className="flex items-start">
                     <Mail className={`h-5 w-5 mr-2 ${iconClasses} mt-0.5`} />
                     <div className="flex-1">
@@ -2521,329 +2583,354 @@ export function JobDetails() {
                 </div>
               );
             })()}
-            
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-8">Work Order Details</h2>
-            {/* Unit Information Section */}
-            <div className="mb-8">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                <FileText className="h-5 w-5 mr-2 text-blue-500" />
-                Work Order Details
-              </h3>
+
+            {/* Content Section */}
+            <div className="p-6">
+              {/* Unit Information Section */}
               {job.work_order && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                  <div className={`p-3 rounded-lg border ${job?.work_order?.submission_date ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Submission Date</span>
-                    <p className={`text-lg font-bold mt-1 ${job?.work_order?.submission_date ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>{formatDate(job?.work_order?.submission_date)}</p>
-                    {(job?.work_order?.created_at || job?.work_order?.submission_date) && (
-                      <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                        {formatTime(job?.work_order?.created_at || job?.work_order?.submission_date)} | {job?.work_order?.submitted_by_name || 'Unknown User'}
+                <div className="mb-8">
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4">Work Order Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className={`p-4 rounded-lg border ${job?.work_order?.submission_date ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Submission Date</span>
+                      <p className={`text-base font-bold mt-2 ${job?.work_order?.submission_date ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>{formatDate(job?.work_order?.submission_date)}</p>
+                      {(job?.work_order?.created_at || job?.work_order?.submission_date) && (
+                        <p className="text-xs text-gray-600 dark:text-gray-400 mt-1.5">
+                          {formatTime(job?.work_order?.created_at || job?.work_order?.submission_date)} | {job?.work_order?.submitted_by_name || 'Unknown User'}
+                        </p>
+                      )}
+                    </div>
+                    <div className={`p-4 rounded-lg border ${job?.work_order?.is_occupied ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Occupied Unit</span>
+                      <p className={`text-base font-bold mt-2 ${job?.work_order?.is_occupied ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>{job?.work_order?.is_occupied ? 'Yes' : 'No'}</p>
+                    </div>
+                    <div className={`p-4 rounded-lg border ${job?.work_order?.is_full_paint ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Full Paint</span>
+                      <p className={`text-base font-bold mt-2 ${job?.work_order?.is_full_paint ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>{job?.work_order?.is_full_paint ? 'Yes' : 'No'}</p>
+                    </div>
+                    <div className={`p-4 rounded-lg border ${job?.work_order?.job_category ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Job Category</span>
+                      <p className={`text-base font-bold mt-2 ${job?.work_order?.job_category ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>{job?.work_order?.job_category || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Sprinkler Information Section */}
+              {hasWorkOrder && job.work_order?.has_sprinklers && (
+                <div className="mb-8">
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 flex items-center">
+                    <Droplets className="h-4 w-4 mr-1.5 text-blue-500" />
+                    Sprinkler Information
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className={`p-4 rounded-lg border ${job?.work_order?.has_sprinklers ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Has Sprinklers</span>
+                      <p className={`text-base font-bold mt-2 ${job?.work_order?.has_sprinklers ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {job?.work_order?.has_sprinklers ? 'Yes' : 'No'}
                       </p>
+                    </div>
+                    {job?.work_order?.has_sprinklers && (
+                      <div className={`p-4 rounded-lg border ${job?.work_order?.sprinklers_painted ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Sprinklers Painted</span>
+                        <p className={`text-base font-bold mt-2 ${job?.work_order?.sprinklers_painted ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                          {job?.work_order?.sprinklers_painted ? 'Yes' : 'No'}
+                        </p>
+                      </div>
                     )}
                   </div>
-                  <div className={`p-3 rounded-lg border ${job?.work_order?.is_occupied ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Occupied Unit</span>
-                    <p className={`text-lg font-bold mt-1 ${job?.work_order?.is_occupied ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>{job?.work_order?.is_occupied ? 'Yes' : 'No'}</p>
+                  {/* Sprinkler Images */}
+                  {hasWorkOrder && job.work_order?.has_sprinklers && job.work_order?.id && (
+                    <div className="mt-6">
+                      <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">Sprinkler Images</h4>
+                      <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                        {jobIdForFiles && (
+                          <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="sprinkler" />
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Painted Areas Section */}
+              {hasWorkOrder && (
+                <div className="mb-8">
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 flex items-center">
+                    <Paintbrush2 className="h-4 w-4 mr-1.5 text-blue-500" />
+                    Painted Areas
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className={`p-4 rounded-lg border ${job?.work_order?.painted_ceilings ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Ceilings</span>
+                      <p className={`text-base font-bold mt-2 ${job?.work_order?.painted_ceilings ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {job?.work_order?.painted_ceilings ? (
+                          <div className="flex flex-col">
+                            <span className="text-sm text-gray-600 dark:text-gray-400 font-normal">
+                              {job?.work_order?.ceiling_display_label === 'Paint Individual Ceiling' && job?.work_order?.individual_ceiling_count
+                                ? `Individual Ceiling (${job?.work_order?.individual_ceiling_count} ceilings)`
+                                : job?.work_order?.ceiling_display_label 
+                                ? job?.work_order?.ceiling_display_label
+                                : 'Yes'}
+                            </span>
+                          </div>
+                        ) : 'No'}
+                      </p>
+                    </div>
+                    <div className={`p-4 rounded-lg border ${job?.work_order?.painted_patio ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Patio</span>
+                      <p className={`text-base font-bold mt-2 ${job?.work_order?.painted_patio ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {job?.work_order?.painted_patio ? 'Yes' : 'No'}
+                      </p>
+                    </div>
+                    <div className={`p-4 rounded-lg border ${job?.work_order?.painted_garage ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Garage</span>
+                      <p className={`text-base font-bold mt-2 ${job?.work_order?.painted_garage ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {job?.work_order?.painted_garage ? 'Yes' : 'No'}
+                      </p>
+                    </div>
+                    <div className={`p-4 rounded-lg border ${job?.work_order?.painted_cabinets ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Cabinets</span>
+                      <p className={`text-base font-bold mt-2 ${job?.work_order?.painted_cabinets ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {job?.work_order?.painted_cabinets ? 'Yes' : 'No'}
+                      </p>
+                    </div>
+                    <div className={`p-4 rounded-lg border ${job?.work_order?.painted_crown_molding ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Crown Molding</span>
+                      <p className={`text-base font-bold mt-2 ${job?.work_order?.painted_crown_molding ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {job?.work_order?.painted_crown_molding ? 'Yes' : 'No'}
+                      </p>
+                    </div>
+                    <div className={`p-4 rounded-lg border ${job?.work_order?.painted_front_door ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Front Door</span>
+                      <p className={`text-base font-bold mt-2 ${job?.work_order?.painted_front_door ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {job?.work_order?.painted_front_door ? 'Yes' : 'No'}
+                      </p>
+                    </div>
                   </div>
-                  <div className={`p-3 rounded-lg border ${job?.work_order?.is_full_paint ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Full Paint</span>
-                    <p className={`text-lg font-bold mt-1 ${job?.work_order?.is_full_paint ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>{job?.work_order?.is_full_paint ? 'Yes' : 'No'}</p>
+                </div>
+              )}
+
+              {/* Accent Wall Section */}
+              {hasWorkOrder && job.work_order?.has_accent_wall && (
+                <div className="mb-8">
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 flex items-center">
+                    <Palette className="h-4 w-4 mr-1.5 text-blue-500" />
+                    Accent Wall Details
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className={`p-4 rounded-lg border ${accentWallDisplayLabel ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Type</span>
+                      <p className={`text-base font-bold mt-2 ${accentWallDisplayLabel ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {accentWallDisplayLabel || 'N/A'}
+                      </p>
+                    </div>
+                    <div className={`p-4 rounded-lg border ${(job?.work_order?.accent_wall_count ?? 0) > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Count</span>
+                      <p className={`text-base font-bold mt-2 ${(job?.work_order?.accent_wall_count ?? 0) > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                        {job?.work_order?.accent_wall_count || 0}
+                      </p>
+                    </div>
                   </div>
-                  <div className={`p-3 rounded-lg border ${job?.work_order?.job_category ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Job Category</span>
-                    <p className={`text-lg font-bold mt-1 ${job?.work_order?.job_category ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>{job?.work_order?.job_category || 'N/A'}</p>
+                </div>
+              )}
+
+              {/* Extra Charges Section */}
+              {hasWorkOrder && hasExtraChargesForApproval && (
+                <div className="mb-8">
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 flex items-center">
+                    <AlertCircle className="h-4 w-4 mr-1.5 text-blue-500" />
+                    Extra Charges
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className={`p-4 rounded-lg border ${hasExtraChargesForApproval ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Has Extra Charges</span>
+                        <p className={`text-base font-bold mt-2 ${hasExtraChargesForApproval ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                          {hasExtraChargesForApproval ? 'Yes' : 'No'}
+                        </p>
+                      </div>
+                      <div className={`p-4 rounded-lg border ${extraChargesAmount > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Total Extra Charges</span>
+                        <p className={`text-lg font-bold mt-2 ${extraChargesAmount > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                          {formatCurrency(extraChargesAmount)}
+                        </p>
+                      </div>
+                      <div className={`p-4 rounded-lg border ${extraChargeLineItems.length > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Line Items</span>
+                        <p className={`text-base font-bold mt-2 ${extraChargeLineItems.length > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                          {extraChargeLineItems.length}
+                        </p>
+                      </div>
+                    </div>
+
+                    {extraChargeLineItems.length > 0 ? (
+                      <div className="space-y-3">
+                        {extraChargeLineItems.map(item => {
+                          const quantity = Number(item.quantity) || 0;
+                          const billRate = Number(item.billRate) || 0;
+                          const subRate = Number(item.subRate) || 0;
+                          const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
+                          const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
+                          return (
+                            <div key={item.id} className="p-4 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30">
+                              <div className="flex justify-between items-start gap-4">
+                                <div>
+                                  <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Extra Charges - {item.categoryName}</div>
+                                  <div className="text-base font-bold mt-1.5 text-green-800 dark:text-green-200">{item.detailName}</div>
+                                  {item.notes && (
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 italic bg-white/50 dark:bg-black/20 rounded px-2 py-1">Notes: {item.notes}</div>
+                                  )}
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                                    {quantity} {item.isHourly ? 'hrs' : 'units'} × {formatCurrency(billRate)}
+                                  </div>
+                                  <div className="text-sm text-gray-600 dark:text-gray-400">Sub: {formatCurrency(subAmount)}</div>
+                                  <div className="text-lg font-bold text-green-800 dark:text-green-200 mt-1">{formatCurrency(billAmount)}</div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <>
+                        <div className={`p-4 rounded-lg border ${typeof job?.work_order?.extra_hours === 'number' && job?.work_order?.extra_hours > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                          <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Extra Hours</span>
+                          <p className={`text-base font-bold mt-2 ${typeof job?.work_order?.extra_hours === 'number' && job?.work_order?.extra_hours > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                            {typeof job?.work_order?.extra_hours === 'number' ? job?.work_order?.extra_hours : 'N/A'}
+                          </p>
+                        </div>
+                        {job?.work_order?.extra_charges_description && (
+                          <div className="p-4 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30">
+                            <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Description</span>
+                            <p className={`text-base mt-2 whitespace-pre-wrap ${job?.work_order?.extra_charges_description ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                              {job?.work_order?.extra_charges_description || 'N/A'}
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Additional Comments Section */}
+              {hasWorkOrder && job.work_order?.additional_comments && (
+                <div className="mb-8">
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 flex items-center">
+                    <MessageSquare className="h-4 w-4 mr-1.5 text-blue-500" />
+                    Additional Comments
+                  </h3>
+                  <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <p className="text-gray-900 dark:text-white whitespace-pre-wrap leading-relaxed">{job?.work_order?.additional_comments}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Job Images Section */}
+              {hasWorkOrder && job.work_order?.id && (
+                <div className="mb-0">
+                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 flex items-center">
+                    <Image className="h-4 w-4 mr-1.5 text-blue-500" />
+                    Work Order Images
+                  </h3>
+                  <div className="space-y-6">
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">
+                        Before Images
+                      </h4>
+                      <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                        {jobIdForFiles && (
+                          <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="before" />
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">
+                        Other Files
+                      </h4>
+                      <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                        {jobIdForFiles && (
+                          <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="other" />
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">
+                        Job Files
+                      </h4>
+                      <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                        {jobIdForFiles && (
+                          <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="job_files" />
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
             </div>
-
-            {/* Paint Information Section - Removed redundant section */}
-
-            {/* Sprinkler Information Section */}
-            {hasWorkOrder && job.work_order?.has_sprinklers && (
-              <div className="mb-8">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                  <Droplets className="h-5 w-5 mr-2 text-blue-500" />
-                  Sprinkler Information
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                  <div className={`p-3 rounded-lg border ${job?.work_order?.has_sprinklers ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Has Sprinklers</span>
-                    <p className={`text-lg font-bold mt-1 ${job?.work_order?.has_sprinklers ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                      {job?.work_order?.has_sprinklers ? 'Yes' : 'No'}
-                    </p>
-                  </div>
-                  {job?.work_order?.has_sprinklers && (
-                    <div className={`p-3 rounded-lg border ${job?.work_order?.sprinklers_painted ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Sprinklers Painted</span>
-                      <p className={`text-lg font-bold mt-1 ${job?.work_order?.sprinklers_painted ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {job?.work_order?.sprinklers_painted ? 'Yes' : 'No'}
-                      </p>
-                    </div>
-                  )}
-                </div>
-                {/* Sprinkler Images */}
-                {hasWorkOrder && job.work_order?.has_sprinklers && job.work_order?.id && (
-                  <div className="mt-4">
-                    <h4 className="text-base font-medium text-gray-700 dark:text-gray-200 mb-2">Sprinkler Images</h4>
-                    {jobIdForFiles && (
-                      <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="sprinkler" />
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Painted Areas Section */}
-            {hasWorkOrder && (
-              <div className="mb-8">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                  <Paintbrush2 className="h-5 w-5 mr-2 text-blue-500" />
-                  Painted Areas
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                  <div className={`p-3 rounded-lg border ${job?.work_order?.painted_ceilings ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Ceilings</span>
-                    <p className={`text-lg font-bold mt-1 ${job?.work_order?.painted_ceilings ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                      {job?.work_order?.painted_ceilings ? (
-                        <div className="flex flex-col">
-                          <span className="text-sm text-gray-500 dark:text-gray-400">
-                            {job?.work_order?.ceiling_display_label === 'Paint Individual Ceiling' && job?.work_order?.individual_ceiling_count
-                              ? `Individual Ceiling (${job?.work_order?.individual_ceiling_count} ceilings)`
-                              : job?.work_order?.ceiling_display_label 
-                              ? job?.work_order?.ceiling_display_label
-                              : 'Yes'}
-                          </span>
-                        </div>
-                      ) : 'No'}
-                    </p>
-                  </div>
-                  <div className={`p-3 rounded-lg border ${job?.work_order?.painted_patio ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Patio</span>
-                    <p className={`text-lg font-bold mt-1 ${job?.work_order?.painted_patio ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                      {job?.work_order?.painted_patio ? 'Yes' : 'No'}
-                    </p>
-                  </div>
-                  <div className={`p-3 rounded-lg border ${job?.work_order?.painted_garage ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Garage</span>
-                    <p className={`text-lg font-bold mt-1 ${job?.work_order?.painted_garage ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                      {job?.work_order?.painted_garage ? 'Yes' : 'No'}
-                    </p>
-                  </div>
-                  <div className={`p-3 rounded-lg border ${job?.work_order?.painted_cabinets ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Cabinets</span>
-                    <p className={`text-lg font-bold mt-1 ${job?.work_order?.painted_cabinets ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                      {job?.work_order?.painted_cabinets ? 'Yes' : 'No'}
-                    </p>
-                  </div>
-                  <div className={`p-3 rounded-lg border ${job?.work_order?.painted_crown_molding ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Crown Molding</span>
-                    <p className={`text-lg font-bold mt-1 ${job?.work_order?.painted_crown_molding ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                      {job?.work_order?.painted_crown_molding ? 'Yes' : 'No'}
-                    </p>
-                  </div>
-                  <div className={`p-3 rounded-lg border ${job?.work_order?.painted_front_door ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Front Door</span>
-                    <p className={`text-lg font-bold mt-1 ${job?.work_order?.painted_front_door ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                      {job?.work_order?.painted_front_door ? 'Yes' : 'No'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            {/* Accent Wall Section */}
-            {hasWorkOrder && job.work_order?.has_accent_wall && (
-              <div className="mb-8">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                  <Palette className="h-5 w-5 mr-2 text-blue-500" />
-                  Accent Wall Details
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                  <div className={`p-3 rounded-lg border ${accentWallDisplayLabel ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Type</span>
-                    <p className={`text-lg font-bold mt-1 ${accentWallDisplayLabel ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                      {accentWallDisplayLabel || 'N/A'}
-                    </p>
-                  </div>
-                  <div className={`p-3 rounded-lg border ${(job?.work_order?.accent_wall_count ?? 0) > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Count</span>
-                    <p className={`text-lg font-bold mt-1 ${(job?.work_order?.accent_wall_count ?? 0) > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                      {job?.work_order?.accent_wall_count || 0}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Extra Charges Section */}
-            {hasWorkOrder && hasExtraChargesForApproval && (
-              <div className="mb-8">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                  <AlertCircle className="h-5 w-5 mr-2 text-blue-500" />
-                  Extra Charges
-                </h3>
-                <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className={`p-3 rounded-lg border ${hasExtraChargesForApproval ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Has Extra Charges</span>
-                      <p className={`text-sm font-bold ${hasExtraChargesForApproval ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {hasExtraChargesForApproval ? 'Yes' : 'No'}
-                      </p>
-                    </div>
-                    <div className={`p-3 rounded-lg border ${extraChargesAmount > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Extra Charges</span>
-                      <p className={`text-lg font-bold mt-1 ${extraChargesAmount > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {formatCurrency(extraChargesAmount)}
-                      </p>
-                    </div>
-                    <div className={`p-3 rounded-lg border ${extraChargeLineItems.length > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center`}>
-                      <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Line Items</span>
-                      <p className={`text-lg font-bold mt-1 ${extraChargeLineItems.length > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {extraChargeLineItems.length}
-                      </p>
-                    </div>
-                  </div>
-
-                  {extraChargeLineItems.length > 0 ? (
-                    <div className="mt-6 space-y-3">
-                      {extraChargeLineItems.map(item => {
-                        const quantity = Number(item.quantity) || 0;
-                        const billRate = Number(item.billRate) || 0;
-                        const subRate = Number(item.subRate) || 0;
-                        const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
-                        const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
-                        return (
-                          <div key={item.id} className="p-3 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30">
-                            <div className="flex justify-between items-start gap-4">
-                              <div>
-                                <div className="text-sm font-medium text-gray-600 dark:text-gray-400">Extra Charges - {item.categoryName}</div>
-                                <div className="text-lg font-bold mt-1 text-green-800 dark:text-green-200">{item.detailName}</div>
-                                {item.notes && (
-                                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">Notes: {item.notes}</div>
-                                )}
-                              </div>
-                              <div className="text-right">
-                                <div className="text-sm text-gray-600 dark:text-gray-400">
-                                  {quantity} {item.isHourly ? 'hrs' : 'units'} × {formatCurrency(billRate)}
-                                </div>
-                                <div className="text-sm text-gray-600 dark:text-gray-400">Sub: {formatCurrency(subAmount)}</div>
-                                <div className="text-lg font-bold text-green-800 dark:text-green-200">{formatCurrency(billAmount)}</div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <>
-                      <div className={`p-3 rounded-lg border ${typeof job?.work_order?.extra_hours === 'number' && job?.work_order?.extra_hours > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700'} flex flex-col justify-center mt-6`}>
-                        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Extra Hours</span>
-                        <p className={`text-lg font-bold mt-1 ${typeof job?.work_order?.extra_hours === 'number' && job?.work_order?.extra_hours > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                          {typeof job?.work_order?.extra_hours === 'number' ? job?.work_order?.extra_hours : 'N/A'}
-                        </p>
-                      </div>
-                      {job?.work_order?.extra_charges_description && (
-                        <div className="p-3 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30 mt-4">
-                          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Description</span>
-                          <p className={`text-lg font-bold mt-1 ${job?.work_order?.extra_charges_description ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                            {job?.work_order?.extra_charges_description || 'N/A'}
-                          </p>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Additional Comments Section */}
-            {hasWorkOrder && job.work_order?.additional_comments && (
-              <div className="mb-8">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                  <MessageSquare className="h-5 w-5 mr-2 text-blue-500" />
-                  Additional Comments
-                </h3>
-                <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                  <p className="text-gray-900 dark:text-white whitespace-pre-wrap">{job?.work_order?.additional_comments}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Job Images Section */}
-            {hasWorkOrder && job.work_order?.id && (
-              <div className="mb-8">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                  <Image className="h-5 w-5 mr-2 text-blue-500" />
-                  Work Order Images
-                </h3>
-                <div className="space-y-6">
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      Before Images
-                    </h4>
-                    {jobIdForFiles && (
-                      <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="before" />
-                    )}
-                  </div>
-                  
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      Other Files
-                    </h4>
-                    {jobIdForFiles && (
-                      <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="other" />
-                    )}
-                  </div>
-
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      Job Files
-                    </h4>
-                    {jobIdForFiles && (
-                      <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="job_files" />
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
         )}
 
         {/* Billing Breakdown - Show only for Admins and JG Management if billing details exist */}
         {(isAdmin || isJGManagement) && job.billing_details && !isJobRequest && (
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow-lg mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-8">Billing Breakdown</h2>
+          <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg mb-6 overflow-hidden">
+            {/* Header Section */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 dark:from-green-700 dark:to-green-800 px-6 py-4">
+              <h2 className="text-xl font-semibold text-white flex items-center">
+                <DollarSign className="h-5 w-5 mr-2" />
+                Billing Breakdown
+              </h2>
+            </div>
 
-            {/* Warning banner for missing rates */}
-            {billingWarnings.length > 0 && (
-              <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/30 rounded-lg">
-                <div className="flex items-start">
-                  <AlertCircle className="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+            {/* Content Section */}
+            <div className="p-6">
+              {/* Warning banner for missing rates */}
+              {billingWarnings.length > 0 && (
+                <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/30 rounded-lg">
+                  <div className="flex items-start">
+                    <AlertCircle className="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-medium text-yellow-800 dark:text-yellow-200">Missing Billing Rates</p>
+                      <p className="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
+                        Some rates are missing in Property Billing. Items are saved but not billed until rates are configured.
+                      </p>
+                      <ul className="mt-2 text-sm text-yellow-700 dark:text-yellow-300 list-disc list-inside">
+                        {billingWarnings.map((warning, index) => (
+                          <li key={index}>{warning}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Add Unit Size, Job Category, and QuickBooks Number here */}
+              <div className="mb-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <p className="font-medium text-yellow-800 dark:text-yellow-200">Missing Billing Rates</p>
-                    <p className="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
-                      Some rates are missing in Property Billing. Items are saved but not billed until rates are configured.
+                    <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Unit Size</span>
+                    <p className="text-base font-semibold text-gray-900 dark:text-white mt-1">{job.unit_size.label}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Job Category</span>
+                    <p className="text-base font-semibold text-gray-900 dark:text-white mt-1">
+                      {job.work_order?.job_category || 'N/A'}
                     </p>
-                    <ul className="mt-2 text-sm text-yellow-700 dark:text-yellow-300 list-disc list-inside">
-                      {billingWarnings.map((warning, index) => (
-                        <li key={index}>{warning}</li>
-                      ))}
-                    </ul>
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">QuickBooks #</span>
+                    <p className="text-base font-semibold text-gray-900 dark:text-white mt-1">
+                      {job.property?.quickbooks_number || 'None Provided'}
+                    </p>
                   </div>
                 </div>
               </div>
-            )}
-
-            {/* Add Unit Size, Job Category, and QuickBooks Number here */}
-            <div className="mb-6 text-gray-700 dark:text-gray-300">
-              <p className="text-lg">Unit Size: <span className="font-semibold text-gray-900 dark:text-white">{job.unit_size.label}</span></p>
-              <p className="text-lg mt-1">Job Category: <span className="font-semibold text-gray-900 dark:text-white">
-                {job.job_category?.name || job.work_order?.job_category || 'N/A'}
-              </span></p>
-              <p className="text-lg mt-1">QB#: <span className="font-semibold text-gray-900 dark:text-white">
-                {job.property?.quickbooks_number || 'None Provided'}
-              </span></p>
-            </div>
 
             {FLAGS.BILLING_V2 ? (
               <BillingBreakdownV2 
@@ -3088,64 +3175,65 @@ export function JobDetails() {
               </>
             )}
 
-            {/* Invoice Status Buttons - Only show when job is in Invoicing phase */}
-            {job?.job_phase?.label === 'Invoicing' && (
-              <div className="mt-6 flex justify-end space-x-4">
-                {!job.invoice_sent ? (
-                  <button
-                    onClick={handleMarkInvoiceSent}
-                    disabled={updatingInvoiceStatus}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                  >
-                    {updatingInvoiceStatus ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
-                        Updating...
-                      </>
-                    ) : (
-                      <>
-                        <Mailbox className="h-4 w-4 mr-2" />
-                        Mark Invoice as Sent
-                      </>
-                    )}
-                  </button>
-                ) : (
-                  <div className="flex items-center space-x-2 px-4 py-2 bg-green-50 dark:bg-green-900/20 rounded-md border border-green-200 dark:border-green-800">
-                    <Mailbox className={`h-6 w-6 ${job.invoice_sent ? 'text-green-500' : 'text-gray-300'}`} />
-                    <span className="text-green-800 dark:text-green-300 font-semibold text-sm">
-                      INVOICE SENT
-                    </span>
-                  </div>
-                )}
-                
-                {!job.invoice_paid ? (
-                  <button
-                    onClick={handleMarkInvoicePaid}
-                    disabled={updatingInvoiceStatus}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                  >
-                    {updatingInvoiceStatus ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
-                        Updating...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Mark Invoice Paid
-                      </>
-                    )}
-                  </button>
-                ) : (
-                  <div className="flex items-center space-x-2 px-4 py-2 bg-green-50 dark:bg-green-900/20 rounded-md border border-green-200 dark:border-green-800">
-                    <CheckCircle className={`h-6 w-6 ${job.invoice_paid ? 'text-green-500' : 'text-gray-300'}`} />
-                    <span className="text-green-800 dark:text-green-300 font-semibold text-sm">
-                      INVOICE PAID
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
+              {/* Invoice Status Buttons - Only show when job is in Invoicing phase */}
+              {job?.job_phase?.label === 'Invoicing' && (
+                <div className="mt-6 flex justify-end space-x-4">
+                  {!job.invoice_sent ? (
+                    <button
+                      onClick={handleMarkInvoiceSent}
+                      disabled={updatingInvoiceStatus}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                    >
+                      {updatingInvoiceStatus ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                          Updating...
+                        </>
+                      ) : (
+                        <>
+                          <Mailbox className="h-4 w-4 mr-2" />
+                          Mark Invoice as Sent
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="flex items-center space-x-2 px-4 py-2 bg-green-50 dark:bg-green-900/20 rounded-md border border-green-200 dark:border-green-800">
+                      <Mailbox className={`h-6 w-6 ${job.invoice_sent ? 'text-green-500' : 'text-gray-300'}`} />
+                      <span className="text-green-800 dark:text-green-300 font-semibold text-sm">
+                        INVOICE SENT
+                      </span>
+                    </div>
+                  )}
+                  
+                  {!job.invoice_paid ? (
+                    <button
+                      onClick={handleMarkInvoicePaid}
+                      disabled={updatingInvoiceStatus}
+                      className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                    >
+                      {updatingInvoiceStatus ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                          Updating...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-4 w-4 mr-2" />
+                          Mark Invoice Paid
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="flex items-center space-x-2 px-4 py-2 bg-green-50 dark:bg-green-900/20 rounded-md border border-green-200 dark:border-green-800">
+                      <CheckCircle className={`h-6 w-6 ${job.invoice_paid ? 'text-green-500' : 'text-gray-300'}`} />
+                      <span className="text-green-800 dark:text-green-300 font-semibold text-sm">
+                        INVOICE PAID
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -3325,39 +3413,50 @@ export function JobDetails() {
 
         {/* PDF and Print buttons at the bottom of the page */}
         {hasWorkOrder && (
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow-lg mb-6">
-            <div className="flex justify-between items-center">
-              <div>
-                {hasWorkOrder && (
-                                                <Link
-                                to={`/dashboard/jobs/${jobId}/new-work-order?edit=true`}
-                                className="inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors"
-                                style={{ 
-                                  backgroundColor: getJobPhaseColor()
-                                }}
-                              >
-                    <Edit className="h-4 w-4 mr-2" />
-                    {isAdmin || isJGManagement ? 'Edit Work Order' : 'View Work Order'}
-                  </Link>
-                )}
-              </div>
-              <div className="flex space-x-3">
-                <button
-                  onClick={generatePDF}
-                  className="inline-flex items-center px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm font-medium rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Download PDF
-                </button>
-                {(isInvoicing || isCompleted) && (
+          <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg mb-6 overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-gray-600 to-gray-700 dark:from-gray-700 dark:to-gray-800 px-6 py-4">
+              <h2 className="text-xl font-semibold text-white flex items-center">
+                <FileText className="h-5 w-5 mr-2" />
+                Actions
+              </h2>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  {hasWorkOrder && (
+                    <Link
+                      to={`/dashboard/jobs/${jobId}/new-work-order?edit=true`}
+                      className="inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors shadow-md hover:shadow-lg"
+                      style={{ 
+                        backgroundColor: getJobPhaseColor()
+                      }}
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      {isAdmin || isJGManagement ? 'Edit Work Order' : 'View Work Order'}
+                    </Link>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-3">
                   <button
-                    onClick={generateInvoicePDF}
-                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                    onClick={generatePDF}
+                    className="inline-flex items-center px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm font-medium rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-all shadow-md hover:shadow-lg"
                   >
                     <Download className="h-4 w-4 mr-2" />
-                    Download Invoice
+                    Download PDF
                   </button>
-                )}
+                  {(isInvoicing || isCompleted) && (
+                    <button
+                      onClick={generateInvoicePDF}
+                      className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-all shadow-md hover:shadow-lg"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Download Invoice
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -3372,7 +3471,7 @@ export function JobDetails() {
               setShowNotificationModal(false);
               setNotificationType(null);
             }}
-            job={notificationJob}
+            job={notificationJob as any}
             notificationType={notificationType}
             onSent={handleNotificationSent}
             additionalServices={supplementalBillingLines.map(line => ({
@@ -3392,7 +3491,7 @@ export function JobDetails() {
               setShowEnhancedNotificationModal(false);
               setNotificationType(null);
             }}
-            job={job}
+            job={job as any}
             notificationType={notificationType}
             onSent={handleNotificationSent}
             additionalServices={supplementalBillingLines.map(line => ({

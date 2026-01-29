@@ -106,7 +106,7 @@ interface PropertyDataCache {
   [propertyId: string]: PropertyDetails;
 }
 
-export function SubcontractorDashboard() {
+export function SubcontractorDashboardPreview() {
   const [error, setError] = useState<string | null>(null);
   const [todayJobs, setTodayJobs] = useState<Job[]>([]);
   const [tomorrowJobs, setTomorrowJobs] = useState<Job[]>([]);
@@ -1134,4 +1134,4 @@ export function SubcontractorDashboard() {
   );
 }
 
-export default SubcontractorDashboard;
+export default SubcontractorDashboardPreview;

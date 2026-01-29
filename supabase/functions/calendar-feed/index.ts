@@ -49,6 +49,21 @@ const fmtDate = (dt: string | Date) => {
   );
 };
 
+const TIME_ZONE = "America/New_York";
+const fmtDateInTimeZone = (dt: string | Date, timeZone: string) => {
+  const d = typeof dt === "string" ? new Date(dt) : dt;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const year = parts.find((p) => p.type === "year")?.value ?? "0000";
+  const month = parts.find((p) => p.type === "month")?.value ?? "01";
+  const day = parts.find((p) => p.type === "day")?.value ?? "01";
+  return `${year}${month}${day}`;
+};
+
 const esc = (t?: string) =>
   (t ?? "")
     .replace(/\\/g, "\\\\")
@@ -143,6 +158,11 @@ const buildJobTitle = (job: any, property: any, assigneeName?: string, needsAssi
   if (jobTypeLabel) {
     parts.push(jobTypeLabel);
   }
+
+  const purchaseOrderValue = job.purchase_order?.trim();
+  if (purchaseOrderValue) {
+    parts.push(`PO#${purchaseOrderValue}`);
+  }
   
   if (needsAssignment) {
     parts.push("⚠️ NEEDS ASSIGNMENT");
@@ -201,7 +221,7 @@ const buildJobDescription = (job: any, property: any, assigneeName?: string, isA
   }
   
   lines.push("");
-  lines.push("View in Portal: https://portal.jgpaintingpros.com/dashboard/jobs/" + job.id);
+  lines.push("View in Portal: https://portal.jgpaintingprosinc.com/dashboard/jobs/" + job.id);
   
   return lines.join("\n");
 };
@@ -329,7 +349,7 @@ Deno.serve(async (req) => {
     if (scope === "events" || scope === "events_and_job_requests") {
       const { data: events, error: eErr } = await supabase
         .from("calendar_events")
-        .select("id, title, details, start_at, end_at, created_by, created_at, updated_at")
+        .select("id, title, details, start_at, end_at, is_all_day, created_by, created_at, updated_at")
         .order("start_at", { ascending: true });
       if (eErr) throw eErr;
 
@@ -347,6 +367,7 @@ Deno.serve(async (req) => {
         const description = buildEventDescription(e, userFullName);
         const startDate = new Date(e.start_at);
         const hasTime = startDate.getUTCHours() !== 0 || startDate.getUTCMinutes() !== 0 || startDate.getUTCSeconds() !== 0;
+        const isAllDay = typeof e.is_all_day === "boolean" ? e.is_all_day : !hasTime;
 
         items.push({
           uid: generateUID("event", e.id, e.created_at),
@@ -355,7 +376,7 @@ Deno.serve(async (req) => {
           description,
           start: e.start_at,
           end: e.end_at,
-          isAllDay: !hasTime,
+          isAllDay: isAllDay,
           status: "CONFIRMED",
           lastModified: e.updated_at ? new Date(e.updated_at) : new Date(e.created_at),
         });
@@ -376,6 +397,7 @@ Deno.serve(async (req) => {
           assignment_status,
           assignment_decision_at,
           assigned_to,
+          purchase_order,
           property:properties(
             id,
             property_name
@@ -424,7 +446,7 @@ Deno.serve(async (req) => {
           const title = buildJobTitle(j, property, assigneeName, needsAssignment);
           const description = buildJobDescription(j, property, assigneeName, isAccepted, needsAssignment);
           const location = property?.property_name || "";
-          const url = `https://portal.jgpaintingpros.com/dashboard/jobs/${j.id}`;
+          const url = `https://portal.jgpaintingprosinc.com/dashboard/jobs/${j.id}`;
 
           let jobStatus = "CONFIRMED";
           if (needsAssignment) {
@@ -466,6 +488,7 @@ Deno.serve(async (req) => {
           assignment_status,
           assignment_decision_at,
           assigned_to,
+          purchase_order,
           property:properties(
             id,
             property_name
@@ -519,7 +542,7 @@ Deno.serve(async (req) => {
           const title = buildJobTitle(j, property, assigneeName, needsAssignment);
           const description = buildJobDescription(j, property, assigneeName, isAccepted, needsAssignment);
           const location = property?.property_name || "";
-          const url = `https://portal.jgpaintingpros.com/dashboard/jobs/${j.id}`;
+          const url = `https://portal.jgpaintingprosinc.com/dashboard/jobs/${j.id}`;
 
           items.push({
             uid: generateUID("jobdone", j.id, j.created_at),
@@ -554,6 +577,7 @@ Deno.serve(async (req) => {
           assignment_status,
           assignment_decision_at,
           assigned_to,
+          purchase_order,
           property:properties(
             id,
             property_name
@@ -590,7 +614,7 @@ Deno.serve(async (req) => {
           const title = buildJobTitle(j, property, assigneeName, false);
           const description = buildJobDescription(j, property, assigneeName, isAccepted, false);
           const location = property?.property_name || "";
-          const url = `https://portal.jgpaintingpros.com/dashboard/jobs/${j.id}`;
+          const url = `https://portal.jgpaintingprosinc.com/dashboard/jobs/${j.id}`;
 
           let jobStatus = "CONFIRMED";
           if (isCancelled) {
@@ -639,8 +663,8 @@ Deno.serve(async (req) => {
       }
       
       if (it.isAllDay) {
-        lines.push(`DTSTART;VALUE=DATE:${fmtDate(it.start)}`);
-        lines.push(`DTEND;VALUE=DATE:${fmtDate(it.end)}`);
+        lines.push(`DTSTART;VALUE=DATE:${fmtDateInTimeZone(it.start, TIME_ZONE)}`);
+        lines.push(`DTEND;VALUE=DATE:${fmtDateInTimeZone(it.end, TIME_ZONE)}`);
       } else {
         lines.push(`DTSTART:${fmtDateTime(it.start)}`);
         lines.push(`DTEND:${fmtDateTime(it.end)}`);
@@ -661,7 +685,8 @@ Deno.serve(async (req) => {
       }
       
       if (it.url) {
-        lines.push(`URL:${esc(it.url)}`);
+        // URLs should not be escaped - use raw URL for proper clickability
+        lines.push(`URL:${it.url}`);
       }
       
       if (it.categories) {

@@ -34,6 +34,7 @@ export interface Job {
     description: string | null;
   };
   // ... other fields ...
+  purchase_order?: string | null;
 }
 
 export interface JobRequest {

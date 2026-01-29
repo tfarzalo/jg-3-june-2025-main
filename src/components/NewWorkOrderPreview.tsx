@@ -883,7 +883,7 @@ const translations = {
   }
 };
 
-const NewWorkOrder = () => {
+const NewWorkOrderPreview = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -2142,11 +2142,11 @@ const NewWorkOrder = () => {
   }
 
   return (
-    <div className="p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
-      <div className="mx-auto px-4">
-        {/* Header with 2-column layout */}
-        <div className="flex items-center justify-between gap-4 mb-6">
-          <div className="flex items-center space-x-4">
+    <div className="p-3 sm:p-4 lg:p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
+      <div className="max-w-7xl mx-auto">
+        {/* Mobile-optimized header with 2-column layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6 sm:mb-8">
+          <div className="flex items-center space-x-3">
             <button
               onClick={() => {
                 if (previewUserId) {
@@ -2155,22 +2155,22 @@ const NewWorkOrder = () => {
                   navigate('/dashboard/jobs');
                 }
               }}
-              className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+              className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors p-1"
             >
-              <ArrowLeft className="h-6 w-6" />
+              <ArrowLeft className="h-5 w-5 sm:h-6 sm:w-6" />
             </button>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 dark:text-white">
               {isEditMode ? t.editWorkOrder : t.addWorkOrder}
             </h1>
           </div>
           
           {/* Language Toggle */}
-          <div className="flex items-center space-x-3">
-            <Globe className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+          <div className="flex items-center justify-end space-x-3">
+            <Globe className="h-4 w-4 sm:h-5 sm:w-5 text-gray-600 dark:text-gray-400" />
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value as 'en' | 'es')}
-              className="px-4 py-2 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-2 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             >
               <option value="en">{t.english}</option>
               <option value="es">{t.spanish}</option>
@@ -2220,80 +2220,68 @@ const NewWorkOrder = () => {
             )}
 
             {/* Job Details Section */}
-            <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg mb-6 overflow-hidden">
-              {/* Header Section */}
-              <div className="bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 px-6 py-4">
-                <h2 className="text-xl font-semibold text-white flex items-center">
-                  <FileText className="h-5 w-5 mr-2" />
-                  {t.jobInformation}
-                </h2>
-              </div>
+            <div className="bg-white dark:bg-[#1E293B] rounded-lg p-3 sm:p-4 lg:p-6 shadow-lg mb-6">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">{t.jobInformation}</h2>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                    Property
+                  </label>
+                  <div className="text-gray-900 dark:text-white font-medium flex items-center">
+                    <Building2 className="h-4 w-4 mr-2 text-gray-500 dark:text-gray-400" />
+                    {job.property?.property_name}
+                  </div>
+                </div>
+                
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                    Work Order #
+                  </label>
+                  <div className="text-gray-900 dark:text-white font-medium flex items-center">
+                    <FileText className="h-4 w-4 mr-2 text-gray-500 dark:text-gray-400" />
+                    {formatWorkOrderNumber(job.work_order_num)}
+                  </div>
+                </div>
+                
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                    Unit #
+                  </label>
+                  <div className="text-gray-900 dark:text-white font-medium">
+                    {job.unit_number}
+                  </div>
+                </div>
+                
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                    Job Type
+                  </label>
+                  <div className="text-gray-900 dark:text-white font-medium">
+                    {job.job_type?.job_type_label || 'Not specified'}
+                  </div>
+                </div>
+                
 
-              {/* Content */}
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center">
-                      <Building2 className="h-4 w-4 mr-1.5" />
-                      Property
-                    </h3>
-                    <div className="pl-5 text-gray-900 dark:text-white font-medium">
-                      {job.property?.property_name}
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center">
-                      <FileText className="h-4 w-4 mr-1.5" />
-                      Work Order #
-                    </h3>
-                    <div className="pl-5 text-gray-900 dark:text-white font-medium">
-                      {formatWorkOrderNumber(job.work_order_num)}
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-                      Unit #
-                    </h3>
-                    <div className="pl-5 text-gray-900 dark:text-white font-medium">
-                      {job.unit_number}
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-                      Job Type
-                    </h3>
-                    <div className="pl-5 text-gray-900 dark:text-white font-medium">
-                      {job.job_type?.job_type_label || 'Not specified'}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center">
-                      <Calendar className="h-4 w-4 mr-1.5" />
-                      Scheduled Date
-                    </h3>
-                    <div className="pl-5 text-gray-900 dark:text-white font-medium">
-                      {formatDate(job.scheduled_date)}
-                    </div>
+                
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                    Scheduled Date
+                  </label>
+                  <div className="text-gray-900 dark:text-white font-medium flex items-center">
+                    <Calendar className="h-4 w-4 mr-2 text-gray-500 dark:text-gray-400" />
+                    {formatDate(job.scheduled_date)}
                   </div>
                 </div>
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
               {/* Unit Information */}
-              <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-green-600 to-green-700 dark:from-green-700 dark:to-green-800 px-6 py-4">
-                  <h2 className="text-xl font-semibold text-white">Unit Information</h2>
-                </div>
-
-                {/* Content */}
-                <div className="p-6">
-                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-3 sm:p-4 lg:p-6 shadow">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Unit Information</h2>
+                
+                <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-2">
                   <div>
                     <label htmlFor="unit_number" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                       Unit # {!isSubcontractor && <span className="text-red-500">*</span>}
@@ -2392,18 +2380,12 @@ const NewWorkOrder = () => {
                   </div>
                 </div>
               </div>
-            </div>
 
               {/* Sprinklers */}
-              <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-cyan-600 to-cyan-700 dark:from-cyan-700 dark:to-cyan-800 px-6 py-4">
-                  <h2 className="text-xl font-semibold text-white">Sprinklers</h2>
-                </div>
-
-                {/* Content */}
-                <div className="p-6">
-                  <div className="space-y-4">
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Sprinklers</h2>
+                
+                <div className="space-y-4">
                   <div className="flex items-center">
                     <input
                       type="checkbox"
@@ -2457,17 +2439,10 @@ const NewWorkOrder = () => {
                   )}
                 </div>
               </div>
-            </div>
 
               {/* Painted Items */}
-              <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-purple-600 to-purple-700 dark:from-purple-700 dark:to-purple-800 px-6 py-4">
-                  <h2 className="text-xl font-semibold text-white">Painted Items</h2>
-                </div>
-
-                {/* Content */}
-                <div className="p-6">
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Painted Items</h2>
                 
                 <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
                   <div className="space-y-4">
@@ -2646,18 +2621,10 @@ const NewWorkOrder = () => {
                   </div>
                 </div>
               </div>
-            </div>
 
               {/* Accent Wall */}
-              <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-pink-600 to-pink-700 dark:from-pink-700 dark:to-pink-800 px-6 py-4">
-                  <h2 className="text-xl font-semibold text-white">Accent Wall</h2>
-                </div>
-
-                {/* Content */}
-                <div className="p-6">
-                  <div className="flex items-center mb-6">
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
+                <div className="flex items-center mb-6">
                   <input
                     type="checkbox"
                     id="has_accent_wall"
@@ -2746,18 +2713,10 @@ const NewWorkOrder = () => {
                   </div>
                 )}
               </div>
-            </div>
 
               {/* Extra Charges (Itemized) */}
-              <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-orange-600 to-orange-700 dark:from-orange-700 dark:to-orange-800 px-6 py-4">
-                  <h2 className="text-xl font-semibold text-white">Extra Charges</h2>
-                </div>
-
-                {/* Content */}
-                <div className="p-6">
-                  <div className="flex items-center mb-6">
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
+                <div className="flex items-center mb-6">
                   <input
                     type="checkbox"
                     id="has_extra_charges"
@@ -2797,19 +2756,12 @@ const NewWorkOrder = () => {
                   </div>
                 )}
               </div>
-            </div>
 
               {/* Before Images */}
-              <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 dark:from-indigo-700 dark:to-indigo-800 px-6 py-4">
-                  <h2 className="text-xl font-semibold text-white">
-                    Before Images {isSubcontractor && <span className="text-red-300">*</span>}
-                  </h2>
-                </div>
-
-                {/* Content */}
-                <div className="p-6">
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
+                  Before Images {isSubcontractor && <span className="text-red-500">*</span>}
+                </h2>
                 
                 <div className="space-y-4">
                   <div>
@@ -2830,17 +2782,10 @@ const NewWorkOrder = () => {
                   </div>
                 </div>
               </div>
-            </div>
 
               {/* Other Files */}
-              <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-teal-600 to-teal-700 dark:from-teal-700 dark:to-teal-800 px-6 py-4">
-                  <h2 className="text-xl font-semibold text-white">Other Files</h2>
-                </div>
-
-                {/* Content */}
-                <div className="p-6">
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Other Files</h2>
                 
                 <div className="space-y-4">
                   <div>
@@ -2858,17 +2803,10 @@ const NewWorkOrder = () => {
                   </div>
                 </div>
               </div>
-            </div>
 
               {/* Additional Comments */}
-              <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-gray-600 to-gray-700 dark:from-gray-700 dark:to-gray-800 px-6 py-4">
-                  <h2 className="text-xl font-semibold text-white">Additional Comments</h2>
-                </div>
-
-                {/* Content */}
-                <div className="p-6">
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Additional Comments</h2>
                 
                 <div>
                   <textarea
@@ -2882,10 +2820,9 @@ const NewWorkOrder = () => {
                   />
                 </div>
               </div>
-            </div>
 
               {/* Submit/Cancel Buttons */}
-              <div className="flex flex-row justify-between gap-3 sm:gap-2 mt-6">
+              <div className="flex flex-row justify-between gap-3 sm:gap-2 mt-6 sm:mt-8">
                 <button
                   type="button"
                   onClick={() => navigate('/dashboard/jobs')}
@@ -2960,4 +2897,4 @@ const NewWorkOrder = () => {
   );
 };
 
-export default withSubcontractorAccessCheck(NewWorkOrder);
+export default withSubcontractorAccessCheck(NewWorkOrderPreview);
