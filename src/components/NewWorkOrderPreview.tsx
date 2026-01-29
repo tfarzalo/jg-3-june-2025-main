@@ -776,7 +776,7 @@ const translations = {
     // Extra Charges
     extraCharges: 'Extra Charges',
     extraChargesRequireApproval: 'Extra Charges Require Approval',
-    extraChargesWarning: 'Extra charges, painted ceilings, accent walls, or sprinklers will set this job to "Pending Work Order" status until approved or notification is sent.',
+    extraChargesWarning: 'Extra charges or sprinklers will set this job to "Pending Work Order" status until approved or notification is sent.',
     description: 'Description',
     describeExtraCharges: 'Describe the extra charges',
     extraHours: 'Extra Hours',
@@ -855,7 +855,7 @@ const translations = {
     // Extra Charges
     extraCharges: 'Cargos Adicionales',
     extraChargesRequireApproval: 'Los Cargos Adicionales Requieren Aprobación',
-    extraChargesWarning: 'Los cargos adicionales, techos pintados, paredes de acento o rociadores establecerán este trabajo en estado "Orden de Trabajo Pendiente" hasta que sea aprobado o se envíe la notificación.',
+    extraChargesWarning: 'Los cargos adicionales o rociadores establecerán este trabajo en estado "Orden de Trabajo Pendiente" hasta que sea aprobado o se envíe la notificación.',
     description: 'Descripción',
     describeExtraCharges: 'Describir los cargos adicionales',
     extraHours: 'Horas Adicionales',
@@ -1657,8 +1657,7 @@ const NewWorkOrderPreview = () => {
       const requiresApproval =
         Boolean(
           formData.has_extra_charges ||
-          formData.painted_ceilings ||
-          formData.has_accent_wall ||
+          extraChargesItems.length > 0 ||
           formData.has_sprinklers
         );
 
@@ -2060,18 +2059,6 @@ const NewWorkOrderPreview = () => {
     (!isSubcontractor || beforeImagesUploaded) &&
     // For subcontractors with sprinklers, require sprinkler images
     (!isSubcontractor || !formData.sprinklers || sprinklerImagesUploaded) &&
-    // Painted Ceilings requirements
-    (!formData.painted_ceilings || (
-      formData.ceiling_mode === 'individual' 
-        ? formData.individual_ceiling_count && formData.individual_ceiling_count > 0
-        : selectedCeilingBillingDetailId
-    )) &&
-    // Accent Walls requirements
-    (!formData.has_accent_wall || (
-      formData.accent_wall_type && 
-      formData.accent_wall_count !== undefined && 
-      formData.accent_wall_count > 0
-    )) &&
     // Extra Charges requirements - at least one line item when checkbox is checked
     (!formData.has_extra_charges || extraChargesItems.length > 0)
   );
@@ -2440,280 +2427,6 @@ const NewWorkOrderPreview = () => {
                 </div>
               </div>
 
-              {/* Painted Items */}
-              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Painted Items</h2>
-                
-                <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
-                  <div className="space-y-4">
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id="painted_ceilings"
-                        name="painted_ceilings"
-                        checked={formData.painted_ceilings}
-                        onChange={(e) => setFormData(prev => ({ ...prev, painted_ceilings: e.target.checked }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label htmlFor="painted_ceilings" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                        Painted Ceilings
-                      </label>
-                    </div>
-                    
-                    {formData.painted_ceilings && (
-                      <div className="ml-6 space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                            Ceiling Paint Option <span className="text-red-500">*</span>
-                          </label>
-                          
-                          {/* Single dropdown with all options */}
-                          <select
-                            id="ceiling_rooms_count"
-                            name="ceiling_rooms_count"
-                            value={formData.ceiling_rooms_count || ''}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              setFormData(prev => ({ 
-                                ...prev, 
-                                ceiling_rooms_count: value,
-                                ceiling_mode: value === 'individual' ? 'individual' : 'unit_size',
-                                individual_ceiling_count: value === 'individual' ? 1 : null
-                              }));
-                              
-                              if (value === 'individual') {
-                                // Find the actual billing detail ID for "Paint Individual Ceiling"
-                                const individualOption = ceilingPaintOptions.find(option => 
-                                  option.unit_sizes?.[0]?.unit_size_label === 'Paint Individual Ceiling'
-                                );
-                                setSelectedCeilingBillingDetailId(individualOption?.id || 'individual');
-                                setCeilingDisplayLabel('Paint Individual Ceiling');
-                              } else {
-                                setSelectedCeilingBillingDetailId(value);
-                                // Find the display label for the selected option
-                                const option = ceilingPaintOptions.find(opt => opt.id === value);
-                                const displayLabel = option?.unit_sizes?.[0]?.unit_size_label || '';
-                                setCeilingDisplayLabel(displayLabel);
-                              }
-                            }}
-                            required
-                            className="w-full h-12 sm:h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                          >
-                            <option value="">Select ceiling option</option>
-                            {ceilingPaintOptions
-                              .filter(option => {
-                                const unitSizeLabel = option.unit_sizes?.[0]?.unit_size_label || '';
-                                // Filter out "Paint Individual Ceiling" and "Individual Ceiling" options
-                                return !unitSizeLabel.includes('Individual Ceiling') && !unitSizeLabel.includes('Paint Individual Ceiling');
-                              })
-                              .map((option) => {
-                                const unitSizeLabel = option.unit_sizes?.[0]?.unit_size_label || 
-                                                     (option.unit_size_id ? `Unit Size ${option.unit_size_id}` : 'Service');
-                                return (
-                                  <option key={option.id} value={option.id}>
-                                    {unitSizeLabel}
-                                  </option>
-                                );
-                              })}
-                            {/* Only show Individual Ceiling option if it exists in billing details */}
-                            {ceilingPaintOptions.some(option => 
-                              option.unit_sizes?.[0]?.unit_size_label === 'Paint Individual Ceiling'
-                            ) && (
-                              <option value="individual">Individual Ceiling</option>
-                            )}
-                          </select>
-                        </div>
-                        
-                        {/* Show individual ceiling count input when "Individual Ceiling" is selected */}
-                        {formData.ceiling_rooms_count === 'individual' && (
-                          <div>
-                            <label htmlFor="individual_ceiling_count" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                              How many ceilings? {formData.painted_ceilings && <span className="text-red-500">*</span>}
-                            </label>
-                            <input
-                              type="number"
-                              id="individual_ceiling_count"
-                              name="individual_ceiling_count"
-                              min="1"
-                              max="20"
-                              value={formData.individual_ceiling_count || ''}
-                              onChange={handleInputChange}
-                              required
-                              className="w-full h-12 sm:h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                              placeholder="Enter number of ceilings"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id="painted_patio"
-                        name="painted_patio"
-                        checked={formData.painted_patio}
-                        onChange={(e) => setFormData(prev => ({ ...prev, painted_patio: e.target.checked }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label htmlFor="painted_patio" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                        Painted Patio
-                      </label>
-                    </div>
-                    
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id="painted_garage"
-                        name="painted_garage"
-                        checked={formData.painted_garage}
-                        onChange={(e) => setFormData(prev => ({ ...prev, painted_garage: e.target.checked }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label htmlFor="painted_garage" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                        Painted Garage
-                      </label>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id="painted_cabinets"
-                        name="painted_cabinets"
-                        checked={formData.painted_cabinets}
-                        onChange={(e) => setFormData(prev => ({ ...prev, painted_cabinets: e.target.checked }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label htmlFor="painted_cabinets" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                        Painted Cabinets
-                      </label>
-                    </div>
-                    
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id="painted_crown_molding"
-                        name="painted_crown_molding"
-                        checked={formData.painted_crown_molding}
-                        onChange={(e) => setFormData(prev => ({ ...prev, painted_crown_molding: e.target.checked }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label htmlFor="painted_crown_molding" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                        Painted Crown Molding
-                      </label>
-                    </div>
-                    
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id="painted_front_door"
-                        name="painted_front_door"
-                        checked={formData.painted_front_door}
-                        onChange={(e) => setFormData(prev => ({ ...prev, painted_front_door: e.target.checked }))}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label htmlFor="painted_front_door" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                        Painted Front Door
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Accent Wall */}
-              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
-                <div className="flex items-center mb-6">
-                  <input
-                    type="checkbox"
-                    id="has_accent_wall"
-                    name="has_accent_wall"
-                    checked={formData.has_accent_wall}
-                    onChange={(e) => setFormData(prev => ({ ...prev, has_accent_wall: e.target.checked }))}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="has_accent_wall" className="ml-2 text-lg font-semibold text-gray-900 dark:text-white">
-                    Accent Wall
-                  </label>
-                </div>
-                
-                {formData.has_accent_wall && (
-                  <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
-                    <div>
-                      <label htmlFor="accent_wall_type" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                        Accent Wall Type {formData.has_accent_wall && <span className="text-red-500">*</span>}
-                      </label>
-                      
-                      {billingOptionsLoading ? (
-                        <div className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg flex items-center justify-center">
-                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent"></div>
-                          <span className="ml-2 text-sm text-gray-500">Loading options...</span>
-                        </div>
-                      ) : accentWallOptions.length > 0 ? (
-                        <select
-                          id="accent_wall_type"
-                          name="accent_wall_type"
-                          required={formData.has_accent_wall}
-                          value={selectedAccentWallBillingDetailId || ''}
-                          onChange={(e) => {
-                            const selectedId = e.target.value;
-                            setSelectedAccentWallBillingDetailId(selectedId);
-                            
-                            if (selectedId) {
-                              // Find the selected option to get the display label
-                              const selectedOption = accentWallOptions.find(opt => opt.id === selectedId);
-                              const displayLabel = selectedOption?.unit_sizes?.[0]?.unit_size_label || 'Service';
-                              
-                              setFormData(prev => ({ ...prev, accent_wall_type: selectedId }));
-                              setAccentWallDisplayLabel(displayLabel);
-                            } else {
-                              setFormData(prev => ({ ...prev, accent_wall_type: '' }));
-                              setAccentWallDisplayLabel(null);
-                            }
-                          }}
-                          className="w-full h-12 sm:h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                        >
-                          <option value="">Select type</option>
-                          {accentWallOptions.map((option) => {
-                            const unitSizeLabel = option.unit_sizes?.[0]?.unit_size_label || 
-                                                 (option.unit_size_id ? `Unit Size ${option.unit_size_id}` : 'Service');
-                            return (
-                              <option key={option.id} value={option.id}>
-                                {unitSizeLabel}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      ) : (
-                        <div className="w-full p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/30 rounded-lg">
-                                                      <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                              ⚠️ No accent wall billing options found for this property. 
-                              Please contact management to set up billing rates for Accent Walls.
-                            </p>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div>
-                      <label htmlFor="accent_wall_count" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                        Number of Accent Walls {formData.has_accent_wall && <span className="text-red-500">*</span>}
-                      </label>
-                      <input
-                        type="number"
-                        id="accent_wall_count"
-                        name="accent_wall_count"
-                        min="0"
-                        required={formData.has_accent_wall}
-                        value={formData.accent_wall_count}
-                        onChange={handleInputChange}
-                        className="w-full h-12 sm:h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
               {/* Extra Charges (Itemized) */}
               <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
                 <div className="flex items-center mb-6">
@@ -2738,8 +2451,8 @@ const NewWorkOrderPreview = () => {
                         <div className="flex items-start">
                           <AlertCircle className="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400 mt-0.5" />
                           <div>
-                            <p className="font-medium">Extra Charges Require Approval</p>
-                            <p className="mt-1 text-sm">Extra charges, painted ceilings, accent walls, or sprinklers will set this job to "Pending Work Order" status until approved or notification is sent.</p>
+                            <p className="font-medium">{content.extraChargesRequireApproval}</p>
+                            <p className="mt-1 text-sm">{content.extraChargesWarning}</p>
                           </div>
                         </div>
                       </div>

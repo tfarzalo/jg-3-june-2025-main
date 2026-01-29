@@ -30,10 +30,8 @@ import {
 
   Layers,
   Droplets,
-  Palette,
   MessageSquare,
   Image,
-  Paintbrush2,
   Mail,
   CheckCircle2,
   X,
@@ -271,7 +269,6 @@ export function JobDetails() {
     [additionalBillingLines]
   );
   const [billingWarnings, setBillingWarnings] = useState<string[]>([]);
-  const [accentWallDisplayLabel, setAccentWallDisplayLabel] = useState<string | null>(null);
   const [updatingInvoiceStatus, setUpdatingInvoiceStatus] = useState(false);
   const [approvalTokenDecision, setApprovalTokenDecision] = useState<{
     decision: 'approved' | 'declined' | null;
@@ -573,42 +570,6 @@ export function JobDetails() {
 
     fetchAdditionalBillingLines();
   }, [job?.work_order]);
-
-  // Fetch accent wall display label
-  useEffect(() => {
-    const fetchAccentWallDisplayLabel = async () => {
-      if (!job?.work_order?.accent_wall_billing_detail_id) {
-        setAccentWallDisplayLabel(null);
-        return;
-      }
-
-      try {
-        const { data } = await supabase
-          .from('billing_details')
-          .select(`
-            id,
-            unit_sizes!inner(unit_size_label)
-          `)
-          .eq('id', job?.work_order?.accent_wall_billing_detail_id)
-          .maybeSingle();
-
-        const unitSizeLabel =
-          Array.isArray((data as any)?.unit_sizes)
-            ? ((data?.unit_sizes as any)?.[0]?.unit_size_label)
-            : (data as any)?.unit_sizes?.unit_size_label;
-        if (unitSizeLabel) {
-          setAccentWallDisplayLabel(unitSizeLabel);
-        } else {
-          setAccentWallDisplayLabel(job?.work_order?.accent_wall_type);
-        }
-      } catch (error) {
-        console.error('Error fetching accent wall display label:', error);
-        setAccentWallDisplayLabel(job?.work_order?.accent_wall_type);
-      }
-    };
-
-    fetchAccentWallDisplayLabel();
-  }, [job?.work_order?.accent_wall_billing_detail_id, job?.work_order?.accent_wall_type]);
 
   useEffect(() => {
     if (job?.assigned_to) {
@@ -1898,9 +1859,95 @@ export function JobDetails() {
             }
           : null
       ));
+  const unifiedExtraLines = useMemo(() => {
+    const lines: Array<{
+      id: string;
+      label: string;
+      quantity: number;
+      unit: string;
+      rate?: number;
+      billAmount: number;
+      subAmount: number;
+      notes?: string;
+    }> = [];
+
+    supplementalBillingLines.forEach((line) => {
+      const qty = Number(line.qty) || 0;
+      const billAmount = Number(line.amountBill) || 0;
+      lines.push({
+        id: `supplemental-${line.key}`,
+        label: line.label,
+        quantity: qty,
+        unit: line.unitLabel ?? 'units',
+        rate: qty > 0 ? billAmount / qty : billAmount,
+        billAmount,
+        subAmount: Number(line.amountSub) || 0
+      });
+    });
+
+    extraChargeLineItems.forEach((item) => {
+      const quantity = Number(item.quantity) || 0;
+      const billRate = Number(item.billRate) || 0;
+      const subRate = Number(item.subRate) || 0;
+      const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
+      const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
+      lines.push({
+        id: `extra-${item.id}`,
+        label: `Extra Charges - ${item.categoryName}: ${item.detailName}`,
+        quantity,
+        unit: item.isHourly ? 'hrs' : 'units',
+        rate: billRate,
+        billAmount,
+        subAmount,
+        notes: item.notes ?? undefined
+      });
+    });
+
+    const hasLegacyExtraCharges =
+      !extraChargesFromItems &&
+      (extraHours > 0 ||
+        legacyExtraChargesAmount > 0 ||
+        legacyExtraChargesSubPay > 0 ||
+        (extraChargesDescription || '').trim().length > 0);
+
+    if (hasLegacyExtraCharges) {
+      lines.push({
+        id: 'extra-legacy',
+        label: extraChargesDescription || 'Extra Charges (Labor)',
+        quantity: extraHours || 0,
+        unit: 'hrs',
+        rate: extraHourlyRate || 0,
+        billAmount: legacyExtraChargesAmount,
+        subAmount: legacyExtraChargesSubPay
+      });
+    }
+
+    return lines;
+  }, [
+    extraChargeLineItems,
+    extraChargesDescription,
+    extraChargesFromItems,
+    extraHourlyRate,
+    extraHours,
+    legacyExtraChargesAmount,
+    legacyExtraChargesSubPay,
+    supplementalBillingLines
+  ]);
+
+  const unifiedExtraTotals = useMemo(() => {
+    return unifiedExtraLines.reduce(
+      (acc, line) => {
+        acc.bill += Number(line.billAmount) || 0;
+        acc.sub += Number(line.subAmount) || 0;
+        return acc;
+      },
+      { bill: 0, sub: 0 }
+    );
+  }, [unifiedExtraLines]);
+
   const hasExtraChargesForApproval = Boolean(
     job?.work_order?.has_extra_charges ||
-    extraChargeLineItems.length > 0 ||
+    unifiedExtraLines.length > 0 ||
     derivedExtraCharges
   );
   const notificationJob = useMemo(() => {
@@ -2653,88 +2700,6 @@ export function JobDetails() {
                 </div>
               )}
 
-              {/* Painted Areas Section */}
-              {hasWorkOrder && (
-                <div className="mb-8">
-                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 flex items-center">
-                    <Paintbrush2 className="h-4 w-4 mr-1.5 text-blue-500" />
-                    Painted Areas
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <div className={`p-4 rounded-lg border ${job?.work_order?.painted_ceilings ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
-                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Ceilings</span>
-                      <p className={`text-base font-bold mt-2 ${job?.work_order?.painted_ceilings ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {job?.work_order?.painted_ceilings ? (
-                          <div className="flex flex-col">
-                            <span className="text-sm text-gray-600 dark:text-gray-400 font-normal">
-                              {job?.work_order?.ceiling_display_label === 'Paint Individual Ceiling' && job?.work_order?.individual_ceiling_count
-                                ? `Individual Ceiling (${job?.work_order?.individual_ceiling_count} ceilings)`
-                                : job?.work_order?.ceiling_display_label 
-                                ? job?.work_order?.ceiling_display_label
-                                : 'Yes'}
-                            </span>
-                          </div>
-                        ) : 'No'}
-                      </p>
-                    </div>
-                    <div className={`p-4 rounded-lg border ${job?.work_order?.painted_patio ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
-                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Patio</span>
-                      <p className={`text-base font-bold mt-2 ${job?.work_order?.painted_patio ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {job?.work_order?.painted_patio ? 'Yes' : 'No'}
-                      </p>
-                    </div>
-                    <div className={`p-4 rounded-lg border ${job?.work_order?.painted_garage ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
-                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Garage</span>
-                      <p className={`text-base font-bold mt-2 ${job?.work_order?.painted_garage ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {job?.work_order?.painted_garage ? 'Yes' : 'No'}
-                      </p>
-                    </div>
-                    <div className={`p-4 rounded-lg border ${job?.work_order?.painted_cabinets ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
-                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Cabinets</span>
-                      <p className={`text-base font-bold mt-2 ${job?.work_order?.painted_cabinets ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {job?.work_order?.painted_cabinets ? 'Yes' : 'No'}
-                      </p>
-                    </div>
-                    <div className={`p-4 rounded-lg border ${job?.work_order?.painted_crown_molding ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
-                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Crown Molding</span>
-                      <p className={`text-base font-bold mt-2 ${job?.work_order?.painted_crown_molding ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {job?.work_order?.painted_crown_molding ? 'Yes' : 'No'}
-                      </p>
-                    </div>
-                    <div className={`p-4 rounded-lg border ${job?.work_order?.painted_front_door ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
-                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Front Door</span>
-                      <p className={`text-base font-bold mt-2 ${job?.work_order?.painted_front_door ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {job?.work_order?.painted_front_door ? 'Yes' : 'No'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Accent Wall Section */}
-              {hasWorkOrder && job.work_order?.has_accent_wall && (
-                <div className="mb-8">
-                  <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-4 flex items-center">
-                    <Palette className="h-4 w-4 mr-1.5 text-blue-500" />
-                    Accent Wall Details
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className={`p-4 rounded-lg border ${accentWallDisplayLabel ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
-                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Type</span>
-                      <p className={`text-base font-bold mt-2 ${accentWallDisplayLabel ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {accentWallDisplayLabel || 'N/A'}
-                      </p>
-                    </div>
-                    <div className={`p-4 rounded-lg border ${(job?.work_order?.accent_wall_count ?? 0) > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
-                      <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Count</span>
-                      <p className={`text-base font-bold mt-2 ${(job?.work_order?.accent_wall_count ?? 0) > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {job?.work_order?.accent_wall_count || 0}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Extra Charges Section */}
               {hasWorkOrder && hasExtraChargesForApproval && (
                 <div className="mb-8">
@@ -2750,44 +2715,39 @@ export function JobDetails() {
                           {hasExtraChargesForApproval ? 'Yes' : 'No'}
                         </p>
                       </div>
-                      <div className={`p-4 rounded-lg border ${extraChargesAmount > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <div className={`p-4 rounded-lg border ${unifiedExtraTotals.bill > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
                         <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Total Extra Charges</span>
-                        <p className={`text-lg font-bold mt-2 ${extraChargesAmount > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                          {formatCurrency(extraChargesAmount)}
+                        <p className={`text-lg font-bold mt-2 ${unifiedExtraTotals.bill > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                          {formatCurrency(unifiedExtraTotals.bill)}
                         </p>
                       </div>
-                      <div className={`p-4 rounded-lg border ${extraChargeLineItems.length > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                      <div className={`p-4 rounded-lg border ${unifiedExtraLines.length > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
                         <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Line Items</span>
-                        <p className={`text-base font-bold mt-2 ${extraChargeLineItems.length > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                          {extraChargeLineItems.length}
+                        <p className={`text-base font-bold mt-2 ${unifiedExtraLines.length > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                          {unifiedExtraLines.length}
                         </p>
                       </div>
                     </div>
 
-                    {extraChargeLineItems.length > 0 ? (
+                    {unifiedExtraLines.length > 0 ? (
                       <div className="space-y-3">
-                        {extraChargeLineItems.map(item => {
-                          const quantity = Number(item.quantity) || 0;
-                          const billRate = Number(item.billRate) || 0;
-                          const subRate = Number(item.subRate) || 0;
-                          const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
-                          const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
+                        {unifiedExtraLines.map(line => {
+                          const rate = Number(line.rate ?? (line.quantity ? line.billAmount / line.quantity : line.billAmount)) || 0;
                           return (
-                            <div key={item.id} className="p-4 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30">
+                            <div key={line.id} className="p-4 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30">
                               <div className="flex justify-between items-start gap-4">
                                 <div>
-                                  <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Extra Charges - {item.categoryName}</div>
-                                  <div className="text-base font-bold mt-1.5 text-green-800 dark:text-green-200">{item.detailName}</div>
-                                  {item.notes && (
-                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 italic bg-white/50 dark:bg-black/20 rounded px-2 py-1">Notes: {item.notes}</div>
+                                  <div className="text-base font-bold mt-1.5 text-green-800 dark:text-green-200">{line.label}</div>
+                                  {line.notes && (
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 italic bg-white/50 dark:bg-black/20 rounded px-2 py-1">Notes: {line.notes}</div>
                                   )}
                                 </div>
                                 <div className="text-right">
                                   <div className="text-sm text-gray-600 dark:text-gray-400">
-                                    {quantity} {item.isHourly ? 'hrs' : 'units'} × {formatCurrency(billRate)}
+                                    {line.quantity} {line.unit} × {formatCurrency(rate)}
                                   </div>
-                                  <div className="text-sm text-gray-600 dark:text-gray-400">Sub: {formatCurrency(subAmount)}</div>
-                                  <div className="text-lg font-bold text-green-800 dark:text-green-200 mt-1">{formatCurrency(billAmount)}</div>
+                                  <div className="text-sm text-gray-600 dark:text-gray-400">Sub: {formatCurrency(line.subAmount)}</div>
+                                  <div className="text-lg font-bold text-green-800 dark:text-green-200 mt-1">{formatCurrency(line.billAmount)}</div>
                                 </div>
                               </div>
                             </div>
@@ -2795,22 +2755,9 @@ export function JobDetails() {
                         })}
                       </div>
                     ) : (
-                      <>
-                        <div className={`p-4 rounded-lg border ${typeof job?.work_order?.extra_hours === 'number' && job?.work_order?.extra_hours > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
-                          <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Extra Hours</span>
-                          <p className={`text-base font-bold mt-2 ${typeof job?.work_order?.extra_hours === 'number' && job?.work_order?.extra_hours > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                            {typeof job?.work_order?.extra_hours === 'number' ? job?.work_order?.extra_hours : 'N/A'}
-                          </p>
-                        </div>
-                        {job?.work_order?.extra_charges_description && (
-                          <div className="p-4 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30">
-                            <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Description</span>
-                            <p className={`text-base mt-2 whitespace-pre-wrap ${job?.work_order?.extra_charges_description ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                              {job?.work_order?.extra_charges_description || 'N/A'}
-                            </p>
-                          </div>
-                        )}
-                      </>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                        No extra charges line items.
+                      </div>
                     )}
                   </div>
                 </div>
@@ -2990,130 +2937,56 @@ export function JobDetails() {
                 </div>
 
                 {/* Extra Charges Section */}
-                {hasWorkOrder && hasExtraChargesForApproval && extraChargesAmount > 0 && (
+                {hasWorkOrder && hasExtraChargesForApproval && unifiedExtraLines.length > 0 && (
                   <div className="mt-8">
                     <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Extra Charges Breakdown</h3>
-                    {extraChargeLineItems.length > 0 ? (
-                      <>
-                        <div className="space-y-3">
-                          {extraChargeLineItems.map((item) => {
-                            const quantity = Number(item.quantity) || 0;
-                            const billRate = Number(item.billRate) || 0;
-                            const subRate = Number(item.subRate) || 0;
-                            const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
-                            const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
-                            return (
-                              <div key={item.id} className="flex justify-between items-start p-3 bg-gray-50 dark:bg-[#0F172A] rounded-lg">
-                                <div className="flex-1">
-                                  <div className="font-medium text-gray-900 dark:text-white">
-                                    Extra Charges - {item.categoryName}: {item.detailName}
-                                  </div>
-                                  <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                                    {quantity} {item.isHourly ? 'hrs' : 'units'} × {formatCurrency(billRate)}
-                                  </div>
-                                  {item.notes && (
-                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">
-                                      Notes: {item.notes}
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="text-right">
-                                  <div className="text-sm text-gray-600 dark:text-gray-400">
-                                    Sub: {formatCurrency(subAmount)}
-                                  </div>
-                                  <div className="font-semibold text-gray-900 dark:text-white">
-                                    {formatCurrency(billAmount)}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg mt-4">
-                          <div className="p-3 rounded-lg border border-green-500/50">
-                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Bill</span>
-                            <p className="text-lg font-semibold text-green-600 dark:text-green-400 mt-1">
-                              {formatCurrency(extraChargesAmount)}
-                            </p>
-                          </div>
-                          <div className="p-3 rounded-lg border border-blue-500/50">
-                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Sub Pay</span>
-                            <p className="text-lg font-semibold text-blue-600 dark:text-blue-400 mt-1">
-                              {formatCurrency(extraChargesSubPay)}
-                            </p>
-                          </div>
-                          <div className="p-3 rounded-lg border border-purple-500/50">
-                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Profit</span>
-                            <p className="text-lg font-semibold text-purple-600 dark:text-purple-400 mt-1">
-                              {formatCurrency(extraChargesAmount - extraChargesSubPay)}
-                            </p>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg">
-                          <div className="p-3 rounded-lg border border-green-500/50">
-                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Amount</span>
-                            <p className="text-lg font-semibold text-green-600 dark:text-green-400 mt-1">
-                              {formatCurrency(extraChargesAmount)}
-                            </p>
-                          </div>
-                          <div className="p-3 rounded-lg border border-blue-500/50">
-                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Hours</span>
-                            <p className="text-lg font-semibold text-blue-600 dark:text-blue-400 mt-1">
-                              {extraHours}
-                            </p>
-                          </div>
-                          <div className="p-3 rounded-lg border border-purple-500/50">
-                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Description</span>
-                            <p className="text-lg font-semibold text-purple-600 dark:text-purple-400 mt-1">
-                              {extraChargesDescription || 'N/A'}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Hourly Rate Information */}
-                        <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg">
-                          <div className="text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                            <div className="flex justify-between">
-                              <span>Hourly Rate:</span>
-                              <span className="font-medium">{formatCurrency(job.hourly_billing_details?.bill_amount || 0)}/hour</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>Subcontractor Rate:</span>
-                              <span className="font-medium">{formatCurrency(job.hourly_billing_details?.sub_pay_amount || 0)}/hour</span>
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* Billing Lines for Ceilings and Accent Walls */}
-                {supplementalBillingLines.length > 0 && (
-                  <div className="mt-8">
-                    <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Ceilings & Accent Walls</h3>
                     <div className="space-y-3">
-                      {supplementalBillingLines.map((line) => (
-                        <div key={line.key} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-[#0F172A] rounded-lg">
-                          <div className="flex-1">
-                            <span className="font-medium text-gray-900 dark:text-white">{line.label}</span>
-                            {line.unitLabel && (
-                              <span className="text-sm text-gray-500 dark:text-gray-400 ml-2">({line.unitLabel})</span>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <div className="text-sm text-gray-600 dark:text-gray-400">
-                              {line.qty} × {formatCurrency(line.rateBill)}
+                      {unifiedExtraLines.map((line) => {
+                        const rate = Number(line.rate ?? (line.quantity ? line.billAmount / line.quantity : line.billAmount)) || 0;
+                        return (
+                          <div key={line.id} className="flex justify-between items-start p-3 bg-gray-50 dark:bg-[#0F172A] rounded-lg">
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900 dark:text-white">{line.label}</div>
+                              <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                                {line.quantity} {line.unit} × {formatCurrency(rate)}
+                              </div>
+                              {line.notes && (
+                                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">
+                                  Notes: {line.notes}
+                                </div>
+                              )}
                             </div>
-                            <div className="font-semibold text-gray-900 dark:text-white">
-                              {formatCurrency(line.amountBill)}
+                            <div className="text-right">
+                              <div className="text-sm text-gray-600 dark:text-gray-400">
+                                Sub: {formatCurrency(line.subAmount)}
+                              </div>
+                              <div className="font-semibold text-gray-900 dark:text-white">
+                                {formatCurrency(line.billAmount)}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg mt-4">
+                      <div className="p-3 rounded-lg border border-green-500/50">
+                        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Bill</span>
+                        <p className="text-lg font-semibold text-green-600 dark:text-green-400 mt-1">
+                          {formatCurrency(unifiedExtraTotals.bill)}
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg border border-blue-500/50">
+                        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Sub Pay</span>
+                        <p className="text-lg font-semibold text-blue-600 dark:text-blue-400 mt-1">
+                          {formatCurrency(unifiedExtraTotals.sub)}
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-lg border border-purple-500/50">
+                        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Profit</span>
+                        <p className="text-lg font-semibold text-purple-600 dark:text-purple-400 mt-1">
+                          {formatCurrency(unifiedExtraTotals.bill - unifiedExtraTotals.sub)}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 )}
