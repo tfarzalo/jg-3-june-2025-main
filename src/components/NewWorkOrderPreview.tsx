@@ -2451,8 +2451,8 @@ const NewWorkOrderPreview = () => {
                         <div className="flex items-start">
                           <AlertCircle className="h-5 w-5 mr-2 text-yellow-600 dark:text-yellow-400 mt-0.5" />
                           <div>
-                            <p className="font-medium">{content.extraChargesRequireApproval}</p>
-                            <p className="mt-1 text-sm">{content.extraChargesWarning}</p>
+                            <p className="font-medium">{t.extraChargesRequireApproval}</p>
+                            <p className="mt-1 text-sm">{t.extraChargesWarning}</p>
                           </div>
                         </div>
                       </div>
