@@ -1505,6 +1505,28 @@ function MessagingPage() {
                     {messages.map(message => {
                       const isOwnMessage = message.sender_id === user?.id;
                       
+                      // Format date/time with smart date labels
+                      const messageDate = new Date(message.created_at);
+                      const today = new Date();
+                      const yesterday = new Date(today);
+                      yesterday.setDate(yesterday.getDate() - 1);
+                      
+                      // Reset time to midnight for comparison
+                      const messageDateOnly = new Date(messageDate.getFullYear(), messageDate.getMonth(), messageDate.getDate());
+                      const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                      const yesterdayDateOnly = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+                      
+                      let dateLabel = '';
+                      if (messageDateOnly.getTime() === todayDateOnly.getTime()) {
+                        dateLabel = 'Today';
+                      } else if (messageDateOnly.getTime() === yesterdayDateOnly.getTime()) {
+                        dateLabel = 'Yesterday';
+                      } else {
+                        dateLabel = messageDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+                      }
+                      
+                      const timeLabel = messageDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      
                       return (
                         <div key={message.id} className={`flex items-start space-x-3 ${isOwnMessage ? 'flex-row-reverse space-x-reverse' : ''} transition-all duration-200 ease-in-out`}>
                           {/* Avatar - Left for received, Right for sent */}
@@ -1535,7 +1557,7 @@ function MessagingPage() {
                                   ? 'text-blue-100' 
                                   : 'text-gray-500 dark:text-gray-300'
                               }`}>
-                                {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                {dateLabel}, {timeLabel}
                               </p>
                             </div>
                           </div>

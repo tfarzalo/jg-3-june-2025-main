@@ -348,16 +348,6 @@ export function JobCategoryManager() {
             </div>
           </div>
         </form>
-        <div className="mt-4 flex justify-end">
-          <button
-            type="submit"
-            disabled={processingId === 'new'}
-            onClick={() => document.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }))}
-            className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
-          >
-            {processingId === 'new' ? 'Creating...' : 'Create Category'}
-          </button>
-        </div>
         </>
       )}
 
