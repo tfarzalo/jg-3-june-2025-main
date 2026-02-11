@@ -53,6 +53,13 @@ const NotificationEmailModal: React.FC<NotificationEmailModalProps> = ({
     }
   }, [isOpen, job, notificationType]);
 
+  // Auto-expand CC/BCC section when there are CC or BCC emails
+  useEffect(() => {
+    if ((ccEmails && ccEmails.trim()) || (bccEmails && bccEmails.trim())) {
+      setShowCCBCC(true);
+    }
+  }, [ccEmails, bccEmails]);
+
   const resolveSecondaryEmail = async (
     propertyId: string,
     recipient: string,

@@ -129,6 +129,7 @@ export function SubcontractorDashboard() {
   const isPreview = previewUserId && (role === 'admin' || role === 'jg_management');
   const [isLoading, setIsLoading] = useState(true);
   const [language, setLanguage] = useState<'en' | 'es'>('en');
+  const [languageInitialized, setLanguageInitialized] = useState(false);
 
   const t = {
     en: {
@@ -165,7 +166,11 @@ export function SubcontractorDashboard() {
       unit: "Unit",
       language: "Language",
       english: "English",
-      spanish: "Español"
+      spanish: "Español",
+      extraCharges: "Extra Charges -",
+      perHour: "/hour",
+      loadingWorkspace: "Loading your workspace...",
+      paintingDashboard: "PAINTING DASHBOARD"
     },
     es: {
       viewingAs: "Estás viendo el panel de subcontratista como",
@@ -201,11 +206,65 @@ export function SubcontractorDashboard() {
       unit: "Unidad",
       language: "Idioma",
       english: "English",
-      spanish: "Español"
+      spanish: "Español",
+      extraCharges: "Cargos Adicionales -",
+      perHour: "/hora",
+      loadingWorkspace: "Cargando su espacio de trabajo...",
+      paintingDashboard: "PANEL DE PINTURA"
     }
   };
 
   const text = t[language];
+
+  // Initialize language from profile on mount
+  useEffect(() => {
+    const initializeLanguage = async () => {
+      try {
+        // Priority: 1. Profile preference (admin-set), 2. Default 'en'
+        // Note: We intentionally ignore localStorage to ensure admin-set language always loads
+        // Users can toggle language temporarily, but it resets on page reload
+        
+        let userId: string | undefined;
+        
+        if (previewUserId) {
+          userId = previewUserId;
+        } else {
+          const { data: userData } = await supabase.auth.getUser();
+          userId = userData.user?.id;
+        }
+
+        if (userId) {
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('language_preference')
+            .eq('id', userId)
+            .single();
+
+          if (profileData?.language_preference === 'es') {
+            setLanguage('es');
+          } else {
+            setLanguage('en');
+          }
+        } else {
+          setLanguage('en'); // Fallback to English if no user
+        }
+      } catch (error) {
+        console.error('Error initializing language:', error);
+        setLanguage('en'); // Fallback to English
+      } finally {
+        setLanguageInitialized(true);
+      }
+    };
+
+    initializeLanguage();
+  }, [previewUserId]);
+
+  // Handle language toggle - temporary for current session only
+  // Note: This does NOT persist to localStorage, so admin-set language always loads on refresh
+  const handleLanguageChange = (newLanguage: 'en' | 'es') => {
+    setLanguage(newLanguage);
+    // Intentionally NOT saving to localStorage - admin-set language should always be the default
+  };
 
   useEffect(() => {
     const fetchJobs = async () => {
@@ -284,13 +343,15 @@ export function SubcontractorDashboard() {
   }, [refreshJobsForSelectedDate]);
 
   useEffect(() => {
-    // Show loading screen for 4 seconds
+    // Show loading screen for 4 seconds, but only after language is initialized
+    if (!languageInitialized) return;
+    
     const timer = setTimeout(() => {
       setIsLoading(false);
     }, 4000);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [languageInitialized]);
 
   const fetchJobsForDate = async (date: Date): Promise<Job[] | undefined> => {
     console.log('fetchJobsForDate called for date:', date);
@@ -690,7 +751,7 @@ export function SubcontractorDashboard() {
   const isTomorrow = isSameDay(selectedDate, addDays(new Date(), 1));
 
   if (isLoading) {
-    return <LoadingScreen message="Loading your workspace..." />;
+    return <LoadingScreen message={text.loadingWorkspace} title={text.paintingDashboard} />;
   }
 
   return (
@@ -723,7 +784,7 @@ export function SubcontractorDashboard() {
                  </div>
                  <select
                    value={language}
-                   onChange={(e) => setLanguage(e.target.value as 'en' | 'es')}
+                   onChange={(e) => handleLanguageChange(e.target.value as 'en' | 'es')}
                    className="block w-full sm:w-auto pl-10 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md dark:bg-[#1E293B] dark:border-gray-600 dark:text-white"
                  >
                    <option value="en">{text.english}</option>
@@ -875,6 +936,7 @@ export function SubcontractorDashboard() {
                             propertyName={job.property?.property_name}
                             scheduledDate={job.scheduled_date}
                             onDecision={handleAssignmentDecision}
+                            language={language}
                           />
                         </div>
                       ) : (
@@ -1024,7 +1086,7 @@ export function SubcontractorDashboard() {
                                               </span>
                                               <span className="text-green-600 dark:text-green-400 font-medium">
                                                 {text.subPay} {formatCurrency(detail.sub_pay_amount)}
-                                                {detail.is_hourly ? '/hour' : ''}
+                                                {detail.is_hourly ? text.perHour : ''}
                                               </span>
                                             </div>
                                           ))}
@@ -1038,7 +1100,7 @@ export function SubcontractorDashboard() {
                                   <div className="space-y-3">
                                     {standardCategories.map(category => renderCategory(category))}
                                     {extraChargeCategories.map(category =>
-                                      renderCategory(category, 'Extra Charges -')
+                                      renderCategory(category, text.extraCharges)
                                     )}
                                   </div>
                                 ) : (

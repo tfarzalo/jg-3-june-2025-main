@@ -3,6 +3,7 @@ import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { CheckCircle, XCircle } from 'lucide-react';
 import { formatDate } from '../lib/dateUtils';
+import { BlockingLoadingModal } from './ui/BlockingLoadingModal';
 
 type DeclineReasonCode = 'schedule_conflict' | 'too_far' | 'scope_mismatch' | 'rate_issue' | 'other' | '';
 
@@ -12,14 +13,71 @@ interface Props {
   propertyName?: string | null;
   scheduledDate?: string | null;
   onDecision?: (decision: 'accepted' | 'declined') => void;
+  language?: 'en' | 'es';
 }
 
-export function SubcontractorDashboardActions({ jobId, workOrderNum, propertyName, scheduledDate, onDecision }: Props) {
+export function SubcontractorDashboardActions({ jobId, workOrderNum, propertyName, scheduledDate, onDecision, language = 'en' }: Props) {
   const [processing, setProcessing] = useState(false);
   const [declineReason, setDeclineReason] = useState<DeclineReasonCode>('');
   const [declineText, setDeclineText] = useState('');
   const [showDecline, setShowDecline] = useState(false);
   const [subcontractorName, setSubcontractorName] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitAction, setSubmitAction] = useState<'accepted' | 'declined' | null>(null);
+
+  // Translations
+  const t = {
+    en: {
+      accept: 'Accept',
+      accepting: 'Accepting...',
+      decline: 'Decline',
+      declining: 'Declining...',
+      acceptingTitle: 'Accepting Assignment...',
+      decliningTitle: 'Declining Assignment...',
+      acceptingMessage: 'Please wait while we confirm your acceptance.',
+      decliningMessage: 'Please wait while we process your decline.',
+      selectReason: 'Select reason',
+      reasonLabel: 'Reason',
+      scheduleConflict: 'Schedule conflict',
+      tooFar: 'Too far / travel distance',
+      scopeMismatch: 'Scope mismatch',
+      rateIssue: 'Rate/payment issue',
+      other: 'Other',
+      provideDetails: 'Provide details',
+      cancel: 'Cancel',
+      confirmDecline: 'Confirm Decline',
+      chooseReason: 'Please choose a reason to decline.',
+      provideReasonOther: 'Please provide a reason for Other.',
+      acceptedToast: 'Assignment accepted',
+      declinedToast: 'Assignment declined'
+    },
+    es: {
+      accept: 'Aceptar',
+      accepting: 'Aceptando...',
+      decline: 'Rechazar',
+      declining: 'Rechazando...',
+      acceptingTitle: 'Aceptando Asignación...',
+      decliningTitle: 'Rechazando Asignación...',
+      acceptingMessage: 'Por favor espere mientras confirmamos su aceptación.',
+      decliningMessage: 'Por favor espere mientras procesamos su rechazo.',
+      selectReason: 'Seleccione razón',
+      reasonLabel: 'Razón',
+      scheduleConflict: 'Conflicto de horario',
+      tooFar: 'Muy lejos / distancia de viaje',
+      scopeMismatch: 'Alcance no coincide',
+      rateIssue: 'Problema de tarifa/pago',
+      other: 'Otro',
+      provideDetails: 'Proporcione detalles',
+      cancel: 'Cancelar',
+      confirmDecline: 'Confirmar Rechazo',
+      chooseReason: 'Por favor elija una razón para rechazar.',
+      provideReasonOther: 'Por favor proporcione una razón para Otro.',
+      acceptedToast: 'Asignación aceptada',
+      declinedToast: 'Asignación rechazada'
+    }
+  };
+
+  const text = t[language];
 
   const loadSubcontractorName = async () => {
     const { data: userData } = await supabase.auth.getUser();
@@ -34,19 +92,32 @@ export function SubcontractorDashboardActions({ jobId, workOrderNum, propertyNam
   };
 
   const submitDecision = async (decision: 'accepted' | 'declined') => {
+    // Guard: prevent double-submission
+    if (isSubmitting || processing) {
+      return;
+    }
+
+    // Validate decline reason before showing loading modal
     if (decision === 'declined') {
       if (!declineReason) {
-        toast.error('Please choose a reason to decline.');
+        toast.error(text.chooseReason);
         return;
       }
       if (declineReason === 'other' && !declineText.trim()) {
-        toast.error('Please provide a reason for Other.');
+        toast.error(text.provideReasonOther);
         return;
       }
     }
 
+    const startTime = Date.now();
+    const MIN_DISPLAY_TIME = 500; // ms - prevents flash on fast networks
+
     try {
+      // Show loading modal immediately
+      setSubmitAction(decision);
+      setIsSubmitting(true);
       setProcessing(true);
+
       const subName = subcontractorName || (await loadSubcontractorName());
       const { data, error } = await supabase.rpc('process_assignment_decision_authenticated', {
         p_job_id: jobId,
@@ -61,13 +132,32 @@ export function SubcontractorDashboardActions({ jobId, workOrderNum, propertyNam
 
       await sendAdminNotifications(decision, subName || 'Subcontractor');
 
-      toast.success(decision === 'accepted' ? 'Assignment accepted' : 'Assignment declined');
+      // Ensure minimum display time to avoid flash
+      const elapsed = Date.now() - startTime;
+      if (elapsed < MIN_DISPLAY_TIME) {
+        await new Promise(resolve => setTimeout(resolve, MIN_DISPLAY_TIME - elapsed));
+      }
+
+      // Success: close modal, show toast, trigger callback
+      setIsSubmitting(false);
+      setSubmitAction(null);
+      toast.success(decision === 'accepted' ? text.acceptedToast : text.declinedToast);
       onDecision?.(decision);
       setShowDecline(false);
       setDeclineReason('');
       setDeclineText('');
     } catch (err) {
       console.error('Error in dashboard decision', err);
+      
+      // Ensure minimum display time even on error
+      const elapsed = Date.now() - startTime;
+      if (elapsed < MIN_DISPLAY_TIME) {
+        await new Promise(resolve => setTimeout(resolve, MIN_DISPLAY_TIME - elapsed));
+      }
+
+      // Error: close modal, show error toast, keep UI intact
+      setIsSubmitting(false);
+      setSubmitAction(null);
       toast.error(err instanceof Error ? err.message : 'Failed to submit decision');
     } finally {
       setProcessing(false);
@@ -78,7 +168,11 @@ export function SubcontractorDashboardActions({ jobId, workOrderNum, propertyNam
     try {
       const { data: recipients, error: recError } = await supabase
         .from('sub_assignment_notification_recipients')
-        .select('user_id, profiles!inner(full_name, email)');
+        .select('user_id, profiles!inner(full_name, email)')
+        .returns<Array<{ 
+          user_id: string; 
+          profiles: { full_name: string; email: string } 
+        }>>();
       if (recError || !recipients) {
         console.warn('No assignment alert recipients configured or failed to load', recError);
         return;
@@ -129,69 +223,78 @@ Reason: ${decision === 'declined' ? (declineReason || 'n/a') : 'n/a'}${declineTe
   };
 
   return (
-    <div className="flex items-center space-x-2">
-      <button
-        onClick={() => submitDecision('accepted')}
-        disabled={processing}
-        className="inline-flex items-center px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg disabled:opacity-60"
-      >
-        <CheckCircle className="h-4 w-4 mr-1" />
-        Accept
-      </button>
-      <div className="relative">
+    <>
+      {/* Blocking Loading Modal */}
+      <BlockingLoadingModal
+        open={isSubmitting}
+        title={submitAction === 'accepted' ? text.acceptingTitle : text.decliningTitle}
+        message={submitAction === 'accepted' ? text.acceptingMessage : text.decliningMessage}
+      />
+
+      <div className="flex items-center space-x-2">
         <button
-          onClick={() => setShowDecline(prev => !prev)}
-          disabled={processing}
-          className="inline-flex items-center px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg disabled:opacity-60"
+          onClick={() => submitDecision('accepted')}
+          disabled={processing || isSubmitting}
+          className="inline-flex items-center px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg disabled:opacity-60 disabled:cursor-not-allowed transition-opacity"
         >
-          <XCircle className="h-4 w-4 mr-1" />
-          Decline
+          <CheckCircle className="h-4 w-4 mr-1" />
+          {isSubmitting && submitAction === 'accepted' ? text.accepting : text.accept}
         </button>
-        {showDecline && (
-          <div className="absolute z-10 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-3">
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Reason</label>
-            <select
-              value={declineReason}
-              onChange={(e) => setDeclineReason(e.target.value as DeclineReasonCode)}
-              className="w-full border-gray-300 rounded-lg text-sm"
-              disabled={processing}
-            >
-              <option value="">Select reason</option>
-              <option value="schedule_conflict">Schedule conflict</option>
-              <option value="too_far">Too far / travel distance</option>
-              <option value="scope_mismatch">Scope mismatch</option>
-              <option value="rate_issue">Rate/payment issue</option>
-              <option value="other">Other</option>
-            </select>
-            {declineReason === 'other' && (
-              <textarea
-                rows={3}
-                className="w-full mt-2 border-gray-300 rounded-lg text-sm"
-                value={declineText}
-                onChange={(e) => setDeclineText(e.target.value)}
-                placeholder="Provide details"
-                disabled={processing}
-              />
-            )}
-            <div className="mt-3 flex justify-end space-x-2">
-              <button
-                onClick={() => setShowDecline(false)}
-                className="text-xs text-gray-500 hover:text-gray-700"
-                disabled={processing}
+        <div className="relative">
+          <button
+            onClick={() => setShowDecline(prev => !prev)}
+            disabled={processing || isSubmitting}
+            className="inline-flex items-center px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg disabled:opacity-60 disabled:cursor-not-allowed transition-opacity"
+          >
+            <XCircle className="h-4 w-4 mr-1" />
+            {isSubmitting && submitAction === 'declined' ? text.declining : text.decline}
+          </button>
+          {showDecline && (
+            <div className="absolute z-10 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg p-3">
+              <label className="block text-xs font-semibold text-gray-700 mb-1">{text.reasonLabel}</label>
+              <select
+                value={declineReason}
+                onChange={(e) => setDeclineReason(e.target.value as DeclineReasonCode)}
+                className="w-full border-gray-300 rounded-lg text-sm"
+                disabled={processing || isSubmitting}
               >
-                Cancel
-              </button>
-              <button
-                onClick={() => submitDecision('declined')}
-                className="text-xs px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-60"
-                disabled={processing}
-              >
-                Confirm Decline
-              </button>
+                <option value="">{text.selectReason}</option>
+                <option value="schedule_conflict">{text.scheduleConflict}</option>
+                <option value="too_far">{text.tooFar}</option>
+                <option value="scope_mismatch">{text.scopeMismatch}</option>
+                <option value="rate_issue">{text.rateIssue}</option>
+                <option value="other">{text.other}</option>
+              </select>
+              {declineReason === 'other' && (
+                <textarea
+                  rows={3}
+                  className="w-full mt-2 border-gray-300 rounded-lg text-sm"
+                  value={declineText}
+                  onChange={(e) => setDeclineText(e.target.value)}
+                  placeholder={text.provideDetails}
+                  disabled={processing || isSubmitting}
+                />
+              )}
+              <div className="mt-3 flex justify-end space-x-2">
+                <button
+                  onClick={() => setShowDecline(false)}
+                  className="text-xs text-gray-500 hover:text-gray-700"
+                  disabled={processing || isSubmitting}
+                >
+                  {text.cancel}
+                </button>
+                <button
+                  onClick={() => submitDecision('declined')}
+                  className="text-xs px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed transition-opacity"
+                  disabled={processing || isSubmitting}
+                >
+                  {text.confirmDecline}
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -35,6 +35,7 @@ interface SubcontractorData {
     friday: boolean;
     saturday: boolean;
   } | null;
+  language_preference: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -66,6 +67,7 @@ export default function SubcontractorEditPage() {
     company_name: '',
     password: '',
     confirmPassword: '',
+    defaultToSpanish: false,
     working_days: {
       sunday: true,
       monday: true,
@@ -140,6 +142,7 @@ useEffect(() => {
           company_name: data.company_name || '',
           password: '',
           confirmPassword: '',
+          defaultToSpanish: data.language_preference === 'es',
           working_days: data.working_days || {
             sunday: true,
             monday: true,
@@ -372,6 +375,7 @@ useEffect(() => {
         address: formData.address,
         company_name: formData.company_name,
         working_days: formData.working_days,
+        language_preference: formData.defaultToSpanish ? 'es' : 'en',
         updated_at: new Date().toISOString()
       };
 
@@ -719,6 +723,33 @@ useEffect(() => {
               This helps ensure proper scheduling and resource allocation.
             </p>
           </div>
+        </div>
+
+        {/* Language Preference Section */}
+        <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Language Preference
+          </h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            Set the default dashboard language for this subcontractor. They can still toggle the language manually, but it will reset to this default on next login.
+          </p>
+          
+          <label className="flex items-center space-x-3 p-3 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.defaultToSpanish}
+              onChange={(e) => setFormData({ ...formData, defaultToSpanish: e.target.checked })}
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 dark:border-gray-600 rounded"
+            />
+            <div className="flex-1">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Default Dashboard Language to Spanish
+              </span>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                When checked, the subcontractor's dashboard will load in Spanish by default
+              </p>
+            </div>
+          </label>
         </div>
 
         {/* Calendar Feed Section */}

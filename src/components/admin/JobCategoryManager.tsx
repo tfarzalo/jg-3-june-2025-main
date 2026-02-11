@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../utils/supabase';
 import { toast } from 'sonner';
-import { Loader2, Plus, Trash2, AlertTriangle, Lock } from 'lucide-react';
+import { Loader2, Plus, Trash2, AlertTriangle, Lock, Pencil, Check, X } from 'lucide-react';
 
 interface JobCategory {
   id: string;
@@ -73,6 +73,8 @@ export function JobCategoryManager() {
   const [isAdding, setIsAdding] = useState(false);
   const [newCategory, setNewCategory] = useState({ name: '', description: '', is_default: false });
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState<string>('');
   
   const [modalConfig, setModalConfig] = useState<Omit<ConfirmationModalProps, 'onCancel'> & { onCancel?: () => void }>({
     isOpen: false,
@@ -258,6 +260,89 @@ export function JobCategoryManager() {
     });
   };
 
+  const startEditing = (category: JobCategory) => {
+    setEditingId(category.id);
+    setEditingName(category.name);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditingName('');
+  };
+
+  const handleRename = async (category: JobCategory) => {
+    const trimmedName = editingName.trim();
+    
+    // Validate
+    if (!trimmedName) {
+      toast.error('Category name cannot be empty');
+      return;
+    }
+
+    if (trimmedName === category.name) {
+      // No change, just cancel
+      cancelEditing();
+      return;
+    }
+
+    // Check for duplicate (case-insensitive, client-side check for better UX)
+    const duplicate = categories.find(
+      c => c.id !== category.id && c.name.toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (duplicate) {
+      toast.error('A category with that name already exists');
+      return;
+    }
+
+    try {
+      setProcessingId(category.id);
+
+      // Call the RPC function to safely rename
+      const { data, error } = await supabase.rpc('rename_job_category', {
+        p_category_id: category.id,
+        p_new_name: trimmedName
+      });
+
+      if (error) {
+        // Handle specific error codes
+        if (error.code === '42501') {
+          toast.error("You don't have permission to rename categories");
+        } else if (error.code === '23505') {
+          toast.error('A category with that name already exists');
+        } else if (error.message.includes('System categories')) {
+          toast.error('System categories cannot be renamed');
+        } else if (error.message.includes('not found')) {
+          toast.error('Category not found');
+        } else {
+          toast.error(error.message || 'Failed to rename category');
+        }
+        throw error;
+      }
+
+      // Update local state with the renamed category
+      setCategories(categories.map(c => 
+        c.id === category.id ? { ...c, name: trimmedName } : c
+      ));
+      
+      toast.success('Category renamed successfully');
+      cancelEditing();
+    } catch (err) {
+      console.error('Error renaming category:', err);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, category: JobCategory) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleRename(category);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEditing();
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-12">
@@ -365,12 +450,48 @@ export function JobCategoryManager() {
             {categories.map((category) => (
               <tr key={category.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-gray-900 dark:text-white flex items-center">
-                    {category.name}
-                    {category.is_default && (
-                      <Lock className="w-3 h-3 ml-2 text-gray-400" />
-                    )}
-                  </div>
+                  {editingId === category.id ? (
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(e, category)}
+                        autoFocus
+                        onFocus={(e) => e.target.select()}
+                        disabled={processingId === category.id}
+                        className="text-sm font-medium px-2 py-1 border border-blue-500 dark:border-blue-400 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                        style={{ width: '200px' }}
+                      />
+                      <button
+                        onClick={() => handleRename(category)}
+                        disabled={processingId === category.id}
+                        className="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50"
+                        title="Save"
+                      >
+                        {processingId === category.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Check className="w-4 h-4" />
+                        )}
+                      </button>
+                      <button
+                        onClick={cancelEditing}
+                        disabled={processingId === category.id}
+                        className="text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 disabled:opacity-50"
+                        title="Cancel"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-sm font-medium text-gray-900 dark:text-white flex items-center">
+                      {category.name}
+                      {category.is_default && (
+                        <Lock className="w-3 h-3 ml-2 text-gray-400" />
+                      )}
+                    </div>
+                  )}
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
                   {category.description || '-'}
@@ -378,7 +499,7 @@ export function JobCategoryManager() {
                 <td className="px-6 py-4 text-center">
                   <button
                     onClick={() => handleToggleDefault(category)}
-                    disabled={!!processingId}
+                    disabled={!!processingId || !!editingId}
                     className={`inline-flex items-center px-2.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
                       category.is_default
                         ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
@@ -389,15 +510,28 @@ export function JobCategoryManager() {
                   </button>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  {!category.is_default && (
-                    <button
-                      onClick={() => handleDelete(category)}
-                      disabled={!!processingId}
-                      className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
+                  <div className="flex items-center justify-end space-x-2">
+                    {!category.is_system && editingId !== category.id && (
+                      <button
+                        onClick={() => startEditing(category)}
+                        disabled={!!processingId || !!editingId}
+                        className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 disabled:opacity-50"
+                        title={category.is_system ? "System category can't be renamed" : "Rename category"}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                    )}
+                    {!category.is_default && editingId !== category.id && (
+                      <button
+                        onClick={() => handleDelete(category)}
+                        disabled={!!processingId || !!editingId}
+                        className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
+                        title="Delete category"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -415,6 +549,49 @@ export function JobCategoryManager() {
           </p>
         </div>
       </div>
+
+      {editingId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow-xl max-w-md w-full border border-gray-200 dark:border-gray-700 overflow-hidden transform transition-all">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Rename Category
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                You are renaming a category. This action will update the category name everywhere it is used.
+              </p>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  New Category Name
+                </label>
+                <input
+                  type="text"
+                  value={editingName}
+                  onChange={e => setEditingName(e.target.value)}
+                  onKeyDown={e => handleKeyDown(e, categories.find(c => c.id === editingId)!)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-800 dark:text-white"
+                  placeholder="Enter new category name"
+                />
+              </div>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={cancelEditing}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleRename(categories.find(c => c.id === editingId)!)}
+                  disabled={processingId !== null}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {processingId === categories.find(c => c.id === editingId)!.id ? 'Renaming...' : 'Rename Category'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmationModal
         isOpen={modalConfig.isOpen}

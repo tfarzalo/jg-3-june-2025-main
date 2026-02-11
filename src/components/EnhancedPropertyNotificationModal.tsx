@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { supabase } from '../utils/supabase';
 import { formatDisplayDate } from '../lib/dateUtils';
 import { ExtraChargeLineItem } from '../types/extraCharges';
+import { getEmailRecipients } from '../lib/contacts/emailRecipientsAdapter';
 
 interface Job {
   id: string;
@@ -23,6 +24,7 @@ interface Job {
   scheduled_date?: string;
   completed_date?: string;
   property?: {
+    id?: string;
     name?: string;
     address?: string;
     address_2?: string;
@@ -31,6 +33,7 @@ interface Job {
     zip?: string;
     ap_email?: string;
     ap_name?: string;
+    primary_contact_email?: string;
   };
   job_type?: {
     label?: string;
@@ -307,43 +310,56 @@ export function EnhancedPropertyNotificationModal({
 
   const initializeRecipient = useCallback(async () => {
     if (!job?.property?.id) return;
+    
+    // Determine if this is approval or notification email
+    const mode = notificationType === 'extra_charges' ? 'approval' : 'notification';
+    console.log(`📧 Initializing ${mode} recipients for property:`, job.property.id);
+    
     try {
-      const { data: prop, error } = await supabase
+      // Use the centralized email recipients function
+      const recipients = await getEmailRecipients(job.property.id, mode, {
+        fallbackToManager: true
+      });
+      
+      console.log(`📧 ${mode} email recipients loaded:`, recipients);
+      
+      // Set To field: primary recipient (with secondary email if available)
+      if (recipients.to.length > 0) {
+        setRecipientEmail(recipients.to.join(', '));
+      }
+      
+      // Set CC field: other recipients
+      if (recipients.cc.length > 0) {
+        setCcEmails(recipients.cc.join(', '));
+      }
+      
+      // Set BCC field if any
+      if (recipients.bcc.length > 0) {
+        setBccEmails(recipients.bcc.join(', '));
+      }
+      
+      // Show CC/BCC fields if there are any
+      if (recipients.cc.length > 0 || recipients.bcc.length > 0) {
+        setShowCCBCC(true);
+      }
+      
+      // Load AP contact name for template
+      const { data: prop } = await supabase
         .from('properties')
-        .select(`
-          primary_contact_email,
-          ap_email,
-          ap_name,
-          community_manager_email,
-          maintenance_supervisor_email,
-          community_manager_secondary_email,
-          maintenance_supervisor_secondary_email,
-          ap_secondary_email,
-          primary_contact_secondary_email
-        `)
+        .select('ap_name')
         .eq('id', job.property.id)
         .single();
-      if (error) {
-        const fallback = job.property?.primary_contact_email || job.property?.ap_email || '';
-        setRecipientEmail(fallback);
-        setApContactName(job.property?.ap_name || '');
-        const secondaryEmail = await resolveSecondaryEmail(job.property.id, fallback);
-        setCcEmails(secondaryEmail || '');
-        return;
-      }
-      const defaultEmail = prop?.primary_contact_email || prop?.ap_email || '';
-      setRecipientEmail(defaultEmail || '');
+      
       setApContactName(prop?.ap_name || job.property?.ap_name || '');
-      const secondaryEmail = await resolveSecondaryEmail(job.property.id, defaultEmail, prop);
-      setCcEmails(secondaryEmail || '');
-    } catch {
-      const fallback = job.property?.primary_contact_email || job.property?.ap_email || '';
+      
+    } catch (error) {
+      console.error(`❌ Error loading ${mode} recipients:`, error);
+      // Fallback to property AP email
+      const fallback = job.property?.ap_email || '';
       setRecipientEmail(fallback);
       setApContactName(job.property?.ap_name || '');
-      const secondaryEmail = await resolveSecondaryEmail(job.property.id, fallback);
-      setCcEmails(secondaryEmail || '');
     }
-  }, [job, resolveSecondaryEmail]);
+  }, [job, notificationType]);
 
   const normalizeImageType = (image: JobImage): ImageBucket => {
     const source = image.image_type || image.file_name || '';
@@ -685,6 +701,13 @@ export function EnhancedPropertyNotificationModal({
 
     return () => clearInterval(interval);
   }, [pendingApproval]);
+
+  // Auto-expand CC/BCC section when there are CC or BCC emails
+  useEffect(() => {
+    if ((ccEmails && ccEmails.trim()) || (bccEmails && bccEmails.trim())) {
+      setShowCCBCC(true);
+    }
+  }, [ccEmails, bccEmails]);
 
   const toggleImageSelection = (imageId: string) => {
     setSelectedImageIds((prev) =>

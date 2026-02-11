@@ -3,9 +3,10 @@ import React, { useState, useEffect } from 'react';
 interface LoadingScreenProps {
   message?: string;
   duration?: number;
+  title?: string;
 }
 
-export function LoadingScreen({ message = 'Loading...', duration = 4000 }: LoadingScreenProps) {
+export function LoadingScreen({ message = 'Loading...', duration = 4000, title = 'PAINTING DASHBOARD' }: LoadingScreenProps) {
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
@@ -64,7 +65,7 @@ export function LoadingScreen({ message = 'Loading...', duration = 4000 }: Loadi
           />
         </div>
         <h3 className="text-gray-900 dark:text-white font-medium text-xl text-center">
-          PAINTING DASHBOARD
+          {title}
         </h3>
       </div>
     </div>

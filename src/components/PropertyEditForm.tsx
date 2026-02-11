@@ -4,6 +4,8 @@ import { Building2, ArrowLeft, MapPin, Plus, Minus, ZoomIn, Trash2 } from 'lucid
 import { supabase } from '../utils/supabase';
 import { useLeafletMap } from '../hooks/useLeafletMap';
 import { PaintColorsEditor } from './properties/PaintColorsEditor';
+import { PropertyContactsEditor } from './property/PropertyContactsEditor';
+import { SystemContactKey, ContactRoles } from '../types/contacts';
 import { PaintScheme } from '../lib/types';
 import { Lightbox } from './Lightbox';
 import { UnitMapUpload } from './ui/UnitMapUpload';
@@ -22,6 +24,12 @@ interface PropertyContact {
   email: string;
   secondary_email?: string;
   phone: string;
+  is_subcontractor_contact?: boolean;
+  is_accounts_receivable_contact?: boolean;
+  is_approval_recipient?: boolean;
+  is_notification_recipient?: boolean;
+  is_primary_approval_recipient?: boolean;
+  is_primary_notification_recipient?: boolean;
   is_new?: boolean;
 }
 
@@ -33,10 +41,22 @@ export function PropertyEditForm() {
   const [previewAddress, setPreviewAddress] = useState('');
   const [paintSchemes, setPaintSchemes] = useState<PaintScheme[]>([]);
   const [contacts, setContacts] = useState<PropertyContact[]>([]);
-  const [subcontractorContactSource, setSubcontractorContactSource] = useState<string>('community_manager');
-  const [notificationContactSource, setNotificationContactSource] = useState<string>('community_manager');
-  const [secondaryEmailVisibility, setSecondaryEmailVisibility] = useState<Record<string, boolean>>({});
-  const [propertySecondaryEmailVisibility, setPropertySecondaryEmailVisibility] = useState<Record<string, boolean>>({});
+  
+  // New contact management state
+  const [systemContacts, setSystemContacts] = useState({
+    community_manager: { name: '', email: '', secondary_email: '', phone: '', title: 'Community Manager' },
+    maintenance_supervisor: { name: '', email: '', secondary_email: '', phone: '', title: 'Maintenance Supervisor' },
+    primary_contact: { name: '', email: '', secondary_email: '', phone: '', title: 'Primary Contact' },
+    ap: { name: '', email: '', secondary_email: '', phone: '', title: 'Accounts Payable' }
+  });
+  
+  const [systemContactRoles, setSystemContactRoles] = useState<Record<string, Partial<ContactRoles>>>({
+    community_manager: { subcontractor: true },
+    maintenance_supervisor: {},
+    primary_contact: {},
+    ap: { accountsReceivable: true }
+  });
+  
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [propertyGroups, setPropertyGroups] = useState<PropertyManagementGroup[]>([]);
   const [originalPropertyName, setOriginalPropertyName] = useState('');
@@ -55,30 +75,7 @@ export function PropertyEditForm() {
     supplies_paint: '',
     unit_layout: '',
     
-    // Contact Information
-    community_manager_name: '',
-    community_manager_email: '',
-    community_manager_phone: '',
-    community_manager_secondary_email: '',
-    maintenance_supervisor_name: '',
-    maintenance_supervisor_email: '',
-    maintenance_supervisor_phone: '',
-    maintenance_supervisor_secondary_email: '',
-    maintenance_supervisor_title: '',
-    point_of_contact: '',
-    primary_contact_name: '',
-    primary_contact_phone: '',
-    primary_contact_role: '',
-    primary_contact_secondary_email: '',
-    subcontractor_a: '',
-    subcontractor_b: '',
-    community_manager_title: '',
-    
     // Billing Information
-    ap_name: '',
-    ap_email: '',
-    ap_phone: '',
-    ap_secondary_email: '',
     billing_notes: '',
     extra_charges_notes: '',
     occupied_regular_paint_fees: '',
@@ -110,6 +107,168 @@ export function PropertyEditForm() {
     compliance_upload_documents_date: '',
     compliance_invoice_delivery_date: ''
   });
+
+  // Handler functions for PropertyContactsEditor
+  const handleSystemContactChange = (key: SystemContactKey, field: string, value: string) => {
+    setSystemContacts(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        [field]: value
+      }
+    }));
+  };
+
+  const handleSystemContactRoleChange = (key: SystemContactKey, role: keyof ContactRoles, value: boolean) => {
+    console.log('🔄 handleSystemContactRoleChange called:', { key, role, value });
+    setSystemContactRoles(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        [role]: value
+      }
+    }));
+    
+    // If setting a role to true, clear it from other contacts
+    if (value) {
+      if (role === 'subcontractor' || role === 'accountsReceivable' || role === 'primaryApproval' || role === 'primaryNotification') {
+        // Clear this role from all other system contacts
+        setSystemContactRoles(prev => {
+          const updated = { ...prev };
+          Object.keys(updated).forEach(k => {
+            if (k !== key && updated[k]) {
+              updated[k] = { ...updated[k], [role]: false };
+            }
+          });
+          return updated;
+        });
+        
+        // Also clear from custom contacts
+        setContacts(prev => prev.map(contact => {
+          if (role === 'subcontractor') return { ...contact, is_subcontractor_contact: false };
+          if (role === 'accountsReceivable') return { ...contact, is_accounts_receivable_contact: false };
+          if (role === 'primaryApproval') return { ...contact, is_primary_approval_recipient: false };
+          if (role === 'primaryNotification') return { ...contact, is_primary_notification_recipient: false };
+          return contact;
+        }));
+      }
+    }
+    
+    // If unchecking approvalRecipient, also uncheck primaryApproval
+    if (role === 'approvalRecipient' && !value) {
+      setSystemContactRoles(prev => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          primaryApproval: false
+        }
+      }));
+    }
+    
+    // If unchecking notificationRecipient, also uncheck primaryNotification
+    if (role === 'notificationRecipient' && !value) {
+      setSystemContactRoles(prev => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          primaryNotification: false
+        }
+      }));
+    }
+  };
+
+  const handleCustomContactChange = (id: string, field: keyof PropertyContact, value: any) => {
+    console.log('🔄 handleCustomContactChange called:', { id, field, value });
+    setContacts(prev => prev.map(contact => {
+      if (contact.id !== id) {
+        // Handle exclusive roles
+        if (field === 'is_subcontractor_contact' && value === true) {
+          return { ...contact, is_subcontractor_contact: false };
+        }
+        if (field === 'is_accounts_receivable_contact' && value === true) {
+          return { ...contact, is_accounts_receivable_contact: false };
+        }
+        if (field === 'is_primary_approval_recipient' && value === true) {
+          return { ...contact, is_primary_approval_recipient: false };
+        }
+        if (field === 'is_primary_notification_recipient' && value === true) {
+          return { ...contact, is_primary_notification_recipient: false };
+        }
+        return contact;
+      }
+      
+      const updated = { ...contact, [field]: value };
+      
+      // If unchecking approval recipient, also uncheck primary
+      if (field === 'is_approval_recipient' && !value) {
+        updated.is_primary_approval_recipient = false;
+      }
+      
+      // If unchecking notification recipient, also uncheck primary
+      if (field === 'is_notification_recipient' && !value) {
+        updated.is_primary_notification_recipient = false;
+      }
+      
+      return updated;
+    }));
+    
+    // Also clear from system contacts if needed
+    if (field === 'is_subcontractor_contact' && value === true) {
+      setSystemContactRoles(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(k => {
+          if (updated[k]) updated[k] = { ...updated[k], subcontractor: false };
+        });
+        return updated;
+      });
+    }
+    
+    if (field === 'is_accounts_receivable_contact' && value === true) {
+      setSystemContactRoles(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(k => {
+          if (updated[k]) updated[k] = { ...updated[k], accountsReceivable: false };
+        });
+        return updated;
+      });
+    }
+    
+    if (field === 'is_primary_approval_recipient' && value === true) {
+      setSystemContactRoles(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(k => {
+          if (updated[k]) updated[k] = { ...updated[k], primaryApproval: false };
+        });
+        return updated;
+      });
+    }
+    
+    if (field === 'is_primary_notification_recipient' && value === true) {
+      setSystemContactRoles(prev => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach(k => {
+          if (updated[k]) updated[k] = { ...updated[k], primaryNotification: false };
+        });
+        return updated;
+      });
+    }
+  };
+
+  const handleCustomContactAdd = () => {
+    const newContact: PropertyContact = {
+      id: `temp-${Date.now()}`,
+      position: '',
+      name: '',
+      email: '',
+      phone: '',
+      is_new: true
+    };
+    setContacts(prev => [...prev, newContact]);
+  };
+
+  const handleCustomContactDelete = (id: string) => {
+    setContacts(prev => prev.filter(contact => contact.id !== id));
+  };
 
   const { mapRef, error: mapError } = useLeafletMap({
     address: previewAddress
@@ -168,6 +327,82 @@ export function PropertyEditForm() {
       if (!data) throw new Error('Property not found');
       
       setOriginalPropertyName(data.property_name || '');
+      
+      // Populate system contacts from property data
+      setSystemContacts({
+        community_manager: {
+          name: data.community_manager_name || '',
+          email: data.community_manager_email || '',
+          secondary_email: data.community_manager_secondary_email || '',
+          phone: data.community_manager_phone || '',
+          title: data.community_manager_title || 'Community Manager'
+        },
+        maintenance_supervisor: {
+          name: data.maintenance_supervisor_name || '',
+          email: data.maintenance_supervisor_email || '',
+          secondary_email: data.maintenance_supervisor_secondary_email || '',
+          phone: data.maintenance_supervisor_phone || '',
+          title: data.maintenance_supervisor_title || 'Maintenance Supervisor'
+        },
+        primary_contact: {
+          name: data.primary_contact_name || '',
+          email: data.primary_contact_email || '',
+          secondary_email: data.primary_contact_secondary_email || '',
+          phone: data.primary_contact_phone || '',
+          title: data.primary_contact_role || 'Primary Contact'
+        },
+        ap: {
+          name: data.ap_name || '',
+          email: data.ap_email || '',
+          secondary_email: data.ap_secondary_email || '',
+          phone: data.ap_phone || '',
+          title: 'Accounts Payable'
+        }
+      });
+      
+      // Load system contact roles from database
+      console.log('📥 Loading system contact roles from database:', {
+        cm_subcontractor: data.community_manager_is_subcontractor,
+        cm_approval: data.community_manager_is_approval_recipient,
+        ms_subcontractor: data.maintenance_supervisor_is_subcontractor,
+        ap_ar: data.ap_is_ar
+      });
+      
+      setSystemContactRoles({
+        community_manager: {
+          subcontractor: data.community_manager_is_subcontractor || false,
+          accountsReceivable: data.community_manager_is_ar || false,
+          approvalRecipient: data.community_manager_is_approval_recipient || false,
+          notificationRecipient: data.community_manager_is_notification_recipient || false,
+          primaryApproval: data.community_manager_is_primary_approval || false,
+          primaryNotification: data.community_manager_is_primary_notification || false
+        },
+        maintenance_supervisor: {
+          subcontractor: data.maintenance_supervisor_is_subcontractor || false,
+          accountsReceivable: data.maintenance_supervisor_is_ar || false,
+          approvalRecipient: data.maintenance_supervisor_is_approval_recipient || false,
+          notificationRecipient: data.maintenance_supervisor_is_notification_recipient || false,
+          primaryApproval: data.maintenance_supervisor_is_primary_approval || false,
+          primaryNotification: data.maintenance_supervisor_is_primary_notification || false
+        },
+        primary_contact: {
+          subcontractor: data.primary_contact_is_subcontractor || false,
+          accountsReceivable: data.primary_contact_is_ar || false,
+          approvalRecipient: data.primary_contact_is_approval_recipient || false,
+          notificationRecipient: data.primary_contact_is_notification_recipient || false,
+          primaryApproval: data.primary_contact_is_primary_approval || false,
+          primaryNotification: data.primary_contact_is_primary_notification || false
+        },
+        ap: {
+          subcontractor: data.ap_is_subcontractor || false,
+          accountsReceivable: data.ap_is_ar || false,
+          approvalRecipient: data.ap_is_approval_recipient || false,
+          notificationRecipient: data.ap_is_notification_recipient || false,
+          primaryApproval: data.ap_is_primary_approval || false,
+          primaryNotification: data.ap_is_primary_notification || false
+        }
+      });
+      
       setFormData({
         property_name: data.property_name || '',
         property_management_group_id: data.property_management_group_id || '',
@@ -181,38 +416,11 @@ export function PropertyEditForm() {
         property_grade: data.property_grade || '',
         supplies_paint: data.supplies_paint || '',
         unit_layout: data.unit_layout || '',
-        community_manager_name: data.community_manager_name || '',
-        community_manager_email: data.community_manager_email || '',
-        community_manager_phone: data.community_manager_phone || '',
-        community_manager_secondary_email: data.community_manager_secondary_email || '',
-        maintenance_supervisor_name: data.maintenance_supervisor_name || '',
-        maintenance_supervisor_email: data.maintenance_supervisor_email || '',
-        maintenance_supervisor_phone: data.maintenance_supervisor_phone || '',
-        maintenance_supervisor_secondary_email: data.maintenance_supervisor_secondary_email || '',
-        maintenance_supervisor_title: data.maintenance_supervisor_title || '',
-        point_of_contact: data.point_of_contact || '',
-        primary_contact_name: data.primary_contact_name || '',
-        primary_contact_phone: data.primary_contact_phone || '',
-        primary_contact_role: data.primary_contact_role || '',
-        primary_contact_secondary_email: data.primary_contact_secondary_email || '',
-        subcontractor_a: data.subcontractor_a || '',
-        subcontractor_b: data.subcontractor_b || '',
-        community_manager_title: data.community_manager_title || '',
-        ap_name: data.ap_name || '',
-        ap_email: data.ap_email || '',
-        ap_phone: data.ap_phone || '',
-        ap_secondary_email: data.ap_secondary_email || '',
         billing_notes: data.billing_notes || '',
         extra_charges_notes: data.extra_charges_notes || '',
         occupied_regular_paint_fees: data.occupied_regular_paint_fees || '',
         quickbooks_number: data.quickbooks_number || '',
         unit_map_file_path: data.unit_map_file_path || '',
-        // The following fields are now managed by PaintColorsEditor
-        // color_walls: data.color_walls || '',
-        // color_trim: data.color_trim || '',
-        // color_regular_unit: data.color_regular_unit || '',
-        // color_kitchen_bathroom: data.color_kitchen_bathroom || '',
-        // color_ceilings: data.color_ceilings || '',
         paint_location: data.paint_location || '',
         compliance_bid_approved: data.compliance_bid_approved || '',
         compliance_coi_address: data.compliance_coi_address || '',
@@ -235,32 +443,6 @@ export function PropertyEditForm() {
         compliance_upload_documents_date: data.compliance_upload_documents_date || '',
         compliance_invoice_delivery_date: data.compliance_invoice_delivery_date || ''
       });
-
-      // Determine subcontractor contact source
-      if (data.primary_contact_name && data.primary_contact_name === data.maintenance_supervisor_name) {
-        setSubcontractorContactSource('maintenance_supervisor');
-      } else if (data.primary_contact_name && data.primary_contact_name === data.community_manager_name) {
-        setSubcontractorContactSource('community_manager');
-      } else if (data.primary_contact_name) {
-        // We'll check against additional contacts later or leave it as is if it matches a name
-        // Ideally we'd store the source ID but for now we rely on name matching
-        // Let's defer exact matching to when contacts are loaded or just default to 'community_manager' if ambiguous
-        // A better approach is checking if it matches the *current* values
-      }
-
-      // Determine notification contact source by email, default to AP if available
-      const currentEmail = data.primary_contact_email || data.ap_email || null;
-      if (currentEmail) {
-        if (currentEmail === data.community_manager_email) {
-          setNotificationContactSource('community_manager');
-        } else if (currentEmail === data.maintenance_supervisor_email) {
-          setNotificationContactSource('maintenance_supervisor');
-        } else if (currentEmail === data.ap_email) {
-          setNotificationContactSource('ap');
-        }
-      } else if (data.ap_email) {
-        setNotificationContactSource('ap');
-      }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch property');
@@ -322,54 +504,92 @@ export function PropertyEditForm() {
       const { unit_map_file_path, ...rest } = formData as any;
       const updateData: Record<string, any> = {
         ...rest,
-        property_management_group_id: formData.property_management_group_id || null
+        property_management_group_id: formData.property_management_group_id || null,
+        // System contact info
+        community_manager_name: systemContacts.community_manager.name,
+        community_manager_email: systemContacts.community_manager.email,
+        community_manager_phone: systemContacts.community_manager.phone,
+        community_manager_secondary_email: systemContacts.community_manager.secondary_email || null,
+        community_manager_title: systemContacts.community_manager.title || 'Community Manager',
+        maintenance_supervisor_name: systemContacts.maintenance_supervisor.name,
+        maintenance_supervisor_email: systemContacts.maintenance_supervisor.email,
+        maintenance_supervisor_phone: systemContacts.maintenance_supervisor.phone,
+        maintenance_supervisor_secondary_email: systemContacts.maintenance_supervisor.secondary_email || null,
+        maintenance_supervisor_title: systemContacts.maintenance_supervisor.title || 'Maintenance Supervisor',
+        ap_name: systemContacts.ap.name,
+        ap_email: systemContacts.ap.email,
+        ap_phone: systemContacts.ap.phone,
+        ap_secondary_email: systemContacts.ap.secondary_email || null,
+        // System contact roles
+        community_manager_is_subcontractor: systemContactRoles.community_manager?.subcontractor || false,
+        community_manager_is_ar: systemContactRoles.community_manager?.accountsReceivable || false,
+        community_manager_is_approval_recipient: systemContactRoles.community_manager?.approvalRecipient || false,
+        community_manager_is_notification_recipient: systemContactRoles.community_manager?.notificationRecipient || false,
+        community_manager_is_primary_approval: systemContactRoles.community_manager?.primaryApproval || false,
+        community_manager_is_primary_notification: systemContactRoles.community_manager?.primaryNotification || false,
+        maintenance_supervisor_is_subcontractor: systemContactRoles.maintenance_supervisor?.subcontractor || false,
+        maintenance_supervisor_is_ar: systemContactRoles.maintenance_supervisor?.accountsReceivable || false,
+        maintenance_supervisor_is_approval_recipient: systemContactRoles.maintenance_supervisor?.approvalRecipient || false,
+        maintenance_supervisor_is_notification_recipient: systemContactRoles.maintenance_supervisor?.notificationRecipient || false,
+        maintenance_supervisor_is_primary_approval: systemContactRoles.maintenance_supervisor?.primaryApproval || false,
+        maintenance_supervisor_is_primary_notification: systemContactRoles.maintenance_supervisor?.primaryNotification || false,
+        primary_contact_is_subcontractor: systemContactRoles.primary_contact?.subcontractor || false,
+        primary_contact_is_ar: systemContactRoles.primary_contact?.accountsReceivable || false,
+        primary_contact_is_approval_recipient: systemContactRoles.primary_contact?.approvalRecipient || false,
+        primary_contact_is_notification_recipient: systemContactRoles.primary_contact?.notificationRecipient || false,
+        primary_contact_is_primary_approval: systemContactRoles.primary_contact?.primaryApproval || false,
+        primary_contact_is_primary_notification: systemContactRoles.primary_contact?.primaryNotification || false,
+        ap_is_subcontractor: systemContactRoles.ap?.subcontractor || false,
+        ap_is_ar: systemContactRoles.ap?.accountsReceivable || false,
+        ap_is_approval_recipient: systemContactRoles.ap?.approvalRecipient || false,
+        ap_is_notification_recipient: systemContactRoles.ap?.notificationRecipient || false,
+        ap_is_primary_approval: systemContactRoles.ap?.primaryApproval || false,
+        ap_is_primary_notification: systemContactRoles.ap?.primaryNotification || false,
       };
 
       dateFields.forEach(field => {
         updateData[field] = formData[field as keyof typeof formData] || null;
       });
+
+      // Set primary contact fields based on which contact has the subcontractor role
+      const subcontractorContact = Object.entries(systemContactRoles).find(
+        ([_, roles]) => roles.subcontractor
+      );
       
-      updateData.community_manager_title = (formData.community_manager_title || '').trim() || 'Community Manager';
-      updateData.maintenance_supervisor_title = (formData.maintenance_supervisor_title || '').trim() || 'Maintenance Supervisor';
-      
-      // Set primary contact fields based on selected source
-      if (subcontractorContactSource === 'community_manager') {
-        updateData.primary_contact_name = formData.community_manager_name;
-        updateData.primary_contact_role = updateData.community_manager_title;
-        updateData.primary_contact_phone = formData.community_manager_phone;
-      } else if (subcontractorContactSource === 'maintenance_supervisor') {
-        updateData.primary_contact_name = formData.maintenance_supervisor_name;
-        updateData.primary_contact_role = updateData.maintenance_supervisor_title;
-        updateData.primary_contact_phone = formData.maintenance_supervisor_phone;
+      if (subcontractorContact) {
+        const [key] = subcontractorContact;
+        const contact = systemContacts[key as SystemContactKey];
+        updateData.primary_contact_name = contact.name;
+        updateData.primary_contact_role = contact.title;
+        updateData.primary_contact_email = contact.email;
+        updateData.primary_contact_phone = contact.phone;
+        updateData.primary_contact_secondary_email = contact.secondary_email || null;
       } else {
-        // Additional contact
-        const contact = contacts.find(c => c.id === subcontractorContactSource);
-        if (contact) {
-          updateData.primary_contact_name = contact.name;
-          updateData.primary_contact_role = contact.position;
-          updateData.primary_contact_phone = contact.phone;
+        // Check custom contacts
+        const customSubContact = contacts.find(c => c.is_subcontractor_contact);
+        if (customSubContact) {
+          updateData.primary_contact_name = customSubContact.name;
+          updateData.primary_contact_role = customSubContact.position;
+          updateData.primary_contact_email = customSubContact.email;
+          updateData.primary_contact_phone = customSubContact.phone;
+          updateData.primary_contact_secondary_email = customSubContact.secondary_email || null;
         } else {
-           // Fallback
-           updateData.primary_contact_name = formData.community_manager_name;
-           updateData.primary_contact_role = updateData.community_manager_title;
-           updateData.primary_contact_phone = formData.community_manager_phone;
+          // Fallback to community manager
+          updateData.primary_contact_name = systemContacts.community_manager.name;
+          updateData.primary_contact_role = systemContacts.community_manager.title;
+          updateData.primary_contact_email = systemContacts.community_manager.email;
+          updateData.primary_contact_phone = systemContacts.community_manager.phone;
+          updateData.primary_contact_secondary_email = systemContacts.community_manager.secondary_email || null;
         }
       }
 
-      if (notificationContactSource === 'community_manager') {
-        updateData.primary_contact_email = formData.community_manager_email;
-      } else if (notificationContactSource === 'maintenance_supervisor') {
-        updateData.primary_contact_email = formData.maintenance_supervisor_email;
-      } else if (notificationContactSource === 'ap') {
-        updateData.primary_contact_email = formData.ap_email;
-      } else {
-        const notifyContact = contacts.find(c => c.id === notificationContactSource);
-        if (notifyContact) {
-          updateData.primary_contact_email = notifyContact.email;
-        } else if (formData.ap_email) {
-          updateData.primary_contact_email = formData.ap_email;
-        }
-      }
+      console.log('💾 Saving system contact roles:', systemContactRoles);
+      console.log('💾 Update data includes role fields:', {
+        cm_subcontractor: updateData.community_manager_is_subcontractor,
+        cm_approval: updateData.community_manager_is_approval_recipient,
+        ms_subcontractor: updateData.maintenance_supervisor_is_subcontractor,
+        ap_ar: updateData.ap_is_ar
+      });
 
       const { error } = await supabase
         .from('properties')
@@ -396,21 +616,34 @@ export function PropertyEditForm() {
           if (deleteError) throw deleteError;
 
           // 2. Insert current contacts
-            if (contacts.length > 0) {
+          if (contacts.length > 0) {
+            console.log('💾 Saving contacts with roles:', contacts);
             const contactsToInsert = contacts.map(c => ({
               property_id: propertyId,
               position: c.position,
               name: c.name,
               email: c.email,
               secondary_email: c.secondary_email || null,
-              phone: c.phone
+              phone: c.phone,
+              is_subcontractor_contact: c.is_subcontractor_contact || false,
+              is_accounts_receivable_contact: c.is_accounts_receivable_contact || false,
+              is_approval_recipient: c.is_approval_recipient || false,
+              is_notification_recipient: c.is_notification_recipient || false,
+              is_primary_approval_recipient: c.is_primary_approval_recipient || false,
+              is_primary_notification_recipient: c.is_primary_notification_recipient || false
             }));
+            console.log('💾 Contacts to insert:', contactsToInsert);
 
             const { error: insertError } = await supabase
               .from('property_contacts')
               .insert(contactsToInsert);
             
-            if (insertError) throw insertError;
+            if (insertError) {
+              console.error('❌ Error inserting contacts:', insertError);
+              throw insertError;
+            } else {
+              console.log('✅ Contacts saved successfully');
+            }
           }
 
         } catch (paintError) {
@@ -453,89 +686,6 @@ export function PropertyEditForm() {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
-
-  const handleAddContact = () => {
-    setContacts(prev => [
-      ...prev,
-      {
-        id: `new-${Date.now()}`,
-        position: '',
-        name: '',
-        email: '',
-        secondary_email: '',
-        phone: '',
-        is_new: true
-      }
-    ]);
-  };
-
-  const handleContactChange = (id: string, field: keyof PropertyContact, value: string) => {
-    setContacts(prev => prev.map(contact => 
-      contact.id === id ? { ...contact, [field]: value } : contact
-    ));
-  };
-
-  const handleDeleteContact = (id: string) => {
-    setContacts(prev => prev.filter(contact => contact.id !== id));
-    if (subcontractorContactSource === id) {
-      setSubcontractorContactSource('community_manager');
-    }
-    setSecondaryEmailVisibility(prev => {
-      const { [id]: _, ...rest } = prev;
-      return rest;
-    });
-  };
-
-  const handleSubcontractorContactChange = (source: string) => {
-    setSubcontractorContactSource(source);
-    toast.success('Subcontractor contact updated');
-  };
-  const handleNotificationContactChange = (source: string) => {
-    setNotificationContactSource(source);
-    toast.success('Email notifications contact updated');
-  };
-
-  const toggleSecondaryEmailField = (contactId: string) => {
-    setSecondaryEmailVisibility(prev => ({
-      ...prev,
-      [contactId]: !prev[contactId]
-    }));
-  };
-
-  const togglePropertySecondaryEmailField = (key: string) => {
-    setPropertySecondaryEmailVisibility(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
-  };
-
-  useEffect(() => {
-    setSecondaryEmailVisibility(prev => {
-      let next: Record<string, boolean> | null = null;
-      contacts.forEach(contact => {
-        if (contact.secondary_email && !prev[contact.id]) {
-          if (!next) next = { ...prev };
-          next[contact.id] = true;
-        }
-      });
-      return next ? next : prev;
-    });
-  }, [contacts]);
-
-  useEffect(() => {
-    setPropertySecondaryEmailVisibility(prev => ({
-      ...prev,
-      community_manager: prev.community_manager || !!formData.community_manager_secondary_email,
-      maintenance_supervisor: prev.maintenance_supervisor || !!formData.maintenance_supervisor_secondary_email,
-      ap: prev.ap || !!formData.ap_secondary_email,
-      primary_contact: prev.primary_contact || !!formData.primary_contact_secondary_email
-    }));
-  }, [
-    formData.community_manager_secondary_email,
-    formData.maintenance_supervisor_secondary_email,
-    formData.ap_secondary_email,
-    formData.primary_contact_secondary_email
-  ]);
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#0F172A] p-6">
@@ -771,345 +921,16 @@ export function PropertyEditForm() {
           </div>
 
           {/* Contact Information */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Contact Information</h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Property Contact 1 (Community Manager) */}
-              <div className="space-y-4 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50/50 dark:bg-gray-800/50">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Property Contact 1</h3>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      name="subcontractor_contact_source"
-                      checked={subcontractorContactSource === 'community_manager'}
-                      onChange={() => handleSubcontractorContactChange('community_manager')}
-                      className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                      title="Set as Subcontractor Contact"
-                    />
-                    <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Subcontractor Contact</label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      name="notification_contact_source"
-                      checked={notificationContactSource === 'community_manager'}
-                      onChange={() => handleNotificationContactChange('community_manager')}
-                      className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
-                      title="Set as Email Notifications Contact"
-                    />
-                    <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Email Notifications</label>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Position / Job</label>
-                  <input
-                    type="text"
-                    name="community_manager_title"
-                    value={formData.community_manager_title}
-                    onChange={handleChange}
-                    className="w-full h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g. Community Manager"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="community_manager_name" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Name
-                  </label>
-                  <input
-                    type="text"
-                    id="community_manager_name"
-                    name="community_manager_name"
-                    value={formData.community_manager_name}
-                    onChange={handleChange}
-                    className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between">
-                    <label htmlFor="community_manager_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      Email
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => togglePropertySecondaryEmailField('community_manager')}
-                      className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none"
-                      aria-label="Toggle secondary email field"
-                    >
-                      {propertySecondaryEmailVisibility.community_manager ? (
-                        <Minus className="h-4 w-4" />
-                      ) : (
-                        <Plus className="h-4 w-4" />
-                      )}
-                    </button>
-                  </div>
-                  <input
-                    type="email"
-                    id="community_manager_email"
-                    name="community_manager_email"
-                    value={formData.community_manager_email}
-                    onChange={handleChange}
-                    className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                {(propertySecondaryEmailVisibility.community_manager || !!formData.community_manager_secondary_email) && (
-                  <div>
-                    <label htmlFor="community_manager_secondary_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      Secondary Email
-                    </label>
-                    <input
-                      type="email"
-                      id="community_manager_secondary_email"
-                      name="community_manager_secondary_email"
-                      value={formData.community_manager_secondary_email}
-                      onChange={handleChange}
-                      className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                )}
-                <div>
-                  <label htmlFor="community_manager_phone" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Phone
-                  </label>
-                  <input
-                    type="tel"
-                    id="community_manager_phone"
-                    name="community_manager_phone"
-                    value={formData.community_manager_phone}
-                    onChange={handleChange}
-                    className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              {/* Property Contact 2 (Maintenance Supervisor) */}
-              <div className="space-y-4 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50/50 dark:bg-gray-800/50">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">Property Contact 2</h3>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      name="subcontractor_contact_source"
-                      checked={subcontractorContactSource === 'maintenance_supervisor'}
-                      onChange={() => handleSubcontractorContactChange('maintenance_supervisor')}
-                      className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                      title="Set as Subcontractor Contact"
-                    />
-                    <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Subcontractor Contact</label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="radio"
-                      name="notification_contact_source"
-                      checked={notificationContactSource === 'maintenance_supervisor'}
-                      onChange={() => handleNotificationContactChange('maintenance_supervisor')}
-                      className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
-                      title="Set as Email Notifications Contact"
-                    />
-                    <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Email Notifications</label>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Position / Job</label>
-                  <input
-                    type="text"
-                    name="maintenance_supervisor_title"
-                    value={formData.maintenance_supervisor_title}
-                    onChange={handleChange}
-                    className="w-full h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g. Maintenance Supervisor"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="maintenance_supervisor_name" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Name
-                  </label>
-                  <input
-                    type="text"
-                    id="maintenance_supervisor_name"
-                    name="maintenance_supervisor_name"
-                    value={formData.maintenance_supervisor_name}
-                    onChange={handleChange}
-                    className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between">
-                    <label htmlFor="maintenance_supervisor_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      Email
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => togglePropertySecondaryEmailField('maintenance_supervisor')}
-                      className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none"
-                      aria-label="Toggle secondary email field"
-                    >
-                      {propertySecondaryEmailVisibility.maintenance_supervisor ? (
-                        <Minus className="h-4 w-4" />
-                      ) : (
-                        <Plus className="h-4 w-4" />
-                      )}
-                    </button>
-                  </div>
-                  <input
-                    type="email"
-                    id="maintenance_supervisor_email"
-                    name="maintenance_supervisor_email"
-                    value={formData.maintenance_supervisor_email}
-                    onChange={handleChange}
-                    className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                {(propertySecondaryEmailVisibility.maintenance_supervisor || !!formData.maintenance_supervisor_secondary_email) && (
-                  <div>
-                    <label htmlFor="maintenance_supervisor_secondary_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      Secondary Email
-                    </label>
-                    <input
-                      type="email"
-                      id="maintenance_supervisor_secondary_email"
-                      name="maintenance_supervisor_secondary_email"
-                      value={formData.maintenance_supervisor_secondary_email}
-                      onChange={handleChange}
-                      className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                )}
-                <div>
-                  <label htmlFor="maintenance_supervisor_phone" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Phone
-                  </label>
-                  <input
-                    type="tel"
-                    id="maintenance_supervisor_phone"
-                    name="maintenance_supervisor_phone"
-                    value={formData.maintenance_supervisor_phone}
-                    onChange={handleChange}
-                    className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              {/* Additional Contacts */}
-              {contacts.map((contact, index) => (
-                <div key={contact.id} className="space-y-4 p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50/50 dark:bg-gray-800/50 relative">
-                   <button
-                     type="button"
-                     onClick={() => handleDeleteContact(contact.id)}
-                     className="absolute top-4 right-4 p-1 text-red-600 hover:text-red-800 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                     title="Remove contact"
-                   >
-                     <Trash2 className="h-4 w-4" />
-                   </button>
-
-                  <div className="flex items-center justify-between pr-8">
-                    <h3 className="text-sm font-bold text-gray-900 dark:text-white">Property Contact {index + 3}</h3>
-                    <div className="flex items-center space-x-2">
-                       <input
-                         type="radio"
-                         name="subcontractor_contact_source"
-                         checked={subcontractorContactSource === contact.id}
-                         onChange={() => handleSubcontractorContactChange(contact.id)}
-                         className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                         title="Set as Subcontractor Contact"
-                       />
-                       <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Subcontractor Contact</label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                       <input
-                         type="radio"
-                         name="notification_contact_source"
-                         checked={notificationContactSource === contact.id}
-                         onChange={() => handleNotificationContactChange(contact.id)}
-                         className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
-                         title="Set as Email Notifications Contact"
-                       />
-                       <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Email Notifications</label>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Position / Job</label>
-                    <input
-                      type="text"
-                      value={contact.position || ''}
-                      onChange={(e) => handleContactChange(contact.id, 'position', e.target.value)}
-                      className="w-full h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Position"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Name</label>
-                    <input
-                      type="text"
-                      value={contact.name || ''}
-                      onChange={(e) => handleContactChange(contact.id, 'name', e.target.value)}
-                      className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Name"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Email</label>
-                      <button
-                        type="button"
-                        onClick={() => toggleSecondaryEmailField(contact.id)}
-                        className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none"
-                        aria-label="Toggle secondary email field"
-                      >
-                        {secondaryEmailVisibility[contact.id] ? (
-                          <Minus className="h-4 w-4" />
-                        ) : (
-                          <Plus className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
-                    <input
-                      type="email"
-                      value={contact.email || ''}
-                      onChange={(e) => handleContactChange(contact.id, 'email', e.target.value)}
-                      className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Email"
-                    />
-                  </div>
-                  {(secondaryEmailVisibility[contact.id] || !!contact.secondary_email) && (
-                    <div className="mt-2">
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Secondary Email</label>
-                      <input
-                        type="email"
-                        value={contact.secondary_email || ''}
-                        onChange={(e) => handleContactChange(contact.id, 'secondary_email', e.target.value)}
-                        className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Secondary Email"
-                      />
-                    </div>
-                  )}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Phone</label>
-                    <input
-                      type="tel"
-                      value={contact.phone || ''}
-                      onChange={(e) => handleContactChange(contact.id, 'phone', e.target.value)}
-                      className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Phone"
-                    />
-                  </div>
-                </div>
-              ))}
-              
-              {/* Add Contact Button Card */}
-              <div className="flex items-center justify-center p-6 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg bg-gray-50/30 dark:bg-gray-800/30 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer" onClick={handleAddContact}>
-                 <div className="text-center">
-                    <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <Plus className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <h3 className="text-sm font-medium text-gray-900 dark:text-white">Add Contact</h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Property Contact {contacts.length + 3}</p>
-                 </div>
-              </div>
-            </div>
-          </div>
+          <PropertyContactsEditor
+            systemContacts={systemContacts}
+            systemContactRoles={systemContactRoles}
+            customContacts={contacts}
+            onSystemContactChange={handleSystemContactChange}
+            onSystemContactRoleChange={handleSystemContactRoleChange}
+            onCustomContactChange={handleCustomContactChange}
+            onCustomContactAdd={handleCustomContactAdd}
+            onCustomContactDelete={handleCustomContactDelete}
+          />
 
           {/* Property Unit Map */}
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
@@ -1267,86 +1088,6 @@ export function PropertyEditForm() {
             
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div className="space-y-4">
-                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200">AP Contact</h3>
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="radio"
-                    name="notification_contact_source"
-                    checked={notificationContactSource === 'ap'}
-                    onChange={() => handleNotificationContactChange('ap')}
-                    className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
-                    title="Set as Email Notifications Contact"
-                  />
-                  <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Email Notifications</label>
-                </div>
-                <div>
-                  <label htmlFor="ap_name" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Name
-                  </label>
-                  <input
-                    type="text"
-                    id="ap_name"
-                    name="ap_name"
-                    value={formData.ap_name}
-                    onChange={handleChange}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between">
-                    <label htmlFor="ap_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      Email
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => togglePropertySecondaryEmailField('ap')}
-                      className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus:outline-none"
-                      aria-label="Toggle secondary email field"
-                    >
-                      {propertySecondaryEmailVisibility.ap ? (
-                        <Minus className="h-4 w-4" />
-                      ) : (
-                        <Plus className="h-4 w-4" />
-                      )}
-                    </button>
-                  </div>
-                  <input
-                    type="email"
-                    id="ap_email"
-                    name="ap_email"
-                    value={formData.ap_email}
-                    onChange={handleChange}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                {(propertySecondaryEmailVisibility.ap || !!formData.ap_secondary_email) && (
-                  <div>
-                    <label htmlFor="ap_secondary_email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      Secondary Email
-                    </label>
-                    <input
-                      type="email"
-                      id="ap_secondary_email"
-                      name="ap_secondary_email"
-                      value={formData.ap_secondary_email}
-                      onChange={handleChange}
-                      className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                )}
-                <div>
-                  <label htmlFor="ap_phone" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Phone
-                  </label>
-                  <input
-                    type="tel"
-                    id="ap_phone"
-                    name="ap_phone"
-                    value={formData.ap_phone}
-                    onChange={handleChange}
-                    className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
                 <div>
                   <label htmlFor="quickbooks_number" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                     QuickBooks Number

@@ -36,6 +36,7 @@ import { getPreviewUrl } from '../utils/storagePreviews';
 import { useUserRole } from '../contexts/UserRoleContext';
 import { getBackNavigationPath } from '../lib/utils';
 import { PropertyFilesPreview } from './properties/PropertyFilesPreview';
+import { PropertyContactsViewer } from './property/PropertyContactsViewer';
 
 interface Property {
   id: string;
@@ -110,6 +111,31 @@ interface Property {
   paint_location: string;
   unit_map_file_id: string | null;
   unit_map_file_path: string | null;
+  // System contact roles
+  community_manager_is_subcontractor?: boolean;
+  community_manager_is_ar?: boolean;
+  community_manager_is_approval_recipient?: boolean;
+  community_manager_is_primary_approval?: boolean;
+  community_manager_is_notification_recipient?: boolean;
+  community_manager_is_primary_notification?: boolean;
+  maintenance_supervisor_is_subcontractor?: boolean;
+  maintenance_supervisor_is_ar?: boolean;
+  maintenance_supervisor_is_approval_recipient?: boolean;
+  maintenance_supervisor_is_primary_approval?: boolean;
+  maintenance_supervisor_is_notification_recipient?: boolean;
+  maintenance_supervisor_is_primary_notification?: boolean;
+  ap_is_subcontractor?: boolean;
+  ap_is_ar?: boolean;
+  ap_is_approval_recipient?: boolean;
+  ap_is_primary_approval?: boolean;
+  ap_is_notification_recipient?: boolean;
+  ap_is_primary_notification?: boolean;
+  primary_contact_is_subcontractor?: boolean;
+  primary_contact_is_ar?: boolean;
+  primary_contact_is_approval_recipient?: boolean;
+  primary_contact_is_primary_approval?: boolean;
+  primary_contact_is_notification_recipient?: boolean;
+  primary_contact_is_primary_notification?: boolean;
 }
 
 interface BillingCategory {
@@ -164,6 +190,12 @@ interface PropertyContact {
   email: string | null;
   phone: string | null;
   secondary_email?: string | null;
+  is_subcontractor_contact?: boolean;
+  is_accounts_receivable_contact?: boolean;
+  is_approval_recipient?: boolean;
+  is_notification_recipient?: boolean;
+  is_primary_approval_recipient?: boolean;
+  is_primary_notification_recipient?: boolean;
 }
 
 export function PropertyDetails() {
@@ -1243,324 +1275,87 @@ export function PropertyDetails() {
         {/* Second Row: Property Unit Map & Contact Information */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Contact Information (now first) */}
-          <div id="contacts" className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden order-2 lg:order-1">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 dark:from-indigo-700 dark:to-indigo-800 px-6 py-4">
-              <h3 className="text-lg font-semibold text-white flex items-center">
-                <User className="h-5 w-5 mr-2" />
-                Contact Information
-              </h3>
-            </div>
-            
-            {/* Content */}
-            <div className="p-6 space-y-6">
-              {(property.community_manager_name || property.community_manager_email || property.community_manager_phone) && (
-                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                  <h4 className="text-sm font-bold text-blue-800 dark:text-blue-200 mb-3 uppercase tracking-wide">
-                    {(property.community_manager_title || 'Community Manager').toUpperCase()}
-                  </h4>
-                  <div className="flex items-center space-x-3 mb-2">
-                    <input
-                      type="radio"
-                      name="notification_contact_source"
-                      className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
-                      checked={notificationContactSource === 'community_manager'}
-                      onChange={() => handleNotificationContactChange('community_manager')}
-                      title="Set as Email Notifications Contact"
-                    />
-                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Email Notifications</span>
-                  </div>
-                  <div className="space-y-2">
-                    {property.community_manager_name && (
-                      <div className="flex items-center">
-                        <User className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">{property.community_manager_name}</span>
-                      </div>
-                    )}
-                    {property.community_manager_email && (
-                      <>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center">
-                            <Mail className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
-                            <span className="text-gray-900 dark:text-white text-sm">{property.community_manager_email}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              cancelSecondaryEmailEdit();
-                              setEditingPropertySecondaryEmailField('community_manager_secondary_email');
-                              setPropertySecondaryEmailDraft(property.community_manager_secondary_email || '');
-                            }}
-                            className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                            title="Add or edit secondary email"
-                          >
-                            {property.community_manager_secondary_email ? (
-                              <Edit className="h-3 w-3 text-green-600" />
-                            ) : (
-                              <Plus className="h-3 w-3 text-gray-500" />
-                            )}
-                          </button>
-                        </div>
-                        {property.community_manager_secondary_email && (
-                          <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-                            <Mail className="h-3 w-3 mr-2 flex-shrink-0 text-gray-500" />
-                            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Secondary:</span>
-                            <span className="ml-1 text-gray-900 dark:text-white text-sm">{property.community_manager_secondary_email}</span>
-                          </div>
-                        )}
-                        {editingPropertySecondaryEmailField === 'community_manager_secondary_email' && (
-                          <form
-                            onSubmit={async (e) => {
-                              e.preventDefault();
-                              await handleSavePropertySecondaryEmail('community_manager_secondary_email');
-                            }}
-                            className="flex items-center space-x-2 mt-2"
-                          >
-                            <input
-                              type="email"
-                              value={propertySecondaryEmailDraft}
-                              onChange={(e) => setPropertySecondaryEmailDraft(e.target.value)}
-                              className="flex-1 h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="Secondary Email"
-                            />
-                            <button
-                              type="submit"
-                              disabled={propertySecondaryEmailSavingField === 'community_manager_secondary_email'}
-                              className="inline-flex items-center px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-white"
-                            >
-                              <Check className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={cancelPropertySecondaryEmailEdit}
-                              className="inline-flex items-center px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </form>
-                        )}
-                      </>
-                    )}
-                    {property.community_manager_phone && (
-                      <div className="flex items-center">
-                        <Phone className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">{property.community_manager_phone}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {(property.maintenance_supervisor_name || property.maintenance_supervisor_email || property.maintenance_supervisor_phone) && (
-                <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                  <h4 className="text-sm font-bold text-green-800 dark:text-green-200 mb-3 uppercase tracking-wide">
-                    {(property.maintenance_supervisor_title || 'Maintenance Supervisor').toUpperCase()}
-                  </h4>
-                  <div className="flex items-center space-x-3 mb-2">
-                    <input
-                      type="radio"
-                      name="notification_contact_source"
-                      className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
-                      checked={notificationContactSource === 'maintenance_supervisor'}
-                      onChange={() => handleNotificationContactChange('maintenance_supervisor')}
-                      title="Set as Email Notifications Contact"
-                    />
-                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Email Notifications</span>
-                  </div>
-                  <div className="space-y-2">
-                    {property.maintenance_supervisor_name && (
-                      <div className="flex items-center">
-                        <User className="h-4 w-4 text-green-600 dark:text-green-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">{property.maintenance_supervisor_name}</span>
-                      </div>
-                    )}
-                    {property.maintenance_supervisor_email && (
-                      <>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center">
-                            <Mail className="h-4 w-4 text-green-600 dark:text-green-400 mr-2 flex-shrink-0" />
-                            <span className="text-gray-900 dark:text-white text-sm">{property.maintenance_supervisor_email}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              cancelSecondaryEmailEdit();
-                              setEditingPropertySecondaryEmailField('maintenance_supervisor_secondary_email');
-                              setPropertySecondaryEmailDraft(property.maintenance_supervisor_secondary_email || '');
-                            }}
-                            className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                            title="Add or edit secondary email"
-                          >
-                            {property.maintenance_supervisor_secondary_email ? (
-                              <Edit className="h-3 w-3 text-green-600" />
-                            ) : (
-                              <Plus className="h-3 w-3 text-gray-500" />
-                            )}
-                          </button>
-                        </div>
-                        {property.maintenance_supervisor_secondary_email && (
-                          <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-                            <Mail className="h-3 w-3 mr-2 flex-shrink-0 text-gray-500" />
-                            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Secondary:</span>
-                            <span className="ml-1 text-gray-900 dark:text-white text-sm">{property.maintenance_supervisor_secondary_email}</span>
-                          </div>
-                        )}
-                        {editingPropertySecondaryEmailField === 'maintenance_supervisor_secondary_email' && (
-                          <form
-                            onSubmit={async (e) => {
-                              e.preventDefault();
-                              await handleSavePropertySecondaryEmail('maintenance_supervisor_secondary_email');
-                            }}
-                            className="flex items-center space-x-2 mt-2"
-                          >
-                            <input
-                              type="email"
-                              value={propertySecondaryEmailDraft}
-                              onChange={(e) => setPropertySecondaryEmailDraft(e.target.value)}
-                              className="flex-1 h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="Secondary Email"
-                            />
-                            <button
-                              type="submit"
-                              disabled={propertySecondaryEmailSavingField === 'maintenance_supervisor_secondary_email'}
-                              className="inline-flex items-center px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-white"
-                            >
-                              <Check className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={cancelPropertySecondaryEmailEdit}
-                              className="inline-flex items-center px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </form>
-                        )}
-                      </>
-                    )}
-                    {property.maintenance_supervisor_phone && (
-                      <div className="flex items-center">
-                        <Phone className="h-4 w-4 text-green-600 dark:text-green-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">{property.maintenance_supervisor_phone}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {(property.primary_contact_name || property.primary_contact_phone || property.primary_contact_role) && (
-                <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                  <h4 className="text-sm font-bold text-purple-800 dark:text-purple-200 mb-3 uppercase tracking-wide">Primary Contact</h4>
-                  <div className="space-y-2">
-                    {property.primary_contact_name && (
-                      <div className="flex items-center">
-                        <User className="h-4 w-4 text-purple-600 dark:text-purple-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">{property.primary_contact_name}</span>
-                      </div>
-                    )}
-                    {property.primary_contact_phone && (
-                      <div className="flex items-center">
-                        <Phone className="h-4 w-4 text-purple-600 dark:text-purple-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">{property.primary_contact_phone}</span>
-                      </div>
-                    )}
-                    {property.primary_contact_role && (
-                      <div className="flex items-center">
-                        <Clipboard className="h-4 w-4 text-purple-600 dark:text-purple-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">{property.primary_contact_role}</span>
-                      </div>
-                    )}
-                    {property.primary_contact_email && (
-                      <>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center">
-                            <Mail className="h-4 w-4 text-purple-600 dark:text-purple-400 mr-2 flex-shrink-0" />
-                            <span className="text-gray-900 dark:text-white text-sm">{property.primary_contact_email}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              cancelSecondaryEmailEdit();
-                              setEditingPropertySecondaryEmailField('primary_contact_secondary_email');
-                              setPropertySecondaryEmailDraft(property.primary_contact_secondary_email || '');
-                            }}
-                            className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                            title="Add or edit secondary email"
-                          >
-                            {property.primary_contact_secondary_email ? (
-                              <Edit className="h-3 w-3 text-green-600" />
-                            ) : (
-                              <Plus className="h-3 w-3 text-gray-500" />
-                            )}
-                          </button>
-                        </div>
-                        {property.primary_contact_secondary_email && (
-                          <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-                            <Mail className="h-3 w-3 mr-2 flex-shrink-0 text-gray-500" />
-                            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Secondary:</span>
-                            <span className="ml-1 text-gray-900 dark:text-white text-sm">{property.primary_contact_secondary_email}</span>
-                          </div>
-                        )}
-                        {editingPropertySecondaryEmailField === 'primary_contact_secondary_email' && (
-                          <form
-                            onSubmit={async (e) => {
-                              e.preventDefault();
-                              await handleSavePropertySecondaryEmail('primary_contact_secondary_email');
-                            }}
-                            className="flex items-center space-x-2 mt-2"
-                          >
-                            <input
-                              type="email"
-                              value={propertySecondaryEmailDraft}
-                              onChange={(e) => setPropertySecondaryEmailDraft(e.target.value)}
-                              className="flex-1 h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="Secondary Email"
-                            />
-                            <button
-                              type="submit"
-                              disabled={propertySecondaryEmailSavingField === 'primary_contact_secondary_email'}
-                              className="inline-flex items-center px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-white"
-                            >
-                              <Check className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={cancelPropertySecondaryEmailEdit}
-                              className="inline-flex items-center px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </form>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {(property.subcontractor_a || property.subcontractor_b) && (
-                <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
-                  <h4 className="text-sm font-bold text-orange-800 dark:text-orange-200 mb-3 uppercase tracking-wide">Subcontractors</h4>
-                  <div className="space-y-2">
-                    {property.subcontractor_a && (
-                      <div className="flex items-center">
-                        <Building2 className="h-4 w-4 text-orange-600 dark:text-orange-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">A: {property.subcontractor_a}</span>
-                      </div>
-                    )}
-                    {property.subcontractor_b && (
-                      <div className="flex items-center">
-                        <Building2 className="h-4 w-4 text-orange-600 dark:text-orange-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">B: {property.subcontractor_b}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+          <div id="contacts" className="order-2 lg:order-1">
+            <PropertyContactsViewer
+              systemContacts={{
+                community_manager: {
+                  name: property.community_manager_name || '',
+                  email: property.community_manager_email || '',
+                  secondary_email: property.community_manager_secondary_email,
+                  phone: property.community_manager_phone || '',
+                  title: property.community_manager_title || 'Community Manager'
+                },
+                maintenance_supervisor: {
+                  name: property.maintenance_supervisor_name || '',
+                  email: property.maintenance_supervisor_email || '',
+                  secondary_email: property.maintenance_supervisor_secondary_email,
+                  phone: property.maintenance_supervisor_phone || '',
+                  title: property.maintenance_supervisor_title || 'Maintenance Supervisor'
+                },
+                primary_contact: {
+                  name: property.primary_contact_name || '',
+                  email: property.primary_contact_email || '',
+                  secondary_email: property.primary_contact_secondary_email,
+                  phone: property.primary_contact_phone || '',
+                  title: property.primary_contact_role || 'Primary Contact'
+                },
+                ap: {
+                  name: property.ap_name || '',
+                  email: property.ap_email || '',
+                  secondary_email: property.ap_secondary_email,
+                  phone: property.ap_phone || '',
+                  title: 'Accounts Payable'
+                }
+              }}
+              systemContactRoles={{
+                community_manager: { 
+                  subcontractor: property.community_manager_is_subcontractor || false,
+                  approvalRecipient: property.community_manager_is_approval_recipient || false,
+                  notificationRecipient: property.community_manager_is_notification_recipient || false,
+                  primaryApproval: property.community_manager_is_primary_approval || false,
+                  primaryNotification: property.community_manager_is_primary_notification || false,
+                  accountsReceivable: property.community_manager_is_ar || false
+                },
+                maintenance_supervisor: {
+                  subcontractor: property.maintenance_supervisor_is_subcontractor || false,
+                  approvalRecipient: property.maintenance_supervisor_is_approval_recipient || false,
+                  notificationRecipient: property.maintenance_supervisor_is_notification_recipient || false,
+                  primaryApproval: property.maintenance_supervisor_is_primary_approval || false,
+                  primaryNotification: property.maintenance_supervisor_is_primary_notification || false,
+                  accountsReceivable: property.maintenance_supervisor_is_ar || false
+                },
+                primary_contact: {
+                  subcontractor: property.primary_contact_is_subcontractor || false,
+                  approvalRecipient: property.primary_contact_is_approval_recipient || false,
+                  notificationRecipient: property.primary_contact_is_notification_recipient || false,
+                  primaryApproval: property.primary_contact_is_primary_approval || false,
+                  primaryNotification: property.primary_contact_is_primary_notification || false,
+                  accountsReceivable: property.primary_contact_is_ar || false
+                },
+                ap: {
+                  subcontractor: property.ap_is_subcontractor || false,
+                  approvalRecipient: property.ap_is_approval_recipient || false,
+                  notificationRecipient: property.ap_is_notification_recipient || false,
+                  primaryApproval: property.ap_is_primary_approval || false,
+                  primaryNotification: property.ap_is_primary_notification || false,
+                  accountsReceivable: property.ap_is_ar || false
+                }
+              }}
+              customContacts={contacts.map(c => ({
+                id: c.id,
+                position: c.position || '',
+                name: c.name || '',
+                email: c.email || '',
+                secondary_email: c.secondary_email,
+                phone: c.phone || '',
+                is_subcontractor_contact: c.is_subcontractor_contact || false,
+                is_accounts_receivable_contact: c.is_accounts_receivable_contact || false,
+                is_approval_recipient: c.is_approval_recipient || false,
+                is_notification_recipient: c.is_notification_recipient || false,
+                is_primary_approval_recipient: c.is_primary_approval_recipient || false,
+                is_primary_notification_recipient: c.is_primary_notification_recipient || false
+              }))}
+            />
           </div>
 
           {/* Property Unit Map (now second) */}
