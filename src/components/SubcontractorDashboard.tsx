@@ -91,6 +91,7 @@ interface BillingDetail {
   bill_amount: number;
   sub_pay_amount: number;
   is_hourly: boolean;
+  sort_order?: number;
   unit_size: {
     unit_size_label: string;
   };
@@ -771,13 +772,16 @@ export function SubcontractorDashboard() {
               bill_amount,
               sub_pay_amount,
               is_hourly,
+              sort_order,
               category_id,
               unit_size_id,
               unit_sizes!billing_details_unit_size_id_fkey (
                 unit_size_label
               )
             `)
-          .eq('property_id', propertyId);
+          .eq('property_id', propertyId)
+          .order('category_id', { ascending: true })
+          .order('sort_order', { ascending: true });
 
           if (detailsError) {
             console.error('Error fetching billing details:', detailsError);
@@ -815,17 +819,20 @@ export function SubcontractorDashboard() {
         name: category.name,
         is_extra_charge: category.is_extra_charge ?? null,
         sort_order: category.sort_order,
-        billing_details: (category.billing_details || []).map((detail: any) => ({
-          id: detail.id,
-          bill_amount: detail.bill_amount,
-          sub_pay_amount: detail.sub_pay_amount,
-          is_hourly: !!detail.is_hourly,
-          unit_size: {
-            unit_size_label: Array.isArray(detail.unit_sizes) 
-              ? detail.unit_sizes[0]?.unit_size_label || 'Unknown'
-              : detail.unit_sizes?.unit_size_label || 'Unknown'
-          }
-        })),
+        billing_details: (category.billing_details || [])
+          .map((detail: any) => ({
+            id: detail.id,
+            bill_amount: detail.bill_amount,
+            sub_pay_amount: detail.sub_pay_amount,
+            is_hourly: !!detail.is_hourly,
+            sort_order: detail.sort_order ?? null,
+            unit_size: {
+              unit_size_label: Array.isArray(detail.unit_sizes) 
+                ? detail.unit_sizes[0]?.unit_size_label || 'Unknown'
+                : detail.unit_sizes?.unit_size_label || 'Unknown'
+            }
+          }))
+          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)),
       }));
 
 
