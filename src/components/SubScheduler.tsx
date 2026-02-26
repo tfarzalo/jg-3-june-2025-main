@@ -25,11 +25,14 @@ interface Job {
   work_order_num: number;
   unit_number: string;
   scheduled_date: string;
+  assigned_to?: string | null;
+  assigned_at?: string | null;
   assignment_status?: string | null;
   assignment_decision_at?: string | null;
   assignment_deadline?: string | null;
   declined_reason_code?: string | null;
   declined_reason_text?: string | null;
+  created_by?: string | null;
   property: {
     id: string;
     property_name: string;
@@ -51,8 +54,6 @@ interface Job {
     id: string;
     job_type_label: string;
   };
-  assigned_to?: string | null;
-  created_by: string;
 }
 
 
@@ -178,6 +179,7 @@ export default function SubScheduler() {
           unit_number,
           scheduled_date,
           assigned_to,
+          assigned_at,
           assignment_status,
           assignment_decision_at,
           assignment_deadline,
@@ -531,10 +533,37 @@ JG Painting Pros Inc.`;
       const notifications = buildAssignmentNotifications();
       
       // Prepare batch updates for assignments
-      const updates = Object.entries(assignments).map(([jobId, subcontractorId]) => {
+      const updates = await Promise.all(Object.entries(assignments).map(async ([jobId, subcontractorId]) => {
         const job = jobs.find(j => j.id === jobId);
         if (!job) throw new Error(`Job ${jobId} not found`);
         const isNewAssignee = job.assigned_to !== subcontractorId;
+        
+        // If this is a new assignment, calculate the deadline
+        let assignedAt = job.assigned_at;
+        let assignmentDeadline = job.assignment_deadline;
+        
+        if (isNewAssignee) {
+          const now = new Date().toISOString();
+          assignedAt = now;
+          
+          // Call the database function to calculate deadline
+          const { data: deadlineData, error: deadlineError } = await supabase
+            .rpc('calculate_assignment_deadline', { p_assigned_at: now });
+          
+          if (deadlineError) {
+            console.error('Error calculating deadline:', deadlineError);
+            // Fallback: set deadline to 3:30 PM ET today or next business day
+            const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+            const deadline = new Date(etNow);
+            deadline.setHours(15, 30, 0, 0); // 3:30 PM
+            if (etNow.getHours() >= 15 && etNow.getMinutes() >= 30) {
+              deadline.setDate(deadline.getDate() + 1);
+            }
+            assignmentDeadline = deadline.toISOString();
+          } else {
+            assignmentDeadline = deadlineData;
+          }
+        }
         
         return {
           id: jobId,
@@ -543,14 +572,16 @@ JG Painting Pros Inc.`;
           unit_size_id: job.unit_size.id,
           job_type_id: job.job_type.id,
           scheduled_date: job.scheduled_date,
-          created_by: job.created_by, // Include the created_by field from the original job
+          created_by: job.created_by,
           assigned_to: subcontractorId,
+          assigned_at: assignedAt,
+          assignment_deadline: assignmentDeadline,
           assignment_status: isNewAssignee ? 'pending' : job.assignment_status || 'pending',
           assignment_decision_at: isNewAssignee ? null : job.assignment_decision_at,
           declined_reason_code: isNewAssignee ? null : job.declined_reason_code,
           declined_reason_text: isNewAssignee ? null : job.declined_reason_text
         };
-      });
+      }));
       
       // Prepare batch updates for unassignments
       const unassignments = jobsToUnassign.map(jobId => {
@@ -565,7 +596,9 @@ JG Painting Pros Inc.`;
           job_type_id: job.job_type.id,
           scheduled_date: job.scheduled_date,
           created_by: job.created_by,
-          assigned_to: null, // Explicitly set to null
+          assigned_to: null,
+          assigned_at: null,
+          assignment_deadline: null,
           assignment_status: null,
           assignment_decision_at: null,
           declined_reason_code: null,
