@@ -375,8 +375,8 @@ function MessagingPage() {
     return `${prefix}${truncatedBody}`;
   };
 
-  // Helper function to format timestamp
-  const formatTimestamp = (timestamp: string) => {
+  // Helper function to format relative timestamp (preserved for quick scan)
+  const formatRelativeTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
     const now = new Date();
     const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
@@ -388,6 +388,20 @@ function MessagingPage() {
     
     // Format as date
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  // Helper function to surface both absolute date and time alongside the relative hint
+  const formatTimestamp = (timestamp: string) => {
+    const relative = formatRelativeTimestamp(timestamp);
+    const absolute = new Date(timestamp).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+
+    return relative === absolute ? absolute : `${relative} • ${absolute}`;
   };
 
   // Helper function to format full timestamp for header
@@ -1526,6 +1540,7 @@ function MessagingPage() {
                       }
                       
                       const timeLabel = messageDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      const dateWithYear = messageDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
                       
                       return (
                         <div key={message.id} className={`flex items-start space-x-3 ${isOwnMessage ? 'flex-row-reverse space-x-reverse' : ''} transition-all duration-200 ease-in-out`}>
@@ -1552,12 +1567,15 @@ function MessagingPage() {
                                 : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-600'
                             }`}>
                               <p className="text-sm break-words">{message.body}</p>
-                              <p className={`text-xs mt-1 ${
+                              <p className={`text-[11px] leading-tight mt-1 ${
                                 isOwnMessage 
                                   ? 'text-blue-100' 
                                   : 'text-gray-500 dark:text-gray-300'
                               }`}>
-                                {dateLabel}, {timeLabel}
+                                <span className="font-semibold">{dateLabel}</span>
+                                <span className="mx-1">•</span>
+                                <span>{timeLabel}</span>
+                                <span className="block opacity-80">{dateWithYear}</span>
                               </p>
                             </div>
                           </div>
@@ -1677,4 +1695,3 @@ function MessagingPage() {
 }
 
 export default MessagingPage;
-

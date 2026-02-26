@@ -158,8 +158,8 @@ export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = (
                 return;
               }
 
-              if (conversationData.participants.includes(user.id)) {
-                console.log('[UnreadMessagesProvider] User is participant, incrementing unread count');
+            if (conversationData.participants.includes(user.id)) {
+              console.log('[UnreadMessagesProvider] User is participant, incrementing unread count');
                 
                 // If someone archived the conversation, unarchive it so it can appear in menus again
                 if (conversationData.archived) {
@@ -194,20 +194,30 @@ export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = (
                 // Force re-render to ensure components update
                 setRefreshTrigger(t => t + 1);
 
-                // Find the sender (other participant)
+                // Find the sender (other participant) for toasts and auto-open
                 const senderId = conversationData.participants.find((id: string) => id !== user.id);
                 if (senderId) {
                   const { data: senderData } = await supabase
                     .from('profiles')
-                    .select('full_name, email')
+                    .select('full_name, email, avatar_url')
                     .eq('id', senderId)
                     .single();
 
                   const senderName = senderData?.full_name || senderData?.email || 'Unknown User';
-                  
+                  const senderAvatar = senderData?.avatar_url || null;
+                  const preview = newMessage.body.length > 120 ? `${newMessage.body.slice(0, 117)}...` : newMessage.body;
+
                   console.log('[UnreadMessagesProvider] Auto-opening chat for:', senderName);
                   // Auto-open chat window for new messages
                   autoOpenChatForMessage(newMessage.conversation_id, senderName);
+
+                  // Fire a window event for toast-style notification (consumed by UserLoginAlertManager)
+                  window.dispatchEvent(new CustomEvent('new-message-toast', { detail: {
+                    conversationId: newMessage.conversation_id,
+                    senderName,
+                    senderAvatar,
+                    preview
+                  }}));
                 }
               } else {
                 console.log('[UnreadMessagesProvider] User is not a participant, ignoring');

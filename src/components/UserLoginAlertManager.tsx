@@ -5,6 +5,7 @@ import { useUserRole } from '../contexts/UserRoleContext';
 import { supabase } from '../utils/supabase';
 import { useAuth } from '../contexts/AuthProvider';
 import { getAvatarUrl } from '../utils/supabase';
+import { NewMessageToast } from './chat/NewMessageToast';
 
 interface LoginAlert {
   id: string;
@@ -20,11 +21,19 @@ interface LoginAlert {
 
 export function UserLoginAlertManager() {
   const [alerts, setAlerts] = useState<LoginAlert[]>([]);
+  const [messageToasts, setMessageToasts] = useState<Array<{
+    id: string;
+    conversationId: string;
+    senderName: string;
+    senderAvatar?: string | null;
+    preview: string;
+  }>>([]);
   const { onlineUserIds, onlineUsers } = usePresence();
   const { role: currentUserRole } = useUserRole();
   const { user: currentUser } = useAuth();
   const previousOnlineUsers = useRef<Set<string>>(new Set());
   const alertCount = useRef(0);
+  const toastCount = useRef(0);
   const isInitialized = useRef(false);
   
   // Track which users we've already shown alerts for in this session
@@ -44,6 +53,11 @@ export function UserLoginAlertManager() {
   // Helper function to get today's date string (YYYY-MM-DD format)
   const getTodayString = (): string => {
     return new Date().toISOString().split('T')[0];
+  };
+
+  const pushMessageToast = (conversationId: string, senderName: string, senderAvatar: string | null, preview: string) => {
+    const id = `toast-${toastCount.current++}`;
+    setMessageToasts(prev => [...prev, { id, conversationId, senderName, senderAvatar, preview }]);
   };
 
   // Helper function to determine if we should show an alert for a user
@@ -143,6 +157,16 @@ export function UserLoginAlertManager() {
     previousOnlineUsers.current = new Set(onlineUserIds);
   }, [onlineUserIds, onlineUsers, currentUser?.id]);
 
+  // Expose listener for new messages via window event to keep change minimal and non-destructive
+  useEffect(() => {
+    const handler = (event: CustomEvent<{ conversationId: string; senderName: string; senderAvatar: string | null; preview: string }>) => {
+      pushMessageToast(event.detail.conversationId, event.detail.senderName, event.detail.senderAvatar, event.detail.preview);
+    };
+
+    window.addEventListener('new-message-toast' as any, handler as EventListener);
+    return () => window.removeEventListener('new-message-toast' as any, handler as EventListener);
+  }, []);
+
   const removeAlert = useCallback((alertId: string) => {
     setAlerts(prev => prev.filter(alert => alert.id !== alertId));
   }, []);
@@ -168,6 +192,25 @@ export function UserLoginAlertManager() {
           <UserLoginAlert
             user={alert.user}
             onClose={() => removeAlert(alert.id)}
+          />
+        </div>
+      ))}
+      {messageToasts.slice(-3).map((toast, index) => (
+        <div
+          key={toast.id}
+          className="transform transition-all duration-300 ease-out"
+          style={{ zIndex: 99990 - index }}
+        >
+          <NewMessageToast
+            senderName={toast.senderName}
+            senderAvatar={toast.senderAvatar}
+            preview={toast.preview}
+            conversationId={toast.conversationId}
+            onClick={(conversationId) => {
+              window.dispatchEvent(new CustomEvent('open-chat-from-toast', { detail: { conversationId } }));
+              setMessageToasts(prev => prev.filter(t => t.id !== toast.id));
+            }}
+            onClose={() => setMessageToasts(prev => prev.filter(t => t.id !== toast.id))}
           />
         </div>
       ))}

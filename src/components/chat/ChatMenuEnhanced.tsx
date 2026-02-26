@@ -68,19 +68,28 @@ export function ChatMenuEnhanced() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesChannelRef = useRef<RealtimeChannel | null>(null);
 
-  // Helper function to format timestamp
+  // Helper function to format timestamp with both relative and absolute info
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
     const now = new Date();
     const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    
-    if (diffInSeconds < 60) return 'Just now';
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-    if (diffInSeconds < 604800) return `${Math.floor(diffInSeconds / 86400)}d ago`;
-    
-    // Format as date
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    let relative: string;
+    if (diffInSeconds < 60) relative = 'Just now';
+    else if (diffInSeconds < 3600) relative = `${Math.floor(diffInSeconds / 60)}m ago`;
+    else if (diffInSeconds < 86400) relative = `${Math.floor(diffInSeconds / 3600)}h ago`;
+    else if (diffInSeconds < 604800) relative = `${Math.floor(diffInSeconds / 86400)}d ago`;
+    else relative = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    const absolute = date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+
+    return `${relative} • ${absolute}`;
   };
 
   // Helper function to get conversation last message preview
@@ -227,6 +236,21 @@ export function ChatMenuEnhanced() {
 
     loadAllConversations();
   }, [user?.id, isOpen]); // Added isOpen to refresh when dropdown opens
+
+  // Listen for global toast click to open chat from elsewhere
+  useEffect(() => {
+    const handler = (event: CustomEvent<{ conversationId: string }>) => {
+      const { conversationId } = event.detail;
+      // Ensure list is open and chat is opened
+      setIsOpen(true);
+      setViewMode('chat');
+      setSelectedChatId(conversationId);
+      openChat(conversationId);
+    };
+
+    window.addEventListener('open-chat-from-toast' as any, handler as EventListener);
+    return () => window.removeEventListener('open-chat-from-toast' as any, handler as EventListener);
+  }, [openChat]);
 
   // Load last messages for all conversations
   useEffect(() => {
@@ -1099,6 +1123,7 @@ export function ChatMenuEnhanced() {
                           </div>
                           <p className={`text-xs text-gray-400 mt-1 px-3 ${isOwnMessage ? 'text-right' : 'text-left'}`}>
                             {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            <span className="ml-1 text-[11px] text-gray-400">{new Date(message.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                           </p>
                         </div>
                       </div>
