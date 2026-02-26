@@ -1106,21 +1106,34 @@ export function SubcontractorDashboard() {
                     </div>
 
                     {/* Assignment Countdown Timer - Show for pending assignments */}
-                    {job.assignment_status === 'pending' && job.assignment_deadline && (
-                      <div className="mt-2">
-                        <AssignmentCountdownTimer 
-                          deadline={job.assignment_deadline}
-                          size="medium"
-                          showLabel={true}
-                          showIcon={true}
-                          language={language}
-                          onExpire={() => {
-                            // Refresh jobs when deadline expires
-                            refreshJobsForSelectedDate();
-                          }}
-                        />
-                      </div>
-                    )}
+                    {(() => {
+                      console.log('🔍 Countdown Timer Check:', {
+                        jobId: job.id,
+                        workOrderNum: job.work_order_num,
+                        assignment_status: job.assignment_status,
+                        assignment_deadline: job.assignment_deadline,
+                        shouldShow: job.assignment_status === 'pending' && job.assignment_deadline
+                      });
+                      
+                      if (job.assignment_status === 'pending' && job.assignment_deadline) {
+                        return (
+                          <div className="mt-2">
+                            <AssignmentCountdownTimer 
+                              deadline={job.assignment_deadline}
+                              size="medium"
+                              showLabel={true}
+                              showIcon={true}
+                              language={language}
+                              onExpire={() => {
+                                // Refresh jobs when deadline expires
+                                refreshJobsForSelectedDate();
+                              }}
+                            />
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
 
                     {/* Action Buttons - Pending assignments get Accept/Decline */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
