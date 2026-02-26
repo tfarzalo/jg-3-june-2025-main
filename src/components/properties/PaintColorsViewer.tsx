@@ -129,11 +129,9 @@ export function PaintColorsViewer({ items }: PaintColorsViewerProps) {
                 
                 return floorplans.map((floorplan, fpIndex) => (
                   <div key={fpIndex} className="space-y-2">
-                    {floorplans.length > 1 && (
-                      <h5 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 pl-2 border-l-2 border-blue-400">
-                        {floorplan}
-                      </h5>
-                    )}
+                    <h5 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 pl-2 border-l-2 border-blue-400">
+                      {floorplan}
+                    </h5>
                     <div className="space-y-3">
                       {groupedRooms[floorplan].map((room, roomIndex) => {
                         const colorHex = getColorHex(room.color);
