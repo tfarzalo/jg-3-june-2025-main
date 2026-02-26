@@ -91,6 +91,7 @@ export interface AuthResponse {
 export interface PaintRoom {
   room: string;
   color: string;
+  floorplan?: string; // Optional: "Floorplan 1", "Floorplan 2", etc.
 }
 
 export interface PaintScheme {

@@ -1,0 +1,47 @@
+-- Add Floorplan Support to Paint Colors
+-- Migration Date: February 26, 2026
+-- 
+-- This is a documentation-only migration as the paint_colors column 
+-- in the properties table is stored as JSONB, which is schema-less.
+-- The application will now support an optional 'floorplan' field in each room object.
+--
+-- SCHEMA CHANGE (Application Level):
+-- 
+-- Old Structure:
+-- {
+--   "paint_type": "Regular Paint",
+--   "rooms": [
+--     { "room": "Living Room", "color": "White" },
+--     { "room": "Bedroom", "color": "Blue" }
+--   ]
+-- }
+--
+-- New Structure (Backward Compatible):
+-- {
+--   "paint_type": "Regular Paint",
+--   "rooms": [
+--     { "room": "Living Room", "color": "White", "floorplan": "Floorplan 1" },
+--     { "room": "Kitchen", "color": "Yellow", "floorplan": "Floorplan 1" },
+--     { "room": "Bedroom", "color": "Blue", "floorplan": "Floorplan 2" }
+--   ]
+-- }
+--
+-- FEATURES:
+-- - Rooms can now be grouped by floorplan (Floorplan 1, Floorplan 2)
+-- - The floorplan field is optional for backward compatibility
+-- - Existing data without floorplan will default to "Floorplan 1" in the UI
+-- - The viewer component will group rooms by floorplan when displayed
+--
+-- NO DATABASE CHANGES REQUIRED
+-- The JSONB column can accommodate this new structure without migration.
+
+-- Verification query to check existing paint_colors structure:
+-- SELECT id, property_name, paint_colors 
+-- FROM properties 
+-- WHERE paint_colors IS NOT NULL 
+-- LIMIT 10;
+
+-- This migration is informational only and does not need to be executed.
+-- The application code changes are sufficient.
+
+SELECT 'Floorplan support added to paint_colors - No database migration needed' as status;

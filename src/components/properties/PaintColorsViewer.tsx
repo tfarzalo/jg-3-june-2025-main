@@ -97,6 +97,21 @@ export function PaintColorsViewer({ items }: PaintColorsViewerProps) {
     );
   }
 
+  // Helper function to group rooms by floorplan
+  const groupRoomsByFloorplan = (rooms: any[]) => {
+    const grouped: { [key: string]: any[] } = {};
+    
+    rooms.forEach(room => {
+      const floorplan = room.floorplan || 'Floorplan 1';
+      if (!grouped[floorplan]) {
+        grouped[floorplan] = [];
+      }
+      grouped[floorplan].push(room);
+    });
+    
+    return grouped;
+  };
+
   return (
     <div className="space-y-6">
       {items.map((scheme, schemeIndex) => (
@@ -107,28 +122,44 @@ export function PaintColorsViewer({ items }: PaintColorsViewerProps) {
           </h4>
           
           {scheme.rooms && scheme.rooms.length > 0 ? (
-            <div className="space-y-3">
-              {scheme.rooms.map((room, roomIndex) => {
-                const colorHex = getColorHex(room.color);
+            <div className="space-y-4">
+              {(() => {
+                const groupedRooms = groupRoomsByFloorplan(scheme.rooms);
+                const floorplans = Object.keys(groupedRooms).sort();
                 
-                return (
-                  <div 
-                    key={roomIndex} 
-                    className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors"
-                    style={{ 
-                      backgroundColor: `${colorHex}20`, // 20 = 12% opacity for faded effect
-                      borderLeft: `4px solid ${colorHex}`
-                    }}
-                  >
-                    <span className="text-gray-700 dark:text-gray-300 font-medium text-sm">
-                      {room.room}
-                    </span>
-                    <span className="text-gray-900 dark:text-white font-semibold text-sm">
-                      {room.color}
-                    </span>
+                return floorplans.map((floorplan, fpIndex) => (
+                  <div key={fpIndex} className="space-y-2">
+                    {floorplans.length > 1 && (
+                      <h5 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 pl-2 border-l-2 border-blue-400">
+                        {floorplan}
+                      </h5>
+                    )}
+                    <div className="space-y-3">
+                      {groupedRooms[floorplan].map((room, roomIndex) => {
+                        const colorHex = getColorHex(room.color);
+                        
+                        return (
+                          <div 
+                            key={roomIndex} 
+                            className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 transition-colors"
+                            style={{ 
+                              backgroundColor: `${colorHex}20`, // 20 = 12% opacity for faded effect
+                              borderLeft: `4px solid ${colorHex}`
+                            }}
+                          >
+                            <span className="text-gray-700 dark:text-gray-300 font-medium text-sm">
+                              {room.room}
+                            </span>
+                            <span className="text-gray-900 dark:text-white font-semibold text-sm">
+                              {room.color}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                );
-              })}
+                ));
+              })()}
             </div>
           ) : (
             <p className="text-gray-500 dark:text-gray-400 text-sm italic text-center py-4">

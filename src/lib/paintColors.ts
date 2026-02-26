@@ -46,7 +46,8 @@ export async function savePaintSchemes(propertyId: string, schemes: PaintScheme[
         .filter(room => room.room?.trim() && room.color?.trim())
         .map(room => ({
           room: room.room.trim(),
-          color: room.color.trim()
+          color: room.color.trim(),
+          ...(room.floorplan && { floorplan: room.floorplan.trim() })
         }))
     }));
 
