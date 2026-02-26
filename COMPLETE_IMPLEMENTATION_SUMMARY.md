@@ -1,70 +1,70 @@
 # Contact & Property Management System - Complete Implementation Summary
 
-## Date: November 18, 2025
+## Date: January 2025 (Updated)
 
 ## Overview
-This document summarizes all the improvements made to the Contact and Property management systems, including status simplification, form embed enhancements, and the new "Create Property from Contact" feature.
+This document summarizes all improvements made to the application, including workflow enhancements, UI improvements, and system cleanup.
 
 ---
 
-## Part 1: Contact Status Simplification ✅
+## Recent Updates - January 2025
 
-### Changes Made
-**Simplified from 10+ statuses to 7 essential statuses:**
-- **Lead** - Potential customer or inquiry
-- **General Contact** - General contact or non-sales inquiry  
-- **Client** - Active client
-- **Dead** - No longer active or not interested
-- **Proposal Sent** - Proposal or quote has been sent
-- **Customer** - Paying customer
-- **Other** - Other status
+### ✅ Feature 1: Auto-Set "Full Paint" Based on Job Type
 
-### Files Changed
-- `supabase/migrations/20251118000001_simplify_contact_statuses.sql` ✅
-- `src/components/Contacts.tsx` - Updated status icons ✅
-- `src/pages/LeadForm.tsx` - Default status to "Lead" ✅
+**Description:** Automatically set the "Full Paint" field in work order forms based on job type selection.
 
-### Status Applied ✅ Migration run successfully
+**Implementation:**
+- Location: `src/components/NewWorkOrder.tsx`, `src/components/NewWorkOrderSpanish.tsx`
+- Logic:
+  - Job Type = "Paint" → Full Paint = "Yes"
+  - Job Type = "Repair" or "Callback" → Full Paint = "No"
+  - Job Type = "Turnaround" → Full Paint = left unchanged (admin decision)
+
+**Status:** ✅ Complete
 
 ---
 
-## Part 2: Form Embed System Enhancement ✅
+### ✅ Feature 2: Convert "Paint on Sprinklers" to Dropdown
 
-### Improvements
-1. **Iframe Communication** - Added postMessage API for parent-child window communication
-2. **Embed Detection** - Form detects if embedded in iframe
-3. **Error Handling** - Better error reporting for embedded contexts
-4. **Contact Creation** - Verified automatic contact creation from lead submissions
+**Description:** Changed "Paint on Sprinklers" from checkbox to dropdown for better clarity.
 
-### Files Changed
-- `src/pages/LeadForm.tsx` - Added iframe detection and postMessage events ✅
-- `src/components/LeadFormBuilder.tsx` - Updated embed code generation ✅
+**Implementation:**
+- Location: `src/components/NewWorkOrder.tsx`, `src/components/NewWorkOrderSpanish.tsx`
+- Changes:
+  - Replaced checkbox with select dropdown
+  - Label: "Was there paint on sprinkler heads?"
+  - Spanish: "¿Había pintura en las cabezas de los rociadores?"
+  - Values: "yes" or "no"
 
-### Events Sent to Parent Window
-```javascript
-// Success
-{ type: 'leadFormSubmitted', formId: string, success: true }
-
-// Error
-{ type: 'leadFormError', formId: string, error: string }
-
-// Redirect
-{ type: 'leadFormRedirect', url: string }
-```
-
-### Embed Code Structure
-```html
-<iframe id="jg-lead-form-{id}" src="{url}" width="100%" height="700"></iframe>
-<script>
-window.addEventListener('message', function(event) {
-  if (event.data.type === 'leadFormSubmitted') {
-    // Handle success
-  }
-});
-</script>
-```
+**Status:** ✅ Complete
 
 ---
+
+### ✅ Feature 3: Add "Is Unit Occupied?" to Job Request Form
+
+**Description:** Added new field to track unit occupancy status throughout job workflow.
+
+**Implementation:**
+
+**Database:**
+- Added `is_occupied` column to `jobs` table
+- Updated `create_job` RPC function
+- Updated `get_job_details` RPC function
+- Migrations: 
+  - `20260225000003_add_is_occupied_to_jobs.sql`
+  - `20260225000004_update_create_job_with_is_occupied.sql`
+  - `20260225000005_update_get_job_details_with_is_occupied.sql`
+
+**Frontend:**
+- Job Request Form: Added dropdown field
+- Work Order Form: Synced value from job
+- Job Details: Display field value
+
+**Status:** ✅ Complete
+
+---
+
+### ✅ Feature 4: Password Change Functionality Cleanup
 
 ## Part 3: Create Property from Contact Feature ✅ NEW
 

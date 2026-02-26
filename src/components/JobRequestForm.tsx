@@ -73,6 +73,7 @@ export function JobRequestForm() {
     job_category_id: '',
     job_type_id: '',
     purchase_order: '',
+    is_occupied: false,
     description: '',
     scheduled_date: getCurrentDateInEastern(),
   });
@@ -415,7 +416,8 @@ export function JobRequestForm() {
         p_description: formData.description || '', // Ensure description is not null
         p_scheduled_date: scheduledDate,
         p_job_category_id: formData.job_category_id || null,
-        p_purchase_order: formData.purchase_order?.trim() || null
+        p_purchase_order: formData.purchase_order?.trim() || null,
+        p_is_occupied: formData.is_occupied
       });
 
       if (error) {
@@ -594,6 +596,22 @@ export function JobRequestForm() {
                   placeholder="Optional"
                   className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+
+              <div>
+                <label htmlFor="is_occupied" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                  Is Unit Occupied?
+                </label>
+                <select
+                  id="is_occupied"
+                  name="is_occupied"
+                  value={formData.is_occupied ? 'yes' : 'no'}
+                  onChange={(e) => setFormData(prev => ({ ...prev, is_occupied: e.target.value === 'yes' }))}
+                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="no">No</option>
+                  <option value="yes">Yes</option>
+                </select>
               </div>
 
               <div>

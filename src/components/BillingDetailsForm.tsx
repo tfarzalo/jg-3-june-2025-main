@@ -417,6 +417,35 @@ export function BillingDetailsForm() {
     const success = await DeleteHandler.handleDelete(
       propertyBillingCategoryId,
       async () => {
+        // First check if this category is referenced by any work orders or jobs
+        const { data: workOrdersWithCategory, error: checkWorkOrdersError } = await supabase
+          .from('work_orders')
+          .select('id, work_order_num')
+          .or(`job_category_id.eq.${propertyBillingCategoryId}`)
+          .limit(1);
+
+        if (checkWorkOrdersError) {
+          console.error('Error checking work orders:', checkWorkOrdersError);
+        }
+
+        if (workOrdersWithCategory && workOrdersWithCategory.length > 0) {
+          throw new Error(`Cannot remove billing category "${categoryName}" because it is associated with active work orders. Please complete or modify those work orders first.`);
+        }
+
+        const { data: jobsWithCategory, error: checkJobsError } = await supabase
+          .from('jobs')
+          .select('id, job_number')
+          .eq('job_category_id', propertyBillingCategoryId)
+          .limit(1);
+
+        if (checkJobsError) {
+          console.error('Error checking jobs:', checkJobsError);
+        }
+
+        if (jobsWithCategory && jobsWithCategory.length > 0) {
+          throw new Error(`Cannot remove billing category "${categoryName}" because it is associated with active jobs. Please complete or modify those jobs first.`);
+        }
+
         // Delete associated billing details first
         const { error: deleteBillingDetailsError } = await supabase
           .from('billing_details')
@@ -425,6 +454,10 @@ export function BillingDetailsForm() {
 
         if (deleteBillingDetailsError) {
           console.error('Error deleting associated billing details:', deleteBillingDetailsError);
+          // Check if it's a foreign key constraint error
+          if (deleteBillingDetailsError.code === '23503') {
+            throw new Error(`Cannot remove billing items because they are associated with active work orders or jobs. Please complete or modify those work orders first.`);
+          }
           throw new Error('Failed to delete associated billing details');
         }
 
@@ -437,6 +470,10 @@ export function BillingDetailsForm() {
 
         if (deletePBCError) {
           console.error('Error deleting property billing category:', deletePBCError);
+          // Check if it's a foreign key constraint error
+          if (deletePBCError.code === '23503') {
+            throw new Error(`Cannot remove billing category "${categoryName}" because it is associated with active work orders or jobs. Please complete or modify those work orders first.`);
+          }
           throw deletePBCError;
         }
       },
@@ -625,6 +662,10 @@ export function BillingDetailsForm() {
 
         if (deleteError) {
           console.error('Error deleting removed billing details:', deleteError);
+          // Check if it's a foreign key constraint error
+          if (deleteError.code === '23503') {
+            throw new Error('Cannot remove billing line items because they are associated with active work orders or jobs. Please complete or modify those work orders first.');
+          }
           throw new Error('Failed to delete removed items. Please try again.');
         }
       }

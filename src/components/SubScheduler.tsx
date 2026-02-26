@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { format, addDays, subDays, parseISO } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { isAvailableOnDate, WorkingDays } from '../lib/availabilityUtils';
+import { AssignmentCountdownTimer } from './AssignmentCountdownTimer';
 
 interface Job {
   id: string;
@@ -26,6 +27,7 @@ interface Job {
   scheduled_date: string;
   assignment_status?: string | null;
   assignment_decision_at?: string | null;
+  assignment_deadline?: string | null;
   declined_reason_code?: string | null;
   declined_reason_text?: string | null;
   property: {
@@ -178,6 +180,7 @@ export default function SubScheduler() {
           assigned_to,
           assignment_status,
           assignment_decision_at,
+          assignment_deadline,
           declined_reason_code,
           declined_reason_text,
           created_by,
@@ -948,6 +951,23 @@ JG Painting Pros Inc.`;
                                         <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
                                           {job.property.property_name} - Unit {job.unit_number}
                                         </p>
+                                        
+                                        {/* Countdown Timer for Pending Assignments */}
+                                        {job.assignment_status === 'pending' && job.assignment_deadline && (
+                                          <div className="mt-1">
+                                            <AssignmentCountdownTimer 
+                                              deadline={job.assignment_deadline}
+                                              size="small"
+                                              showLabel={false}
+                                              showIcon={true}
+                                              language="en"
+                                              onExpire={() => {
+                                                // Refresh jobs when deadline expires
+                                                fetchJobs();
+                                              }}
+                                            />
+                                          </div>
+                                        )}
                                       </div>
                                       <button
                                         onClick={() => handleRemoveAssignment(job.id)}

@@ -21,6 +21,8 @@ import { useUserRole } from '../contexts/UserRoleContext';
 import { LoadingScreen } from './ui/LoadingScreen';
 import { Lightbox } from './Lightbox';
 import { SubcontractorDashboardActions } from './SubcontractorDashboardActions';
+import { AssignmentCountdownTimer } from './AssignmentCountdownTimer';
+
 
 
 interface Job {
@@ -28,10 +30,15 @@ interface Job {
   work_order_num: number;
   unit_number: string;
   scheduled_date: string;
-  assignment_status?: 'pending' | 'accepted' | 'declined' | 'in_progress' | 'completed' | null;
+  assignment_status?: 'pending' | 'accepted' | 'declined' | 'auto_declined' | 'in_progress' | 'completed' | null;
   assignment_decision_at?: string | null;
+  assigned_at?: string | null;
+  assignment_deadline?: string | null;
   declined_reason_code?: string | null;
   declined_reason_text?: string | null;
+  unit_size?: {
+    unit_size_label: string;
+  } | null;
   property: {
     id: string;
     property_name: string;
@@ -75,6 +82,7 @@ interface BillingCategory {
   id: string;
   name: string;
   is_extra_charge?: boolean | null;
+  sort_order?: number;
   billing_details: BillingDetail[];
 }
 
@@ -216,6 +224,135 @@ export function SubcontractorDashboard() {
 
   const text = t[language];
 
+  // Translation mappings for database content
+  const translateRoomName = (room: string): string => {
+    if (language === 'en') return room;
+    
+    const roomTranslations: { [key: string]: string } = {
+      'Walls': 'Paredes',
+      'KBA': 'KBA',
+      'Trim/Backsplash': 'Moldura/Salpicadero',
+      'Trim': 'Moldura',
+      'Backsplash': 'Salpicadero',
+      "Bathroom's": 'Baños',
+      'Bathrooms': 'Baños',
+      'Bathroom': 'Baño',
+      'Bedroom': 'Dormitorio',
+      'Bedrooms': 'Dormitorios',
+      'Living Room': 'Sala de Estar',
+      'Kitchen': 'Cocina',
+      'Dining Room': 'Comedor',
+      'Hallway': 'Pasillo',
+      'Entry': 'Entrada',
+      'Closet': 'Armario',
+      'Ceilings': 'Techos',
+      'Ceiling': 'Techo',
+      'Doors': 'Puertas',
+      'Door': 'Puerta',
+      'Windows': 'Ventanas',
+      'Window': 'Ventana',
+      'Baseboards': 'Zócalos',
+      'Baseboard': 'Zócalo',
+      'Crown Molding': 'Moldura de Corona',
+      'Accent Wall': 'Pared de Acento',
+      'Other': 'Otro'
+    };
+    
+    return roomTranslations[room] || room;
+  };
+
+  const translatePaintType = (paintType: string): string => {
+    if (language === 'en') return paintType;
+    
+    const paintTypeTranslations: { [key: string]: string } = {
+      'Regular Paint': 'Pintura Regular',
+      'Painted Ceilings': 'Techos Pintados',
+      'Painted Cabinets': 'Gabinetes Pintados',
+      'Accent Wall': 'Pared de Acento',
+      'Exterior Paint': 'Pintura Exterior',
+      'Trim Paint': 'Pintura de Moldura',
+      'Door Paint': 'Pintura de Puerta'
+    };
+    
+    // Handle "Floorplan X" format
+    if (paintType.startsWith('Floorplan ')) {
+      return paintType.replace('Floorplan', 'Plano de Planta');
+    }
+    
+    return paintTypeTranslations[paintType] || paintType;
+  };
+
+  const translateCategoryName = (categoryName: string): string => {
+    if (language === 'en') return categoryName;
+    
+    const categoryTranslations: { [key: string]: string } = {
+      'Regular Paint': 'Pintura Regular',
+      'Painted Ceilings': 'Techos Pintados',
+      'Painted Cabinets': 'Gabinetes Pintados',
+      'Accent Wall': 'Pared de Acento',
+      'Patch/Drywall/Ceiling': 'Parche/Drywall/Techo',
+      'Extra Charges': 'Cargos Adicionales',
+      'Paint One Accent Wall': 'Pintar Una Pared de Acento',
+      'Exterior Paint': 'Pintura Exterior',
+      'Trim Paint': 'Pintura de Moldura',
+      'Door Paint': 'Pintura de Puerta',
+      'Window Paint': 'Pintura de Ventana',
+      'Cabinet Paint': 'Pintura de Gabinete',
+      'Drywall Repair': 'Reparación de Drywall',
+      'Ceiling Repair': 'Reparación de Techo',
+      'Other': 'Otro'
+    };
+    
+    return categoryTranslations[categoryName] || categoryName;
+  };
+
+  const translateUnitSize = (unitSize: string): string => {
+    if (language === 'en') return unitSize;
+    
+    const unitSizeTranslations: { [key: string]: string } = {
+      '1 Bedroom': '1 Dormitorio',
+      '2 Bedroom': '2 Dormitorios',
+      '3 Bedroom': '3 Dormitorios',
+      '4 Bedroom': '4 Dormitorios',
+      'Studio': 'Estudio',
+      'Loft': 'Loft',
+      'Paint One Accent Wall': 'Pintar Una Pared de Acento',
+      'Patch/Drywall/Ceiling': 'Parche/Drywall/Techo',
+      'Paint Bedroom': 'Pintar Dormitorio',
+      'Paint Bathroom': 'Pintar Baño',
+      'Per Hour': 'Por Hora',
+      'Hourly': 'Por Hora',
+      'Other': 'Otro',
+      'Each': 'Cada Uno',
+      'Per Room': 'Por Habitación',
+      'Per Unit': 'Por Unidad'
+    };
+    
+    return unitSizeTranslations[unitSize] || unitSize;
+  };
+
+  const translateJobPhase = (jobPhase: string): string => {
+    if (language === 'en') return jobPhase;
+    
+    const jobPhaseTranslations: { [key: string]: string } = {
+      'Job Request': 'Solicitud de Trabajo',
+      'Approved': 'Aprobado',
+      'In Progress': 'En Progreso',
+      'Completed': 'Completado',
+      'On Hold': 'En Espera',
+      'Cancelled': 'Cancelado',
+      'Pending': 'Pendiente',
+      'Review': 'Revisión',
+      'Scheduled': 'Programado',
+      'Work Order Created': 'Orden de Trabajo Creada',
+      'Ready for Invoice': 'Listo para Facturar',
+      'Invoiced': 'Facturado',
+      'Paid': 'Pagado'
+    };
+    
+    return jobPhaseTranslations[jobPhase] || jobPhase;
+  };
+
   // Initialize language from profile on mount
   useEffect(() => {
     const initializeLanguage = async () => {
@@ -353,6 +490,43 @@ export function SubcontractorDashboard() {
     return () => clearTimeout(timer);
   }, [languageInitialized]);
 
+  // Real-time subscription for job assignment changes
+  useEffect(() => {
+    if (!previewUserId && !isLoading) {
+      // Only set up subscription for actual subcontractors, not admin previews
+      const getUserId = async () => {
+        const { data: userData } = await supabase.auth.getUser();
+        return userData.user?.id;
+      };
+
+      getUserId().then(userId => {
+        if (!userId) return;
+
+        const channel = supabase
+          .channel('job-assignment-updates')
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'jobs',
+              filter: `assigned_to=eq.${userId}`
+            },
+            (payload) => {
+              console.log('Job assignment changed:', payload);
+              // Refresh jobs when assignment status changes
+              refreshJobsForSelectedDate();
+            }
+          )
+          .subscribe();
+
+        return () => {
+          supabase.removeChannel(channel);
+        };
+      });
+    }
+  }, [previewUserId, isLoading, refreshJobsForSelectedDate]);
+
   const fetchJobsForDate = async (date: Date): Promise<Job[] | undefined> => {
     console.log('fetchJobsForDate called for date:', date);
     try {
@@ -429,8 +603,13 @@ export function SubcontractorDashboard() {
           scheduled_date,
           assignment_status,
           assignment_decision_at,
+          assigned_at,
+          assignment_deadline,
           declined_reason_code,
           declined_reason_text,
+          unit_size:unit_sizes (
+            unit_size_label
+          ),
           property:properties (
             id,
             property_name,
@@ -470,6 +649,7 @@ export function SubcontractorDashboard() {
         job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase,
         job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
         work_order: Array.isArray(job.work_order) ? job.work_order[0] : job.work_order,
+        unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
       }));
 
       
@@ -567,15 +747,17 @@ export function SubcontractorDashboard() {
       let billingError: any = null;
       
       try {
-          // Fetch all billing categories first
+          // Fetch all billing categories first, ordered by sort_order
         const { data: categoriesData, error: categoriesError } = await supabase
           .from('billing_categories')
           .select(`
             id,
             name,
-            is_extra_charge
+            is_extra_charge,
+            sort_order
           `)
-          .eq('property_id', propertyId);
+          .eq('property_id', propertyId)
+          .order('sort_order', { ascending: true });
 
         if (categoriesError) {
           console.error('Error fetching billing categories:', categoriesError);
@@ -632,6 +814,7 @@ export function SubcontractorDashboard() {
         id: category.id,
         name: category.name,
         is_extra_charge: category.is_extra_charge ?? null,
+        sort_order: category.sort_order,
         billing_details: (category.billing_details || []).map((detail: any) => ({
           id: detail.id,
           bill_amount: detail.bill_amount,
@@ -884,7 +1067,7 @@ export function SubcontractorDashboard() {
                           color: 'white'
                         }}
                       >
-                        {job.job_phase?.job_phase_label || text.unknownPhase}
+                        {translateJobPhase(job.job_phase?.job_phase_label || text.unknownPhase)}
                       </span>
                     </div>
 
@@ -896,10 +1079,15 @@ export function SubcontractorDashboard() {
                           {job.property ? formatAddress(job.property) : text.noAddress}
                         </p>
                       </div>
-                      <div className="flex items-center">
+                      <div className="flex items-center space-x-2">
                         <span className="text-sm font-bold text-gray-900 dark:text-white bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded-md">
                           {text.unit} #{job.unit_number}
                         </span>
+                        {job.unit_size?.unit_size_label && (
+                          <span className="text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-md">
+                            {translateUnitSize(job.unit_size.unit_size_label)}
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -909,6 +1097,23 @@ export function SubcontractorDashboard() {
                         {job.job_type?.job_type_label || text.unknownType}
                       </span>
                     </div>
+
+                    {/* Assignment Countdown Timer - Show for pending assignments */}
+                    {job.assignment_status === 'pending' && job.assignment_deadline && (
+                      <div className="mt-2">
+                        <AssignmentCountdownTimer 
+                          deadline={job.assignment_deadline}
+                          size="medium"
+                          showLabel={true}
+                          showIcon={true}
+                          language={language}
+                          onExpire={() => {
+                            // Refresh jobs when deadline expires
+                            refreshJobsForSelectedDate();
+                          }}
+                        />
+                      </div>
+                    )}
 
                     {/* Action Buttons - Pending assignments get Accept/Decline */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
@@ -1023,11 +1228,11 @@ export function SubcontractorDashboard() {
                                  <div className="space-y-3">
                                    {propertyDataCache[job.property?.id || '']?.paint_colors.map((scheme, index) => (
                                      <div key={index} className="pl-4 border-l-2 border-gray-200 dark:border-gray-600">
-                                       <h5 className="font-medium text-gray-800 dark:text-gray-200 mb-2">{scheme.paint_type}</h5>
+                                       <h5 className="font-medium text-gray-800 dark:text-gray-200 mb-2">{translatePaintType(scheme.paint_type)}</h5>
                                        <div className="space-y-2">
                                          {scheme.rooms.map((room, roomIndex) => (
                                            <div key={roomIndex} className="flex justify-between items-center text-sm">
-                                             <span className="text-gray-600 dark:text-gray-400">{room.room}</span>
+                                             <span className="text-gray-600 dark:text-gray-400">{translateRoomName(room.room)}</span>
                                              <span className="text-gray-800 dark:text-gray-200 font-medium">{room.color}</span>
                                            </div>
                                          ))}
@@ -1054,11 +1259,16 @@ export function SubcontractorDashboard() {
                                   category.billing_details.some(detail => detail.sub_pay_amount > 0)
                                 );
 
-                                const standardCategories = subcontractorCategories.filter(
+                                // Sort by sort_order to match property billing order
+                                const sortedSubcontractorCategories = [...subcontractorCategories].sort(
+                                  (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+                                );
+
+                                const standardCategories = sortedSubcontractorCategories.filter(
                                   category => !category.is_extra_charge
                                 );
 
-                                const extraChargeCategories = subcontractorCategories.filter(
+                                const extraChargeCategories = sortedSubcontractorCategories.filter(
                                   category => category.is_extra_charge && category.name !== 'Extra Charges'
                                 );
 
@@ -1072,7 +1282,7 @@ export function SubcontractorDashboard() {
                                   return (
                                     <div key={category.id} className="pl-4 border-l-2 border-gray-200 dark:border-gray-600">
                                       <h5 className="font-medium text-gray-800 dark:text-gray-200 mb-2">
-                                        {labelPrefix ? `${labelPrefix} ${category.name}` : category.name}
+                                        {labelPrefix ? `${labelPrefix} ${translateCategoryName(category.name)}` : translateCategoryName(category.name)}
                                       </h5>
                                       <div className="mb-3">
                                         <h6 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -1082,7 +1292,7 @@ export function SubcontractorDashboard() {
                                           {subPayDetails.map(detail => (
                                             <div key={detail.id} className="flex justify-between items-center text-sm">
                                               <span className="text-gray-600 dark:text-gray-400">
-                                                {detail.unit_size.unit_size_label}
+                                                {translateUnitSize(detail.unit_size.unit_size_label)}
                                               </span>
                                               <span className="text-green-600 dark:text-green-400 font-medium">
                                                 {text.subPay} {formatCurrency(detail.sub_pay_amount)}
@@ -1152,14 +1362,19 @@ export function SubcontractorDashboard() {
                             color: 'white'
                           }}
                         >
-                          {job.job_phase?.job_phase_label || text.unknownPhase}
+                          {translateJobPhase(job.job_phase?.job_phase_label || text.unknownPhase)}
                         </span>
                       </div>
                       <div className="flex flex-col space-y-1">
-                        <div className="flex items-center space-x-4">
+                        <div className="flex items-center flex-wrap gap-2">
                           <span className="text-xs text-gray-600 dark:text-gray-400">
                             {text.unit} #{job.unit_number}
                           </span>
+                          {job.unit_size?.unit_size_label && (
+                            <span className="text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">
+                              {translateUnitSize(job.unit_size.unit_size_label)}
+                            </span>
+                          )}
                           <span className="text-xs text-gray-600 dark:text-gray-400">
                             {job.job_type?.job_type_label || text.unknownType}
                           </span>

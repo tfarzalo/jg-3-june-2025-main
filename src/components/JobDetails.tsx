@@ -1706,10 +1706,14 @@ export function JobDetails() {
     setShowEnhancedNotificationModal(true);
   };
 
-  const handleNotificationSent = () => {
+  const handleNotificationSent = async () => {
     toast.success('Notification sent successfully');
     setShowNotificationModal(false);
+    setShowEnhancedNotificationModal(false);
     setNotificationType(null);
+    
+    // Refresh job data to show updated status
+    await refetchJob();
   };
 
   // Invoice status handlers

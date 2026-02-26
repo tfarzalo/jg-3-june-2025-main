@@ -747,7 +747,7 @@ const translations = {
     // Sprinklers
     sprinklers: 'Sprinklers',
     unitHasSprinklers: 'Unit Has Sprinklers',
-    paintOnSprinklers: 'Paint on Sprinklers',
+    paintOnSprinklers: 'Was there paint on sprinkler heads?',
     sprinklerImages: 'Sprinkler Images',
     
     // Images
@@ -1070,11 +1070,26 @@ const NewWorkOrder = () => {
       setSelectedAccentWallBillingDetailId(existingWorkOrder.accent_wall_billing_detail_id || null);
       setAccentWallDisplayLabel(existingWorkOrder.accent_wall_type || null);
     } else if (job) {
+      // Check job type to auto-set is_full_paint:
+      // - "Paint" job type -> is_full_paint = true (Yes)
+      // - "Repair" or "Callback" job type -> is_full_paint = false (No)
+      const jobTypeLabel = job.job_type?.job_type_label?.toLowerCase() || '';
+      const isPaintJob = jobTypeLabel === 'paint';
+      const isRepairOrCallback = jobTypeLabel === 'repair' || jobTypeLabel === 'callback';
+      
+      // Auto-set is_full_paint based on job type
+      let autoSetFullPaint = job.is_full_paint ?? false;
+      if (isPaintJob) {
+        autoSetFullPaint = true;
+      } else if (isRepairOrCallback) {
+        autoSetFullPaint = false;
+      }
+      
       setFormData({
         unit_number: job.unit_number || '',
         unit_size_id: job.unit_size?.id || '',
         is_occupied: job.is_occupied ?? false,
-        is_full_paint: job.is_full_paint ?? false,
+        is_full_paint: autoSetFullPaint,
         job_type: job.job_type?.job_type_label || '',
         job_category_id: job.job_category_id || '',
         has_sprinklers: job.has_sprinklers ?? false,
@@ -1130,7 +1145,6 @@ const NewWorkOrder = () => {
         ...data,
         is_occupied: data.is_occupied ?? false,
         is_full_paint: data.is_full_paint ?? false,
-        job_category: data.job_category ?? 'Regular Paint',
         has_sprinklers: data.has_sprinklers ?? false,
         sprinklers_painted: data.sprinklers_painted ?? false,
         painted_ceilings: data.painted_ceilings ?? false,
@@ -2410,17 +2424,20 @@ const NewWorkOrder = () => {
                   
                   {formData.sprinklers && (
                     <>
-                      <div className="flex items-center mt-4">
-                        <input
-                          type="checkbox"
-                          id="sprinklers_painted"
-                          checked={formData.sprinklers_painted}
-                          onChange={e => setFormData(prev => ({ ...prev, sprinklers_painted: e.target.checked }))}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                        />
-                        <label htmlFor="sprinklers_painted" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                          Paint on Sprinklers
+                      <div className="mt-4">
+                        <label htmlFor="sprinklers_painted" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                          Was there paint on sprinkler heads?
                         </label>
+                        <select
+                          id="sprinklers_painted"
+                          name="sprinklers_painted"
+                          value={formData.sprinklers_painted ? 'yes' : 'no'}
+                          onChange={(e) => setFormData(prev => ({ ...prev, sprinklers_painted: e.target.value === 'yes' }))}
+                          className="w-full h-12 sm:h-11 px-4 border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-gray-50 dark:bg-[#0F172A]"
+                        >
+                          <option value="no">No</option>
+                          <option value="yes">Yes</option>
+                        </select>
                       </div>
                       <div className="mt-4">
                         <label className="block text-sm font-medium text-gray-700 mb-2">

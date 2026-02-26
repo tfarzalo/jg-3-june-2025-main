@@ -317,11 +317,6 @@ export function Users() {
     e.preventDefault();
     
     if (!selectedUser) return;
-    
-    if (formData.password && formData.password !== formData.confirmPassword) {
-      toast.error('Passwords do not match');
-      return;
-    }
 
     try {
       // Update profile
@@ -338,19 +333,6 @@ export function Users() {
         .eq('id', selectedUser.id);
 
       if (profileError) throw profileError;
-
-      // Update password if provided
-      if (formData.password) {
-        const { error: passwordError } = await supabase.auth.admin.updateUserById(
-          selectedUser.id,
-          { password: formData.password }
-        );
-
-        if (passwordError) {
-          console.error('Password update error:', passwordError);
-          toast.warning('Profile updated but password change failed. Please contact support.');
-        }
-      }
 
       toast.success('User updated successfully');
       setShowEditUserModal(false);
@@ -442,6 +424,11 @@ export function Users() {
     
     if (!selectedUser) return;
     
+    if (!passwordData.password) {
+      toast.error('Please enter a password');
+      return;
+    }
+
     if (passwordData.password !== passwordData.confirmPassword) {
       toast.error('Passwords do not match');
       return;
@@ -450,12 +437,31 @@ export function Users() {
     try {
       setChangingPassword(true);
 
-      const { error } = await supabase.auth.admin.updateUserById(
-        selectedUser.id,
-        { password: passwordData.password }
-      );
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
-      if (error) throw error;
+      if (sessionError || !session) {
+        throw new Error('You must be logged in to change passwords');
+      }
+
+      const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-password`;
+
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          userId: selectedUser.id,
+          password: passwordData.password,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result?.error || 'Failed to change password');
+      }
 
       toast.success('Password changed successfully');
       setShowChangePasswordModal(false);
@@ -466,7 +472,7 @@ export function Users() {
       });
     } catch (error) {
       console.error('Error changing password:', error);
-      toast.error('Failed to change password');
+      toast.error(error instanceof Error ? error.message : 'Failed to change password');
     } finally {
       setChangingPassword(false);
     }
@@ -1008,34 +1014,6 @@ export function Users() {
                 />
               </div>
               <div>
-                <label htmlFor="edit-password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  New Password (leave blank to keep current)
-                </label>
-                <input
-                  type="password"
-                  id="edit-password"
-                  name="new-password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-[#1E293B]"
-                  autoComplete="new-password"
-                />
-              </div>
-              <div>
-                <label htmlFor="edit-confirmPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Confirm New Password
-                </label>
-                <input
-                  type="password"
-                  id="edit-confirmPassword"
-                  name="confirm-password"
-                  value={formData.confirmPassword}
-                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-[#1E293B]"
-                  autoComplete="new-password"
-                />
-              </div>
-              <div>
                 <label htmlFor="edit-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Role
                 </label>
@@ -1051,6 +1029,11 @@ export function Users() {
                   <option value="jg_management">JG Management</option>
                   <option value="admin">Admin</option>
                 </select>
+              </div>
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-2">
+                <p className="text-sm text-blue-800 dark:text-blue-300">
+                  💡 To change the user's password, use the "Change Password" button (key icon) from the users list.
+                </p>
               </div>
               <div className="flex justify-end space-x-3 pt-4">
                 <button

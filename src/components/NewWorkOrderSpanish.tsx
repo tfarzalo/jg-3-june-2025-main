@@ -488,25 +488,26 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
               
               {formData.sprinklers && (
                 <>
-                  <div className="flex items-center mt-4">
-                    <input
-                      type="checkbox"
+                  <div className="mt-4">
+                    <label htmlFor="sprinklers_painted" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                      ¿Había pintura en las cabezas de los aspersores?
+                    </label>
+                    <select
                       id="sprinklers_painted"
-                      checked={formData.sprinklers_painted}
-                      onChange={e => {
-                        const target = e.target as HTMLInputElement;
-                        const checked = target.checked;
-                        // Use the same direct state update pattern as English version
+                      name="sprinklers_painted"
+                      value={formData.sprinklers_painted ? 'yes' : 'no'}
+                      onChange={(e) => {
+                        const isPainted = e.target.value === 'yes';
                         const syntheticEvent = {
-                          target: { name: 'sprinklers_painted', value: checked.toString(), type: 'checkbox', checked }
+                          target: { name: 'sprinklers_painted', value: isPainted.toString(), type: 'checkbox', checked: isPainted }
                         } as React.ChangeEvent<HTMLInputElement>;
                         handleInputChange(syntheticEvent);
                       }}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                    />
-                    <label htmlFor="sprinklers_painted" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                      Pintura en Aspersores
-                    </label>
+                      className="w-full h-12 sm:h-11 px-4 border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-gray-50 dark:bg-[#0F172A]"
+                    >
+                      <option value="no">No</option>
+                      <option value="yes">Sí</option>
+                    </select>
                   </div>
                   <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
