@@ -2828,8 +2828,8 @@ export function JobDetails() {
 
         )}
 
-        {/* Billing Breakdown - Show only for Admins and JG Management if billing details exist */}
-        {(isAdmin || isJGManagement) && job.billing_details && !isJobRequest && (
+        {/* Billing Breakdown - Show only for Admins and JG Management after work order submission */}
+        {(isAdmin || isJGManagement) && !isJobRequest && hasWorkOrder && (
           <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg mb-6 overflow-hidden">
             {/* Header Section */}
             <div className="bg-gradient-to-r from-green-600 to-green-700 dark:from-green-700 dark:to-green-800 px-6 py-4">

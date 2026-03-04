@@ -19,7 +19,7 @@ export function WorkOrders() {
       error={error}
       phaseLabel="Work Order"
       showAddButton={false}
-      hideAmountColumn={true}
+      hideAmountColumn={false}
       initialSortConfig={sortField ? { field: sortField, direction: sortDirection } : undefined}
     />
   );

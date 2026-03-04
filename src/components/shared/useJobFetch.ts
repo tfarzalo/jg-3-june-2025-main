@@ -163,6 +163,43 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
           return amount;
         };
 
+        // RPC billing cache to avoid duplicate get_job_details calls
+        const billingRpcCache = new Map<string, number | null>();
+        const computeBillingTotalFromRpc = async (jobId: string) => {
+          if (billingRpcCache.has(jobId)) return billingRpcCache.get(jobId) ?? null;
+          const { data: jd } = await supabase.rpc('get_job_details', { p_job_id: jobId });
+          let total: number | null = null;
+          if (jd) {
+            const base = Number(jd?.billing_details?.bill_amount ?? jd?.billing_details?.base_price ?? 0) || 0;
+            const extraLabor = Number(jd?.extra_charges_details?.bill_amount ?? jd?.extra_charges_details?.total_extra_charges ?? 0) || 0;
+
+            // Extra charge line items
+            const lineItems = jd?.work_order?.extra_charges_line_items ?? [];
+            const lineItemsTotal = Array.isArray(lineItems)
+              ? lineItems.reduce((sum: number, item: any) => {
+                  const qty = Number(item?.quantity ?? 0) || 0;
+                  const rate = Number(item?.billRate ?? 0) || 0;
+                  const calc = Number(item?.calculatedBillAmount ?? qty * rate) || 0;
+                  return sum + calc;
+                }, 0)
+              : 0;
+
+            // Additional services
+            const additional = jd?.work_order?.additional_services ?? [];
+            const additionalTotal = Array.isArray(additional)
+              ? additional.reduce((sum: number, svc: any) => {
+                  const amt = Number(svc?.amountBill ?? svc?.amount_bill ?? 0) || 0;
+                  return sum + amt;
+                }, 0)
+              : 0;
+
+            const computed = base + extraLabor + lineItemsTotal + additionalTotal;
+            total = computed > 0 ? computed : null;
+          }
+          billingRpcCache.set(jobId, total);
+          return total;
+        };
+
         // Transform the data to match the Job interface
         const transformedJobs: Job[] = await Promise.all((data || []).map(async job => {
           const phaseLabel = Array.isArray(job.job_phase) ? job.job_phase[0]?.job_phase_label : job.job_phase?.job_phase_label;
@@ -175,6 +212,14 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
             const baseBill = await getBaseBillForJobRequest(propertyObj?.id, job.unit_size_id, unitSizeObj?.unit_size_label, jobCategory);
             if (baseBill !== null) {
               totalBillingAmount = baseBill;
+            }
+          }
+
+          // For other phases or missing amounts, try live RPC billing total
+          if (!totalBillingAmount || totalBillingAmount === 0) {
+            const rpcTotal = await computeBillingTotalFromRpc(job.id);
+            if (rpcTotal !== null) {
+              totalBillingAmount = rpcTotal;
             }
           }
 
@@ -292,6 +337,33 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
                 unitSizeLabel: unitSizeObj?.unit_size_label
               });
               totalBillingAmount = billing?.bill_amount ?? totalBillingAmount;
+            }
+
+            // Fallback: live RPC billing total for other phases
+            if (!totalBillingAmount || totalBillingAmount === 0) {
+              const { data: jd } = await supabase.rpc('get_job_details', { p_job_id: newJob.id });
+              if (jd) {
+                const base = Number(jd?.billing_details?.bill_amount ?? jd?.billing_details?.base_price ?? 0) || 0;
+                const extraLabor = Number(jd?.extra_charges_details?.bill_amount ?? jd?.extra_charges_details?.total_extra_charges ?? 0) || 0;
+                const lineItems = jd?.work_order?.extra_charges_line_items ?? [];
+                const lineItemsTotal = Array.isArray(lineItems)
+                  ? lineItems.reduce((sum: number, item: any) => {
+                      const qty = Number(item?.quantity ?? 0) || 0;
+                      const rate = Number(item?.billRate ?? 0) || 0;
+                      const calc = Number(item?.calculatedBillAmount ?? qty * rate) || 0;
+                      return sum + calc;
+                    }, 0)
+                  : 0;
+                const additional = jd?.work_order?.additional_services ?? [];
+                const additionalTotal = Array.isArray(additional)
+                  ? additional.reduce((sum: number, svc: any) => {
+                      const amt = Number(svc?.amountBill ?? svc?.amount_bill ?? 0) || 0;
+                      return sum + amt;
+                    }, 0)
+                  : 0;
+                const computed = base + extraLabor + lineItemsTotal + additionalTotal;
+                if (computed > 0) totalBillingAmount = computed;
+              }
             }
 
             // Transform the data to match the Job interface

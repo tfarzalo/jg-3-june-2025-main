@@ -15,7 +15,7 @@ export function CancelledJobs() {
       error={error}
       phaseLabel={['Cancelled']}
       showAddButton={false}
-      hideAmountColumn={true}
+      hideAmountColumn={false}
     />
   );
 }

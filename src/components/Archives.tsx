@@ -14,7 +14,7 @@ export function Archives() {
       phaseLabel="Archived"
       refetch={refetch}
       isArchive={true}
-      hideAmountColumn={true}
+      hideAmountColumn={false}
     />
   );
 }

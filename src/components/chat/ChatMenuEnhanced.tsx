@@ -217,7 +217,7 @@ export function ChatMenuEnhanced() {
               .from('profiles')
               .select('id, email, full_name, avatar_url')
               .eq('id', otherParticipantId)
-              .single();
+              .maybeSingle();
 
             if (!participantError && participantData) {
               setChatUsers(prev => ({ ...prev, [conversation.id]: participantData }));
@@ -335,9 +335,11 @@ export function ChatMenuEnhanced() {
               .from('conversations')
               .select('*')
               .eq('id', chat.id)
-              .single();
+              .contains('participants', [user.id]) // satisfy RLS by proving membership
+              .maybeSingle();
 
             if (convError) throw convError;
+            if (!conversationData) continue; // Conversation not found or not accessible
 
             const otherParticipantId = conversationData.participants.find((id: string) => id !== user.id);
             
@@ -346,7 +348,7 @@ export function ChatMenuEnhanced() {
                 .from('profiles')
                 .select('id, email, full_name, avatar_url')
                 .eq('id', otherParticipantId)
-                .single();
+                .maybeSingle();
 
               if (!participantError && participantData) {
                 setChatUsers(prev => ({ ...prev, [chat.id]: participantData }));
