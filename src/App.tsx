@@ -36,6 +36,7 @@ const NewWorkOrderPreview = lazy(() => import('./components/NewWorkOrderPreview'
 const LeadForm = lazy(() => import('./pages/LeadForm').then(module => ({ default: module.LeadForm })));
 const SmsConsentPage = lazy(() => import('./pages/SmsConsentPage'));
 const FileEditorPage = lazy(() => import('./pages/FileEditorPage'));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
 
 // Loading spinner component
 const LoadingSpinner = () => (
@@ -125,6 +126,15 @@ const ProtectedLayout = () => (
         <Route path="/auth" element={
           <Suspense fallback={<LoadingSpinner />}>
             <AuthLayout />
+          </Suspense>
+        } />
+        <Route path="/auth/reset-password" element={
+          <Suspense fallback={<LoadingSpinner />}>
+            <JobDataProvider>
+              <AuthProvider>
+                <ResetPasswordPage />
+              </AuthProvider>
+            </JobDataProvider>
           </Suspense>
         } />
         

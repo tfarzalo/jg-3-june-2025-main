@@ -11,6 +11,11 @@ export function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [showReset, setShowReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSending, setResetSending] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
   const isMountedRef = useRef(true);
   const loadingTimeoutRef = useRef<number | null>(null);
 
@@ -104,6 +109,44 @@ export function Auth() {
     }
   };
 
+  const handleResetRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetError(null);
+
+    if (!resetEmail) {
+      setResetError('Enter the email for your admin or JG management account.');
+      return;
+    }
+
+    try {
+      setResetSending(true);
+      const { data, error } = await supabase.functions.invoke('request-password-reset', {
+        body: {
+          email: resetEmail.trim(),
+          redirectBase: window.location.origin,
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (!data?.success) {
+        throw new Error(data?.error || 'Unable to start password reset');
+      }
+
+      setResetSent(true);
+      toast.success('If that admin or JG management account exists, a reset link is on the way.');
+    } catch (err: any) {
+      console.error('Auth: password reset request failed', err);
+      const message = err?.message || 'Could not send reset email';
+      setResetError(message);
+      toast.error(message);
+    } finally {
+      setResetSending(false);
+    }
+  };
+
   // Show loading spinner only during initial auth check
   if (authLoading) {
     return (
@@ -194,6 +237,22 @@ export function Auth() {
             </div>
           </div>
 
+          <div className="flex items-center justify-between text-sm">
+            <button
+              type="button"
+              onClick={() => {
+                setShowReset(true);
+                setResetEmail(email);
+                setResetSent(false);
+                setResetError(null);
+              }}
+              className="text-blue-600 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-200 font-medium"
+            >
+              Forgot password?
+            </button>
+            <span className="text-gray-500 dark:text-gray-400">Admins &amp; JG management only</span>
+          </div>
+
           <div>
             <button
               type="submit"
@@ -219,6 +278,72 @@ export function Auth() {
           </div>
         </form>
       </div>
+
+      {showReset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="relative w-full max-w-lg rounded-xl bg-white dark:bg-[#0B1224] p-6 shadow-2xl border border-gray-200/70 dark:border-gray-700/60">
+            <button
+              onClick={() => setShowReset(false)}
+              className="absolute right-3 top-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              aria-label="Close reset dialog"
+            >
+              ×
+            </button>
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-wide text-blue-600 dark:text-blue-300 font-semibold">Secure reset</p>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Reset admin password</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                Enter the email for an <strong>admin</strong> or <strong>JG management</strong> account. We will email a 1-hour link to create a new password.
+              </p>
+            </div>
+
+            <form onSubmit={handleResetRequest} className="mt-4 space-y-4">
+              <div>
+                <label htmlFor="reset-email" className="sr-only">Admin email</label>
+                <input
+                  id="reset-email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-[#0F172A] px-4 py-3 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="admin@jgportal.com"
+                />
+              </div>
+
+              {resetError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/50 dark:bg-red-900/50 dark:text-red-200">
+                  {resetError}
+                </div>
+              )}
+
+              {resetSent && (
+                <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-500/50 dark:bg-green-900/40 dark:text-green-200">
+                  Check your inbox for the password reset link. It expires in 1 hour.
+                </div>
+              )}
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="submit"
+                  disabled={resetSending}
+                  className="flex-1 rounded-lg bg-blue-600 px-4 py-3 text-white font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+                >
+                  {resetSending ? 'Sending reset link…' : 'Send reset link'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowReset(false)}
+                  className="rounded-lg border border-gray-300 dark:border-gray-700 px-4 py-3 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
