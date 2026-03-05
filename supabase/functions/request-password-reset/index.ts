@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
 };
 
-const ALLOWED_ROLES = ["admin", "jg_management", "is_super_admin"];
+const ALLOWED_ROLES = ["admin", "jg_management", "subcontractor", "is_super_admin"];
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -83,7 +83,7 @@ serve(async (req) => {
 
     const resetUrl = `${baseUrl}/auth/reset-password?token=${token}`;
 
-    const subject = "JG Portal admin password reset";
+    const subject = "JG Portal password reset";
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto;">
         <h2 style="color: #1d4ed8;">Reset your JG Portal password</h2>

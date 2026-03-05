@@ -20,7 +20,7 @@ const ResetPasswordPage: React.FC = () => {
 
   const parseJsonSafe = async (res: Response) => {
     const text = await res.text();
-    if (!text) return null;
+    if (!text || text.trim().length === 0) return {};
     try {
       return JSON.parse(text);
     } catch (err) {
@@ -210,20 +210,33 @@ const ResetPasswordPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white flex items-center justify-center px-4 py-10">
-      <div className="relative w-full max-w-xl overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur shadow-2xl">
-        <div className="absolute inset-0 opacity-60" aria-hidden>
-          <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-blue-500 blur-3xl" />
-          <div className="pointer-events-none absolute -right-16 bottom-0 h-48 w-48 rounded-full bg-indigo-500 blur-3xl" />
-        </div>
-        <div className="relative space-y-6 p-8">
-          <div>
-            <p className="text-xs uppercase tracking-[0.25em] text-blue-200">JG Portal</p>
-            <h1 className="mt-2 text-3xl font-bold text-white">Create a new password</h1>
-            <p className="mt-1 text-sm text-slate-200/80">Secure reset for admin &amp; JG management accounts.</p>
+    <div className="min-h-screen bg-gray-100 dark:bg-[#0F172A] flex items-center justify-center p-4">
+      <div className="w-full max-w-md space-y-6 bg-white dark:bg-[#1E293B] p-8 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+        <div className="text-center space-y-1">
+          <div className="mx-auto h-16 w-16 flex items-center justify-center">
+            <img
+              src="https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png"
+              alt="JG Portal Logo"
+              className="h-16 w-auto object-contain"
+              onError={(e) => {
+                const target = e.currentTarget;
+                target.style.display = 'none';
+                const parent = target.parentElement;
+                if (parent) {
+                  parent.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" class="h-10 w-10 text-gray-400">
+                      <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"></path>
+                      <path d="M7 7h.01"></path>
+                    </svg>
+                  `;
+                }
+              }}
+            />
           </div>
-          {renderCardBody()}
+          <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white">Create a new password</h1>
+          <p className="text-sm text-gray-600 dark:text-gray-300">Secure reset for admin, JG management, and subcontractor accounts.</p>
         </div>
+        {renderCardBody()}
       </div>
     </div>
   );
