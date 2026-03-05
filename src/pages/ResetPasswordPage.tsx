@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { supabase } from '../utils/supabase';
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -19,6 +18,17 @@ const ResetPasswordPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [role, setRole] = useState<string | null>(null);
 
+  const parseJsonSafe = async (res: Response) => {
+    const text = await res.text();
+    if (!text) return null;
+    try {
+      return JSON.parse(text);
+    } catch (err) {
+      console.error('ResetPasswordPage: failed to parse response', err, text);
+      throw new Error(text || 'Unexpected response from server');
+    }
+  };
+
   useEffect(() => {
     if (!token) {
       setError('Missing password reset token.');
@@ -31,7 +41,7 @@ const ResetPasswordPage: React.FC = () => {
         setState('loading');
         const validateUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/complete-password-reset?token=${token}`;
         const res = await fetch(validateUrl, { method: 'GET' });
-        const data = await res.json();
+        const data = await parseJsonSafe(res);
 
         if (!res.ok || !data?.success) {
           throw new Error(data?.error || 'Invalid or expired reset link');
@@ -70,18 +80,18 @@ const ResetPasswordPage: React.FC = () => {
 
     try {
       setSubmitting(true);
-      const { data, error } = await supabase.functions.invoke('complete-password-reset', {
-        body: {
-          token,
-          password,
+      const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/complete-password-reset`;
+      const res = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ token, password }),
       });
 
-      if (error) {
-        throw new Error(error.message);
-      }
+      const data = await parseJsonSafe(res);
 
-      if (!data?.success) {
+      if (!res.ok || !data?.success) {
         throw new Error(data?.error || 'Unable to update password');
       }
 
