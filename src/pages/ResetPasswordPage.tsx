@@ -234,7 +234,7 @@ const ResetPasswordPage: React.FC = () => {
             />
           </div>
           <h1 className="text-3xl font-extrabold text-gray-900 dark:text-white">Create a new password</h1>
-          <p className="text-sm text-gray-600 dark:text-gray-300">Secure reset for admin, JG management, and subcontractor accounts.</p>
+          <p className="text-sm text-gray-600 dark:text-gray-300">Secure reset for your JG Portal account.</p>
         </div>
         {renderCardBody()}
       </div>

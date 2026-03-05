@@ -237,7 +237,7 @@ export function Auth() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center justify-end text-sm">
             <button
               type="button"
               onClick={() => {
@@ -250,7 +250,6 @@ export function Auth() {
             >
               Forgot password?
             </button>
-            <span className="text-gray-500 dark:text-gray-400">Admins &amp; JG management only</span>
           </div>
 
           <div>
@@ -293,7 +292,7 @@ export function Auth() {
               <p className="text-xs uppercase tracking-wide text-blue-600 dark:text-blue-300 font-semibold">Secure reset</p>
               <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Reset admin password</h3>
               <p className="text-sm text-gray-600 dark:text-gray-300">
-                Enter the email for an <strong>admin</strong> or <strong>JG management</strong> account. We will email a 1-hour link to create a new password.
+                Enter the email for your account. We will email a 1-hour link to create a new password.
               </p>
             </div>
 
