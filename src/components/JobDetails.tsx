@@ -197,6 +197,8 @@ interface Job {
   invoice_paid?: boolean;
   invoice_sent_date?: string;
   invoice_paid_date?: string;
+  repair_amount?: number;
+  repair_sub_pay?: number;
 }
 
 async function sendEmail(data: EmailData) {
@@ -269,6 +271,11 @@ export function JobDetails() {
     [additionalBillingLines]
   );
   const [billingWarnings, setBillingWarnings] = useState<string[]>([]);
+  const [repairAmountInput, setRepairAmountInput] = useState<string>('');
+  const [repairSubPayInput, setRepairSubPayInput] = useState<string>('');
+  const [isEditingRepairAmount, setIsEditingRepairAmount] = useState(false);
+  const [repairExpanded, setRepairExpanded] = useState(false);
+  const [savingRepairAmount, setSavingRepairAmount] = useState(false);
   const [updatingInvoiceStatus, setUpdatingInvoiceStatus] = useState(false);
   const [approvalTokenDecision, setApprovalTokenDecision] = useState<{
     decision: 'approved' | 'declined' | null;
@@ -336,6 +343,14 @@ export function JobDetails() {
       setRecipientEmail(preferred);
     }
   }, [job?.property?.primary_contact_email, job?.property?.ap_email, recipientEmail]);
+
+  // Sync repair amount input with job data when loaded/refreshed
+  useEffect(() => {
+    if (!isEditingRepairAmount) {
+      setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
+      setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+    }
+  }, [job?.repair_amount, job?.repair_sub_pay, isEditingRepairAmount]);
 
   // Fetch approval token decision status for Extra Charges
   const fetchApprovalDecision = useCallback(async () => {
@@ -529,7 +544,7 @@ export function JobDetails() {
       const supplementalAmount = supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0);
       
       // Calculate total billing amount (same as "Total to Invoice" calculation)
-      const totalBillingAmount = standardBillAmount + extraChargesBillAmount + supplementalAmount;
+      const totalBillingAmount = standardBillAmount + extraChargesBillAmount + supplementalAmount + (job.repair_amount ?? 0);
 
 
       try {
@@ -1716,6 +1731,93 @@ export function JobDetails() {
     await refetchJob();
   };
 
+  // Repair amount handler
+  const handleSaveRepairAmount = async () => {
+    if (!jobId) return;
+    const parsedAmount = parseFloat(repairAmountInput);
+    const parsedSubPay = parseFloat(repairSubPayInput);
+    const amount = isNaN(parsedAmount) ? 0 : Math.max(0, parsedAmount);
+    const subPay = isNaN(parsedSubPay) ? 0 : Math.max(0, parsedSubPay);
+    setSavingRepairAmount(true);
+    try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!userData.user) throw new Error('User not found');
+
+      const { error } = await supabase
+        .from('jobs')
+        .update({ repair_amount: amount, repair_sub_pay: subPay })
+        .eq('id', jobId);
+      if (error) throw error;
+
+      const currentPhase = job?.job_phase?.label?.trim();
+      const hadRepairBefore = (job?.repair_amount ?? 0) > 0;
+
+      // Determine whether other extra charges exist (besides repair)
+      const hasOtherExtraCharges = Boolean(
+        job?.work_order?.has_extra_charges ||
+        unifiedExtraLines.length > 0 ||
+        derivedExtraCharges
+      );
+
+      // --- Phase advancement: Job Request or Work Order → Pending Work Order ---
+      // When admin sets a repair amount on a job that isn't already pending/approved
+      if (amount > 0 && (currentPhase === 'Job Request' || currentPhase === 'Work Order')) {
+        const { data: pendingPhase, error: phaseErr } = await supabase
+          .from('job_phases')
+          .select('id')
+          .eq('job_phase_label', 'Pending Work Order')
+          .single();
+        if (!phaseErr && pendingPhase) {
+          await supabase.from('jobs').update({ current_phase_id: pendingPhase.id }).eq('id', jobId);
+          await supabase.from('job_phase_changes').insert({
+            job_id: jobId,
+            changed_by: userData.user.id,
+            from_phase_id: job?.job_phase?.id,
+            to_phase_id: pendingPhase.id,
+            change_reason: 'Admin set repair amount — job moved to Pending Work Order for approval'
+          });
+        }
+      }
+
+      // --- Phase revert: Pending Work Order → Work Order ---
+      // When admin clears repair to 0 and no other extra charges exist
+      if (amount === 0 && hadRepairBefore && currentPhase === 'Pending Work Order' && !hasOtherExtraCharges) {
+        // Determine the right revert phase: if work order exists go to Work Order, else Job Request
+        const revertLabel = job?.work_order ? 'Work Order' : 'Job Request';
+        const { data: revertPhase, error: phaseErr } = await supabase
+          .from('job_phases')
+          .select('id')
+          .eq('job_phase_label', revertLabel)
+          .single();
+        if (!phaseErr && revertPhase) {
+          await supabase.from('jobs').update({ current_phase_id: revertPhase.id }).eq('id', jobId);
+          await supabase.from('job_phase_changes').insert({
+            job_id: jobId,
+            changed_by: userData.user.id,
+            from_phase_id: job?.job_phase?.id,
+            to_phase_id: revertPhase.id,
+            change_reason: `Admin cleared repair amount — no other extra charges, job reverted to ${revertLabel}`
+          });
+        }
+      }
+
+      setIsEditingRepairAmount(false);
+      await refetchJob(true);
+      toast.success(amount === 0 ? 'Repair cost cleared' : 'Repair amounts saved');
+
+      // Keep repair section expanded after save so the user can see the saved values
+      if (amount > 0) {
+        setRepairExpanded(true);
+      }
+    } catch (err) {
+      console.error('Error saving repair amount:', err);
+      toast.error('Failed to save repair amount');
+    } finally {
+      setSavingRepairAmount(false);
+    }
+  };
+
   // Invoice status handlers
   const handleMarkInvoiceSent = async () => {
     if (!job?.id) return;
@@ -1939,7 +2041,7 @@ export function JobDetails() {
   ]);
 
   const unifiedExtraTotals = useMemo(() => {
-    return unifiedExtraLines.reduce(
+    const base = unifiedExtraLines.reduce(
       (acc, line) => {
         acc.bill += Number(line.billAmount) || 0;
         acc.sub += Number(line.subAmount) || 0;
@@ -1947,12 +2049,17 @@ export function JobDetails() {
       },
       { bill: 0, sub: 0 }
     );
-  }, [unifiedExtraLines]);
+    // Include admin-set repair amounts
+    base.bill += job?.repair_amount ?? 0;
+    base.sub += job?.repair_sub_pay ?? 0;
+    return base;
+  }, [unifiedExtraLines, job?.repair_amount, job?.repair_sub_pay]);
 
   const hasExtraChargesForApproval = Boolean(
     job?.work_order?.has_extra_charges ||
     unifiedExtraLines.length > 0 ||
-    derivedExtraCharges
+    derivedExtraCharges ||
+    (job?.repair_amount ?? 0) > 0
   );
   const notificationJob = useMemo(() => {
     if (!job) return job;
@@ -2279,6 +2386,145 @@ export function JobDetails() {
                 </div>
               </div>
             </div>
+
+            {/* Repair Fields — Admin only, collapsible */}
+            {(isAdmin || isJGManagement) && (
+              <div className="px-6 pb-4">
+                <div className="bg-white dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 rounded-xl overflow-hidden">
+
+                  {/* Header row — always visible */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !repairExpanded;
+                      setRepairExpanded(next);
+                      if (next && !(job.repair_amount ?? 0)) {
+                        setIsEditingRepairAmount(true);
+                      }
+                      if (!next) {
+                        setIsEditingRepairAmount(false);
+                        setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
+                        setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+                      }
+                    }}
+                    className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-700/30 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm">🔧</span>
+                      <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider">Repair</span>
+                      {(job.repair_amount ?? 0) > 0 && !repairExpanded && (
+                        <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">
+                          &nbsp;·&nbsp;{formatCurrency(job.repair_amount ?? 0)} bill / {formatCurrency(job.repair_sub_pay ?? 0)} sub
+                        </span>
+                      )}
+                      {(job.work_order?.repair_cost ?? 0) > 0 && !repairExpanded && (
+                        <span className="text-xs text-zinc-400 dark:text-zinc-500 truncate">
+                          &nbsp;(Sub: {formatCurrency(job.work_order?.repair_cost ?? 0)})
+                        </span>
+                      )}
+                    </div>
+                    <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full border border-zinc-300 dark:border-zinc-600 text-zinc-400 dark:text-zinc-400 text-base font-medium leading-none ml-3">
+                      {repairExpanded ? '−' : '+'}
+                    </span>
+                  </button>
+
+                  {/* Expanded content */}
+                  {repairExpanded && (
+                    <div className="border-t border-zinc-100 dark:border-zinc-700/60">
+
+                      {/* Sub's reported cost — only shown when relevant */}
+                      {(job.work_order?.repair_cost ?? 0) > 0 && (
+                        <div className="flex items-center gap-2 px-4 py-2 bg-zinc-50 dark:bg-zinc-800/40 border-b border-zinc-100 dark:border-zinc-700/60">
+                          <span className="text-xs text-zinc-500 dark:text-zinc-400">Sub reported cost:</span>
+                          <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{formatCurrency(job.work_order?.repair_cost ?? 0)}</span>
+                        </div>
+                      )}
+
+                      {/* Read-only saved values */}
+                      {!isEditingRepairAmount && (job.repair_amount ?? 0) > 0 ? (
+                        <div className="px-4 py-3">
+                          <div className="grid grid-cols-3 gap-4 mb-3">
+                            <div>
+                              <div className="text-xs text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Bill</div>
+                              <div className="text-base font-bold text-zinc-900 dark:text-white">{formatCurrency(job.repair_amount ?? 0)}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Sub Pay</div>
+                              <div className="text-base font-bold text-zinc-900 dark:text-white">{formatCurrency(job.repair_sub_pay ?? 0)}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Profit</div>
+                              <div className="text-base font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency((job.repair_amount ?? 0) - (job.repair_sub_pay ?? 0))}</div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setIsEditingRepairAmount(true)}
+                            className="text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 underline underline-offset-2"
+                          >
+                            Edit amounts
+                          </button>
+                        </div>
+                      ) : !isEditingRepairAmount ? null : (
+                        /* Edit fields */
+                        <div className="px-4 py-3 space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">
+                                Bill to Customer
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={repairAmountInput}
+                                onChange={e => setRepairAmountInput(e.target.value)}
+                                className="w-full px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-[#0F172A] text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-sm"
+                                placeholder="0.00"
+                                autoFocus
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">
+                                Pay to Sub
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={repairSubPayInput}
+                                onChange={e => setRepairSubPayInput(e.target.value)}
+                                className="w-full px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-[#0F172A] text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-sm"
+                                placeholder="0.00"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={handleSaveRepairAmount}
+                              disabled={savingRepairAmount}
+                              className="px-3 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors"
+                            >
+                              {savingRepairAmount ? 'Saving…' : 'Save'}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setIsEditingRepairAmount(false);
+                                setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
+                                setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+                              }}
+                              className="px-3 py-1.5 text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-600 dark:text-zinc-300 rounded-lg border border-zinc-200 dark:border-zinc-600 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Property Map */}
             <div className="px-6 pb-6">
@@ -2725,44 +2971,74 @@ export function JobDetails() {
                           {formatCurrency(unifiedExtraTotals.bill)}
                         </p>
                       </div>
-                      <div className={`p-4 rounded-lg border ${unifiedExtraLines.length > 0 ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
-                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Line Items</span>
-                        <p className={`text-base font-bold mt-2 ${unifiedExtraLines.length > 0 ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                          {unifiedExtraLines.length}
-                        </p>
-                      </div>
+                      {(() => {
+                        const repairCount = (job?.repair_amount ?? 0) > 0 ? 1 : 0;
+                        const totalCount = unifiedExtraLines.length + repairCount;
+                        const hasAny = totalCount > 0;
+                        return (
+                          <div className={`p-4 rounded-lg border ${hasAny ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                            <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Line Items</span>
+                            <p className={`text-base font-bold mt-2 ${hasAny ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                              {totalCount}
+                            </p>
+                          </div>
+                        );
+                      })()}
                     </div>
 
-                    {unifiedExtraLines.length > 0 ? (
-                      <div className="space-y-3">
-                        {unifiedExtraLines.map(line => {
-                          const rate = Number(line.rate ?? (line.quantity ? line.billAmount / line.quantity : line.billAmount)) || 0;
-                          return (
-                            <div key={line.id} className="p-4 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30">
+                    {/* Line item cards */}
+                    {(() => {
+                      const repairAmount = job?.repair_amount ?? 0;
+                      const repairSubPay = job?.repair_sub_pay ?? 0;
+                      const repairCost = job?.work_order?.repair_cost ?? 0;
+                      const hasRepair = repairAmount > 0;
+                      const hasLines = unifiedExtraLines.length > 0;
+                      if (!hasRepair && !hasLines) return null;
+                      return (
+                        <div className="space-y-3">
+                          {unifiedExtraLines.map(line => {
+                            const rate = Number(line.rate ?? (line.quantity ? line.billAmount / line.quantity : line.billAmount)) || 0;
+                            return (
+                              <div key={line.id} className="p-4 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30">
+                                <div className="flex justify-between items-start gap-4">
+                                  <div>
+                                    <div className="text-base font-bold mt-1.5 text-green-800 dark:text-green-200">{line.label}</div>
+                                    {line.notes && (
+                                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 italic bg-white/50 dark:bg-black/20 rounded px-2 py-1">Notes: {line.notes}</div>
+                                    )}
+                                  </div>
+                                  <div className="text-right">
+                                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                                      {line.quantity} {line.unit} × {formatCurrency(rate)}
+                                    </div>
+                                    <div className="text-sm text-gray-600 dark:text-gray-400">Sub: {formatCurrency(line.subAmount)}</div>
+                                    <div className="text-lg font-bold text-green-800 dark:text-green-200 mt-1">{formatCurrency(line.billAmount)}</div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {hasRepair && (
+                            <div className="p-4 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30">
                               <div className="flex justify-between items-start gap-4">
                                 <div>
-                                  <div className="text-base font-bold mt-1.5 text-green-800 dark:text-green-200">{line.label}</div>
-                                  {line.notes && (
-                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 italic bg-white/50 dark:bg-black/20 rounded px-2 py-1">Notes: {line.notes}</div>
+                                  <div className="text-base font-bold mt-1.5 text-green-800 dark:text-green-200">
+                                    Repair
+                                  </div>
+                                  {repairCost > 0 && (
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Sub reported: {formatCurrency(repairCost)}</div>
                                   )}
                                 </div>
                                 <div className="text-right">
-                                  <div className="text-sm text-gray-600 dark:text-gray-400">
-                                    {line.quantity} {line.unit} × {formatCurrency(rate)}
-                                  </div>
-                                  <div className="text-sm text-gray-600 dark:text-gray-400">Sub: {formatCurrency(line.subAmount)}</div>
-                                  <div className="text-lg font-bold text-green-800 dark:text-green-200 mt-1">{formatCurrency(line.billAmount)}</div>
+                                  <div className="text-sm text-gray-600 dark:text-gray-400">Sub Pay: {formatCurrency(repairSubPay)}</div>
+                                  <div className="text-lg font-bold text-green-800 dark:text-green-200 mt-1">{formatCurrency(repairAmount)}</div>
                                 </div>
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="text-sm text-gray-500 dark:text-gray-400">
-                        No extra charges line items.
-                      </div>
-                    )}
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -2895,11 +3171,27 @@ export function JobDetails() {
                     label: line.label,
                     unit_label: line.unitLabel,
                     quantity: line.qty,
-                    billing_detail_id: line.key, // This should be the actual billing detail ID
+                    billing_detail_id: line.key,
                     bill_amount: line.amountBill,
                     sub_pay_amount: line.amountSub,
                     profit_amount: line.amountBill - line.amountSub
-                  }))
+                  })),
+                  repair_amount: job.repair_amount ?? 0,
+                  repair_cost: job.work_order?.repair_cost ?? 0,
+                  repair_sub_pay: job.repair_sub_pay ?? 0,
+                  is_editing_repair: isEditingRepairAmount,
+                  repair_amount_input: repairAmountInput,
+                  repair_sub_pay_input: repairSubPayInput,
+                  saving_repair: savingRepairAmount,
+                  on_repair_edit: () => setIsEditingRepairAmount(true),
+                  on_repair_save: handleSaveRepairAmount,
+                  on_repair_cancel: () => {
+                    setIsEditingRepairAmount(false);
+                    setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
+                    setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+                  },
+                  on_repair_input_change: (val: string) => setRepairAmountInput(val),
+                  on_repair_sub_pay_change: (val: string) => setRepairSubPayInput(val),
                 }} 
               />
             ) : (
@@ -2911,7 +3203,8 @@ export function JobDetails() {
                     <p className="text-lg font-semibold text-green-600 dark:text-green-400 mt-1">
                       {formatCurrency(
                         (job.billing_details?.bill_amount ?? 0) + extraChargesAmount + 
-                        supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)
+                        supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0) +
+                        (job.repair_amount ?? 0)
                       )}
                     </p>
                   </div>
@@ -2934,7 +3227,8 @@ export function JobDetails() {
                       {formatCurrency(
                         ((job.billing_details?.bill_amount ?? 0) - (job.billing_details?.sub_pay_amount ?? 0)) + 
                         (extraChargesAmount - extraChargesSubPay) +
-                        supplementalBillingLines.reduce((sum, line) => sum + (line.amountBill - line.amountSub), 0)
+                        supplementalBillingLines.reduce((sum, line) => sum + (line.amountBill - line.amountSub), 0) +
+                        (job.repair_amount ?? 0)
                       )}
                     </p>
                   </div>
@@ -3001,7 +3295,8 @@ export function JobDetails() {
                   <span className="text-xl font-bold text-green-600 dark:text-green-400">
                     {formatCurrency(
                       (job.billing_details?.bill_amount ?? 0) + extraChargesAmount + 
-                      supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)
+                      supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0) +
+                      (job.repair_amount ?? 0)
                     )}
                   </span>
                 </div>
@@ -3014,7 +3309,8 @@ export function JobDetails() {
                       <span className="text-base font-semibold text-gray-900 dark:text-white">
                         {formatCurrency(
                           (job.billing_details?.bill_amount ?? 0) + extraChargesAmount + 
-                          supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)
+                          supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0) +
+                          (job.repair_amount ?? 0)
                         )}
                       </span>
                     </div>
@@ -3033,7 +3329,8 @@ export function JobDetails() {
                         {formatCurrency(
                           ((job.billing_details?.bill_amount ?? 0) - (job.billing_details?.sub_pay_amount ?? 0)) + 
                           ((job.extra_charges_details?.bill_amount ?? 0) - (job.extra_charges_details?.sub_pay_amount ?? 0)) +
-                          supplementalBillingLines.reduce((sum, line) => sum + (line.amountBill - line.amountSub), 0)
+                          supplementalBillingLines.reduce((sum, line) => sum + (line.amountBill - line.amountSub), 0) +
+                          (job.repair_amount ?? 0)
                         )}
                       </span>
                     </div>

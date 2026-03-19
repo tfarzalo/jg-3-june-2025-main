@@ -221,6 +221,7 @@ export interface Job {
   invoice_paid?: boolean;
   invoice_sent_date?: string;
   invoice_paid_date?: string;
+  repair_amount?: number;
 }
 
 // Normalization helpers

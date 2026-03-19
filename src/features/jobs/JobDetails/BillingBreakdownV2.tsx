@@ -73,7 +73,7 @@ const UnifiedChargesTable: React.FC<{ items: UnifiedChargeItem[] }> = ({ items }
                 )}
               </td>
               <td className="px-6 py-4 text-zinc-600 dark:text-zinc-400 text-base">{s.unit_label ?? (s.is_hours ? 'Hours' : '—')}</td>
-              <td className="px-6 py-4 text-center text-zinc-800 dark:text-zinc-100 font-bold text-lg">{s.quantity_or_hours}</td>
+              <td className="px-6 py-4 text-center text-zinc-800 dark:text-zinc-100 font-bold text-lg">{s.quantity_or_hours == null ? '—' : s.quantity_or_hours}</td>
               <td className="px-6 py-4 text-right font-bold text-zinc-900 dark:text-zinc-100 text-lg">{formatCurrency(s.bill_amount)}</td>
               <td className="px-6 py-4 text-right font-bold text-zinc-900 dark:text-zinc-100 text-lg">{formatCurrency(s.sub_pay_amount)}</td>
               <td className="px-6 py-4 text-right font-bold text-emerald-600 dark:text-emerald-400 text-lg">{formatCurrency(s.profit_amount)}</td>
@@ -103,6 +103,14 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
   const items = billing.additional_services ?? [];
   const extraLineItems = billing.extra_charges_line_items ?? [];
   const hasExtraLineItems = extraLineItems.length > 0;
+
+  const repairAmount = billing.repair_amount ?? 0;
+  const repairSubPay = billing.repair_sub_pay ?? 0;
+  const repairCost = billing.repair_cost ?? 0;
+  const isEditingRepair = billing.is_editing_repair ?? false;
+  const repairInput = billing.repair_amount_input ?? '';
+  const repairSubPayInput = billing.repair_sub_pay_input ?? '';
+  const savingRepair = billing.saving_repair ?? false;
 
   // Prepare unified list
   const unifiedItems: UnifiedChargeItem[] = [
@@ -147,6 +155,17 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
       bill_amount: extra.bill_amount || 0,
       sub_pay_amount: extra.sub_pay_amount || 0,
       profit_amount: (extra.bill_amount || 0) - (extra.sub_pay_amount || 0)
+    }] : []),
+    // Repair line item — only shown when admin has set a repair amount
+    ...(repairAmount > 0 ? [{
+      id: 'repair',
+      label: `Repair${repairCost > 0 ? ` (Sub reported: ${formatCurrency(repairCost)})` : ''}`,
+      unit_label: '—',
+      quantity_or_hours: null as unknown as number,
+      is_hours: false,
+      bill_amount: repairAmount,
+      sub_pay_amount: repairSubPay,
+      profit_amount: repairAmount - repairSubPay
     }] : [])
   ];
 
@@ -159,6 +178,7 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
   const totalExtraSub = sum(unifiedItems.map(i => i.sub_pay_amount));
   const totalExtraProfit = totalExtraBill - totalExtraSub;
 
+  // Repair is already included as a line item inside unifiedItems — no double-counting needed
   const totals = {
     bill: baseBill + totalExtraBill,
     sub: baseSub + totalExtraSub,
@@ -242,7 +262,7 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
                   </div>
                   {totalExtraBill > 0 && (
                     <div className="flex justify-between items-center">
-                      <span className="text-zinc-600 dark:text-zinc-400">Extra Charges:</span>
+                      <span className="text-zinc-600 dark:text-zinc-400">Extra Charges & Repairs:</span>
                       <span className="font-semibold text-zinc-900 dark:text-zinc-100">{formatCurrency(totalExtraBill)}</span>
                     </div>
                   )}
@@ -262,7 +282,7 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
                   </div>
                   {totalExtraSub > 0 && (
                     <div className="flex justify-between items-center">
-                      <span className="text-zinc-600 dark:text-zinc-400">Extra Charges:</span>
+                      <span className="text-zinc-600 dark:text-zinc-400">Extra Charges & Repairs:</span>
                       <span className="font-semibold text-zinc-900 dark:text-zinc-100">{formatCurrency(totalExtraSub)}</span>
                     </div>
                   )}
@@ -282,7 +302,7 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
                   </div>
                   {totalExtraProfit > 0 && (
                     <div className="flex justify-between items-center">
-                      <span className="text-zinc-600 dark:text-zinc-400">Extra Charges:</span>
+                      <span className="text-zinc-600 dark:text-zinc-400">Extra Charges & Repairs:</span>
                       <span className="font-semibold text-emerald-600 dark:text-emerald-400">{formatCurrency(totalExtraProfit)}</span>
                     </div>
                   )}

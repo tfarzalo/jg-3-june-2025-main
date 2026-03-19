@@ -44,6 +44,7 @@ export type WorkOrderLite = {
   extra_charges_description?: string | null;
   extra_hours?: number;
   additional_comments?: string | null;
+  repair_cost?: number;
   // keep other fields as-is
   [k: string]: any;
 };
@@ -74,6 +75,8 @@ export type JobDetailsNormalized = {
   hourly_billing_details?: any;
   extra_charges_details?: any;
   debug_billing_joins?: any;
+  repair_amount?: number;
+  repair_sub_pay?: number;
 };
 
 export function normalizeJobDetails(d: any): JobDetailsNormalized {
@@ -133,6 +136,7 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
         extra_charges_description: work_orderRaw?.extra_charges_description ?? null,
         extra_hours: Number(work_orderRaw?.extra_hours ?? 0),
         additional_comments: work_orderRaw?.additional_comments ?? null,
+        repair_cost: Number(work_orderRaw?.repair_cost ?? 0),
       }
     : null;
 
@@ -164,5 +168,7 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
     hourly_billing_details: d?.hourly_billing_details ?? null,
     extra_charges_details: d?.extra_charges_details ?? null,
     debug_billing_joins: d?.debug_billing_joins ?? null,
+    repair_amount: d?.repair_amount != null ? Number(d.repair_amount) : undefined,
+    repair_sub_pay: d?.repair_sub_pay != null ? Number(d.repair_sub_pay) : undefined,
   };
 }

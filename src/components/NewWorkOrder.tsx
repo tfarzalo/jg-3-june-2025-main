@@ -73,6 +73,7 @@ interface Job {
   has_extra_charges: boolean;
   extra_charges_description: string;
   extra_hours: number;
+  repair_cost: number;
   additional_comments: string;
   created_by: string;
 }
@@ -113,6 +114,7 @@ interface WorkOrder {
   extra_charges_description: string;
   extra_hours: number;
   extra_charges_line_items?: ExtraChargeLineItem[];
+  repair_cost: number;
   additional_comments: string;
   additional_services?: Record<string, any>;
 }
@@ -150,6 +152,7 @@ interface WorkOrderDBPayload {
   extra_charges_description: string;
   extra_hours: number;
   extra_charges_line_items?: ExtraChargeLineItem[];
+  repair_cost?: number;
   additional_comments: string;
   prepared_by: string;
   ceiling_billing_detail_id?: string | null;
@@ -377,6 +380,7 @@ const buildWorkOrderPayload = (
     extra_charges_description: formData.extra_charges_description || '',
     extra_hours: toDbNumber(formData.extra_hours) || 0,
     extra_charges_line_items: formData.has_extra_charges ? extraChargesItems : [],
+    repair_cost: toDbNumber(formData.repair_cost) || 0,
     additional_comments: formData.additional_comments || '',
     prepared_by: '', // Will be set during submission - this gets overridden
     ceiling_billing_detail_id: nilIfEmpty(ceilingBillingDetailId),
@@ -938,6 +942,7 @@ const NewWorkOrder = () => {
     has_extra_charges: false,
     extra_charges_description: '',
     extra_hours: 0,
+    repair_cost: 0,
     additional_comments: ''
   });
 
@@ -1054,6 +1059,7 @@ const NewWorkOrder = () => {
         has_extra_charges: existingWorkOrder.has_extra_charges ?? false,
         extra_charges_description: existingWorkOrder.extra_charges_description || '',
         extra_hours: existingWorkOrder.extra_hours ?? 0,
+        repair_cost: existingWorkOrder.repair_cost ?? 0,
         additional_comments: existingWorkOrder.additional_comments || ''
       });
 
@@ -1109,6 +1115,7 @@ const NewWorkOrder = () => {
         has_extra_charges: job.has_extra_charges ?? false,
         extra_charges_description: job.extra_charges_description || '',
         extra_hours: job.extra_hours ?? 0,
+        repair_cost: 0,
         additional_comments: job.additional_comments || '',
         ceiling_mode: 'unit_size' as 'unit_size' | 'individual'
       });
@@ -1673,6 +1680,8 @@ const NewWorkOrder = () => {
           formData.has_extra_charges ||
           extraChargesItems.length > 0 ||
           formData.has_sprinklers
+          // NOTE: repair_cost from the work order form is informational only.
+          // The admin sets repair_amount on the job, which drives the approval flow.
         );
 
       // Get the target phase ID for phase advancement
@@ -2513,6 +2522,48 @@ const NewWorkOrder = () => {
                 )}
               </div>
             </div>
+
+              {/* Repair Cost */}
+              <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+                {/* Header */}
+                <div className="bg-gradient-to-r from-red-600 to-red-700 dark:from-red-700 dark:to-red-800 px-6 py-4">
+                  <h2 className="text-xl font-semibold text-white">Repair Cost</h2>
+                </div>
+                {/* Content */}
+                <div className="p-6 space-y-3">
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    If repairs were performed during this job, enter the total repair cost below. Leave at <strong>$0</strong> if no repairs were needed.
+                  </p>
+                  <div>
+                    <label htmlFor="repair_cost" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                      Repair Cost (if applicable)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 font-medium">$</span>
+                      <input
+                        type="number"
+                        id="repair_cost"
+                        name="repair_cost"
+                        min="0"
+                        step="0.01"
+                        value={formData.repair_cost === 0 ? '' : formData.repair_cost}
+                        onChange={(e) => setFormData(prev => ({
+                          ...prev,
+                          repair_cost: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0
+                        }))}
+                        placeholder="0.00"
+                        className="w-full pl-7 pr-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    {formData.repair_cost > 0 && (
+                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-2 flex items-center gap-1">
+                        <span>ℹ</span>
+                        <span>Repair cost will be reviewed by admin. They will set the billing amounts and send approval if needed.</span>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
 
               {/* Before Images */}
               <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">

@@ -33,4 +33,17 @@ export type JobBillingPayload = {
   } | null;
   extra_charges_line_items?: ExtraChargeLineItem[];
   additional_services?: AdditionalService[];
+  // Repair fields
+  repair_amount?: number;        // admin-set: billed to customer
+  repair_sub_pay?: number;       // admin-set: paid to subcontractor for repair
+  repair_cost?: number;          // sub-reported: informational only
+  is_editing_repair?: boolean;
+  repair_amount_input?: string;
+  repair_sub_pay_input?: string;
+  saving_repair?: boolean;
+  on_repair_edit?: () => void;
+  on_repair_save?: () => void;
+  on_repair_cancel?: () => void;
+  on_repair_input_change?: (val: string) => void;
+  on_repair_sub_pay_change?: (val: string) => void;
 };
