@@ -64,8 +64,8 @@ export function Auth() {
       if (profile?.role === 'subcontractor') {
         console.log('Auth: Redirecting subcontractor to subcontractor dashboard');
         navigate('/dashboard/subcontractor');
-      } else if (profile?.role === 'admin' || profile?.role === 'jg_management') {
-        console.log('Auth: Redirecting admin/management to main dashboard');
+      } else if (profile?.role === 'admin' || profile?.role === 'is_super_admin' || profile?.role === 'jg_management') {
+        console.log('Auth: Redirecting admin/super_admin/management to main dashboard');
         navigate('/dashboard');
       } else {
         console.log('Auth: Redirecting other users to main dashboard');

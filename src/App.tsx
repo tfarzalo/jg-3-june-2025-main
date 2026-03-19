@@ -19,6 +19,8 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { MainLayout } from './components/ui/MainLayout';
 import { PersistentLayout } from './components/PersistentLayout';
 import { AlertStackingTest } from './components/AlertStackingTest';
+import { MaintenanceModeProvider } from './contexts/MaintenanceModeContext';
+import { MaintenanceGate } from './components/MaintenanceGate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const Auth = lazy(() => import('./components/Auth'));
@@ -66,13 +68,15 @@ const ProtectedLayout = () => (
   <JobDataProvider>
     <AuthProvider>
       <UserRoleProvider>
-        <SubcontractorPreviewProvider>
-          <ChatTrayProvider>
-            <UnreadMessagesProvider>
-              <ProtectedRoute />
-            </UnreadMessagesProvider>
-          </ChatTrayProvider>
-        </SubcontractorPreviewProvider>
+        <MaintenanceModeProvider>
+          <SubcontractorPreviewProvider>
+            <ChatTrayProvider>
+              <UnreadMessagesProvider>
+                <ProtectedRoute />
+              </UnreadMessagesProvider>
+            </ChatTrayProvider>
+          </SubcontractorPreviewProvider>
+        </MaintenanceModeProvider>
       </UserRoleProvider>
     </AuthProvider>
   </JobDataProvider>
@@ -144,7 +148,10 @@ const ProtectedLayout = () => (
             <ProtectedLayout />
           </Suspense>
         }>
-          <Route element={<PersistentLayout />}>
+          {/* MaintenanceGate sits here: inside auth+role providers, outside layout.
+              Admin users pass through; non-admins see the overlay when maintenance is ON. */}
+          <Route element={<MaintenanceGate />}>
+            <Route element={<PersistentLayout />}>
             <Route path="/test-alerts" element={
               <Suspense fallback={<LoadingSpinner />}>
                 <MainLayout>
@@ -194,15 +201,16 @@ const ProtectedLayout = () => (
                 </MainLayout>
               </Suspense>
             } />
-          </Route>
+            </Route>{/* end PersistentLayout */}
 
-          {/* Dedicated File Editor Route - Outside PersistentLayout to hide sidebar */}
-          <Route path="/file-editor/:fileId" element={
-            <Suspense fallback={<LoadingSpinner />}>
-              <FileEditorPage />
-            </Suspense>
-          } />
-        </Route>
+            {/* Dedicated File Editor Route - Outside PersistentLayout to hide sidebar */}
+            <Route path="/file-editor/:fileId" element={
+              <Suspense fallback={<LoadingSpinner />}>
+                <FileEditorPage />
+              </Suspense>
+            } />
+          </Route>{/* end MaintenanceGate */}
+        </Route>{/* end ProtectedLayout */}
         
         {/* Default redirect */}
         <Route path="/" element={<Navigate to="/auth" replace />} />

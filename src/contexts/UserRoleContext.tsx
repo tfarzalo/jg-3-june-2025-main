@@ -5,6 +5,7 @@ interface UserRoleContextType {
   role: string | null;
   isSubcontractor: boolean;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
   isJGManagement: boolean;
   loading: boolean;
   error: string | null;
@@ -14,6 +15,7 @@ const UserRoleContext = createContext<UserRoleContextType>({
   role: null,
   isSubcontractor: false,
   isAdmin: false,
+  isSuperAdmin: false,
   isJGManagement: false,
   loading: true,
   error: null
@@ -25,8 +27,10 @@ export function UserRoleProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   // Calculate boolean flags based on role
+  // Super admin inherits all admin capabilities, plus the maintenance bypass
   const isSubcontractor = role === 'subcontractor';
-  const isAdmin = role === 'admin';
+  const isSuperAdmin = role === 'is_super_admin';
+  const isAdmin = role === 'admin' || isSuperAdmin;   // super admin IS an admin everywhere
   const isJGManagement = role === 'jg_management';
 
   useEffect(() => {
@@ -87,6 +91,7 @@ export function UserRoleProvider({ children }: { children: React.ReactNode }) {
       role, 
       isSubcontractor, 
       isAdmin, 
+      isSuperAdmin,
       isJGManagement, 
       loading, 
       error 

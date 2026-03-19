@@ -34,6 +34,7 @@ import { toast } from 'sonner';
 import { useEffect } from 'react';
 import { useAuth } from '../contexts/AuthProvider';
 import { useUnreadMessages } from '../contexts/UnreadMessagesProvider';
+import { useMaintenanceMode } from '../contexts/MaintenanceModeContext';
 
 // Lightweight live connection indicator state
 function LiveStatusBadge({ isCollapsed }: { isCollapsed: boolean }) {
@@ -114,11 +115,12 @@ interface NavGroup {
 export function Sidebar() {
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const { isAdmin, isJGManagement, isSubcontractor } = useUserRole();
+  const { isAdmin, isSuperAdmin, isJGManagement, isSubcontractor } = useUserRole();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const { user } = useAuth();
   const { unreadCount } = useUnreadMessages();
+  const { isMaintenanceMode } = useMaintenanceMode();
 
 
   // Function to get icon color based on unified color palette
@@ -268,8 +270,8 @@ export function Sidebar() {
           { icon: Activity, label: 'Activity Log', to: '/dashboard/activity', dataTutorial: 'activity' },
         ]
       },
-      // Only show settings for admin users
-      ...(isAdmin ? [{
+      // Show settings for admin and super admin users
+      ...((isAdmin || isSuperAdmin) ? [{
         title: 'SETTINGS',
         items: [
           { icon: Settings, label: 'Admin Settings', to: '/dashboard/settings', dataTutorial: 'settings' },
@@ -420,6 +422,27 @@ export function Sidebar() {
         <div className="mt-3">
           <LiveStatusBadge isCollapsed={isCollapsed} />
         </div>
+        {/* Maintenance mode indicator — only visible to super admin */}
+        {isSuperAdmin && isMaintenanceMode && (
+          <div className={`mt-2 ${isCollapsed ? 'flex justify-center' : ''}`}>
+            {isCollapsed ? (
+              <div
+                title="Maintenance Mode is ON"
+                className="w-3 h-3 rounded-full bg-red-500 animate-pulse"
+              />
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/40">
+                <span className="relative flex h-2 w-2 flex-shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                </span>
+                <span className="text-xs font-semibold text-red-600 dark:text-red-400 leading-none">
+                  Maintenance Mode ON
+                </span>
+              </div>
+            )}
+          </div>
+        )}
         {!isCollapsed && (
           <div className="mt-4 text-xs text-gray-500 dark:text-gray-600">
             Copyright 2025 JG Portal V2.0

@@ -9,6 +9,7 @@ interface UseUserRoleResult {
   loading: boolean;
   error: string | null;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
   isJGManagement: boolean;
   isSubcontractor: boolean;
 }
@@ -84,7 +85,9 @@ export function useUserRole(): UseUserRoleResult {
   return {
     user,
     ...state,
-    isAdmin: state.role === 'admin',
+    isSuperAdmin: state.role === 'is_super_admin',
+    // Super admin inherits all admin capabilities everywhere in the app
+    isAdmin: state.role === 'admin' || state.role === 'is_super_admin',
     isJGManagement: state.role === 'jg_management',
     isSubcontractor: state.role === 'subcontractor'
   };

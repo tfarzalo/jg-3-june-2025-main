@@ -1957,7 +1957,7 @@ const NewWorkOrderPreview = () => {
           .eq('id', userData.user.id)
           .single();
           
-        if (profile?.role === 'admin' || profile?.role === 'jg_management') {
+        if (profile?.role === 'admin' || profile?.role === 'is_super_admin' || profile?.role === 'jg_management') {
           return null; // Continue with the form
         }
       }

@@ -42,6 +42,7 @@ export function withSubcontractorAccessCheck<T>(
         }
         if (
           profile.role === 'admin' ||
+          profile.role === 'is_super_admin' ||
           profile.role === 'jg_management' ||
           job.assigned_to === userId
         ) {
