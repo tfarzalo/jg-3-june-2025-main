@@ -44,11 +44,11 @@ export function DailyAgendaEmailSettings() {
     try {
       setLoading(true);
       
-      // Get all admin and JG management users
+      // Get all admin, JG management, and super admin users
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
         .select('id, email, full_name, role')
-        .in('role', ['admin', 'manager']);
+        .in('role', ['admin', 'jg_management', 'is_super_admin']);
       
       if (profilesError) throw profilesError;
 
@@ -180,29 +180,20 @@ export function DailyAgendaEmailSettings() {
       setSavingTime(true);
       
       // Format as HH:MM:SS for postgres TIME type
+      // This value is treated as Eastern Time (ET) by the cron trigger function
       const timeString = `${sendTime}:00`;
       
-      // Get the config ID first
-      const { data: configData, error: fetchError } = await supabase
-        .from('daily_email_config')
-        .select('id')
-        .single();
-      
-      if (fetchError) throw fetchError;
-      if (!configData) throw new Error('No email config found');
-      
-      // Update the config
       const { error: updateError } = await supabase
         .from('daily_email_config')
         .update({
           send_time_utc: timeString,
           updated_at: new Date().toISOString()
         })
-        .eq('id', configData.id);
+        .not('id', 'is', null); // update the single config row
       
       if (updateError) throw updateError;
       
-      toast.success(`Daily email time updated to ${sendTime}. Cron job will be rescheduled automatically.`);
+      toast.success(`Daily send time updated to ${sendTime} ET. Takes effect at the next scheduled check.`);
       await fetchEmailConfig();
     } catch (error) {
       console.error('Error updating send time:', error);
@@ -228,7 +219,7 @@ export function DailyAgendaEmailSettings() {
       <div>
         <h2 className="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Daily Agenda Email Settings</h2>
         <p className="text-gray-600 dark:text-gray-400">
-          Configure which admin and management users receive daily job summary emails.
+          Configure which admin, management, and super admin users receive daily job summary emails.
         </p>
       </div>
 
@@ -269,7 +260,7 @@ export function DailyAgendaEmailSettings() {
               </Button>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Current schedule: Emails sent daily at {sendTime} Eastern Time (ET). The system will automatically convert this to UTC for scheduling.
+              Emails will send daily at <strong>{sendTime} ET</strong>. The scheduler checks every hour and fires within a 10-minute window of this time. Changes take effect immediately — no redeploy needed.
             </p>
           </div>
         </div>
@@ -390,7 +381,7 @@ export function DailyAgendaEmailSettings() {
             </div>
           ) : users.length === 0 ? (
             <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-              No admin or management users found
+              No admin, management, or super admin users found
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -410,7 +401,7 @@ export function DailyAgendaEmailSettings() {
                       <td className="p-4 text-gray-600 dark:text-gray-400">{user.email}</td>
                       <td className="p-4">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
-                          {user.role === 'manager' ? 'JG Management' : 'Admin'}
+                          {user.role === 'jg_management' ? 'JG Management' : user.role === 'is_super_admin' ? 'Super Admin' : 'Admin'}
                         </span>
                       </td>
                       <td className="p-4">
@@ -446,11 +437,13 @@ export function DailyAgendaEmailSettings() {
             <div className="text-sm text-blue-900 dark:text-blue-200">
               <p className="font-semibold mb-1">How it works:</p>
               <ul className="list-disc list-inside space-y-1 text-blue-800 dark:text-blue-300">
-                <li>Emails are sent automatically at {sendTime} Eastern Time (ET) every day</li>
+                <li>Emails are sent automatically at <strong>{sendTime} ET</strong> every day</li>
+                <li>The scheduler runs hourly and sends within a 10-minute window of the configured time</li>
+                <li>Changing the send time above takes effect immediately — no redeploy needed</li>
                 <li>Email content includes job counts and details for the current day</li>
-                <li>Use the test feature above to preview the email format</li>
+                <li>Use the test feature above to preview and verify email delivery</li>
                 <li>Only users with the toggle enabled will receive daily emails</li>
-                <li>The cron job will automatically reschedule when you change the send time</li>
+                <li>Duplicate sends on the same day are automatically prevented</li>
               </ul>
             </div>
           </div>
