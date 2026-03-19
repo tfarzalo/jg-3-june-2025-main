@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardList, ArrowLeft, Upload, X, Image, FileText } from 'lucide-react';
+import { ClipboardList, ArrowLeft, Upload, X, Image, FileText, Search, ChevronDown } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { getCurrentDateInEastern, formatDateForInput } from '../lib/dateUtils';
 import { JobType } from '../lib/types';
@@ -50,6 +50,11 @@ export function JobRequestForm() {
     const fakeEvent = { preventDefault() {} } as any;
     await handleSubmit(fakeEvent);
   });
+
+  // Property search/dropdown state
+  const [propertySearch, setPropertySearch] = useState('');
+  const [propertyDropdownOpen, setPropertyDropdownOpen] = useState(false);
+  const propertyDropdownRef = useRef<HTMLDivElement>(null);
 
   const [debugInfo, setDebugInfo] = useState<{
     supabaseConnected: boolean;
@@ -106,18 +111,19 @@ export function JobRequestForm() {
     testConnection();
     Promise.all([
       fetchProperties(),
-      fetchUnitSizes(),
       fetchJobTypes(),
       fetchJobCategories()
     ]);
   }, []);
 
-  // Fetch job categories when property changes
+  // Fetch job categories and unit sizes when property changes
   useEffect(() => {
     if (formData.property_id) {
       fetchPropertyJobCategories(formData.property_id);
+      fetchPropertyUnitSizes(formData.property_id);
     } else {
       setJobCategories([]);
+      setUnitSizes([]);
     }
   }, [formData.property_id]);
 
@@ -138,19 +144,35 @@ export function JobRequestForm() {
     }
   };
 
-  const fetchUnitSizes = async () => {
+  const fetchPropertyUnitSizes = async (propertyId: string) => {
     try {
+      // Get only unit sizes that have been configured for this property in billing_details
       const { data, error } = await supabase
-        .from('unit_sizes')
-        .select('*')
-        .order('unit_size_label');
+        .from('billing_details')
+        .select('unit_size_id, unit_sizes!inner(id, unit_size_label)')
+        .eq('property_id', propertyId);
 
       if (error) throw error;
-      setUnitSizes(data || []);
+
+      // Deduplicate by unit_size_id and extract the unit size objects
+      const seen = new Set<string>();
+      const uniqueSizes: UnitSize[] = [];
+      for (const row of (data || [])) {
+        const sizeData = row.unit_sizes as unknown as UnitSize;
+        if (sizeData && !seen.has(sizeData.id)) {
+          seen.add(sizeData.id);
+          uniqueSizes.push(sizeData);
+        }
+      }
+      uniqueSizes.sort((a, b) => a.unit_size_label.localeCompare(b.unit_size_label));
+
+      setUnitSizes(uniqueSizes);
       setDebugInfo(prev => ({ ...prev, unitSizesLoaded: true }));
+      // Reset unit size selection when property changes
+      setFormData(prev => ({ ...prev, unit_size_id: '' }));
     } catch (err) {
-      console.error('Error fetching unit sizes:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch unit sizes');
+      console.error('Error fetching property unit sizes:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch unit sizes for this property');
     }
   };
 
@@ -447,6 +469,35 @@ export function JobRequestForm() {
     setHasChanges(true);
   };
 
+  // Close property dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (propertyDropdownRef.current && !propertyDropdownRef.current.contains(e.target as Node)) {
+        setPropertyDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredProperties = properties.filter(p => {
+    const q = propertySearch.toLowerCase();
+    return (
+      p.property_name.toLowerCase().includes(q) ||
+      p.address.toLowerCase().includes(q) ||
+      p.city.toLowerCase().includes(q)
+    );
+  });
+
+  const selectedProperty = properties.find(p => p.id === formData.property_id) || null;
+
+  const handlePropertySelect = (property: Property) => {
+    setFormData(prev => ({ ...prev, property_id: property.id }));
+    setPropertySearch('');
+    setPropertyDropdownOpen(false);
+    setHasChanges(true);
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#0F172A] p-6">
       <div className="max-w-7xl mx-auto">
@@ -475,24 +526,95 @@ export function JobRequestForm() {
             
             <div className="space-y-6">
               <div>
-                <label htmlFor="property_id" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                   Select Property
                 </label>
-                <select
-                  id="property_id"
+                <div ref={propertyDropdownRef} className="relative">
+                  {/* Selected property display / search input */}
+                  <div
+                    className={`w-full h-11 flex items-center bg-gray-50 dark:bg-[#0F172A] border rounded-lg cursor-pointer transition-colors ${
+                      propertyDropdownOpen
+                        ? 'border-blue-500 ring-2 ring-blue-500'
+                        : 'border-gray-300 dark:border-[#2D3B4E] hover:border-gray-400 dark:hover:border-[#4B5563]'
+                    }`}
+                    onClick={() => {
+                      setPropertyDropdownOpen(prev => !prev);
+                      if (!propertyDropdownOpen) setPropertySearch('');
+                    }}
+                  >
+                    <Search className="h-4 w-4 text-gray-400 dark:text-gray-500 ml-3 flex-shrink-0" />
+                    {propertyDropdownOpen ? (
+                      <input
+                        autoFocus
+                        type="text"
+                        value={propertySearch}
+                        onChange={e => setPropertySearch(e.target.value)}
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Type to search properties..."
+                        className="flex-1 h-full px-2 bg-transparent text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none text-sm"
+                      />
+                    ) : (
+                      <span className={`flex-1 px-2 text-sm truncate ${selectedProperty ? 'text-gray-900 dark:text-white' : 'text-gray-400 dark:text-gray-500'}`}>
+                        {selectedProperty ? selectedProperty.property_name : 'Select a property'}
+                      </span>
+                    )}
+                    {selectedProperty && !propertyDropdownOpen && (
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          setFormData(prev => ({ ...prev, property_id: '' }));
+                          setHasChanges(true);
+                        }}
+                        className="p-1 mr-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded transition-colors"
+                        title="Clear selection"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <ChevronDown className={`h-4 w-4 text-gray-400 dark:text-gray-500 mr-3 flex-shrink-0 transition-transform duration-150 ${propertyDropdownOpen ? 'rotate-180' : ''}`} />
+                  </div>
+
+                  {/* Dropdown list */}
+                  {propertyDropdownOpen && (
+                    <div className="absolute z-50 w-full mt-1 bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-[#2D3B4E] rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                      {filteredProperties.length === 0 ? (
+                        <div className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 text-center">
+                          No properties match "{propertySearch}"
+                        </div>
+                      ) : (
+                        filteredProperties.map(property => (
+                          <button
+                            key={property.id}
+                            type="button"
+                            onClick={() => handlePropertySelect(property)}
+                            className={`w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors ${
+                              formData.property_id === property.id
+                                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 font-medium'
+                                : 'text-gray-900 dark:text-white'
+                            }`}
+                          >
+                            <div className="font-medium">{property.property_name}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                              {formatPropertyAddress(property)}
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* Hidden native input to satisfy form required validation */}
+                <input
+                  type="text"
                   name="property_id"
                   required
                   value={formData.property_id}
-                  onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select a property</option>
-                  {properties.map(property => (
-                    <option key={property.id} value={property.id}>
-                      {property.property_name} | {formatPropertyAddress(property)}
-                    </option>
-                  ))}
-                </select>
+                  onChange={() => {}}
+                  className="sr-only"
+                  aria-hidden="true"
+                  tabIndex={-1}
+                />
               </div>
 
               <div>
@@ -521,9 +643,10 @@ export function JobRequestForm() {
                   required
                   value={formData.unit_size_id}
                   onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={!formData.property_id}
+                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <option value="">Select a unit size</option>
+                  <option value="">{!formData.property_id ? 'Select a property first' : unitSizes.length === 0 ? 'No unit sizes configured for this property' : 'Select a unit size'}</option>
                   {unitSizes.map(size => (
                     <option key={size.id} value={size.id}>
                       {size.unit_size_label}
