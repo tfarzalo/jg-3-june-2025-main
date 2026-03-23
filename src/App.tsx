@@ -39,6 +39,7 @@ const LeadForm = lazy(() => import('./pages/LeadForm').then(module => ({ default
 const SmsConsentPage = lazy(() => import('./pages/SmsConsentPage'));
 const FileEditorPage = lazy(() => import('./pages/FileEditorPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
+const EmployeeOnboardingPage = lazy(() => import('./pages/EmployeeOnboardingPage'));
 
 // Loading spinner component
 const LoadingSpinner = () => (
@@ -123,6 +124,11 @@ const ProtectedLayout = () => (
         <Route path="/sms-consent" element={
           <Suspense fallback={<LoadingSpinner />}>
             <SmsConsentPage />
+          </Suspense>
+        } />
+        <Route path="/employee-onboarding/:token" element={
+          <Suspense fallback={<LoadingSpinner />}>
+            <EmployeeOnboardingPage />
           </Suspense>
         } />
         

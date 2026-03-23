@@ -24,8 +24,7 @@ import {
 import { supabase } from '../utils/supabase';
 import { config } from '../config/environment';
 import { useNavigate, useLocation } from 'react-router-dom';
-import Lightbox from 'yet-another-react-lightbox';
-import 'yet-another-react-lightbox/styles.css';
+import { Lightbox } from './Lightbox';
 import { getPreviewUrl } from '../utils/storagePreviews';
 import { buildStoragePath as buildCanonicalStoragePath } from '../utils/storagePaths';
 import { FILE_CATEGORY_PATHS, FOLDER_NAME_TO_CATEGORY, LEGACY_CATEGORY_ALIASES } from '../utils/fileCategories';
@@ -264,7 +263,7 @@ export function FileManager() {
   const [isDragging, setIsDragging] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
-  const [lightboxImages, setLightboxImages] = useState<{ src: string; alt: string }[]>([]);
+  const [lightboxImages, setLightboxImages] = useState<{ url: string; alt: string }[]>([]);
   const [moveConfirmation, setMoveConfirmation] = useState<{ item: FileItem; targetFolderId: string } | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
 
@@ -1132,7 +1131,7 @@ export function FileManager() {
             .from('files')
             .createSignedUrl(img.file_path, 3600);
           return {
-            src: urlData?.signedUrl || '',
+            url: urlData?.signedUrl || '',
             alt: img.name
           };
         })
@@ -1732,18 +1731,11 @@ export function FileManager() {
 
       {/* Lightbox */}
       <Lightbox
-        open={lightboxOpen}
-        close={() => setLightboxOpen(false)}
-        index={lightboxIndex}
-        slides={lightboxImages}
-        carousel={{
-          padding: '16px',
-          spacing: '16px',
-        }}
-        controller={{
-          closeOnBackdropClick: true,
-        }}
-        animation={{ fade: 300 }}
+        isOpen={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+        title="File Preview"
+        images={lightboxImages}
+        initialIndex={lightboxIndex}
       />
     </div>
   );

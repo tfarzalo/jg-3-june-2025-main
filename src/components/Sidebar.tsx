@@ -25,7 +25,8 @@ import {
   CalendarDays,
   Archive,
   MessageCircle,
-  HelpCircle
+  HelpCircle,
+  Briefcase
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { useTheme } from './ui/ThemeProvider';
@@ -179,6 +180,8 @@ export function Sidebar() {
         return '#9E9E9E'; // Neutral Gray
       
       // CONTACTS
+      case 'Employees':
+        return '#0F766E'; // Deep Teal
       case 'Contacts':
         return '#7C3AED'; // Purple (distinct from other sections)
       
@@ -377,6 +380,25 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="p-4 border-t border-gray-200 dark:border-[#1E293B]">
+        {isAdmin && (
+          <NavLink
+            to="/dashboard/employees"
+            className={({ isActive }) =>
+              `flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors mb-3 ${
+                isActive
+                  ? 'bg-teal-50 text-teal-700 dark:bg-teal-600 dark:text-white'
+                  : 'text-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#1E293B] hover:text-gray-900 dark:hover:text-white'
+              }`
+            }
+            title={isCollapsed ? 'Employees' : undefined}
+          >
+            <Briefcase
+              className={`${isCollapsed ? 'h-6 w-6' : 'h-5 w-5 mr-3'}`}
+              style={{ color: getIconColor('Employees') }}
+            />
+            {!isCollapsed && 'Employees'}
+          </NavLink>
+        )}
         <NavLink
           to="/dashboard/contacts"
           className={({ isActive }) =>

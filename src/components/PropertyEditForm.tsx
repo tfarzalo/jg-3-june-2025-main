@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Building2, ArrowLeft, MapPin, Plus, Minus, ZoomIn, Trash2 } from 'lucide-react';
+import { Building2, ArrowLeft, MapPin, Plus, Minus, ZoomIn, Trash2, HardHat } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { useLeafletMap } from '../hooks/useLeafletMap';
 import { PaintColorsEditor } from './properties/PaintColorsEditor';
@@ -60,6 +60,14 @@ export function PropertyEditForm() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [propertyGroups, setPropertyGroups] = useState<PropertyManagementGroup[]>([]);
   const [originalPropertyName, setOriginalPropertyName] = useState('');
+
+  // Preferred subcontractors
+  interface SubUser { id: string; full_name: string; }
+  const [subcontractorUsers, setSubcontractorUsers] = useState<SubUser[]>([]);
+  const [preferredSubA, setPreferredSubA] = useState<string>('');
+  const [preferredSubB, setPreferredSubB] = useState<string>('');
+  const [preferredSubC, setPreferredSubC] = useState<string>('');
+  const [subExclusionNote, setSubExclusionNote] = useState<string>('');
   
   const [formData, setFormData] = useState({
     property_name: '',
@@ -285,6 +293,9 @@ export function PropertyEditForm() {
       fetchPaintSchemes(),
       fetchContacts()
     ]);
+    // Load subcontractor users list
+    supabase.from('profiles').select('id, full_name').eq('role', 'subcontractor').order('full_name')
+      .then(({ data }) => setSubcontractorUsers(data || []));
   }, [propertyId, navigate]);
 
   useEffect(() => {
@@ -444,6 +455,12 @@ export function PropertyEditForm() {
         compliance_invoice_delivery_date: data.compliance_invoice_delivery_date || ''
       });
 
+      // Load preferred subcontractors
+      setPreferredSubA(data.preferred_subcontractor_a_id || '');
+      setPreferredSubB(data.preferred_subcontractor_b_id || '');
+      setPreferredSubC(data.preferred_subcontractor_c_id || '');
+      setSubExclusionNote(data.subcontractor_exclusion_note || '');
+
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch property');
       setTimeout(() => navigate('/dashboard/properties'), 2000);
@@ -545,6 +562,11 @@ export function PropertyEditForm() {
         ap_is_notification_recipient: systemContactRoles.ap?.notificationRecipient || false,
         ap_is_primary_approval: systemContactRoles.ap?.primaryApproval || false,
         ap_is_primary_notification: systemContactRoles.ap?.primaryNotification || false,
+        // Preferred subcontractors
+        preferred_subcontractor_a_id: preferredSubA || null,
+        preferred_subcontractor_b_id: preferredSubB || null,
+        preferred_subcontractor_c_id: preferredSubC || null,
+        subcontractor_exclusion_note: subExclusionNote.trim() || null,
       };
 
       dateFields.forEach(field => {
@@ -630,7 +652,12 @@ export function PropertyEditForm() {
               is_approval_recipient: c.is_approval_recipient || false,
               is_notification_recipient: c.is_notification_recipient || false,
               is_primary_approval_recipient: c.is_primary_approval_recipient || false,
-              is_primary_notification_recipient: c.is_primary_notification_recipient || false
+              is_primary_notification_recipient: c.is_primary_notification_recipient || false,
+              // New display fields
+              is_primary_contact: (c as any).is_primary_contact || false,
+              receives_approval_emails: (c as any).receives_approval_emails || false,
+              receives_notification_emails: (c as any).receives_notification_emails || false,
+              custom_title: (c as any).custom_title || null,
             }));
             console.log('💾 Contacts to insert:', contactsToInsert);
 
@@ -1082,10 +1109,65 @@ export function PropertyEditForm() {
             </div>
           </div>
 
+          {/* Preferred Subcontractors */}
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
+              <HardHat className="h-5 w-5 text-indigo-500" />
+              Preferred Subcontractors
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+              Assign up to 3 preferred subcontractor users for this property, ranked A (primary), B, and C.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {(
+                [
+                  { slot: 'a', label: 'A — Primary', value: preferredSubA, set: setPreferredSubA },
+                  { slot: 'b', label: 'B — Secondary', value: preferredSubB, set: setPreferredSubB },
+                  { slot: 'c', label: 'C — Tertiary', value: preferredSubC, set: setPreferredSubC },
+                ] as { slot: string; label: string; value: string; set: (v: string) => void }[]
+              ).map(({ slot, label, value, set }) => (
+                <div key={slot}>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                    {label}
+                  </label>
+                  <select
+                    value={value}
+                    onChange={(e) => set(e.target.value)}
+                    className="w-full h-11 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="">— Not assigned —</option>
+                    {subcontractorUsers.map(u => (
+                      <option key={u.id} value={u.id}>{u.full_name}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+
+            {/* Exclusion Note */}
+            <div className="mt-6 pt-5 border-t border-gray-200 dark:border-gray-700">
+              <label htmlFor="subExclusionNote" className="flex items-center gap-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                <span className="text-amber-500">⚠</span>
+                Exclusion Note
+                <span className="text-xs font-normal text-gray-400 ml-1">(optional)</span>
+              </label>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                Note any subcontractors who should be excluded or special instructions for assignment at this property.
+              </p>
+              <textarea
+                id="subExclusionNote"
+                rows={3}
+                value={subExclusionNote}
+                onChange={(e) => setSubExclusionNote(e.target.value)}
+                placeholder="e.g., Do not assign Smith Painting — prior quality issues. Contractor C requires prior approval from site manager."
+                className="w-full px-3 py-2 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+              />
+            </div>
+          </div>
+
           {/* Billing Information */}
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Billing Information</h2>
-            
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Billing Information</h2>            
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <div className="space-y-4">
                 <div>

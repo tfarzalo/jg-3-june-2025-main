@@ -1,6 +1,6 @@
 import React, { Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { RouteGuard, SubcontractorRouteGuard, AdminRouteGuard } from './RouteGuard';
+import { RouteGuard, SubcontractorRouteGuard, AdminRouteGuard, StrictAdminRouteGuard } from './RouteGuard';
 
 // Lazy load components - using correct pattern for each export type
 const DashboardHome = lazy(() => import('./DashboardHome').then(module => ({ default: module.DashboardHome })));
@@ -43,6 +43,8 @@ const Changelog = lazy(() => import('../pages/Changelog').then(module => ({ defa
 const ChangelogManager = lazy(() => import('./ChangelogManager').then(module => ({ default: module.ChangelogManager })));
 const Contacts = lazy(() => import('./Contacts').then(module => ({ default: module.Contacts })));
 const ContactDetail = lazy(() => import('./ContactDetail').then(module => ({ default: module.ContactDetail })));
+const Employees = lazy(() => import('./Employees').then(module => ({ default: module.Employees })));
+const EmployeeProfile = lazy(() => import('./EmployeeProfile').then(module => ({ default: module.EmployeeProfile })));
 
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center h-full">
@@ -178,6 +180,16 @@ export function Dashboard() {
             <RouteGuard>
               <ContactDetail />
             </RouteGuard>
+          } />
+          <Route path="employees" element={
+            <StrictAdminRouteGuard>
+              <Employees />
+            </StrictAdminRouteGuard>
+          } />
+          <Route path="employees/:employeeId" element={
+            <StrictAdminRouteGuard>
+              <EmployeeProfile />
+            </StrictAdminRouteGuard>
           } />
           <Route path="support" element={
             <RouteGuard>

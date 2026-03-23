@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Trash2 } from 'lucide-react';
-import Lightbox from 'yet-another-react-lightbox';
-import 'yet-another-react-lightbox/styles.css';
+import { Trash2 } from 'lucide-react';
+import { Lightbox } from './Lightbox';
 import { supabase } from '../utils/supabase';
 import { getPreviewUrl, PreviewResult } from '../utils/storagePreviews';
 import { FILE_CATEGORY_LABELS, FOLDER_KEY_TO_CATEGORY, LEGACY_CATEGORY_ALIASES } from '../utils/fileCategories';
@@ -266,21 +265,11 @@ export function ImageGallery({ workOrderId, jobId, folder, allowDelete = false }
       </div>
 
       <Lightbox
-        open={showLightbox}
-        close={() => setShowLightbox(false)}
-        index={currentIndex}
-        slides={files.map(f => ({ src: getImageUrl(f) }))}
-        render={{
-          buttonClose: () => (
-            <button
-              onClick={() => setShowLightbox(false)}
-              className="absolute top-4 right-4 text-white hover:text-gray-300"
-              aria-label="Close"
-            >
-              <X className="h-6 w-6" />
-            </button>
-          ),
-        }}
+        isOpen={showLightbox}
+        onClose={() => setShowLightbox(false)}
+        title="Photos"
+        images={files.map(f => ({ url: getImageUrl(f), alt: f.file_name }))}
+        initialIndex={currentIndex}
       />
     </div>
   );

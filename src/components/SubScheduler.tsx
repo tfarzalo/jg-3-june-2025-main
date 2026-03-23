@@ -10,7 +10,8 @@ import {
   RefreshCw,
   ChevronLeft,
   ChevronRight,
-  CalendarDays
+  CalendarDays,
+  AlertTriangle
 } from 'lucide-react';
 import { supabase, getAvatarUrl, setupAvatarRefreshListener } from '../utils/supabase';
 import { formatDate, formatDisplayDate, isSameDayInEastern } from '../lib/dateUtils';
@@ -94,6 +95,17 @@ export default function SubScheduler() {
   const [pendingNotifications, setPendingNotifications] = useState<AssignmentNotification[]>([]);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [sendingNotifications, setSendingNotifications] = useState(false);
+
+  // Preferred subcontractor IDs keyed by property ID
+  // { [propertyId]: { a: string|null, b: string|null, c: string|null } }
+  const [preferredSubsByProperty, setPreferredSubsByProperty] = useState<
+    Record<string, { a: string | null; b: string | null; c: string | null }>
+  >({});
+
+  // Non-preferred assignment warning modal
+  interface PendingDrop { job: Job; subcontractorId: string; }
+  const [pendingDrop, setPendingDrop] = useState<PendingDrop | null>(null);
+  const [showNonPreferredWarning, setShowNonPreferredWarning] = useState(false);
   
   // Date filtering
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -109,6 +121,30 @@ export default function SubScheduler() {
       setLoading(false);
     });
   }, [refreshKey]);
+
+  // When jobs change, fetch preferred subcontractors for all distinct properties
+  useEffect(() => {
+    if (jobs.length === 0) return;
+    const propertyIds = [...new Set(jobs.map(j => j.property?.id).filter(Boolean))] as string[];
+    if (propertyIds.length === 0) return;
+
+    supabase
+      .from('properties')
+      .select('id, preferred_subcontractor_a_id, preferred_subcontractor_b_id, preferred_subcontractor_c_id')
+      .in('id', propertyIds)
+      .then(({ data }) => {
+        if (!data) return;
+        const map: Record<string, { a: string | null; b: string | null; c: string | null }> = {};
+        data.forEach(row => {
+          map[row.id] = {
+            a: row.preferred_subcontractor_a_id ?? null,
+            b: row.preferred_subcontractor_b_id ?? null,
+            c: row.preferred_subcontractor_c_id ?? null,
+          };
+        });
+        setPreferredSubsByProperty(map);
+      });
+  }, [jobs]);
 
   // Filter jobs by date
   useEffect(() => {
@@ -260,23 +296,38 @@ export default function SubScheduler() {
     e.preventDefault();
   };
 
-  const handleDrop = (subcontractorId: string) => {
-    if (!draggedJob) return;
-    
-    // If the job was previously assigned to a different subcontractor
-    if (assignments[draggedJob.id] && assignments[draggedJob.id] !== subcontractorId) {
-      // Remove from jobsToUnassign if it was there
-      setJobsToUnassign(prev => prev.filter(id => id !== draggedJob.id));
-    }
-    
-    // Update assignments
-    setAssignments(prev => ({
-      ...prev,
-      [draggedJob.id]: subcontractorId
-    }));
-    
+  // Commit a drop (after confirmation if needed)
+  const commitDrop = (jobId: string, subcontractorId: string) => {
+    setAssignments(prev => ({ ...prev, [jobId]: subcontractorId }));
+    setJobsToUnassign(prev => prev.filter(id => id !== jobId));
     setHasChanges(true);
     setDraggedJob(null);
+  };
+
+  const handleDrop = (subcontractorId: string) => {
+    if (!draggedJob) return;
+
+    const propertyId = draggedJob.property?.id;
+    const prefs = propertyId ? preferredSubsByProperty[propertyId] : undefined;
+
+    // Only warn if the property has at least one preferred sub set
+    const preferredIds = prefs
+      ? [prefs.a, prefs.b, prefs.c].filter(Boolean) as string[]
+      : [];
+
+    const isNonPreferred =
+      preferredIds.length > 0 && !preferredIds.includes(subcontractorId);
+
+    if (isNonPreferred) {
+      // Stash the pending drop and show warning
+      setPendingDrop({ job: draggedJob, subcontractorId });
+      setShowNonPreferredWarning(true);
+      setDraggedJob(null);
+      return;
+    }
+
+    // No concern — commit immediately
+    commitDrop(draggedJob.id, subcontractorId);
   };
 
   const handleRemoveAssignment = (jobId: string) => {
@@ -1076,6 +1127,104 @@ JG Painting Pros Inc.`;
           </div>
         </div>
       )}
+
+      {/* ── Non-Preferred Subcontractor Warning Modal ── */}
+      {showNonPreferredWarning && pendingDrop && (() => {
+        const sub = subcontractors.find(s => s.id === pendingDrop.subcontractorId);
+        const propertyId = pendingDrop.job.property?.id;
+        const prefs = propertyId ? preferredSubsByProperty[propertyId] : undefined;
+        const prefNames = prefs
+          ? ([prefs.a, prefs.b, prefs.c] as (string | null)[])
+              .map((id, idx) => {
+                if (!id) return null;
+                const found = subcontractors.find(s => s.id === id);
+                return found ? `${['A', 'B', 'C'][idx]} — ${found.full_name}` : null;
+              })
+              .filter(Boolean)
+          : [];
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/60">
+            <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-2xl w-full max-w-md p-6">
+              {/* Header */}
+              <div className="flex items-start gap-3 mb-4">
+                <div className="flex-shrink-0 mt-0.5 h-10 w-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-white leading-tight">
+                    Non-Preferred Subcontractor
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                    This subcontractor is not on the preferred list for this property.
+                  </p>
+                </div>
+              </div>
+
+              {/* Job + Sub info */}
+              <div className="bg-gray-50 dark:bg-[#0F172A] rounded-lg p-4 mb-4 space-y-2 text-sm">
+                <div>
+                  <span className="text-gray-500 dark:text-gray-400">Property: </span>
+                  <span className="font-medium text-gray-900 dark:text-white">
+                    {pendingDrop.job.property?.property_name}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500 dark:text-gray-400">Work Order: </span>
+                  <span className="font-medium text-gray-900 dark:text-white">
+                    {formatWorkOrderNumber(pendingDrop.job.work_order_num)} — Unit {pendingDrop.job.unit_number}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500 dark:text-gray-400">Assigning to: </span>
+                  <span className="font-semibold text-amber-700 dark:text-amber-400">
+                    {sub?.full_name ?? 'Unknown'}
+                  </span>
+                </div>
+                {prefNames.length > 0 && (
+                  <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-gray-500 dark:text-gray-400 mb-1">Preferred subcontractors:</p>
+                    <ul className="space-y-0.5">
+                      {prefNames.map((n, i) => (
+                        <li key={i} className="text-gray-700 dark:text-gray-300 font-medium">{n}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-5">
+                Do you want to continue assigning this job to{' '}
+                <strong className="text-gray-900 dark:text-white">{sub?.full_name ?? 'this subcontractor'}</strong>, or cancel and pick a preferred subcontractor?
+              </p>
+
+              {/* Actions */}
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNonPreferredWarning(false);
+                    setPendingDrop(null);
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-[#0F172A] rounded-lg hover:bg-gray-200 dark:hover:bg-[#243049] transition-colors"
+                >
+                  Cancel Assignment
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    commitDrop(pendingDrop.job.id, pendingDrop.subcontractorId);
+                    setShowNonPreferredWarning(false);
+                    setPendingDrop(null);
+                  }}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  Continue Anyway
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showNotificationModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/60">

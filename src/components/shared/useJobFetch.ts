@@ -107,6 +107,9 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
             job_phase_label,
             color_light_mode,
             color_dark_mode
+          ),
+          assigned_to_profile:assigned_to (
+            full_name
           )
         `)
         .in('current_phase_id', phaseData.map(phase => phase.id))
@@ -239,7 +242,8 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
             property: Array.isArray(job.property) ? job.property[0] : job.property,
             unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
             job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
-            job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase
+            job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase,
+            assigned_to_profile: Array.isArray(job.assigned_to_profile) ? job.assigned_to_profile[0] : job.assigned_to_profile
           };
         }));
         
@@ -318,6 +322,9 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
                 job_phase_label,
                 color_light_mode,
                 color_dark_mode
+              ),
+              assigned_to_profile:assigned_to (
+                full_name
               )
             `)
             .eq('id', payload.new.id)
@@ -380,7 +387,8 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
               property: Array.isArray(newJob.property) ? newJob.property[0] : newJob.property,
               unit_size: Array.isArray(newJob.unit_size) ? newJob.unit_size[0] : newJob.unit_size,
               job_type: Array.isArray(newJob.job_type) ? newJob.job_type[0] : newJob.job_type,
-              job_phase: Array.isArray(newJob.job_phase) ? newJob.job_phase[0] : newJob.job_phase
+              job_phase: Array.isArray(newJob.job_phase) ? newJob.job_phase[0] : newJob.job_phase,
+              assigned_to_profile: Array.isArray(newJob.assigned_to_profile) ? newJob.assigned_to_profile[0] : newJob.assigned_to_profile
             };
             setJobs(prev => [transformedJob, ...prev]);
           } else {

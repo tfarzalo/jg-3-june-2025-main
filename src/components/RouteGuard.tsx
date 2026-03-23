@@ -100,3 +100,24 @@ export function AdminRouteGuard({ children }: { children: React.ReactNode }) {
 
   return <>{children}</>;
 }
+
+/**
+ * Guard for admin-only routes. JG management is intentionally excluded.
+ */
+export function StrictAdminRouteGuard({ children }: { children: React.ReactNode }) {
+  const { isAdmin, loading } = useUserRole();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+}

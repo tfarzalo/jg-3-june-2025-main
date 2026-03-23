@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { MessageCircle, Plus, X, ArrowLeft, Search, Send } from 'lucide-react';
 import { useChatTray } from '../../contexts/ChatTrayProvider';
 import { useAuth } from '../../contexts/AuthProvider';
@@ -65,8 +65,12 @@ export function ChatMenuEnhanced() {
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const messageListRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesChannelRef = useRef<RealtimeChannel | null>(null);
+  const isInitialMessagePositionRef = useRef(false);
+  const previousMessageCountRef = useRef(0);
+  const shouldAutoScrollRef = useRef(true);
 
   // Helper function to format timestamp with both relative and absolute info
   const formatTimestamp = (timestamp: string) => {
@@ -103,16 +107,56 @@ export function ChatMenuEnhanced() {
     return `${prefix}${truncatedBody}`;
   };
 
-  // Auto-scroll to bottom
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollMessagesToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    const container = messageListRef.current;
+    if (!container) return;
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior
+    });
+  };
+
+  const handleMessageListScroll = () => {
+    const container = messageListRef.current;
+    if (!container) return;
+
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    shouldAutoScrollRef.current = distanceFromBottom < 64;
   };
 
   useEffect(() => {
-    if (messages.length > 0) {
-      scrollToBottom();
+    if (viewMode === 'chat' && selectedChatId) {
+      isInitialMessagePositionRef.current = true;
+      previousMessageCountRef.current = 0;
+      shouldAutoScrollRef.current = true;
     }
-  }, [messages]);
+  }, [selectedChatId, viewMode]);
+
+  useLayoutEffect(() => {
+    if (viewMode !== 'chat' || !selectedChatId) {
+      return;
+    }
+
+    if (messages.length === 0) {
+      previousMessageCountRef.current = 0;
+      return;
+    }
+
+    if (messages.length === previousMessageCountRef.current) {
+      return;
+    }
+
+    if (isInitialMessagePositionRef.current) {
+      scrollMessagesToBottom('auto');
+      isInitialMessagePositionRef.current = false;
+      shouldAutoScrollRef.current = true;
+    } else if (shouldAutoScrollRef.current) {
+      scrollMessagesToBottom('smooth');
+    }
+
+    previousMessageCountRef.current = messages.length;
+  }, [messages.length, selectedChatId, viewMode]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -535,6 +579,9 @@ export function ChatMenuEnhanced() {
     console.log('Loading messages for chat:', selectedChatId);
     const loadMessages = async () => {
       setLoadingMessages(true);
+      isInitialMessagePositionRef.current = true;
+      previousMessageCountRef.current = 0;
+      shouldAutoScrollRef.current = true;
       try {
         const { data: messagesData, error } = await supabase
           .from('messages')
@@ -770,6 +817,9 @@ export function ChatMenuEnhanced() {
     console.log('Opening chat:', chatId);
     setMessages([]); // Clear messages before switching
     setLoadingMessages(false); // Reset loading state
+    isInitialMessagePositionRef.current = true;
+    previousMessageCountRef.current = 0;
+    shouldAutoScrollRef.current = true;
     setSelectedChatId(chatId);
     setViewMode('chat');
     // Mark as read when opening the chat
@@ -781,6 +831,8 @@ export function ChatMenuEnhanced() {
     setSelectedChatId(null);
     setMessages([]);
     setLoadingMessages(false);
+    isInitialMessagePositionRef.current = false;
+    previousMessageCountRef.current = 0;
   };
 
   if (!user) return null;
@@ -790,7 +842,7 @@ export function ChatMenuEnhanced() {
       {/* Chat Icon Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="relative text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors p-2"
+        className="relative flex min-h-[44px] min-w-[44px] items-center justify-center p-2 text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
         aria-label="Open chats"
       >
         <MessageCircle className="h-5 w-5" />
@@ -803,25 +855,34 @@ export function ChatMenuEnhanced() {
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-96 max-w-[calc(100vw-2rem)] bg-white dark:bg-[#1E293B] rounded-lg shadow-xl z-50 overflow-hidden border border-gray-200 dark:border-[#2D3B4E]">
+        <div className="fixed inset-x-0 bottom-0 top-16 z-50 flex flex-col overflow-hidden border border-gray-200 bg-white shadow-xl dark:border-[#2D3B4E] dark:bg-[#1E293B] sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 sm:max-h-[min(42rem,calc(100vh-6rem))] sm:w-96 sm:max-w-[calc(100vw-2rem)] sm:rounded-lg">
           
           {/* LIST VIEW */}
           {viewMode === 'list' && (
-            <>
+            <div className="flex min-h-0 flex-1 flex-col">
               {/* Header */}
               <div className="px-4 py-3 border-b border-gray-200 dark:border-[#2D3B4E] flex items-center justify-between bg-gradient-to-r from-blue-600 to-blue-700">
                 <h3 className="font-semibold text-white">Chats</h3>
-                <button
-                  onClick={handleStartNewChat}
-                  className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
-                  title="Start new chat"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleStartNewChat}
+                    className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg bg-white/20 p-1.5 text-white transition-colors hover:bg-white/30"
+                    title="Start new chat"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => setIsOpen(false)}
+                    className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg bg-white/20 p-1.5 text-white transition-colors hover:bg-white/30"
+                    title="Close chats"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
 
               {/* Chat List */}
-              <div className="max-h-96 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto">
                 {allConversations.length === 0 ? (
                   <div className="px-4 py-8 text-center">
                     <MessageCircle className="h-12 w-12 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
@@ -905,21 +966,28 @@ export function ChatMenuEnhanced() {
                   })
                 )}
               </div>
-            </>
+            </div>
           )}
 
           {/* USER SELECT VIEW */}
           {viewMode === 'userSelect' && (
-            <>
+            <div className="flex min-h-0 flex-1 flex-col">
               {/* Header */}
               <div className="px-4 py-3 border-b border-gray-200 dark:border-[#2D3B4E] flex items-center space-x-3 bg-gradient-to-r from-blue-600 to-blue-700">
                 <button
                   onClick={() => setViewMode('list')}
-                  className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
+                  className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg bg-white/20 p-1.5 text-white transition-colors hover:bg-white/30"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </button>
-                <h3 className="font-semibold text-white">Select User</h3>
+                <h3 className="flex-1 font-semibold text-white">Select User</h3>
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg bg-white/20 p-1.5 text-white transition-colors hover:bg-white/30"
+                  title="Close chats"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
               {/* Search */}
@@ -938,7 +1006,7 @@ export function ChatMenuEnhanced() {
               </div>
 
               {/* User List */}
-              <div className="max-h-80 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto">
                 {isLoadingUsers ? (
                   <div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                     Loading users...
@@ -989,21 +1057,28 @@ export function ChatMenuEnhanced() {
                   )
                 )}
               </div>
-            </>
+            </div>
           )}
 
           {/* SUBJECT PROMPT VIEW */}
           {viewMode === 'subjectPrompt' && selectedUser && (
-            <>
+            <div className="flex min-h-0 flex-1 flex-col">
               {/* Header */}
               <div className="px-4 py-3 border-b border-gray-200 dark:border-[#2D3B4E] flex items-center space-x-3 bg-gradient-to-r from-blue-600 to-blue-700">
                 <button
                   onClick={() => setViewMode('userSelect')}
-                  className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
+                  className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg bg-white/20 p-1.5 text-white transition-colors hover:bg-white/30"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </button>
-                <h3 className="font-semibold text-white">Chat Subject</h3>
+                <h3 className="flex-1 font-semibold text-white">Chat Subject</h3>
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg bg-white/20 p-1.5 text-white transition-colors hover:bg-white/30"
+                  title="Close chats"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
               {/* Selected User Info */}
@@ -1069,17 +1144,17 @@ export function ChatMenuEnhanced() {
                   Start Chat
                 </button>
               </div>
-            </>
+            </div>
           )}
 
           {/* CHAT VIEW */}
           {viewMode === 'chat' && selectedChatId && (
-            <>
+            <div className="flex min-h-0 flex-1 flex-col">
               {/* Header */}
               <div className="px-4 py-3 border-b border-gray-200 dark:border-[#2D3B4E] flex items-center space-x-3 bg-gradient-to-r from-blue-600 to-blue-700">
                 <button
                   onClick={handleBackToList}
-                  className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
+                  className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg bg-white/20 p-1.5 text-white transition-colors hover:bg-white/30"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </button>
@@ -1088,10 +1163,21 @@ export function ChatMenuEnhanced() {
                     {chatTitles[selectedChatId] || 'Chat'}
                   </p>
                 </div>
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg bg-white/20 p-1.5 text-white transition-colors hover:bg-white/30"
+                  title="Close chats"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
               {/* Messages */}
-              <div className="h-96 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-[#0F172A]">
+              <div
+                ref={messageListRef}
+                onScroll={handleMessageListScroll}
+                className="flex-1 overflow-y-auto bg-gray-50 p-3 space-y-3 dark:bg-[#0F172A] sm:p-4"
+              >
                 {loadingMessages ? (
                   <div className="text-center py-8 text-sm text-gray-500 dark:text-gray-400">
                     Loading messages...
@@ -1108,7 +1194,7 @@ export function ChatMenuEnhanced() {
                         key={message.id}
                         className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
                       >
-                        <div className={`max-w-[75%] ${isOwnMessage ? 'order-2' : 'order-1'}`}>
+                        <div className={`max-w-[85%] sm:max-w-[75%] ${isOwnMessage ? 'order-2' : 'order-1'}`}>
                           {!isOwnMessage && (
                             <p className="text-xs text-gray-500 dark:text-gray-400 mb-1 px-3">
                               {message.sender?.full_name || message.sender?.email || 'Unknown'}
@@ -1136,7 +1222,7 @@ export function ChatMenuEnhanced() {
               </div>
 
               {/* Message Input */}
-              <div className="p-4 border-t border-gray-200 dark:border-[#2D3B4E]">
+              <div className="border-t border-gray-200 p-3 dark:border-[#2D3B4E] sm:p-4">
                 <div className="flex items-end space-x-2">
                   <textarea
                     value={newMessage}
@@ -1154,7 +1240,7 @@ export function ChatMenuEnhanced() {
                   <button
                     onClick={handleSendMessage}
                     disabled={!newMessage.trim() || sending}
-                    className="p-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-lg transition-colors disabled:cursor-not-allowed"
+                    className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg bg-blue-600 p-2.5 text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-gray-600"
                     title="Send message"
                   >
                     <Send className="h-5 w-5" />
@@ -1164,7 +1250,7 @@ export function ChatMenuEnhanced() {
                   Press Enter to send, Shift+Enter for new line
                 </p>
               </div>
-            </>
+            </div>
           )}
         </div>
       )}

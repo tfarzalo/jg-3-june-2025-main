@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { CheckCircle, XCircle, Clock, AlertCircle, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, AlertCircle, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { formatDate } from '../lib/dateUtils';
+import { Lightbox } from '../components/Lightbox';
 
 interface ApprovalData {
   valid: boolean;
@@ -36,7 +37,8 @@ export function PublicApprovalPage() {
   const [approvalData, setApprovalData] = useState<ApprovalData | null>(null);
   const [processing, setProcessing] = useState(false);
   const [notes, setNotes] = useState('');
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
 
   useEffect(() => {
     if (token) {
@@ -112,8 +114,9 @@ export function PublicApprovalPage() {
     }
   };
 
-  const openImage = (url: string) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
+  const openImage = (index: number) => {
+    setLightboxIndex(index);
+    setLightboxOpen(true);
   };
 
   if (loading) {
@@ -240,43 +243,66 @@ export function PublicApprovalPage() {
         )}
 
         {/* Images */}
-        {images && images.length > 0 && (
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow-lg p-6 mb-6">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
-              <ImageIcon className="h-5 w-5 mr-2" />
-              Images for Approval ({images.filter(img => img.selected).length})
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {images.filter(img => img.selected).map((image) => {
-                const imageUrl = `${supabaseUrl}/storage/v1/object/public/job-images/${image.file_path}`;
-                return (
-                  <div
-                    key={image.id}
-                    className="relative group cursor-pointer"
-                    onClick={() => openImage(imageUrl)}
-                  >
-                    <div className="aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
-                      <img
-                        src={imageUrl}
-                        alt={image.image_type || 'Job image'}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                        onError={(e) => {
-                          e.currentTarget.src = '/placeholder-image.png';
-                        }}
-                      />
-                    </div>
-                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity rounded-lg flex items-center justify-center">
-                      <ExternalLink className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                    </div>
-                    <p className="mt-2 text-xs text-center text-gray-600 dark:text-gray-400 capitalize">
-                      {image.image_type || 'Image'}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        {images && images.length > 0 && (() => {
+          const selectedImages = images.filter(img => img.selected);
+          const lightboxImageList = selectedImages.map(img => ({
+            url: `${supabaseUrl}/storage/v1/object/public/job-images/${img.file_path}`,
+            alt: img.image_type || 'Job image',
+            label: img.image_type || 'Job image',
+          }));
+          return (
+            <>
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow-lg p-6 mb-6">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center">
+                  <ImageIcon className="h-5 w-5 mr-2" />
+                  Images for Approval ({selectedImages.length})
+                </h2>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {selectedImages.map((image, idx) => {
+                    const imageUrl = lightboxImageList[idx].url;
+                    return (
+                      <div
+                        key={image.id}
+                        className="relative group cursor-pointer"
+                        onClick={() => openImage(idx)}
+                      >
+                        <div className="aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
+                          <img
+                            src={imageUrl}
+                            alt={image.image_type || 'Job image'}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                            onError={(e) => {
+                              e.currentTarget.src = '/placeholder-image.png';
+                            }}
+                          />
+                        </div>
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity rounded-lg flex items-center justify-center">
+                          <svg className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                          </svg>
+                        </div>
+                        <p className="mt-2 text-xs text-center text-gray-600 dark:text-gray-400 capitalize">
+                          {image.image_type || 'Image'}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-gray-500 text-center mt-4">
+                  Click any image to view full size with zoom &amp; pan
+                </p>
+              </div>
+
+              <Lightbox
+                isOpen={lightboxOpen}
+                onClose={() => setLightboxOpen(false)}
+                title="Approval Images"
+                images={lightboxImageList}
+                initialIndex={lightboxIndex}
+              />
+            </>
+          );
+        })()}
 
         {/* Notes Section (always visible) */}
         {!isAlreadyProcessed && (

@@ -13,6 +13,9 @@ interface Job {
   created_at: string;
   updated_at: string;
   assigned_to?: string | null;
+  assigned_to_profile?: {
+    full_name: string;
+  } | null;
   invoice_sent?: boolean;
   invoice_paid?: boolean;
   invoice_sent_date?: string;
@@ -250,6 +253,9 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
               job_phase_label,
               color_light_mode,
               color_dark_mode
+            ),
+            assigned_to_profile:assigned_to (
+              full_name
             )
           `;
         
@@ -290,6 +296,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
           unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
           job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
           job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase,
+          assigned_to_profile: Array.isArray(job.assigned_to_profile) ? job.assigned_to_profile[0] : job.assigned_to_profile,
         }));
 
 
@@ -412,7 +419,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
               color_light_mode,
               color_dark_mode
             ),
-            profiles:assigned_to (
+            assigned_to_profile:assigned_to (
               full_name
             )
           `)
@@ -433,6 +440,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
             unit_size: Array.isArray(newJob.unit_size) ? newJob.unit_size[0] : newJob.unit_size,
             job_type: Array.isArray(newJob.job_type) ? newJob.job_type[0] : newJob.job_type,
             job_phase: Array.isArray(newJob.job_phase) ? newJob.job_phase[0] : newJob.job_phase,
+            assigned_to_profile: Array.isArray(newJob.assigned_to_profile) ? newJob.assigned_to_profile[0] : newJob.assigned_to_profile,
           };
           addJob(transformedJob);
         }
@@ -473,7 +481,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
               color_light_mode,
               color_dark_mode
             ),
-            profiles:assigned_to (
+            assigned_to_profile:assigned_to (
               full_name
             )
           `)
@@ -494,6 +502,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
             unit_size: Array.isArray(updatedJob.unit_size) ? updatedJob.unit_size[0] : updatedJob.unit_size,
             job_type: Array.isArray(updatedJob.job_type) ? updatedJob.job_type[0] : updatedJob.job_type,
             job_phase: Array.isArray(updatedJob.job_phase) ? updatedJob.job_phase[0] : updatedJob.job_phase,
+            assigned_to_profile: Array.isArray(updatedJob.assigned_to_profile) ? updatedJob.assigned_to_profile[0] : updatedJob.assigned_to_profile,
           };
           updateJob(transformedJob);
         }

@@ -69,6 +69,15 @@ interface PropertyDetails {
   primary_contact_role: string | null;
   billing_categories: BillingCategory[];
   paint_colors: PaintScheme[];
+  property_general_notes: PropertyGeneralNote[];
+}
+
+interface PropertyGeneralNote {
+  id: string;
+  topic: string;
+  note_content: string;
+  created_at: string;
+  creator_name: string;
 }
 
 interface BillingCategory {
@@ -116,6 +125,7 @@ export function SubcontractorDashboardPreview() {
   const [expandedJobs, setExpandedJobs] = useState<ExpandedJobs>({});
   const [propertyDataCache, setPropertyDataCache] = useState<PropertyDataCache>({});
   const [loadingProperties, setLoadingProperties] = useState<{[propertyId: string]: boolean}>({});
+  const [propertyPanelTabs, setPropertyPanelTabs] = useState<{[jobId: string]: 'info' | 'notes'}>({});
   const [unitMapModalOpen, setUnitMapModalOpen] = useState<{isOpen: boolean; imageUrl: string; propertyName: string}>({
     isOpen: false,
     imageUrl: '',
@@ -170,7 +180,12 @@ export function SubcontractorDashboardPreview() {
       extraCharges: "Extra Charges -",
       perHour: "/hour",
       loadingWorkspace: "Loading your workspace...",
-      paintingDashboard: "PAINTING DASHBOARD"
+      paintingDashboard: "PAINTING DASHBOARD",
+      propertyInfoTab: "Property Info",
+      notesTab: "Notes",
+      generalPropertyNotes: "General Property Notes",
+      noGeneralPropertyNotes: "No general property notes",
+      noGeneralPropertyNotesMessage: "No notes are currently available for this property."
     },
     es: {
       viewingAs: "Estás viendo el panel de subcontratista como",
@@ -210,7 +225,12 @@ export function SubcontractorDashboardPreview() {
       extraCharges: "Cargos Adicionales -",
       perHour: "/hora",
       loadingWorkspace: "Cargando su espacio de trabajo...",
-      paintingDashboard: "PANEL DE PINTURA"
+      paintingDashboard: "PANEL DE PINTURA",
+      propertyInfoTab: "Información de la Propiedad",
+      notesTab: "Notas",
+      generalPropertyNotes: "Notas Generales de la Propiedad",
+      noGeneralPropertyNotes: "No hay notas generales de la propiedad",
+      noGeneralPropertyNotesMessage: "No hay notas disponibles actualmente para esta propiedad."
     }
   };
 
@@ -520,10 +540,19 @@ export function SubcontractorDashboardPreview() {
   };
 
   const toggleJobExpansion = (jobId: string) => {
-    setExpandedJobs(prev => ({
-      ...prev,
-      [jobId]: !prev[jobId]
-    }));
+    setExpandedJobs(prev => {
+      const nextExpanded = !prev[jobId];
+      if (nextExpanded) {
+        setPropertyPanelTabs(tabPrev => ({
+          ...tabPrev,
+          [jobId]: tabPrev[jobId] || 'info'
+        }));
+      }
+      return {
+        ...prev,
+        [jobId]: nextExpanded
+      };
+    });
   };
 
   const fetchPropertyDetails = useCallback(async (propertyId: string) => {
@@ -560,6 +589,35 @@ export function SubcontractorDashboardPreview() {
       if (propertyError) {
         console.error('Error fetching property details:', propertyError);
         throw propertyError;
+      }
+
+      let propertyGeneralNotes: PropertyGeneralNote[] = [];
+      try {
+        const { data: notesData, error: notesError } = await supabase
+          .from('property_general_notes')
+          .select(`
+            id,
+            topic,
+            note_content,
+            created_at,
+            creator:profiles!property_general_notes_created_by_fkey(full_name)
+          `)
+          .eq('property_id', propertyId)
+          .order('created_at', { ascending: false });
+
+        if (notesError) {
+          console.error('Error fetching property general notes:', notesError);
+        } else {
+          propertyGeneralNotes = (notesData || []).map((note: any) => ({
+            id: note.id,
+            topic: note.topic,
+            note_content: note.note_content,
+            created_at: note.created_at,
+            creator_name: note.creator?.full_name || 'Unknown'
+          }));
+        }
+      } catch (notesErr) {
+        console.error('Error fetching property general notes:', notesErr);
       }
 
       // Fetch billing categories and details
@@ -690,6 +748,7 @@ export function SubcontractorDashboardPreview() {
         ...propertyData,
         billing_categories: processedBillingData,
         paint_colors: paintColors,
+        property_general_notes: propertyGeneralNotes,
         primary_contact_name: (propertyData as any).primary_contact_name || null,
         primary_contact_role: (propertyData as any).primary_contact_role || null,
         community_manager_name: (propertyData as any).community_manager_name || '',
@@ -963,154 +1022,223 @@ export function SubcontractorDashboardPreview() {
                             <span className="ml-3 text-gray-600 dark:text-gray-400">{text.loadingProperty}</span>
                           </div>
                         ) : (
-                          <div className="space-y-6">
-                            {/* Subcontractor Contact (Primary Contact) */}
-                            {(propertyDataCache[job.property?.id || '']?.primary_contact_name || propertyDataCache[job.property?.id || '']?.community_manager_name || propertyDataCache[job.property?.id || '']?.maintenance_supervisor_name) && (
-                              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
-                                <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                                  <User className="h-5 w-5 mr-2 text-green-600 dark:text-green-400" />
-                                  {propertyDataCache[job.property?.id || '']?.primary_contact_role || propertyDataCache[job.property?.id || '']?.community_manager_title || propertyDataCache[job.property?.id || '']?.maintenance_supervisor_title || text.positionJob}
-                                </h4>
-                                <p className="text-gray-800 dark:text-gray-200 text-sm">
-                                  {getFirstName(
-                                    propertyDataCache[job.property?.id || '']?.primary_contact_name || 
-                                    propertyDataCache[job.property?.id || '']?.community_manager_name || 
-                                    propertyDataCache[job.property?.id || '']?.maintenance_supervisor_name || 
-                                    ''
-                                  )}
-                                </p>
-                              </div>
-                            )}
+                          (() => {
+                            const cachedPropertyDetails = propertyDataCache[job.property?.id || ''];
+                            const activePropertyTab = propertyPanelTabs[job.id] || 'info';
 
-                            {/* Paint Location */}
-                             <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
-                               <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                                 <Palette className="h-5 w-5 mr-2 text-purple-600 dark:text-purple-400" />
-                                 {text.paintLocation}
-                               </h4>
-                               {propertyDataCache[job.property?.id || '']?.paint_location ? (
-                                 <p className="text-gray-800 dark:text-gray-200 text-sm mb-3">
-                                   {propertyDataCache[job.property?.id || '']?.paint_location}
-                                 </p>
-                               ) : (
-                                 <p className="text-gray-500 dark:text-gray-400 text-sm italic mb-3">{text.notProvided}</p>
-                               )}
-                               
-                               {/* Property Unit Map Button */}
-                               {propertyDataCache[job.property?.id || '']?.unit_map_file_path && (
-                                 <div className="mt-3">
-                                   <button
-                                     onClick={() => openUnitMapModal(
-                                       propertyDataCache[job.property?.id || '']?.unit_map_file_path || '',
-                                       propertyDataCache[job.property?.id || '']?.property_name || ''
-                                     )}
-                                     className="inline-flex items-center px-3 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition-colors"
-                                   >
-                                     <FileText className="h-4 w-4 mr-2" />
-                                     {text.viewUnitMap}
-                                   </button>
-                                 </div>
-                               )}
-                             </div>
+                            return (
+                              <div className="space-y-4">
+                                <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#0F172A] p-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPropertyPanelTabs(prev => ({ ...prev, [job.id]: 'info' }))}
+                                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                                      activePropertyTab === 'info'
+                                        ? 'bg-white dark:bg-[#1E293B] text-gray-900 dark:text-white shadow-sm'
+                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                                    }`}
+                                  >
+                                    {text.propertyInfoTab}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPropertyPanelTabs(prev => ({ ...prev, [job.id]: 'notes' }))}
+                                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                                      activePropertyTab === 'notes'
+                                        ? 'bg-white dark:bg-[#1E293B] text-gray-900 dark:text-white shadow-sm'
+                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                                    }`}
+                                  >
+                                    {text.notesTab}
+                                  </button>
+                                </div>
 
-                             {/* Paint Colors */}
-                             <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
-                               <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                                 <Palette className="h-5 w-5 mr-2 text-purple-600 dark:text-purple-400" />
-                                 {text.paintColors}
-                               </h4>
-                               {propertyDataCache[job.property?.id || '']?.paint_colors?.length > 0 ? (
-                                 <div className="space-y-3">
-                                   {propertyDataCache[job.property?.id || '']?.paint_colors.map((scheme, index) => (
-                                     <div key={index} className="pl-4 border-l-2 border-gray-200 dark:border-gray-600">
-                                       <h5 className="font-medium text-gray-800 dark:text-gray-200 mb-2">{scheme.paint_type}</h5>
-                                       <div className="space-y-2">
-                                         {scheme.rooms.map((room, roomIndex) => (
-                                           <div key={roomIndex} className="flex justify-between items-center text-sm">
-                                             <span className="text-gray-600 dark:text-gray-400">{room.room}</span>
-                                             <span className="text-gray-800 dark:text-gray-200 font-medium">{room.color}</span>
-                                           </div>
-                                         ))}
-                                       </div>
-                                     </div>
-                                   ))}
-                                 </div>
-                               ) : (
-                                 <p className="text-gray-500 dark:text-gray-400 text-sm italic">{text.notProvided}</p>
-                               )}
-                             </div>
-
-                            {/* Billing Info */}
-                            <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
-                              <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                                <DollarSign className="h-5 w-5 mr-2 text-green-600 dark:text-green-400" />
-                                {text.billingInfo}
-                              </h4>
-                              {(() => {
-                                const propertyBillingData = propertyDataCache[job.property?.id || ''];
-                                const allCategories = propertyBillingData?.billing_categories || [];
-
-                                const subcontractorCategories = allCategories.filter(category =>
-                                  category.billing_details.some(detail => detail.sub_pay_amount > 0)
-                                );
-
-                                const standardCategories = subcontractorCategories.filter(
-                                  category => !category.is_extra_charge
-                                );
-
-                                const extraChargeCategories = subcontractorCategories.filter(
-                                  category => category.is_extra_charge && category.name !== 'Extra Charges'
-                                );
-
-                                const renderCategory = (category: BillingCategory, labelPrefix?: string) => {
-                                  const subPayDetails = category.billing_details.filter(
-                                    detail => detail.sub_pay_amount > 0
-                                  );
-
-                                  if (subPayDetails.length === 0) return null;
-
-                                  return (
-                                    <div key={category.id} className="pl-4 border-l-2 border-gray-200 dark:border-gray-600">
-                                      <h5 className="font-medium text-gray-800 dark:text-gray-200 mb-2">
-                                        {labelPrefix ? `${labelPrefix} ${category.name}` : category.name}
-                                      </h5>
-                                      <div className="mb-3">
-                                        <h6 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                          {text.subPayRates}
-                                        </h6>
-                                        <div className="space-y-2">
-                                          {subPayDetails.map(detail => (
-                                            <div key={detail.id} className="flex justify-between items-center text-sm">
-                                              <span className="text-gray-600 dark:text-gray-400">
-                                                {detail.unit_size.unit_size_label}
-                                              </span>
-                                              <span className="text-green-600 dark:text-green-400 font-medium">
-                                                {text.subPay} {formatCurrency(detail.sub_pay_amount)}
-                                                {detail.is_hourly ? text.perHour : ''}
+                                {activePropertyTab === 'notes' ? (
+                                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
+                                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                                      <FileText className="h-5 w-5 mr-2 text-slate-600 dark:text-slate-300" />
+                                      {text.generalPropertyNotes}
+                                    </h4>
+                                    {cachedPropertyDetails?.property_general_notes?.length ? (
+                                      <div className="space-y-4">
+                                        {cachedPropertyDetails.property_general_notes.map((note) => (
+                                          <div
+                                            key={note.id}
+                                            className="border-l-4 border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1E293B] rounded-r-xl p-4"
+                                          >
+                                            <div className="flex flex-wrap items-center gap-2">
+                                              <span className="inline-flex items-center rounded-full bg-slate-200 dark:bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                                                {note.topic}
                                               </span>
                                             </div>
-                                          ))}
-                                        </div>
+                                            <p className="text-gray-900 dark:text-white whitespace-pre-wrap mt-3 text-sm">
+                                              {note.note_content}
+                                            </p>
+                                            <div className="flex flex-wrap items-center gap-2 mt-3 text-xs text-gray-500 dark:text-gray-400">
+                                              <span>{format(new Date(note.created_at), 'MMM d, yyyy')}</span>
+                                              <span>•</span>
+                                              <span>{format(new Date(note.created_at), 'h:mm a')}</span>
+                                              <span>•</span>
+                                              <span>{note.creator_name}</span>
+                                            </div>
+                                          </div>
+                                        ))}
                                       </div>
-                                    </div>
-                                  );
-                                };
-
-                                return subcontractorCategories.length > 0 ? (
-                                  <div className="space-y-3">
-                                    {standardCategories.map(category => renderCategory(category))}
-                                    {extraChargeCategories.map(category =>
-                                      renderCategory(category, text.extraCharges)
+                                    ) : (
+                                      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                                        <FileText className="h-10 w-10 mx-auto mb-3 text-gray-400" />
+                                        <p className="font-medium">{text.noGeneralPropertyNotes}</p>
+                                        <p className="text-sm mt-1">{text.noGeneralPropertyNotesMessage}</p>
+                                      </div>
                                     )}
                                   </div>
                                 ) : (
-                                  <p className="text-gray-500 dark:text-gray-400 text-sm italic">
-                                    {text.noSubRates}
-                                  </p>
-                                );
-                              })()}
-                            </div>
-                          </div>
+                                  <div className="space-y-6">
+                                    {(cachedPropertyDetails?.primary_contact_name || cachedPropertyDetails?.community_manager_name || cachedPropertyDetails?.maintenance_supervisor_name) && (
+                                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
+                                        <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                                          <User className="h-5 w-5 mr-2 text-green-600 dark:text-green-400" />
+                                          {cachedPropertyDetails?.primary_contact_role || cachedPropertyDetails?.community_manager_title || cachedPropertyDetails?.maintenance_supervisor_title || text.positionJob}
+                                        </h4>
+                                        <p className="text-gray-800 dark:text-gray-200 text-sm">
+                                          {getFirstName(
+                                            cachedPropertyDetails?.primary_contact_name ||
+                                            cachedPropertyDetails?.community_manager_name ||
+                                            cachedPropertyDetails?.maintenance_supervisor_name ||
+                                            ''
+                                          )}
+                                        </p>
+                                      </div>
+                                    )}
+
+                                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
+                                      <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                                        <Palette className="h-5 w-5 mr-2 text-purple-600 dark:text-purple-400" />
+                                        {text.paintLocation}
+                                      </h4>
+                                      {cachedPropertyDetails?.paint_location ? (
+                                        <p className="text-gray-800 dark:text-gray-200 text-sm mb-3">
+                                          {cachedPropertyDetails.paint_location}
+                                        </p>
+                                      ) : (
+                                        <p className="text-gray-500 dark:text-gray-400 text-sm italic mb-3">{text.notProvided}</p>
+                                      )}
+
+                                      {cachedPropertyDetails?.unit_map_file_path && (
+                                        <div className="mt-3">
+                                          <button
+                                            onClick={() => openUnitMapModal(
+                                              cachedPropertyDetails.unit_map_file_path || '',
+                                              cachedPropertyDetails.property_name || ''
+                                            )}
+                                            className="inline-flex items-center px-3 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-lg transition-colors"
+                                          >
+                                            <FileText className="h-4 w-4 mr-2" />
+                                            {text.viewUnitMap}
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
+                                      <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                                        <Palette className="h-5 w-5 mr-2 text-purple-600 dark:text-purple-400" />
+                                        {text.paintColors}
+                                      </h4>
+                                      {cachedPropertyDetails?.paint_colors?.length > 0 ? (
+                                        <div className="space-y-3">
+                                          {cachedPropertyDetails.paint_colors.map((scheme, index) => (
+                                            <div key={index} className="pl-4 border-l-2 border-gray-200 dark:border-gray-600">
+                                              <h5 className="font-medium text-gray-800 dark:text-gray-200 mb-2">{scheme.paint_type}</h5>
+                                              <div className="space-y-2">
+                                                {scheme.rooms.map((room, roomIndex) => (
+                                                  <div key={roomIndex} className="flex justify-between items-center text-sm">
+                                                    <span className="text-gray-600 dark:text-gray-400">{room.room}</span>
+                                                    <span className="text-gray-800 dark:text-gray-200 font-medium">{room.color}</span>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p className="text-gray-500 dark:text-gray-400 text-sm italic">{text.notProvided}</p>
+                                      )}
+                                    </div>
+
+                                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
+                                      <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                                        <DollarSign className="h-5 w-5 mr-2 text-green-600 dark:text-green-400" />
+                                        {text.billingInfo}
+                                      </h4>
+                                      {(() => {
+                                        const allCategories = cachedPropertyDetails?.billing_categories || [];
+
+                                        const subcontractorCategories = allCategories.filter(category =>
+                                          category.billing_details.some(detail => detail.sub_pay_amount > 0)
+                                        );
+
+                                        const standardCategories = subcontractorCategories.filter(
+                                          category => !category.is_extra_charge
+                                        );
+
+                                        const extraChargeCategories = subcontractorCategories.filter(
+                                          category => category.is_extra_charge && category.name !== 'Extra Charges'
+                                        );
+
+                                        const renderCategory = (category: BillingCategory, labelPrefix?: string) => {
+                                          const subPayDetails = category.billing_details.filter(
+                                            detail => detail.sub_pay_amount > 0
+                                          );
+
+                                          if (subPayDetails.length === 0) return null;
+
+                                          return (
+                                            <div key={category.id} className="pl-4 border-l-2 border-gray-200 dark:border-gray-600">
+                                              <h5 className="font-medium text-gray-800 dark:text-gray-200 mb-2">
+                                                {labelPrefix ? `${labelPrefix} ${category.name}` : category.name}
+                                              </h5>
+                                              <div className="mb-3">
+                                                <h6 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                                  {text.subPayRates}
+                                                </h6>
+                                                <div className="space-y-2">
+                                                  {subPayDetails.map(detail => (
+                                                    <div key={detail.id} className="flex justify-between items-center text-sm">
+                                                      <span className="text-gray-600 dark:text-gray-400">
+                                                        {detail.unit_size.unit_size_label}
+                                                      </span>
+                                                      <span className="text-green-600 dark:text-green-400 font-medium">
+                                                        {text.subPay} {formatCurrency(detail.sub_pay_amount)}
+                                                        {detail.is_hourly ? text.perHour : ''}
+                                                      </span>
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          );
+                                        };
+
+                                        return subcontractorCategories.length > 0 ? (
+                                          <div className="space-y-3">
+                                            {standardCategories.map(category => renderCategory(category))}
+                                            {extraChargeCategories.map(category =>
+                                              renderCategory(category, text.extraCharges)
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <p className="text-gray-500 dark:text-gray-400 text-sm italic">
+                                            {text.noSubRates}
+                                          </p>
+                                        );
+                                      })()}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()
                         )}
                       </div>
                     )}

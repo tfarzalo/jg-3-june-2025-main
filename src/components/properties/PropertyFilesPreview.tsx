@@ -2,8 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { FolderOpen, File as FileIcon, Image as ImageIcon, FileText, ChevronRight, Eye, ArrowUp, ArrowDown } from 'lucide-react';
 import { supabase } from '../../utils/supabase';
 import { getPreviewUrl } from '../../utils/storagePreviews';
-import Lightbox from 'yet-another-react-lightbox';
-import 'yet-another-react-lightbox/styles.css';
+import { Lightbox } from '../Lightbox';
 
 interface FileItem {
   id: string;
@@ -56,7 +55,7 @@ export const PropertyFilesPreview: React.FC<PropertyFilesPreviewProps> = ({ prop
     { id: null, name: 'Property Files' }
   ]);
   const [lightboxIndex, setLightboxIndex] = useState(-1);
-  const [lightboxImages, setLightboxImages] = useState<Array<{ src: string }>>([]);
+  const [lightboxImages, setLightboxImages] = useState<Array<{ url: string; alt?: string }>>([]);
   const [sortConfig, setSortConfig] = useState<{ key: keyof FileItem; direction: 'asc' | 'desc' } | null>({ 
     key: 'name', 
     direction: 'asc' 
@@ -141,7 +140,7 @@ export const PropertyFilesPreview: React.FC<PropertyFilesPreviewProps> = ({ prop
   const handleImageClick = (item: FileItem) => {
     if (item.type.startsWith('image/')) {
       const imageItems = items.filter(i => i.type.startsWith('image/') && i.previewUrl);
-      const images = imageItems.map(i => ({ src: i.previewUrl! }));
+      const images = imageItems.map(i => ({ url: i.previewUrl!, alt: i.name }));
       const index = imageItems.findIndex(i => i.id === item.id);
       setLightboxImages(images);
       setLightboxIndex(index);
@@ -345,10 +344,11 @@ export const PropertyFilesPreview: React.FC<PropertyFilesPreviewProps> = ({ prop
 
       {/* Lightbox for image preview */}
       <Lightbox
-        open={lightboxIndex >= 0}
-        index={lightboxIndex}
-        close={() => setLightboxIndex(-1)}
-        slides={lightboxImages}
+        isOpen={lightboxIndex >= 0}
+        onClose={() => setLightboxIndex(-1)}
+        title="Property Files"
+        images={lightboxImages}
+        initialIndex={lightboxIndex >= 0 ? lightboxIndex : 0}
       />
     </div>
   );

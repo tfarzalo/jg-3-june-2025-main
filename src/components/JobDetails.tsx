@@ -201,6 +201,16 @@ interface Job {
   repair_sub_pay?: number;
 }
 
+interface JobNote {
+  id: string;
+  topic: string;
+  note_content: string;
+  created_by: string;
+  created_at: string;
+  updated_at?: string;
+  created_by_name: string;
+}
+
 async function sendEmail(data: EmailData) {
   console.log('Sending email:', data);
   return Promise.resolve();
@@ -221,6 +231,9 @@ export function JobDetails() {
 
   // Null-safe accessors to prevent crashes during slow loads
   const phaseLabel = job?.job_phase?.label ?? '—';
+  const canManageRepair = isAdmin || isJGManagement;
+  const canEditRepairInCurrentPhase = phaseLabel === 'Job Request' || phaseLabel === 'Work Order';
+  const isRepairLocked = canManageRepair && !canEditRepairInCurrentPhase;
   const unitSizeId = job?.unit_size?.id ?? null;
   const propertyName = job?.property?.name ?? '—';
   const workOrderNum = job?.work_order_num ?? '—';
@@ -277,6 +290,15 @@ export function JobDetails() {
   const [repairExpanded, setRepairExpanded] = useState(false);
   const [savingRepairAmount, setSavingRepairAmount] = useState(false);
   const [updatingInvoiceStatus, setUpdatingInvoiceStatus] = useState(false);
+  const [showJobNotes, setShowJobNotes] = useState(false);
+  const [jobNotes, setJobNotes] = useState<JobNote[]>([]);
+  const [jobNotesLoading, setJobNotesLoading] = useState(false);
+  const [jobNotesSaving, setJobNotesSaving] = useState(false);
+  const [jobNotesError, setJobNotesError] = useState<string | null>(null);
+  const [newJobNote, setNewJobNote] = useState({
+    topic: '',
+    note_content: '',
+  });
   const [approvalTokenDecision, setApprovalTokenDecision] = useState<{
     decision: 'approved' | 'declined' | null;
     decision_at: string | null;
@@ -351,6 +373,89 @@ export function JobDetails() {
       setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
     }
   }, [job?.repair_amount, job?.repair_sub_pay, isEditingRepairAmount]);
+
+  useEffect(() => {
+    if (!canEditRepairInCurrentPhase) {
+      setIsEditingRepairAmount(false);
+      setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
+      setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+    }
+  }, [canEditRepairInCurrentPhase, job?.repair_amount, job?.repair_sub_pay]);
+
+  const fetchJobNotes = useCallback(async () => {
+    if (!jobId || !isAdmin) {
+      setJobNotes([]);
+      setJobNotesError(null);
+      setJobNotesLoading(false);
+      return;
+    }
+
+    try {
+      setJobNotesLoading(true);
+      setJobNotesError(null);
+
+      const { data, error } = await supabase
+        .from('job_notes')
+        .select(`
+          id,
+          topic,
+          note_content,
+          created_by,
+          created_at,
+          updated_at,
+          created_by_profile:profiles!job_notes_created_by_fkey(full_name)
+        `)
+        .eq('job_id', jobId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const formattedNotes = (data ?? []).map((item: any) => ({
+        id: item.id,
+        topic: item.topic,
+        note_content: item.note_content,
+        created_by: item.created_by,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        created_by_name: item.created_by_profile?.full_name || 'Unknown',
+      }));
+
+      setJobNotes(formattedNotes);
+    } catch (err) {
+      console.error('Error fetching job notes:', err);
+      setJobNotesError(err instanceof Error ? err.message : 'Failed to load job notes');
+    } finally {
+      setJobNotesLoading(false);
+    }
+  }, [jobId, isAdmin]);
+
+  useEffect(() => {
+    fetchJobNotes();
+  }, [fetchJobNotes]);
+
+  useEffect(() => {
+    if (!jobId || !isAdmin) return;
+
+    const channel = supabase
+      .channel(`job-${jobId}-notes`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'job_notes',
+          filter: `job_id=eq.${jobId}`,
+        },
+        () => {
+          fetchJobNotes();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [fetchJobNotes, isAdmin, jobId]);
 
   // Fetch approval token decision status for Extra Charges
   const fetchApprovalDecision = useCallback(async () => {
@@ -818,6 +923,62 @@ export function JobDetails() {
       console.error('Error deleting job:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to delete job');
       setDeleting(false);
+    }
+  };
+
+  const handleAddJobNote = async () => {
+    if (!jobId || !isAdmin) return;
+
+    if (!newJobNote.topic.trim() || !newJobNote.note_content.trim()) {
+      toast.error('Topic and note content are required');
+      return;
+    }
+
+    try {
+      setJobNotesSaving(true);
+
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!userData.user) throw new Error('User not found');
+
+      const { error } = await supabase
+        .from('job_notes')
+        .insert({
+          job_id: jobId,
+          topic: newJobNote.topic.trim(),
+          note_content: newJobNote.note_content.trim(),
+          created_by: userData.user.id,
+        });
+
+      if (error) throw error;
+
+      setNewJobNote({ topic: '', note_content: '' });
+      await fetchJobNotes();
+      toast.success('Job note added');
+    } catch (err) {
+      console.error('Error adding job note:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to add job note');
+    } finally {
+      setJobNotesSaving(false);
+    }
+  };
+
+  const handleDeleteJobNote = async (noteId: string) => {
+    if (!isAdmin) return;
+
+    try {
+      const { error } = await supabase
+        .from('job_notes')
+        .delete()
+        .eq('id', noteId);
+
+      if (error) throw error;
+
+      await fetchJobNotes();
+      toast.success('Job note deleted');
+    } catch (err) {
+      console.error('Error deleting job note:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to delete job note');
     }
   };
 
@@ -1734,6 +1895,10 @@ export function JobDetails() {
   // Repair amount handler
   const handleSaveRepairAmount = async () => {
     if (!jobId) return;
+    if (!canEditRepairInCurrentPhase) {
+      toast.error(`Repair can only be edited in Job Request or Work Order. Current phase: ${phaseLabel}.`);
+      return;
+    }
     const parsedAmount = parseFloat(repairAmountInput);
     const parsedSubPay = parseFloat(repairSubPayInput);
     const amount = isNaN(parsedAmount) ? 0 : Math.max(0, parsedAmount);
@@ -2105,7 +2270,6 @@ export function JobDetails() {
   const hasWorkOrder = !!job.work_order;
   const isJobRequest = phaseLabel === 'Job Request';
   const isPendingWorkOrder = phaseLabel === 'Pending Work Order';
-  const isWorkOrder = phaseLabel === 'Work Order';
   const isInvoicing = phaseLabel === 'Invoicing';
   const isCompleted = phaseLabel === 'Completed';
   const isCancelled = phaseLabel === 'Cancelled';
@@ -2387,15 +2551,20 @@ export function JobDetails() {
               </div>
             </div>
 
-            {/* Repair Fields — Admin only, collapsible */}
-            {(isAdmin || isJGManagement) && (
+            {/* Repair Fields — Admin only, phase-gated */}
+            {canManageRepair && (
               <div className="px-6 pb-4">
-                <div className="bg-white dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 rounded-xl overflow-hidden">
+                <div className={`border rounded-xl overflow-hidden transition-colors ${
+                  isRepairLocked
+                    ? 'bg-zinc-100 dark:bg-zinc-900/60 border-zinc-200 dark:border-zinc-700 opacity-70'
+                    : 'bg-white dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-700/60'
+                }`}>
 
                   {/* Header row — always visible */}
                   <button
                     type="button"
                     onClick={() => {
+                      if (isRepairLocked) return;
                       const next = !repairExpanded;
                       setRepairExpanded(next);
                       if (next && !(job.repair_amount ?? 0)) {
@@ -2407,7 +2576,12 @@ export function JobDetails() {
                         setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
                       }
                     }}
-                    className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-700/30 transition-colors"
+                    disabled={isRepairLocked}
+                    className={`w-full flex items-center justify-between px-4 py-2.5 transition-colors ${
+                      isRepairLocked
+                        ? 'cursor-not-allowed bg-zinc-100 dark:bg-zinc-900/40'
+                        : 'hover:bg-zinc-50 dark:hover:bg-zinc-700/30'
+                    }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-sm">🔧</span>
@@ -2422,15 +2596,30 @@ export function JobDetails() {
                           &nbsp;(Sub: {formatCurrency(job.work_order?.repair_cost ?? 0)})
                         </span>
                       )}
+                      {isRepairLocked && (
+                        <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                          &nbsp;·&nbsp;Available only in Job Request or Work Order
+                        </span>
+                      )}
                     </div>
                     <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded-full border border-zinc-300 dark:border-zinc-600 text-zinc-400 dark:text-zinc-400 text-base font-medium leading-none ml-3">
-                      {repairExpanded ? '−' : '+'}
+                      {isRepairLocked ? '•' : (repairExpanded ? '−' : '+')}
                     </span>
                   </button>
 
                   {/* Expanded content */}
-                  {repairExpanded && (
+                  {(repairExpanded || isRepairLocked) && (
                     <div className="border-t border-zinc-100 dark:border-zinc-700/60">
+                      {isRepairLocked && (
+                        <div className="px-4 py-3 bg-zinc-50 dark:bg-zinc-900/30 border-b border-zinc-200 dark:border-zinc-700/60">
+                          <p className="text-sm text-zinc-600 dark:text-zinc-300">
+                            Repair amounts can only be edited while the job is in <span className="font-semibold">Job Request</span> or <span className="font-semibold">Work Order</span>.
+                          </p>
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                            Current phase: {phaseLabel}
+                          </p>
+                        </div>
+                      )}
 
                       {/* Sub's reported cost — only shown when relevant */}
                       {(job.work_order?.repair_cost ?? 0) > 0 && (
@@ -2457,14 +2646,16 @@ export function JobDetails() {
                               <div className="text-base font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency((job.repair_amount ?? 0) - (job.repair_sub_pay ?? 0))}</div>
                             </div>
                           </div>
-                          <button
-                            onClick={() => setIsEditingRepairAmount(true)}
-                            className="text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 underline underline-offset-2"
-                          >
-                            Edit amounts
-                          </button>
+                          {canEditRepairInCurrentPhase && (
+                            <button
+                              onClick={() => setIsEditingRepairAmount(true)}
+                              className="text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 underline underline-offset-2"
+                            >
+                              Edit amounts
+                            </button>
+                          )}
                         </div>
-                      ) : !isEditingRepairAmount ? null : (
+                      ) : !isEditingRepairAmount || isRepairLocked ? null : (
                         /* Edit fields */
                         <div className="px-4 py-3 space-y-3">
                           <div className="grid grid-cols-2 gap-3">
@@ -2478,6 +2669,7 @@ export function JobDetails() {
                                 step="0.01"
                                 value={repairAmountInput}
                                 onChange={e => setRepairAmountInput(e.target.value)}
+                                disabled={isRepairLocked}
                                 className="w-full px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-[#0F172A] text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-sm"
                                 placeholder="0.00"
                                 autoFocus
@@ -2493,6 +2685,7 @@ export function JobDetails() {
                                 step="0.01"
                                 value={repairSubPayInput}
                                 onChange={e => setRepairSubPayInput(e.target.value)}
+                                disabled={isRepairLocked}
                                 className="w-full px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-[#0F172A] text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-sm"
                                 placeholder="0.00"
                               />
@@ -2678,6 +2871,154 @@ export function JobDetails() {
             </div>
           </div>
         </div>
+
+        {isAdmin && (
+          <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg mb-6 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowJobNotes((current) => !current)}
+              className="w-full bg-gradient-to-r from-slate-700 to-slate-800 dark:from-slate-800 dark:to-slate-900 px-6 py-4 flex items-center justify-between text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div>
+                  <h2 className="text-xl font-semibold text-white flex items-center">
+                    <FileText className="h-5 w-5 mr-2" />
+                    Admin Notes
+                  </h2>
+                  <p className="text-sm text-slate-200/90 mt-1">
+                    Internal job notes visible only to admin users.
+                  </p>
+                </div>
+                <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white">
+                  {jobNotes.length} {jobNotes.length === 1 ? 'Note' : 'Notes'}
+                </span>
+              </div>
+              <span className="inline-flex items-center text-sm font-medium text-white/90">
+                {showJobNotes ? (
+                  <>
+                    <ChevronUp className="h-4 w-4 mr-1" />
+                    Collapse
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4 mr-1" />
+                    Expand
+                  </>
+                )}
+              </span>
+            </button>
+
+            {showJobNotes && (
+              <div className="p-6 space-y-6">
+                <div className="bg-gray-50 dark:bg-[#0F172A] rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                    Add Note
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Note Topic
+                      </label>
+                      <input
+                        type="text"
+                        value={newJobNote.topic}
+                        onChange={(e) => setNewJobNote((current) => ({ ...current, topic: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        placeholder="Enter note topic"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Note
+                      </label>
+                      <textarea
+                        value={newJobNote.note_content}
+                        onChange={(e) => setNewJobNote((current) => ({ ...current, note_content: e.target.value }))}
+                        rows={4}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        placeholder="Add an internal note for this job..."
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={handleAddJobNote}
+                      disabled={jobNotesSaving || !newJobNote.topic.trim() || !newJobNote.note_content.trim()}
+                      className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      {jobNotesSaving ? 'Adding...' : 'Add Note'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-[#1E293B] rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                    Notes History
+                  </h3>
+
+                  {jobNotesLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                    </div>
+                  ) : jobNotesError ? (
+                    <div className="text-sm text-red-600 dark:text-red-400">
+                      {jobNotesError}
+                    </div>
+                  ) : jobNotes.length === 0 ? (
+                    <div className="text-center py-10 text-gray-500 dark:text-gray-400">
+                      <FileText className="h-10 w-10 mx-auto mb-3 text-gray-400" />
+                      <p className="font-medium">No admin notes yet</p>
+                      <p className="text-sm mt-1">Expand this section to add the first note for this job.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {jobNotes.map((note) => (
+                        <div
+                          key={note.id}
+                          className="border-l-4 border-slate-300 dark:border-slate-700 bg-gray-50 dark:bg-[#0F172A] rounded-r-xl p-4"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="inline-flex items-center rounded-full bg-slate-200 dark:bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                                  {note.topic}
+                                </span>
+                              </div>
+                              <p className="text-gray-900 dark:text-white whitespace-pre-wrap mt-3">
+                                {note.note_content}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-2 mt-3 text-sm text-gray-500 dark:text-gray-400">
+                                <span>Added by {note.created_by_name}</span>
+                                <span>•</span>
+                                <span>{formatDate(note.created_at)}</span>
+                                <span>•</span>
+                                <span>{formatTime(note.created_at)}</span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm('Delete this job note?')) {
+                                  handleDeleteJobNote(note.id);
+                                }
+                              }}
+                              className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg text-red-600 dark:text-red-400 transition-colors"
+                              aria-label="Delete job note"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Work Order Details - Always show if work order exists */}
         {job.work_order && (

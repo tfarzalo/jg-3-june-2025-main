@@ -19,7 +19,9 @@ import {
   Trash2,
   ArrowLeft,
   ZoomIn,
-  FolderOpen
+  FolderOpen,
+  Users,
+  HardHat,
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { PropertyMap } from './PropertyMap';
@@ -33,6 +35,7 @@ import { Lightbox } from './Lightbox';
 import { usePropertyPhaseCounts } from '../hooks/usePropertyPhaseCounts';
 import { StatCard } from './ui/StatCard';
 import { getPreviewUrl } from '../utils/storagePreviews';
+import { getPropertyUnitMaps } from '../lib/utils/fileUpload';
 import { useUserRole } from '../contexts/UserRoleContext';
 import { getBackNavigationPath } from '../lib/utils';
 import { PropertyFilesPreview } from './properties/PropertyFilesPreview';
@@ -182,6 +185,19 @@ interface PropertyUpdate {
   };
 }
 
+interface PropertyGeneralNote {
+  id: string;
+  property_id: string;
+  topic: string;
+  note_content: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  creator?: {
+    full_name: string;
+  } | null;
+}
+
 interface PropertyContact {
   id: string;
   property_id: string;
@@ -201,7 +217,7 @@ interface PropertyContact {
 export function PropertyDetails() {
   const { propertyId } = useParams<{ propertyId: string }>();
   const navigate = useNavigate();
-  const { isSubcontractor } = useUserRole();
+  const { isSubcontractor, isAdmin } = useUserRole();
   const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -210,6 +226,7 @@ export function PropertyDetails() {
   const [unitSizes, setUnitSizes] = useState<{[key: string]: string}>({});
   const [callbacks, setCallbacks] = useState<PropertyCallback[]>([]);
   const [updates, setUpdates] = useState<PropertyUpdate[]>([]);
+  const [generalNotes, setGeneralNotes] = useState<PropertyGeneralNote[]>([]);
   const [paintSchemes, setPaintSchemes] = useState<PaintScheme[]>([]);
   const [contacts, setContacts] = useState<PropertyContact[]>([]);
   const [editingSecondaryEmailContactId, setEditingSecondaryEmailContactId] = useState<string | null>(null);
@@ -219,70 +236,98 @@ export function PropertyDetails() {
   const [propertySecondaryEmailDraft, setPropertySecondaryEmailDraft] = useState('');
   const [propertySecondaryEmailSavingField, setPropertySecondaryEmailSavingField] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   const [unitMapUrl, setUnitMapUrl] = useState<string | null>(null);
+  const [unitMapImages, setUnitMapImages] = useState<Array<{ url: string; alt: string; label: string }>>([]);
   const [notificationContactSource, setNotificationContactSource] = useState<string>('community_manager');
 
-  // Generate unit map URL when property data loads
+  // Preferred subcontractors
+  interface SubcontractorUser { id: string; full_name: string; email: string | null; }
+  const [subcontractorUsers, setSubcontractorUsers] = useState<SubcontractorUser[]>([]);
+  const [preferredSubA, setPreferredSubA] = useState<string | null>(null);
+  const [preferredSubB, setPreferredSubB] = useState<string | null>(null);
+  const [preferredSubC, setPreferredSubC] = useState<string | null>(null);
+  const [exclusionNote, setExclusionNote] = useState<string>('');
+  const [exclusionNoteDraft, setExclusionNoteDraft] = useState<string>('');
+  const [editingExclusionNote, setEditingExclusionNote] = useState(false);
+  const [savingExclusionNote, setSavingExclusionNote] = useState(false);
+
+  // Load all unit map images from property_unit_maps table
   useEffect(() => {
-    const generateUnitMapUrl = async () => {
+    const loadUnitMaps = async () => {
+      if (!property?.id) return;
+
+      // Try loading from the new multi-image table first
+      const records = await getPropertyUnitMaps(property.id);
+
+      if (records.length > 0) {
+        const resolved = await Promise.all(
+          records.map(async (r, idx) => {
+            try {
+              const result = await getPreviewUrl(supabase, 'files', r.file_path);
+              return {
+                url: result.url,
+                alt: r.display_name || `Property Unit Map ${idx + 1}`,
+                label: r.display_name || `Image ${idx + 1} of ${records.length}`,
+                is_primary: r.is_primary,
+              };
+            } catch {
+              try {
+                const { data } = supabase.storage.from('files').getPublicUrl(r.file_path);
+                return {
+                  url: data.publicUrl,
+                  alt: r.display_name || `Property Unit Map ${idx + 1}`,
+                  label: r.display_name || `Image ${idx + 1} of ${records.length}`,
+                  is_primary: r.is_primary,
+                };
+              } catch {
+                return null;
+              }
+            }
+          })
+        );
+
+        const valid = resolved.filter(Boolean) as Array<{ url: string; alt: string; label: string; is_primary: boolean }>;
+        // Put primary image first
+        valid.sort((a, b) => (b.is_primary ? 1 : 0) - (a.is_primary ? 1 : 0));
+        setUnitMapImages(valid);
+        if (valid.length > 0) setUnitMapUrl(valid[0].url);
+        return;
+      }
+
+      // Fallback: legacy single-image path
       if (property?.unit_map_file_path) {
         try {
-          // First try to get the file from the database to get the correct path
-          const { data: fileData, error: fileError } = await supabase
+          const { data: fileData } = await supabase
             .from('files')
-            .select('path, storage_path, name')
+            .select('path, storage_path')
             .eq('id', property.unit_map_file_id)
             .single();
 
-          let filePath = property.unit_map_file_path;
-          
-          // If we found the file in the database, use its path
-          if (fileData && !fileError) {
-            filePath = fileData.storage_path || fileData.path;
-          }
-
-          console.log('Attempting to load unit map with path:', filePath);
-          
+          const filePath = fileData?.storage_path || fileData?.path || property.unit_map_file_path;
           const previewResult = await getPreviewUrl(supabase, 'files', filePath);
           setUnitMapUrl(previewResult.url);
-        } catch (error) {
-          console.error('Error generating unit map URL:', error);
-          
-          // Try alternative path formats
-          const alternativePaths = [
-            property.unit_map_file_path,
-            property.unit_map_file_path?.replace(/ /g, '_'), // Replace spaces with underscores
-            property.unit_map_file_path?.replace(/ /g, '%20'), // URL encode spaces
-          ].filter(Boolean);
-
-          for (const altPath of alternativePaths) {
-            try {
-              console.log('Trying alternative path:', altPath);
-              const { data: urlData } = supabase.storage
-                .from('files')
-                .getPublicUrl(altPath);
-              
-              // Test if the URL is accessible
-              const response = await fetch(urlData.publicUrl, { method: 'HEAD' });
-              if (response.ok) {
-                setUnitMapUrl(urlData.publicUrl);
-                return;
-              }
-            } catch (altError) {
-              console.log('Alternative path failed:', altPath, altError);
-            }
+          setUnitMapImages([{ url: previewResult.url, alt: 'Property Unit Map', label: 'Property Unit Map' }]);
+        } catch {
+          try {
+            const { data: urlData } = supabase.storage
+              .from('files')
+              .getPublicUrl(property.unit_map_file_path);
+            setUnitMapUrl(urlData.publicUrl);
+            setUnitMapImages([{ url: urlData.publicUrl, alt: 'Property Unit Map', label: 'Property Unit Map' }]);
+          } catch {
+            setUnitMapUrl(null);
+            setUnitMapImages([]);
           }
-          
-          // If all alternatives fail, set to null
-          setUnitMapUrl(null);
         }
       } else {
         setUnitMapUrl(null);
+        setUnitMapImages([]);
       }
     };
 
-    generateUnitMapUrl();
-  }, [property?.unit_map_file_path, property?.unit_map_file_id]);
+    loadUnitMaps();
+  }, [property?.id, property?.unit_map_file_path, property?.unit_map_file_id]);
 
   const [propertyJobs, setPropertyJobs] = useState<any[]>([]);
   const [jobsLoading, setJobsLoading] = useState(false);
@@ -306,10 +351,52 @@ export function PropertyDetails() {
     update_type: '',
     note: ''
   });
+  const [showGeneralNoteForm, setShowGeneralNoteForm] = useState(false);
+  const [newGeneralNote, setNewGeneralNote] = useState({
+    topic: '',
+    note_content: ''
+  });
+  const [editingGeneralNoteId, setEditingGeneralNoteId] = useState<string | null>(null);
+  const [editingGeneralNote, setEditingGeneralNote] = useState({
+    topic: '',
+    note_content: ''
+  });
   
   // State for delete confirmation
   const [showDeleteCallbackConfirm, setShowDeleteCallbackConfirm] = useState<string | null>(null);
   const [showDeleteUpdateConfirm, setShowDeleteUpdateConfirm] = useState<string | null>(null);
+
+  const fetchPropertyGeneralNotes = async () => {
+    if (!propertyId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('property_general_notes')
+        .select(`
+          id,
+          property_id,
+          topic,
+          note_content,
+          created_by,
+          created_at,
+          updated_at,
+          creator:profiles!property_general_notes_created_by_fkey(full_name)
+        `)
+        .eq('property_id', propertyId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching property general notes:', error);
+        setGeneralNotes([]);
+        return;
+      }
+
+      setGeneralNotes(data || []);
+    } catch (error) {
+      console.error('Error fetching property general notes:', error);
+      setGeneralNotes([]);
+    }
+  };
 
   const formattedAddress = property ? [
     property.address,
@@ -416,6 +503,40 @@ export function PropertyDetails() {
     }
   };
 
+  const savePreferredSubcontractor = async (slot: 'a' | 'b' | 'c', userId: string | null) => {
+    if (!propertyId) return;
+    const col = `preferred_subcontractor_${slot}_id`;
+    try {
+      const { error } = await supabase.from('properties').update({ [col]: userId || null }).eq('id', propertyId);
+      if (error) throw error;
+      if (slot === 'a') setPreferredSubA(userId);
+      if (slot === 'b') setPreferredSubB(userId);
+      if (slot === 'c') setPreferredSubC(userId);
+      toast.success('Preferred subcontractor updated');
+    } catch {
+      toast.error('Failed to update preferred subcontractor');
+    }
+  };
+
+  const saveExclusionNote = async () => {
+    if (!propertyId) return;
+    setSavingExclusionNote(true);
+    try {
+      const { error } = await supabase
+        .from('properties')
+        .update({ subcontractor_exclusion_note: exclusionNoteDraft.trim() || null })
+        .eq('id', propertyId);
+      if (error) throw error;
+      setExclusionNote(exclusionNoteDraft.trim());
+      setEditingExclusionNote(false);
+      toast.success('Exclusion note saved');
+    } catch {
+      toast.error('Failed to save exclusion note');
+    } finally {
+      setSavingExclusionNote(false);
+    }
+  };
+
   const complianceItems: { label: string; value: string; date?: string | null }[] = property ? [
     { label: 'Compliance Required', value: property.compliance_required, date: property.compliance_required_date },
     { label: 'Compliance Approved', value: property.compliance_approved, date: property.compliance_approved_date },
@@ -480,6 +601,22 @@ export function PropertyDetails() {
         
 
         setProperty(propertyData);
+
+        // Load preferred subcontractors from new columns
+        setPreferredSubA(propertyData.preferred_subcontractor_a_id || null);
+        setPreferredSubB(propertyData.preferred_subcontractor_b_id || null);
+        setPreferredSubC(propertyData.preferred_subcontractor_c_id || null);
+        const note = propertyData.subcontractor_exclusion_note || '';
+        setExclusionNote(note);
+        setExclusionNoteDraft(note);
+
+        // Fetch all subcontractor users for the selector
+        const { data: subUsers } = await supabase
+          .from('profiles')
+          .select('id, full_name, email')
+          .eq('role', 'subcontractor')
+          .order('full_name');
+        setSubcontractorUsers(subUsers || []);
 
         // Fetch billing data
         const { data: categoryData, error: categoryError } = await supabase
@@ -560,6 +697,8 @@ export function PropertyDetails() {
 
         if (updateError) throw updateError;
         setUpdates(updateData || []);
+
+        await fetchPropertyGeneralNotes();
 
         // Fetch additional contacts
         const { data: contactsData, error: contactsError } = await supabase
@@ -842,6 +981,101 @@ export function PropertyDetails() {
     }
   };
 
+  const handleAddGeneralNote = async () => {
+    if (!propertyId) return;
+
+    if (!newGeneralNote.topic.trim() || !newGeneralNote.note_content.trim()) {
+      toast.error('Topic and note content are required');
+      return;
+    }
+
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      const { error } = await supabase
+        .from('property_general_notes')
+        .insert({
+          property_id: propertyId,
+          topic: newGeneralNote.topic.trim(),
+          note_content: newGeneralNote.note_content.trim(),
+          created_by: userData.user.id
+        });
+
+      if (error) throw error;
+
+      setNewGeneralNote({
+        topic: '',
+        note_content: ''
+      });
+      setShowGeneralNoteForm(false);
+      await fetchPropertyGeneralNotes();
+      toast.success('General property note added successfully');
+    } catch (err) {
+      console.error('Error adding property general note:', err);
+      toast.error('Failed to add general property note');
+    }
+  };
+
+  const handleDeleteGeneralNote = async (noteId: string) => {
+    try {
+      const { error } = await supabase
+        .from('property_general_notes')
+        .delete()
+        .eq('id', noteId);
+
+      if (error) throw error;
+
+      await fetchPropertyGeneralNotes();
+      toast.success('General property note deleted successfully');
+    } catch (err) {
+      console.error('Error deleting property general note:', err);
+      toast.error('Failed to delete general property note');
+    }
+  };
+
+  const handleStartEditGeneralNote = (note: PropertyGeneralNote) => {
+    setEditingGeneralNoteId(note.id);
+    setEditingGeneralNote({
+      topic: note.topic,
+      note_content: note.note_content
+    });
+  };
+
+  const handleCancelEditGeneralNote = () => {
+    setEditingGeneralNoteId(null);
+    setEditingGeneralNote({
+      topic: '',
+      note_content: ''
+    });
+  };
+
+  const handleSaveGeneralNote = async (noteId: string) => {
+    if (!editingGeneralNote.topic.trim() || !editingGeneralNote.note_content.trim()) {
+      toast.error('Topic and note content are required');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('property_general_notes')
+        .update({
+          topic: editingGeneralNote.topic.trim(),
+          note_content: editingGeneralNote.note_content.trim()
+        })
+        .eq('id', noteId);
+
+      if (error) throw error;
+
+      await fetchPropertyGeneralNotes();
+      handleCancelEditGeneralNote();
+      toast.success('General property note updated successfully');
+    } catch (err) {
+      console.error('Error updating property general note:', err);
+      toast.error('Failed to update general property note');
+    }
+  };
+
   // Simple smooth scroll function for anchor navigation
   const smoothScrollTo = (elementId: string) => {
     const element = document.getElementById(elementId);
@@ -1096,112 +1330,6 @@ export function PropertyDetails() {
                   </div>
                 </div>
               )}
-
-              {/* Additional Contacts */}
-              {contacts.length > 0 && (
-                <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                  <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 uppercase tracking-wide">Additional Contacts</h4>
-                  <div className="space-y-4">
-                    {contacts.map(contact => (
-                      <div key={contact.id} className="border-b border-gray-200 dark:border-gray-700 last:border-0 pb-3 last:pb-0">
-                         {contact.position && (
-                            <div className="font-medium text-gray-900 dark:text-white text-sm mb-1">{contact.position}</div>
-                         )}
-                         <div className="flex items-center space-x-3 mb-2">
-                           <input
-                             type="radio"
-                             name="notification_contact_source"
-                             className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
-                             checked={notificationContactSource === contact.id}
-                             onChange={() => handleNotificationContactChange(contact.id)}
-                             title="Set as Email Notifications Contact"
-                           />
-                           <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Email Notifications</span>
-                         </div>
-                         <div className="space-y-1 ml-1">
-                            {contact.name && (
-                              <div className="flex items-center">
-                                <User className="h-3 w-3 text-gray-500 dark:text-gray-400 mr-2 flex-shrink-0" />
-                                <span className="text-gray-600 dark:text-gray-300 text-sm">{contact.name}</span>
-                              </div>
-                            )}
-                            {contact.email && (
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center">
-                                  <Mail className="h-3 w-3 text-gray-500 dark:text-gray-400 mr-2 flex-shrink-0" />
-                                  <span className="text-gray-600 dark:text-gray-300 text-sm">{contact.email}</span>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    cancelPropertySecondaryEmailEdit();
-                                    setEditingSecondaryEmailContactId(contact.id);
-                                    setSecondaryEmailDraft(contact.secondary_email || '');
-                                  }}
-                                  className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                                  title="Add or edit secondary email"
-                                >
-                                  {contact.secondary_email ? (
-                                    <Edit className="h-3 w-3 text-green-600" />
-                                  ) : (
-                                    <Plus className="h-3 w-3 text-gray-500" />
-                                  )}
-                                </button>
-                              </div>
-                            )}
-                            {contact.secondary_email && (
-                              <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-                                <Mail className="h-3 w-3 mr-2 flex-shrink-0 text-gray-500" />
-                                <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Secondary:</span>
-                                <span className="ml-1 text-gray-600 dark:text-gray-300 text-sm">{contact.secondary_email}</span>
-                              </div>
-                            )}
-                            {editingSecondaryEmailContactId === contact.id && (
-                              <form
-                                onSubmit={async (e) => {
-                                  e.preventDefault();
-                                  await handleSaveSecondaryEmail(contact.id);
-                                }}
-                                className="flex items-center space-x-2 mt-2"
-                              >
-                                <input
-                                  type="email"
-                                  value={secondaryEmailDraft}
-                                  onChange={(e) => setSecondaryEmailDraft(e.target.value)}
-                                  className="flex-1 h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                  placeholder="Secondary Email"
-                                />
-                                <button
-                                  type="submit"
-                                  disabled={secondaryEmailSavingContactId === contact.id}
-                                  className="inline-flex items-center px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-white"
-                                >
-                                  <Check className="h-4 w-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    cancelSecondaryEmailEdit();
-                                  }}
-                                  className="inline-flex items-center px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500"
-                                >
-                                  <X className="h-4 w-4" />
-                                </button>
-                              </form>
-                            )}
-                            {contact.phone && (
-                              <div className="flex items-center">
-                                <Phone className="h-3 w-3 text-gray-500 dark:text-gray-400 mr-2 flex-shrink-0" />
-                                <span className="text-gray-600 dark:text-gray-300 text-sm">{contact.phone}</span>
-                              </div>
-                            )}
-                         </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
 
@@ -1272,155 +1400,300 @@ export function PropertyDetails() {
           </div>
         </div>
 
-        {/* Second Row: Property Unit Map & Contact Information */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Contact Information (now first) */}
-          <div id="contacts" className="order-2 lg:order-1">
-            <PropertyContactsViewer
-              systemContacts={{
-                community_manager: {
-                  name: property.community_manager_name || '',
-                  email: property.community_manager_email || '',
-                  secondary_email: property.community_manager_secondary_email,
-                  phone: property.community_manager_phone || '',
-                  title: property.community_manager_title || 'Community Manager'
-                },
-                maintenance_supervisor: {
-                  name: property.maintenance_supervisor_name || '',
-                  email: property.maintenance_supervisor_email || '',
-                  secondary_email: property.maintenance_supervisor_secondary_email,
-                  phone: property.maintenance_supervisor_phone || '',
-                  title: property.maintenance_supervisor_title || 'Maintenance Supervisor'
-                },
-                primary_contact: {
-                  name: property.primary_contact_name || '',
-                  email: property.primary_contact_email || '',
-                  secondary_email: property.primary_contact_secondary_email,
-                  phone: property.primary_contact_phone || '',
-                  title: property.primary_contact_role || 'Primary Contact'
-                },
-                ap: {
-                  name: property.ap_name || '',
-                  email: property.ap_email || '',
-                  secondary_email: property.ap_secondary_email,
-                  phone: property.ap_phone || '',
-                  title: 'Accounts Payable'
-                }
-              }}
-              systemContactRoles={{
-                community_manager: { 
-                  subcontractor: property.community_manager_is_subcontractor || false,
-                  approvalRecipient: property.community_manager_is_approval_recipient || false,
-                  notificationRecipient: property.community_manager_is_notification_recipient || false,
-                  primaryApproval: property.community_manager_is_primary_approval || false,
-                  primaryNotification: property.community_manager_is_primary_notification || false,
-                  accountsReceivable: property.community_manager_is_ar || false
-                },
-                maintenance_supervisor: {
-                  subcontractor: property.maintenance_supervisor_is_subcontractor || false,
-                  approvalRecipient: property.maintenance_supervisor_is_approval_recipient || false,
-                  notificationRecipient: property.maintenance_supervisor_is_notification_recipient || false,
-                  primaryApproval: property.maintenance_supervisor_is_primary_approval || false,
-                  primaryNotification: property.maintenance_supervisor_is_primary_notification || false,
-                  accountsReceivable: property.maintenance_supervisor_is_ar || false
-                },
-                primary_contact: {
-                  subcontractor: property.primary_contact_is_subcontractor || false,
-                  approvalRecipient: property.primary_contact_is_approval_recipient || false,
-                  notificationRecipient: property.primary_contact_is_notification_recipient || false,
-                  primaryApproval: property.primary_contact_is_primary_approval || false,
-                  primaryNotification: property.primary_contact_is_primary_notification || false,
-                  accountsReceivable: property.primary_contact_is_ar || false
-                },
-                ap: {
-                  subcontractor: property.ap_is_subcontractor || false,
-                  approvalRecipient: property.ap_is_approval_recipient || false,
-                  notificationRecipient: property.ap_is_notification_recipient || false,
-                  primaryApproval: property.ap_is_primary_approval || false,
-                  primaryNotification: property.ap_is_primary_notification || false,
-                  accountsReceivable: property.ap_is_ar || false
-                }
-              }}
-              customContacts={contacts.map(c => ({
-                id: c.id,
-                position: c.position || '',
-                name: c.name || '',
-                email: c.email || '',
-                secondary_email: c.secondary_email,
-                phone: c.phone || '',
-                is_subcontractor_contact: c.is_subcontractor_contact || false,
-                is_accounts_receivable_contact: c.is_accounts_receivable_contact || false,
-                is_approval_recipient: c.is_approval_recipient || false,
-                is_notification_recipient: c.is_notification_recipient || false,
-                is_primary_approval_recipient: c.is_primary_approval_recipient || false,
-                is_primary_notification_recipient: c.is_primary_notification_recipient || false
-              }))}
-            />
-          </div>
+        {/* Second Row: Contact Information — Full Width */}
+        <div id="contacts">
+          <PropertyContactsViewer
+            systemContacts={{
+              community_manager: {
+                name: property.community_manager_name || '',
+                email: property.community_manager_email || '',
+                secondary_email: property.community_manager_secondary_email,
+                phone: property.community_manager_phone || '',
+                title: property.community_manager_title || 'Community Manager'
+              },
+              maintenance_supervisor: {
+                name: property.maintenance_supervisor_name || '',
+                email: property.maintenance_supervisor_email || '',
+                secondary_email: property.maintenance_supervisor_secondary_email,
+                phone: property.maintenance_supervisor_phone || '',
+                title: property.maintenance_supervisor_title || 'Maintenance Supervisor'
+              },
+              primary_contact: {
+                name: property.primary_contact_name || '',
+                email: property.primary_contact_email || '',
+                secondary_email: property.primary_contact_secondary_email,
+                phone: property.primary_contact_phone || '',
+                title: property.primary_contact_role || 'Primary Contact'
+              },
+              ap: {
+                name: property.ap_name || '',
+                email: property.ap_email || '',
+                secondary_email: property.ap_secondary_email,
+                phone: property.ap_phone || '',
+                title: 'Accounts Payable'
+              }
+            }}
+            systemContactRoles={{
+              community_manager: {
+                subcontractor: property.community_manager_is_subcontractor || false,
+                approvalRecipient: property.community_manager_is_approval_recipient || false,
+                notificationRecipient: property.community_manager_is_notification_recipient || false,
+                primaryApproval: property.community_manager_is_primary_approval || false,
+                primaryNotification: property.community_manager_is_primary_notification || false,
+                accountsReceivable: property.community_manager_is_ar || false
+              },
+              maintenance_supervisor: {
+                subcontractor: property.maintenance_supervisor_is_subcontractor || false,
+                approvalRecipient: property.maintenance_supervisor_is_approval_recipient || false,
+                notificationRecipient: property.maintenance_supervisor_is_notification_recipient || false,
+                primaryApproval: property.maintenance_supervisor_is_primary_approval || false,
+                primaryNotification: property.maintenance_supervisor_is_primary_notification || false,
+                accountsReceivable: property.maintenance_supervisor_is_ar || false
+              },
+              primary_contact: {
+                subcontractor: property.primary_contact_is_subcontractor || false,
+                approvalRecipient: property.primary_contact_is_approval_recipient || false,
+                notificationRecipient: property.primary_contact_is_notification_recipient || false,
+                primaryApproval: property.primary_contact_is_primary_approval || false,
+                primaryNotification: property.primary_contact_is_primary_notification || false,
+                accountsReceivable: property.primary_contact_is_ar || false
+              },
+              ap: {
+                subcontractor: property.ap_is_subcontractor || false,
+                approvalRecipient: property.ap_is_approval_recipient || false,
+                notificationRecipient: property.ap_is_notification_recipient || false,
+                primaryApproval: property.ap_is_primary_approval || false,
+                primaryNotification: property.ap_is_primary_notification || false,
+                accountsReceivable: property.ap_is_ar || false
+              }
+            }}
+            customContacts={contacts.map(c => ({
+              id: c.id,
+              position: (c as any).position || '',
+              name: c.name || '',
+              email: c.email || '',
+              secondary_email: c.secondary_email,
+              phone: c.phone || '',
+              is_subcontractor_contact: c.is_subcontractor_contact || false,
+              is_accounts_receivable_contact: c.is_accounts_receivable_contact || false,
+              is_approval_recipient: c.is_approval_recipient || false,
+              is_notification_recipient: c.is_notification_recipient || false,
+              is_primary_approval_recipient: c.is_primary_approval_recipient || false,
+              is_primary_notification_recipient: c.is_primary_notification_recipient || false,
+              is_primary_contact: (c as any).is_primary_contact || false,
+              receives_approval_emails: (c as any).receives_approval_emails || false,
+              receives_notification_emails: (c as any).receives_notification_emails || false,
+              custom_title: (c as any).custom_title || null,
+            }))}
+            onAddContact={() => navigate(`/dashboard/properties/${property.id}/edit`)}
+          />
+        </div>
 
-          {/* Property Unit Map (now second) */}
-          {property.unit_map_file_path && unitMapUrl ? (
-            <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden order-1 lg:order-2">
-              {/* Header */}
-              <div className="bg-gradient-to-r from-orange-600 to-orange-700 dark:from-orange-700 dark:to-orange-800 px-6 py-4">
-                <h3 className="text-lg font-semibold text-white flex items-center">
-                  <FileText className="h-5 w-5 mr-2" />
-                  Property Unit Map
-                </h3>
-              </div>
-              
-              {/* Content */}
-              <div className="p-6">
-                <div className="relative w-full h-80 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden group cursor-pointer" style={{ pointerEvents: 'auto' }}>
-                <img 
-                  src={unitMapUrl || ''}
-                  alt="Property Unit Map" 
-                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                  style={{ pointerEvents: 'auto', cursor: 'pointer' }}
-                  onClick={() => setLightboxOpen(true)}
-                  onError={(e) => {
-                    console.error('Failed to load unit map image:', property.unit_map_file_path);
-                    e.currentTarget.style.display = 'none';
-                    e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                  }}
-                />
-                <div className="hidden absolute inset-0 items-center justify-center bg-gray-100 dark:bg-gray-800 pointer-events-none">
-                  <div className="text-center">
-                    <FileText className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                    <p className="font-medium text-sm">Unable to load image</p>
-                    <p className="text-xs">Please check the file</p>
+        {/* Preferred Subcontractors — Full Width, right after Contacts */}
+        <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+          <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 dark:from-indigo-700 dark:to-indigo-800 px-6 py-4 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-white flex items-center">
+              <HardHat className="h-5 w-5 mr-2" />
+              Preferred Subcontractors
+            </h3>
+            {!isSubcontractor && (
+              <span className="text-indigo-200 text-xs">Select up to 3 preferred subcontractors for this property</span>
+            )}
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {(['a', 'b', 'c'] as const).map((slot, idx) => {
+                const label = ['A — Primary', 'B — Secondary', 'C — Tertiary'][idx];
+                const value = [preferredSubA, preferredSubB, preferredSubC][idx];
+                const selectedUser = subcontractorUsers.find(u => u.id === value);
+                return (
+                  <div key={slot} className="flex flex-col gap-2">
+                    <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-xs font-bold">
+                        {['A', 'B', 'C'][idx]}
+                      </span>
+                      {label}
+                    </p>
+                    {isSubcontractor ? (
+                      <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <HardHat className="h-4 w-4 text-indigo-500 flex-shrink-0" />
+                        <span className="text-sm text-gray-900 dark:text-white">
+                          {selectedUser ? selectedUser.full_name : <span className="text-gray-400 italic">Not assigned</span>}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <select
+                          value={value || ''}
+                          onChange={(e) => savePreferredSubcontractor(slot, e.target.value || null)}
+                          className="w-full h-11 pl-3 pr-8 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none"
+                        >
+                          <option value="">— Not assigned —</option>
+                          {subcontractorUsers.map(u => (
+                            <option key={u.id} value={u.id}>{u.full_name}</option>
+                          ))}
+                        </select>
+                        <HardHat className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      </div>
+                    )}
+                    {selectedUser && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate pl-1">
+                        {selectedUser.email}
+                      </p>
+                    )}
                   </div>
-                </div>
-                {/* Hover overlay with click hint */}
-                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 flex items-center justify-center pointer-events-none">
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white dark:bg-gray-800 rounded-full p-3 shadow-lg">
-                    <ZoomIn className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  </div>
-                </div>
-              </div>
+                );
+              })}
             </div>
-          ) : (
-            <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden order-1 lg:order-2">
-              {/* Header */}
-              <div className="bg-gradient-to-r from-orange-600 to-orange-700 dark:from-orange-700 dark:to-orange-800 px-6 py-4">
-                <h3 className="text-lg font-semibold text-white flex items-center">
-                  <FileText className="h-5 w-5 mr-2" />
-                  Property Unit Map
-                </h3>
+
+            {/* Exclusion Note */}
+            {!isSubcontractor && (
+              <div className="mt-6 pt-5 border-t border-gray-200 dark:border-gray-700">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-xs">
+                      ⚠
+                    </span>
+                    Exclusion Note
+                  </p>
+                  {!editingExclusionNote && (
+                    <button
+                      onClick={() => { setExclusionNoteDraft(exclusionNote); setEditingExclusionNote(true); }}
+                      className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 font-medium transition-colors"
+                    >
+                      {exclusionNote ? 'Edit' : '+ Add note'}
+                    </button>
+                  )}
+                </div>
+
+                {editingExclusionNote ? (
+                  <div className="space-y-2">
+                    <textarea
+                      rows={3}
+                      value={exclusionNoteDraft}
+                      onChange={(e) => setExclusionNoteDraft(e.target.value)}
+                      placeholder="e.g., Do not assign Smith Painting — prior quality issues. Contractor C requires prior approval."
+                      className="w-full px-3 py-2 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        onClick={() => setEditingExclusionNote(false)}
+                        className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white border border-gray-300 dark:border-gray-600 rounded-md transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={saveExclusionNote}
+                        disabled={savingExclusionNote}
+                        className="px-3 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors disabled:opacity-60"
+                      >
+                        {savingExclusionNote ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+                ) : exclusionNote ? (
+                  <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 rounded-lg">
+                    <span className="text-amber-500 mt-0.5 flex-shrink-0 text-sm">⚠</span>
+                    <p className="text-sm text-amber-900 dark:text-amber-200 leading-relaxed whitespace-pre-wrap">{exclusionNote}</p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400 dark:text-gray-600 italic">No exclusion note set.</p>
+                )}
               </div>
-              
-              {/* Content */}
-              <div className="p-6">
-                <div className="flex items-center justify-center h-64 bg-gray-50 dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
-                  <div className="text-center">
-                    <FileText className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                    <p className="text-gray-500 dark:text-gray-400 text-sm">No unit map uploaded</p>
+            )}
+          </div>
+        </div>
+
+        {/* Property Unit Map — Full Width (always shown) */}
+        <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-orange-600 to-orange-700 dark:from-orange-700 dark:to-orange-800 px-6 py-4 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-white flex items-center">
+              <FileText className="h-5 w-5 mr-2" />
+              Property Unit Map
+              {unitMapImages.length > 1 && (
+                <span className="ml-2 text-sm font-normal text-orange-200">
+                  ({unitMapImages.length} images)
+                </span>
+              )}
+            </h3>
+            {unitMapImages.length > 0 && (
+              <button
+                onClick={() => { setLightboxIndex(0); setLightboxOpen(true); }}
+                className="flex items-center gap-1.5 text-sm text-orange-100 hover:text-white transition-colors"
+              >
+                <ZoomIn className="h-4 w-4" />
+                View Full Size
+              </button>
+            )}
+          </div>
+          {/* Content */}
+          <div className="p-6">
+            {unitMapImages.length > 0 ? (
+              <div className="space-y-3">
+                {/* Main image */}
+                <div
+                  className="relative w-full bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden group cursor-pointer"
+                  style={{ minHeight: '18rem', maxHeight: '28rem' }}
+                  onClick={() => { setLightboxIndex(0); setLightboxOpen(true); }}
+                >
+                  <img
+                    src={unitMapImages[0].url}
+                    alt={unitMapImages[0].alt}
+                    className="w-full h-full object-contain transition-transform group-hover:scale-[1.02]"
+                    style={{ maxHeight: '28rem' }}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 flex items-center justify-center pointer-events-none">
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white dark:bg-gray-800 rounded-full p-3 shadow-lg">
+                      <ZoomIn className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                    </div>
                   </div>
                 </div>
+                {/* Thumbnail strip (only shown when there are multiple images) */}
+                {unitMapImages.length > 1 && (
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {unitMapImages.map((img, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => { setLightboxIndex(idx); setLightboxOpen(true); }}
+                        className={`flex-shrink-0 w-20 h-14 rounded-md overflow-hidden border-2 transition-all hover:opacity-100 ${
+                          idx === 0
+                            ? 'border-orange-400 shadow-md opacity-100'
+                            : 'border-gray-300 dark:border-gray-600 opacity-70 hover:border-orange-300'
+                        }`}
+                        title={img.label}
+                      >
+                        <img
+                          src={img.url}
+                          alt={img.alt}
+                          className="w-full h-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            ) : (
+              /* Placeholder — always shown when no unit map is uploaded */
+              <div className="flex flex-col items-center justify-center h-64 bg-gray-50 dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+                <FileText className="h-10 w-10 mb-3 text-gray-300 dark:text-gray-600" />
+                <p className="text-sm font-medium text-gray-400 dark:text-gray-500">No unit map uploaded</p>
+                {!isSubcontractor && (
+                  <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">
+                    Upload a unit map from the{' '}
+                    <button
+                      onClick={() => navigate(`/dashboard/properties/${property.id}/edit`)}
+                      className="text-orange-500 hover:text-orange-600 underline underline-offset-2"
+                    >
+                      Edit Property
+                    </button>{' '}
+                    page
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Compliance Information - Full Width */}
@@ -1496,134 +1769,40 @@ export function PropertyDetails() {
             {/* Content */}
             <div className="p-6">
                 <div className="space-y-6">
-                  {/* AP Contact */}
-                  {(property.ap_name || property.ap_email || property.ap_phone) && (
-                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                      <h4 className="text-sm font-bold text-blue-800 dark:text-blue-200 mb-3 uppercase tracking-wide">AP Contact</h4>
-                      <div className="flex items-center space-x-3 mb-2">
-                        <input
-                          type="radio"
-                          name="notification_contact_source"
-                          className="h-4 w-4 text-green-600 border-gray-300 focus:ring-green-500"
-                          checked={notificationContactSource === 'ap'}
-                          onChange={() => handleNotificationContactChange('ap')}
-                          title="Set as Email Notifications Contact"
-                        />
-                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Email Notifications</span>
-                      </div>
-                      <div className="space-y-2">
-                        {property.ap_name && (
-                          <div className="flex items-center">
-                            <User className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
-                            <span className="text-gray-900 dark:text-white text-sm">{property.ap_name}</span>
-                      </div>
-                    )}
-                    {property.ap_email && (
-                      <>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center">
-                            <Mail className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
-                            <span className="text-gray-900 dark:text-white text-sm">{property.ap_email}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              cancelSecondaryEmailEdit();
-                              setEditingPropertySecondaryEmailField('ap_secondary_email');
-                              setPropertySecondaryEmailDraft(property.ap_secondary_email || '');
-                            }}
-                            className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                            title="Add or edit secondary email"
-                          >
-                            {property.ap_secondary_email ? (
-                              <Edit className="h-3 w-3 text-green-600" />
-                            ) : (
-                              <Plus className="h-3 w-3 text-gray-500" />
-                            )}
-                          </button>
-                        </div>
-                        {property.ap_secondary_email && (
-                          <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
-                            <Mail className="h-3 w-3 mr-2 flex-shrink-0 text-gray-500" />
-                            <span className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Secondary:</span>
-                            <span className="ml-1 text-gray-900 dark:text-white text-sm">{property.ap_secondary_email}</span>
-                          </div>
-                        )}
-                        {editingPropertySecondaryEmailField === 'ap_secondary_email' && (
-                          <form
-                            onSubmit={async (e) => {
-                              e.preventDefault();
-                              await handleSavePropertySecondaryEmail('ap_secondary_email');
-                            }}
-                            className="flex items-center space-x-2 mt-2"
-                          >
-                            <input
-                              type="email"
-                              value={propertySecondaryEmailDraft}
-                              onChange={(e) => setPropertySecondaryEmailDraft(e.target.value)}
-                              className="flex-1 h-10 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              placeholder="Secondary Email"
-                            />
-                            <button
-                              type="submit"
-                              disabled={propertySecondaryEmailSavingField === 'ap_secondary_email'}
-                              className="inline-flex items-center px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-white"
-                            >
-                              <Check className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={cancelPropertySecondaryEmailEdit}
-                              className="inline-flex items-center px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-600 dark:text-gray-300 hover:border-gray-400 dark:hover:border-gray-500"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </form>
-                        )}
-                      </>
-                    )}
-                    {property.ap_phone && (
-                      <div className="flex items-center">
-                        <Phone className="h-4 w-4 text-blue-600 dark:text-blue-400 mr-2 flex-shrink-0" />
-                        <span className="text-gray-900 dark:text-white text-sm">{property.ap_phone}</span>
-                      </div>
+                  {/* QuickBooks Number — always shown first */}
+                  <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                    <h4 className="text-sm font-bold text-green-800 dark:text-green-200 mb-2 uppercase tracking-wide">QuickBooks Number</h4>
+                    {property.quickbooks_number ? (
+                      <p className="text-gray-900 dark:text-white text-sm font-mono">{property.quickbooks_number}</p>
+                    ) : (
+                      <p className="text-gray-400 dark:text-gray-500 text-sm italic">Not set</p>
                     )}
                   </div>
-                </div>
-              )}
 
-              {/* QuickBooks Number */}
-              {property.quickbooks_number && (
-                <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                  <h4 className="text-sm font-bold text-green-800 dark:text-green-200 mb-2 uppercase tracking-wide">QuickBooks Number</h4>
-                  <p className="text-gray-900 dark:text-white text-sm font-mono">{property.quickbooks_number}</p>
-                </div>
-              )}
+                  {/* Billing Notes */}
+                  {property.billing_notes && (
+                    <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                      <h4 className="text-sm font-bold text-yellow-800 dark:text-yellow-200 mb-2 uppercase tracking-wide">Billing Notes</h4>
+                      <p className="text-gray-900 dark:text-white text-sm whitespace-pre-wrap">{property.billing_notes}</p>
+                    </div>
+                  )}
 
-              {/* Billing Notes */}
-              {property.billing_notes && (
-                <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-                  <h4 className="text-sm font-bold text-yellow-800 dark:text-yellow-200 mb-2 uppercase tracking-wide">Billing Notes</h4>
-                  <p className="text-gray-900 dark:text-white text-sm whitespace-pre-wrap">{property.billing_notes}</p>
-                </div>
-              )}
+                  {/* Extra Charges Notes */}
+                  {property.extra_charges_notes && (
+                    <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                      <h4 className="text-sm font-bold text-orange-800 dark:text-orange-200 mb-2 uppercase tracking-wide">Extra Charges Notes</h4>
+                      <p className="text-gray-900 dark:text-white text-sm whitespace-pre-wrap">{property.extra_charges_notes}</p>
+                    </div>
+                  )}
 
-              {/* Extra Charges Notes */}
-              {property.extra_charges_notes && (
-                <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
-                  <h4 className="text-sm font-bold text-orange-800 dark:text-orange-200 mb-2 uppercase tracking-wide">Extra Charges Notes</h4>
-                  <p className="text-gray-900 dark:text-white text-sm whitespace-pre-wrap">{property.extra_charges_notes}</p>
+                  {/* Occupied Regular Paint Fees */}
+                  {property.occupied_regular_paint_fees && (
+                    <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                      <h4 className="text-sm font-bold text-purple-800 dark:text-purple-200 mb-2 uppercase tracking-wide">Occupied Regular Paint Fees</h4>
+                      <p className="text-gray-900 dark:text-white text-sm">{property.occupied_regular_paint_fees}</p>
+                    </div>
+                  )}
                 </div>
-              )}
-
-              {/* Occupied Regular Paint Fees */}
-              {property.occupied_regular_paint_fees && (
-                <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                  <h4 className="text-sm font-bold text-purple-800 dark:text-purple-200 mb-2 uppercase tracking-wide">Occupied Regular Paint Fees</h4>
-                  <p className="text-gray-900 dark:text-white text-sm">{property.occupied_regular_paint_fees}</p>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -2059,6 +2238,186 @@ export function PropertyDetails() {
           )}
         </div>
 
+        {/* General Property Notes Section */}
+        <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+          <div className="bg-gradient-to-r from-slate-700 to-slate-800 dark:from-slate-800 dark:to-slate-900 px-6 py-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-white flex items-center">
+                <Clipboard className="h-5 w-5 mr-2" />
+                General Property Notes
+              </h3>
+              {isAdmin && (
+                <button
+                  onClick={() => setShowGeneralNoteForm(true)}
+                  className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-medium rounded-lg transition-colors backdrop-blur-sm"
+                >
+                  <Plus className="h-4 w-4 mr-2 inline-block" />
+                  Add Note
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="p-6">
+            {generalNotes.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                <Clipboard className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                <p className="font-medium">No general property notes recorded</p>
+                <p className="text-sm">
+                  {isAdmin ? 'Click "Add Note" to get started' : 'No general notes are currently available for this property'}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {generalNotes.map((note) => (
+                  <div
+                    key={note.id}
+                    className="border-l-4 border-slate-300 dark:border-slate-700 bg-gray-50 dark:bg-[#0F172A] rounded-r-xl p-4"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        {editingGeneralNoteId === note.id ? (
+                          <div className="space-y-3">
+                            <input
+                              type="text"
+                              value={editingGeneralNote.topic}
+                              onChange={(e) => setEditingGeneralNote({ ...editingGeneralNote, topic: e.target.value })}
+                              className="w-full rounded-md bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                              placeholder="Enter note topic"
+                            />
+                            <textarea
+                              value={editingGeneralNote.note_content}
+                              onChange={(e) => setEditingGeneralNote({ ...editingGeneralNote, note_content: e.target.value })}
+                              className="w-full rounded-md bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                              placeholder="Enter general property note"
+                              rows={4}
+                            />
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="inline-flex items-center rounded-full bg-slate-200 dark:bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                                {note.topic}
+                              </span>
+                            </div>
+                            <p className="text-gray-900 dark:text-white whitespace-pre-wrap mt-3">
+                              {note.note_content}
+                            </p>
+                          </>
+                        )}
+                        <div className="flex flex-wrap items-center gap-2 mt-3 text-sm text-gray-500 dark:text-gray-400">
+                          <span>{formatDate(note.created_at)}</span>
+                          <span>•</span>
+                          <span>{format(new Date(note.created_at), 'h:mm a')}</span>
+                          <span>•</span>
+                          <span>{note.creator?.full_name || 'Unknown'}</span>
+                        </div>
+                      </div>
+                      {isAdmin && (
+                        <div className="flex items-center gap-2">
+                          {editingGeneralNoteId === note.id ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveGeneralNote(note.id)}
+                                className="p-2 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg text-green-600 dark:text-green-400 transition-colors"
+                                aria-label="Save general property note"
+                              >
+                                <Save className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelEditGeneralNote}
+                                className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
+                                aria-label="Cancel editing general property note"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditGeneralNote(note)}
+                                className="p-2 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg text-blue-600 dark:text-blue-400 transition-colors"
+                                aria-label="Edit general property note"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (window.confirm('Delete this general property note?')) {
+                                    handleDeleteGeneralNote(note.id);
+                                  }
+                                }}
+                                className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg text-red-600 dark:text-red-400 transition-colors"
+                                aria-label="Delete general property note"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {showGeneralNoteForm && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add General Property Note</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Topic
+                    </label>
+                    <input
+                      type="text"
+                      value={newGeneralNote.topic}
+                      onChange={(e) => setNewGeneralNote({ ...newGeneralNote, topic: e.target.value })}
+                      className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                      placeholder="Enter note topic"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Note
+                    </label>
+                    <textarea
+                      value={newGeneralNote.note_content}
+                      onChange={(e) => setNewGeneralNote({ ...newGeneralNote, note_content: e.target.value })}
+                      className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                      placeholder="Enter general property note"
+                      rows={4}
+                    />
+                  </div>
+                </div>
+                <div className="mt-6 flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowGeneralNoteForm(false)}
+                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddGeneralNote}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                  >
+                    Add Note
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Property Files Section */}
         <div id="property-files" className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
           {/* Header */}
@@ -2194,14 +2553,15 @@ export function PropertyDetails() {
           </div>
         </div>
       </div>
-      </div>
       
-      {/* Lightbox for Property Unit Map */}
+      {/* Lightbox for Property Unit Map — supports multiple images */}
       <Lightbox
         isOpen={lightboxOpen}
         onClose={() => setLightboxOpen(false)}
-        imageUrl={unitMapUrl || ''}
+        images={unitMapImages.length > 0 ? unitMapImages : undefined}
+        imageUrl={unitMapImages.length === 0 ? (unitMapUrl || '') : undefined}
         imageAlt="Property Unit Map"
+        initialIndex={lightboxIndex}
       />
     </div>
   );

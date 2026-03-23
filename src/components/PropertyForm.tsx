@@ -454,7 +454,12 @@ export function PropertyForm() {
           is_approval_recipient: c.is_approval_recipient || false,
           is_notification_recipient: c.is_notification_recipient || false,
           is_primary_approval_recipient: c.is_primary_approval_recipient || false,
-          is_primary_notification_recipient: c.is_primary_notification_recipient || false
+          is_primary_notification_recipient: c.is_primary_notification_recipient || false,
+          // New display fields
+          is_primary_contact: (c as any).is_primary_contact || false,
+          receives_approval_emails: (c as any).receives_approval_emails || false,
+          receives_notification_emails: (c as any).receives_notification_emails || false,
+          custom_title: (c as any).custom_title || null,
         }));
         console.log('💾 Contacts to insert:', contactsToInsert);
 

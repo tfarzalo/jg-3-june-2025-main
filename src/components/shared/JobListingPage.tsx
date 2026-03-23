@@ -105,6 +105,10 @@ interface ExportConfig {
     startDate: string;
     endDate: string;
   };
+  filters: {
+    propertyName: string;
+    subcontractor: string;
+  };
   columns: {
     // Job Information
     workOrder: boolean;
@@ -249,6 +253,83 @@ export function formatDate(dateString: string) {
   }
 }
 
+function getJobScheduledDateOnly(scheduledDate?: string | null) {
+  if (!scheduledDate) return '';
+  return scheduledDate.split('T')[0] || '';
+}
+
+function getDefaultExportDateRange() {
+  return {
+    startDate: format(subMonths(new Date(), 1), 'yyyy-MM-dd'),
+    endDate: format(new Date(), 'yyyy-MM-dd')
+  };
+}
+
+function getDefaultExportConfig(): ExportConfig {
+  return {
+    dateRange: getDefaultExportDateRange(),
+    filters: {
+      propertyName: 'all',
+      subcontractor: 'all'
+    },
+    columns: {
+      // Job Information
+      workOrder: true,
+      phase: true,
+      property: true,
+      address: true,
+      unitNumber: true,
+      unitSize: true,
+      jobType: true,
+      purchaseOrder: false,
+      scheduledDate: true,
+      lastModificationDate: false,
+      description: false,
+      assignedTo: false,
+      jobStatus: false,
+      // Work Order Information
+      submissionDate: false,
+      isOccupied: false,
+      isFullPaint: false,
+      paintType: false,
+      hasSprinklers: false,
+      sprinklersPainted: false,
+      paintedCeilings: false,
+      ceilingRoomsCount: false,
+      paintedPatio: false,
+      paintedGarage: false,
+      paintedCabinets: false,
+      paintedCrownMolding: false,
+      paintedFrontDoor: false,
+      cabinetRemovalRepair: false,
+      ceilingLightsRepair: false,
+      hasAccentWall: false,
+      accentWallType: false,
+      accentWallCount: false,
+      hasExtraCharges: false,
+      extraChargesDescription: false,
+      extraChargesLineItems: false,
+      extraHours: false,
+      additionalComments: false,
+      // Billing/Invoice Information
+      invoiceSent: false,
+      invoicePaid: false,
+      invoiceSentDate: false,
+      invoicePaidDate: false,
+      // Billing Breakdown
+      baseBillToCustomer: false,
+      basePayToSubcontractor: false,
+      baseProfit: false,
+      extraChargesBillToCustomer: false,
+      extraChargesPayToSubcontractor: false,
+      extraChargesProfit: false,
+      totalBillToCustomer: false,
+      totalPayToSubcontractor: false,
+      totalProfit: false
+    }
+  };
+}
+
 export function JobListingPage({ 
   title, 
   jobs, 
@@ -266,81 +347,40 @@ export function JobListingPage({
 }: JobListingPageProps) {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
+  const [propertyFilter, setPropertyFilter] = useState('all');
+  const [subcontractorFilter, setSubcontractorFilter] = useState('all');
+  const [scheduledStartDate, setScheduledStartDate] = useState('');
+  const [scheduledEndDate, setScheduledEndDate] = useState('');
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showExportConfig, setShowExportConfig] = useState(false);
   const [exportType, setExportType] = useState<'csv' | 'pdf' | null>(null);
   
   // Load export preferences from localStorage or use defaults
   const [exportConfig, setExportConfig] = useState<ExportConfig>(() => {
+    const defaults = getDefaultExportConfig();
     const saved = localStorage.getItem('jobExportConfig');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        return {
+          dateRange: {
+            ...defaults.dateRange,
+            ...(parsed?.dateRange || {})
+          },
+          filters: {
+            ...defaults.filters,
+            ...(parsed?.filters || {})
+          },
+          columns: {
+            ...defaults.columns,
+            ...(parsed?.columns || {})
+          }
+        };
       } catch (e) {
         console.error('Failed to parse saved export config:', e);
       }
     }
-    return {
-      dateRange: {
-        startDate: format(subMonths(new Date(), 1), 'yyyy-MM-dd'),
-        endDate: format(new Date(), 'yyyy-MM-dd')
-      },
-      columns: {
-        // Job Information
-        workOrder: true,
-        phase: true,
-        property: true,
-        address: true,
-        unitNumber: true,
-        unitSize: true,
-        jobType: true,
-        purchaseOrder: false,
-        scheduledDate: true,
-        lastModificationDate: false,
-        description: false,
-        assignedTo: false,
-        jobStatus: false,
-        // Work Order Information
-        submissionDate: false,
-        isOccupied: false,
-        isFullPaint: false,
-        paintType: false,
-        hasSprinklers: false,
-        sprinklersPainted: false,
-        paintedCeilings: false,
-        ceilingRoomsCount: false,
-        paintedPatio: false,
-        paintedGarage: false,
-        paintedCabinets: false,
-        paintedCrownMolding: false,
-        paintedFrontDoor: false,
-        cabinetRemovalRepair: false,
-        ceilingLightsRepair: false,
-        hasAccentWall: false,
-        accentWallType: false,
-        accentWallCount: false,
-        hasExtraCharges: false,
-        extraChargesDescription: false,
-        extraChargesLineItems: false,
-        extraHours: false,
-        additionalComments: false,
-        // Billing/Invoice Information
-        invoiceSent: false,
-        invoicePaid: false,
-        invoiceSentDate: false,
-        invoicePaidDate: false,
-        // Billing Breakdown
-        baseBillToCustomer: false,
-        basePayToSubcontractor: false,
-        baseProfit: false,
-        extraChargesBillToCustomer: false,
-        extraChargesPayToSubcontractor: false,
-        extraChargesProfit: false,
-        totalBillToCustomer: false,
-        totalPayToSubcontractor: false,
-        totalProfit: false
-      }
-    };
+    return defaults;
   });
   
   const [expandedSections, setExpandedSections] = useState({
@@ -366,6 +406,26 @@ export function JobListingPage({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  const propertyOptions = Array.from(
+    new Set(
+      jobs
+        .map((job) => job.property.property_name?.trim())
+        .filter((propertyName): propertyName is string => Boolean(propertyName))
+    )
+  ).sort((a, b) => a.localeCompare(b));
+
+  const subcontractorOptions = Array.from(
+    new Set(
+      jobs
+        .map((job) => job.assigned_to_profile?.full_name?.trim())
+        .filter((fullName): fullName is string => Boolean(fullName))
+    )
+  ).sort((a, b) => a.localeCompare(b));
+
+  const hasActiveFilters = Boolean(
+    searchTerm || propertyFilter !== 'all' || subcontractorFilter !== 'all' || scheduledStartDate || scheduledEndDate
+  );
 
   const handleSort = (field: SortField) => {
     setSortConfig(prevConfig => ({
@@ -423,13 +483,17 @@ export function JobListingPage({
   };
 
   const handleExportClick = (type: 'csv' | 'pdf') => {
+    const defaultDateRange = getDefaultExportDateRange();
     setExportType(type);
-    // Always reset date range to current default (30 days prior to today)
     setExportConfig(prev => ({
       ...prev,
       dateRange: {
-        startDate: format(subMonths(new Date(), 1), 'yyyy-MM-dd'),
-        endDate: format(new Date(), 'yyyy-MM-dd')
+        startDate: scheduledStartDate || defaultDateRange.startDate,
+        endDate: scheduledEndDate || defaultDateRange.endDate
+      },
+      filters: {
+        propertyName: propertyFilter,
+        subcontractor: subcontractorFilter
       }
     }));
     setShowExportConfig(true);
@@ -523,6 +587,34 @@ export function JobListingPage({
       .join('; ');
   };
 
+  const applyExportFilters = (allJobsForExport: Job[]) => {
+    return allJobsForExport.filter((job) => {
+      try {
+        const scheduledDateOnly = getJobScheduledDateOnly(job.scheduled_date);
+        const assignedSubcontractor = job.assigned_to_profile?.full_name?.trim() || '';
+        const matchesStartDate =
+          !exportConfig.dateRange.startDate ||
+          (scheduledDateOnly !== '' && scheduledDateOnly >= exportConfig.dateRange.startDate);
+        const matchesEndDate =
+          !exportConfig.dateRange.endDate ||
+          (scheduledDateOnly !== '' && scheduledDateOnly <= exportConfig.dateRange.endDate);
+        const matchesProperty =
+          exportConfig.filters.propertyName === 'all' ||
+          job.property.property_name === exportConfig.filters.propertyName;
+        const matchesSubcontractor =
+          exportConfig.filters.subcontractor === 'all' ||
+          (exportConfig.filters.subcontractor === 'unassigned'
+            ? !assignedSubcontractor
+            : assignedSubcontractor === exportConfig.filters.subcontractor);
+
+        return matchesStartDate && matchesEndDate && matchesProperty && matchesSubcontractor;
+      } catch (error) {
+        console.error('Error applying export filters for job', job.id, error);
+        return false;
+      }
+    });
+  };
+
   const exportToCSV = async () => {
     try {
       let allJobsForExport: Job[] = [];
@@ -545,7 +637,8 @@ export function JobListingPage({
           unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
           job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
           purchase_order: job.purchase_order,
-          job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase
+          job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase,
+          assigned_to_profile: Array.isArray(job.assigned_to_profile) ? job.assigned_to_profile[0] : job.assigned_to_profile
         }));
 
       if (phaseLabel) {
@@ -601,29 +694,14 @@ export function JobListingPage({
         console.log(`Using ${allJobsForExport.length} jobs from page props for export`);
       }
 
-      // Filter by date range only
-      const filteredJobs = allJobsForExport.filter(job => {
-        // Check date range - use string comparison for YYYY-MM-DD dates
-        // This avoids timezone issues from parseISO treating YYYY-MM-DD as UTC
-        try {
-          const jobDate = job.scheduled_date;
-          const startDate = exportConfig.dateRange.startDate;
-          const endDate = exportConfig.dateRange.endDate;
-          
-          // String comparison works for YYYY-MM-DD format
-          const isInDateRange = jobDate >= startDate && jobDate <= endDate;
-          return isInDateRange;
-        } catch (error) {
-          console.error('Error comparing date for job', job.id, error);
-          return false; // Exclude jobs with invalid dates
-        }
-      });
+      const filteredJobs = applyExportFilters(allJobsForExport);
 
-      console.log(`Exporting ${filteredJobs.length} jobs out of ${allJobsForExport.length} total jobs after date filtering`);
+      console.log(`Exporting ${filteredJobs.length} jobs out of ${allJobsForExport.length} total jobs after export filtering`);
+      console.log('Export filters:', exportConfig.filters);
       console.log(`Date range: ${exportConfig.dateRange.startDate} to ${exportConfig.dateRange.endDate}`);
 
       if (filteredJobs.length === 0) {
-        toast.error('No jobs match the selected date range');
+        toast.error('No jobs match the selected export filters');
         return;
       }
 
@@ -843,7 +921,8 @@ export function JobListingPage({
           property: Array.isArray(job.property) ? job.property[0] : job.property,
           unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
           job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
-          job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase
+          job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase,
+          assigned_to_profile: Array.isArray(job.assigned_to_profile) ? job.assigned_to_profile[0] : job.assigned_to_profile
         }));
 
       // Fetch all jobs if phaseLabel is provided, otherwise use jobs from props
@@ -877,24 +956,10 @@ export function JobListingPage({
         allJobsForExport = jobs;
       }
       
-      // Filter by date range only
-      const filteredJobs = allJobsForExport.filter(job => {
-        try {
-          // Use string comparison for YYYY-MM-DD dates
-          const jobDate = job.scheduled_date;
-          const startDate = exportConfig.dateRange.startDate;
-          const endDate = exportConfig.dateRange.endDate;
-          
-          // String comparison works for YYYY-MM-DD format
-          return jobDate >= startDate && jobDate <= endDate;
-        } catch (error) {
-          console.error('Error comparing date for job', job.id, error);
-          return false;
-        }
-      });
+      const filteredJobs = applyExportFilters(allJobsForExport);
 
       if (filteredJobs.length === 0) {
-        toast.error('No jobs match the selected date range');
+        toast.error('No jobs match the selected export filters');
         return;
       }
 
@@ -1500,16 +1565,49 @@ export function JobListingPage({
     }
   };
 
+  const clearFilters = () => {
+    setSearchTerm('');
+    setPropertyFilter('all');
+    setSubcontractorFilter('all');
+    setScheduledStartDate('');
+    setScheduledEndDate('');
+  };
+
   const sortedAndFilteredJobs = getSortedJobs(
-    jobs.filter(job => 
-      job.property.property_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.unit_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.unit_size.unit_size_label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.job_type.job_type_label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (job.purchase_order?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
-      formatWorkOrderNumber(job.work_order_num).toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    jobs.filter((job) => {
+      const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+      const scheduledDateOnly = getJobScheduledDateOnly(job.scheduled_date);
+      const assignedSubcontractor = job.assigned_to_profile?.full_name?.trim() || '';
+
+      const matchesSearch = !normalizedSearchTerm || [
+        job.property.property_name,
+        job.unit_number,
+        job.unit_size.unit_size_label,
+        job.job_type.job_type_label,
+        job.purchase_order || '',
+        formatWorkOrderNumber(job.work_order_num),
+        assignedSubcontractor
+      ].some((value) => value.toLowerCase().includes(normalizedSearchTerm));
+
+      const matchesProperty = propertyFilter === 'all' || job.property.property_name === propertyFilter;
+      const matchesSubcontractor =
+        subcontractorFilter === 'all' ||
+        (subcontractorFilter === 'unassigned' ? !assignedSubcontractor : assignedSubcontractor === subcontractorFilter);
+      const matchesStartDate = !scheduledStartDate || (scheduledDateOnly !== '' && scheduledDateOnly >= scheduledStartDate);
+      const matchesEndDate = !scheduledEndDate || (scheduledDateOnly !== '' && scheduledDateOnly <= scheduledEndDate);
+
+      return matchesSearch && matchesProperty && matchesSubcontractor && matchesStartDate && matchesEndDate;
+    })
   );
+
+  useEffect(() => {
+    const visibleJobIds = new Set(sortedAndFilteredJobs.map((job) => job.id));
+
+    setSelectedJobs((prev) => {
+      const next = prev.filter((jobId) => visibleJobIds.has(jobId));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [sortedAndFilteredJobs]);
 
 
   const SortIcon = ({ field }: { field: SortField }) => {
@@ -1620,16 +1718,98 @@ export function JobListingPage({
       </div>
 
       <div className="space-y-4 sm:space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder={`Search ${title.toLowerCase()}...`}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-8 sm:pl-10 pr-4 py-2 text-sm sm:text-base bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#1E293B] rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
+        <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow p-4 sm:p-5">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="relative flex-1 max-w-xl">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder={`Search ${title.toLowerCase()}...`}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-8 sm:pl-10 pr-4 py-2 text-sm sm:text-base bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Showing {sortedAndFilteredJobs.length} of {jobs.length} jobs
+                </p>
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-[#0F172A] border border-gray-200 dark:border-[#334155] rounded-lg hover:bg-gray-200 dark:hover:bg-[#162033] transition-colors"
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Clear Filters
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+                  Property Name
+                </label>
+                <select
+                  value={propertyFilter}
+                  onChange={(e) => setPropertyFilter(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="all">All Properties</option>
+                  {propertyOptions.map((propertyName) => (
+                    <option key={propertyName} value={propertyName}>
+                      {propertyName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+                  Subcontractor
+                </label>
+                <select
+                  value={subcontractorFilter}
+                  onChange={(e) => setSubcontractorFilter(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="all">All Subcontractors</option>
+                  <option value="unassigned">Unassigned</option>
+                  {subcontractorOptions.map((subcontractorName) => (
+                    <option key={subcontractorName} value={subcontractorName}>
+                      {subcontractorName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+                  Scheduled From
+                </label>
+                <input
+                  type="date"
+                  value={scheduledStartDate}
+                  onChange={(e) => setScheduledStartDate(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+                  Scheduled To
+                </label>
+                <input
+                  type="date"
+                  value={scheduledEndDate}
+                  onChange={(e) => setScheduledEndDate(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1975,9 +2155,9 @@ export function JobListingPage({
               )}
 
               {/* Date Range Selection */}
-              <div className="bg-gray-50 dark:bg-[#0F172A] rounded-lg p-4">
-                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Date Range</h4>
-                <div className="grid grid-cols-2 gap-4">
+	              <div className="bg-gray-50 dark:bg-[#0F172A] rounded-lg p-4">
+	                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Date Range</h4>
+	                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Start Date</label>
                     <input
@@ -2003,12 +2183,56 @@ export function JobListingPage({
                       onClick={(e) => e.currentTarget.showPicker?.()}
                       className="w-full px-3 py-2 bg-white dark:bg-[#2D3B4E] border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
                     />
+	                  </div>
+	                </div>
+	              </div>
+
+              <div className="bg-gray-50 dark:bg-[#0F172A] rounded-lg p-4">
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Filters</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Property Name</label>
+                    <select
+                      value={exportConfig.filters.propertyName}
+                      onChange={(e) => setExportConfig(prev => ({
+                        ...prev,
+                        filters: { ...prev.filters, propertyName: e.target.value }
+                      }))}
+                      className="w-full px-3 py-2 bg-white dark:bg-[#2D3B4E] border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                    >
+                      <option value="all">All Properties</option>
+                      {propertyOptions.map((propertyName) => (
+                        <option key={propertyName} value={propertyName}>
+                          {propertyName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">Subcontractor</label>
+                    <select
+                      value={exportConfig.filters.subcontractor}
+                      onChange={(e) => setExportConfig(prev => ({
+                        ...prev,
+                        filters: { ...prev.filters, subcontractor: e.target.value }
+                      }))}
+                      className="w-full px-3 py-2 bg-white dark:bg-[#2D3B4E] border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                    >
+                      <option value="all">All Subcontractors</option>
+                      <option value="unassigned">Unassigned</option>
+                      {subcontractorOptions.map((subcontractorName) => (
+                        <option key={subcontractorName} value={subcontractorName}>
+                          {subcontractorName}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>
 
-              {/* Column Selection with Accordions */}
-              <div>
+	              {/* Column Selection with Accordions */}
+	              <div>
                 <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Fields to Export</h4>
                 
                 {/* Job Information Accordion */}

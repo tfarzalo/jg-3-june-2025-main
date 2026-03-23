@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ApprovalLightbox } from './ApprovalLightbox';
+import { Lightbox } from '../Lightbox';
 
 interface JobImage {
   id: string;
@@ -126,12 +126,16 @@ export function ApprovalImageGallery({ images, supabaseUrl }: ApprovalImageGalle
 
       {/* Lightbox */}
       {lightboxOpen && (
-        <ApprovalLightbox
-          images={imageUrls}
-          imageNames={orderedImages.map(img => img.image_type || img.file_name)}
-          currentIndex={currentImageIndex}
+        <Lightbox
+          isOpen={lightboxOpen}
           onClose={() => setLightboxOpen(false)}
-          onNavigate={setCurrentImageIndex}
+          title="Job Photos"
+          images={imageUrls.map((url, i) => ({
+            url,
+            alt: orderedImages[i]?.image_type || orderedImages[i]?.file_name || `Photo ${i + 1}`,
+            label: orderedImages[i]?.image_type || orderedImages[i]?.file_name || `Photo ${i + 1}`,
+          }))}
+          initialIndex={currentImageIndex}
         />
       )}
     </>
