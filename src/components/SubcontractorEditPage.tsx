@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
+import { portSubcontractorToEmployee } from '../features/employees/api';
 import { 
   ArrowLeft, 
   User, 
@@ -15,7 +16,8 @@ import {
   Trash2,
   Eye,
   EyeOff,
-  Lock
+  Lock,
+  Briefcase
 } from 'lucide-react';
 interface SubcontractorData {
   id: string;
@@ -87,6 +89,7 @@ export default function SubcontractorEditPage() {
   const [calendarToken, setCalendarToken] = useState<string | null>(null);
   const [loadingCalendarFeed, setLoadingCalendarFeed] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
+  const [portingToEmployee, setPortingToEmployee] = useState(false);
 
 useEffect(() => {
   checkUserRole();
@@ -497,6 +500,21 @@ useEffect(() => {
     }
   };
 
+  const handlePortToEmployee = async () => {
+    if (!subcontractor) return;
+    try {
+      setPortingToEmployee(true);
+      const employee = await portSubcontractorToEmployee(subcontractor.id);
+      toast.success('Employee entry is ready. Review the dates and office notes.');
+      navigate(`/dashboard/employees/${employee.id}`);
+    } catch (error) {
+      console.error('Error porting subcontractor to employee:', error);
+      toast.error(error instanceof Error ? error.message : 'Unable to port this subcontractor to employees.');
+    } finally {
+      setPortingToEmployee(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -535,6 +553,15 @@ useEffect(() => {
         </div>
         
         <div className="flex space-x-3">
+          <button
+            type="button"
+            onClick={handlePortToEmployee}
+            disabled={portingToEmployee}
+            className="px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white rounded-lg transition-colors flex items-center space-x-2"
+          >
+            <Briefcase className="h-4 w-4" />
+            <span>{portingToEmployee ? 'Porting...' : 'Port to Employee Section'}</span>
+          </button>
           <button
             onClick={handleDelete}
             disabled={saving}

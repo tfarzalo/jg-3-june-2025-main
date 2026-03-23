@@ -340,6 +340,38 @@ const resolveTokenAccess = async (
   };
 };
 
+const createPreviewTokenLink = async (params: {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  employeeId: string;
+  formKey: string;
+  baseUrl: string;
+  actorId: string | null;
+}) => {
+  const rawToken = generateToken();
+  const tokenHash = await hashToken(rawToken);
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const { error } = await params.supabase
+    .from("employee_form_tokens")
+    .insert({
+      employee_id: params.employeeId,
+      form_key: params.formKey,
+      token_hash: tokenHash,
+      token_preview: rawToken.slice(0, 8),
+      expires_at: expiresAt,
+      created_by: params.actorId,
+    });
+
+  if (error) {
+    throw new Error("Unable to create preview token.");
+  }
+
+  return {
+    url: buildEmployeeOnboardingUrl(params.baseUrl, rawToken),
+    expiresAt,
+  };
+};
+
 const handleSendPacket = async (
   supabase: ReturnType<typeof getSupabaseAdmin>,
   req: Request,
@@ -480,6 +512,84 @@ const handleValidateToken = async (
     payload: access.submission.form_payload || {},
     alreadySubmitted: ["submitted", "complete"].includes(access.submission.status),
     expiresAt: access.tokenRecord.expires_at,
+  });
+};
+
+const handlePreviewEmail = async (
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  req: Request,
+  body: Record<string, unknown>,
+) => {
+  const adminUser = await getAdminUser(supabase, req);
+  if (!adminUser) {
+    throw new Error("Admin access is required.");
+  }
+
+  const employeeId = String(body.employeeId || "");
+  const baseUrl = String(body.baseUrl || "");
+  if (!employeeId || !baseUrl) {
+    throw new Error("Employee ID and base URL are required.");
+  }
+
+  const employee = await getEmployeeRecord(supabase, employeeId);
+  const links: Array<{ title: string; url: string }> = [];
+
+  for (const formKey of EMPLOYEE_FORM_KEYS) {
+    const submission = await getEmployeeSubmission(supabase, employeeId, formKey);
+    const previewLink = await createPreviewTokenLink({
+      supabase,
+      employeeId,
+      formKey,
+      baseUrl,
+      actorId: adminUser.id,
+    });
+
+    links.push({
+      title: submission.form_title,
+      url: previewLink.url,
+    });
+  }
+
+  return json({
+    success: true,
+    subject: "Welcome to JG Painting Pros - onboarding packet",
+    html: buildOnboardingEmailHtml(employee, links),
+  });
+};
+
+const handlePreviewLink = async (
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  req: Request,
+  body: Record<string, unknown>,
+) => {
+  const adminUser = await getAdminUser(supabase, req);
+  if (!adminUser) {
+    throw new Error("Admin access is required.");
+  }
+
+  const employeeId = String(body.employeeId || "");
+  const formKey = String(body.formKey || "");
+  const baseUrl = String(body.baseUrl || "");
+  if (!employeeId || !formKey || !baseUrl) {
+    throw new Error("Employee ID, form key, and base URL are required.");
+  }
+
+  if (!EMPLOYEE_FORM_MAP[formKey]) {
+    throw new Error("Unsupported onboarding form.");
+  }
+
+  const previewLink = await createPreviewTokenLink({
+    supabase,
+    employeeId,
+    formKey,
+    baseUrl,
+    actorId: adminUser.id,
+  });
+
+  return json({
+    success: true,
+    url: previewLink.url,
+    expiresAt: previewLink.expiresAt,
   });
 };
 
@@ -668,6 +778,10 @@ Deno.serve(async (req) => {
         return await handleSaveSubmission(supabase, req, body);
       case "pdf_url":
         return await handlePdfUrl(supabase, req, body);
+      case "preview_email":
+        return await handlePreviewEmail(supabase, req, body);
+      case "preview_link":
+        return await handlePreviewLink(supabase, req, body);
       default:
         return json({ success: false, error: "Unsupported action." }, 400);
     }

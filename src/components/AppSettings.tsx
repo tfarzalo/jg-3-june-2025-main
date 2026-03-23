@@ -136,7 +136,7 @@ export function AppSettings() {
       const { data: admins, error: adminError } = await supabase
         .from('profiles')
         .select('id, full_name, email, role')
-        .in('role', ['admin', 'jg_management'])
+        .in('role', ['admin', 'jg_management', 'is_super_admin'])
         .order('full_name');
       if (adminError) throw adminError;
       setAdminOptions(admins || []);

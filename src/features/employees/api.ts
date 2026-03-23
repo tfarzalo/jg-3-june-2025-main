@@ -6,6 +6,7 @@ import type {
   EmployeeRecord,
   EmployeeFormSubmissionRecord,
   PublicEmployeeTokenAccess,
+  EmployeeEmailPreview,
 } from './types';
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/employee-onboarding`;
@@ -94,7 +95,11 @@ export const createEmployee = async (input: {
   email: string;
   phone: string;
   position_title: string;
+  interview_date?: string;
+  hire_date?: string;
   start_date: string;
+  internal_office_notes?: string;
+  linked_subcontractor_profile_id?: string | null;
 }): Promise<EmployeeRecord> => {
   const {
     data: { user },
@@ -103,6 +108,10 @@ export const createEmployee = async (input: {
   const payload = {
     ...input,
     phone: input.phone || null,
+    interview_date: input.interview_date || null,
+    hire_date: input.hire_date || null,
+    internal_office_notes: input.internal_office_notes || null,
+    linked_subcontractor_profile_id: input.linked_subcontractor_profile_id || null,
     updated_by: user?.id || null,
   };
 
@@ -141,6 +150,46 @@ export const getEmployeeProfile = async (employeeId: string): Promise<EmployeePr
   };
 };
 
+export const updateEmployee = async (
+  employeeId: string,
+  input: Partial<
+    Pick<
+      EmployeeRecord,
+      | 'full_name'
+      | 'email'
+      | 'phone'
+      | 'position_title'
+      | 'interview_date'
+      | 'hire_date'
+      | 'start_date'
+      | 'internal_office_notes'
+      | 'linked_subcontractor_profile_id'
+    >
+  >,
+): Promise<EmployeeRecord> => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const payload = {
+    ...input,
+    updated_by: user?.id || null,
+  };
+
+  const { data, error } = await supabase
+    .from('employees')
+    .update(payload)
+    .eq('id', employeeId)
+    .select('*')
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as EmployeeRecord;
+};
+
 export const sendEmployeeOnboardingPacket = async (params: {
   employeeId: string;
   formKey?: string;
@@ -158,6 +207,34 @@ export const sendEmployeeOnboardingPacket = async (params: {
     regenerate: params.regenerate ?? true,
     baseUrl: params.baseUrl || window.location.origin,
   });
+
+export const previewEmployeeOnboardingEmail = async (employeeId: string) => {
+  const result = await invokeEmployeeOnboardingFunction<{
+    success: true;
+    subject: string;
+    html: string;
+  }>({
+    action: 'preview_email',
+    employeeId,
+    baseUrl: window.location.origin,
+  });
+
+  return result as EmployeeEmailPreview;
+};
+
+export const previewEmployeeFormLink = async (employeeId: string, formKey: string) => {
+  const result = await invokeEmployeeOnboardingFunction<{
+    success: true;
+    url: string;
+  }>({
+    action: 'preview_link',
+    employeeId,
+    formKey,
+    baseUrl: window.location.origin,
+  });
+
+  return result.url;
+};
 
 export const getEmployeePdfUrl = async (employeeId: string, formKey: string) => {
   const result = await invokeEmployeeOnboardingFunction<{
@@ -214,4 +291,110 @@ export const validateEmployeeOnboardingToken = async (token: string) => {
   );
 
   return result as PublicEmployeeTokenAccess;
+};
+
+export const portSubcontractorToEmployee = async (subcontractorProfileId: string) => {
+  const { data: existingEmployee, error: existingEmployeeError } = await supabase
+    .from('employees')
+    .select('*')
+    .eq('linked_subcontractor_profile_id', subcontractorProfileId)
+    .maybeSingle();
+
+  if (existingEmployeeError) {
+    throw existingEmployeeError;
+  }
+
+  if (existingEmployee) {
+    return existingEmployee as EmployeeRecord;
+  }
+
+  const { data: subcontractor, error: subcontractorError } = await supabase
+    .from('profiles')
+    .select('id, email, full_name, phone, company_name, created_at')
+    .eq('id', subcontractorProfileId)
+    .eq('role', 'subcontractor')
+    .single();
+
+  if (subcontractorError || !subcontractor) {
+    throw subcontractorError || new Error('Subcontractor profile not found.');
+  }
+
+  const fallbackDate = subcontractor.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+
+  return await createEmployee({
+    full_name: subcontractor.full_name || subcontractor.email || 'Ported subcontractor',
+    email: subcontractor.email || '',
+    phone: subcontractor.phone || '',
+    position_title: subcontractor.company_name || 'Ported from subcontractor',
+    start_date: fallbackDate,
+    internal_office_notes: 'Created from subcontractor profile.',
+    linked_subcontractor_profile_id: subcontractor.id,
+  });
+};
+
+export const createSubcontractorUserFromEmployee = async (params: {
+  employee: EmployeeRecord;
+  password: string;
+}) => {
+  const { employee, password } = params;
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error('You must be signed in to create users.');
+  }
+
+  if (employee.linked_subcontractor_profile_id) {
+    return employee.linked_subcontractor_profile_id;
+  }
+
+  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({
+      email: employee.email,
+      password,
+      full_name: employee.full_name,
+      role: 'subcontractor',
+      working_days: {
+        sunday: true,
+        monday: true,
+        tuesday: true,
+        wednesday: true,
+        thursday: true,
+        friday: true,
+        saturday: false,
+      },
+      sendWelcomeEmail: true,
+    }),
+  });
+
+  const result = await response.json();
+  if (!response.ok || !result.success || !result.user?.id) {
+    throw new Error(result.error || 'Unable to create subcontractor user.');
+  }
+
+  const newProfileId = result.user.id as string;
+
+  const { error: profileUpdateError } = await supabase
+    .from('profiles')
+    .update({
+      phone: employee.phone,
+      company_name: employee.position_title,
+    })
+    .eq('id', newProfileId);
+
+  if (profileUpdateError) {
+    throw profileUpdateError;
+  }
+
+  await updateEmployee(employee.id, {
+    linked_subcontractor_profile_id: newProfileId,
+  });
+
+  return newProfileId;
 };

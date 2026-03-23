@@ -6,9 +6,13 @@ export interface EmployeeRecord {
   email: string;
   phone: string | null;
   position_title: string;
+  interview_date: string | null;
+  hire_date: string | null;
   start_date: string;
+  internal_office_notes: string | null;
   onboarding_packet_sent_at: string | null;
   onboarding_packet_sent_by: string | null;
+  linked_subcontractor_profile_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -47,4 +51,9 @@ export interface PublicEmployeeTokenAccess {
   payload: Record<string, unknown>;
   alreadySubmitted: boolean;
   expiresAt: string;
+}
+
+export interface EmployeeEmailPreview {
+  subject: string;
+  html: string;
 }

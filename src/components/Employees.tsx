@@ -28,7 +28,10 @@ export function Employees() {
     email: '',
     phone: '',
     position_title: '',
+    interview_date: '',
+    hire_date: '',
     start_date: '',
+    internal_office_notes: '',
   });
 
   const fetchEmployees = async () => {
@@ -71,7 +74,10 @@ export function Employees() {
         email: '',
         phone: '',
         position_title: '',
+        interview_date: '',
+        hire_date: '',
         start_date: '',
+        internal_office_notes: '',
       });
       await fetchEmployees();
       navigate(`/dashboard/employees/${employee.id}`);
@@ -147,12 +153,39 @@ export function Employees() {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Interview date</label>
+                <input
+                  type="date"
+                  value={formData.interview_date}
+                  onChange={(event) => setFormData((current) => ({ ...current, interview_date: event.target.value }))}
+                  className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-[#0F172A] dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Hire date</label>
+                <input
+                  type="date"
+                  value={formData.hire_date}
+                  onChange={(event) => setFormData((current) => ({ ...current, hire_date: event.target.value }))}
+                  className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-[#0F172A] dark:text-white"
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Start date</label>
                 <input
                   required
                   type="date"
                   value={formData.start_date}
                   onChange={(event) => setFormData((current) => ({ ...current, start_date: event.target.value }))}
+                  className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-[#0F172A] dark:text-white"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Internal office notes</label>
+                <textarea
+                  value={formData.internal_office_notes}
+                  onChange={(event) => setFormData((current) => ({ ...current, internal_office_notes: event.target.value }))}
+                  rows={3}
                   className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-[#0F172A] dark:text-white"
                 />
               </div>
