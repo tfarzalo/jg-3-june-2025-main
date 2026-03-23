@@ -1,11 +1,14 @@
 import type { EmployeeFormStatus } from '../../../shared/employeeOnboarding';
 
+export type EmployeeStatus = 'hired' | 'not_hired' | 'terminated' | 'on_leave';
+
 export interface EmployeeRecord {
   id: string;
   full_name: string;
   email: string;
   phone: string | null;
   position_title: string;
+  employee_status: EmployeeStatus;
   interview_date: string | null;
   hire_date: string | null;
   start_date: string;

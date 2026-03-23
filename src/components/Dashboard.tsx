@@ -45,6 +45,7 @@ const Contacts = lazy(() => import('./Contacts').then(module => ({ default: modu
 const ContactDetail = lazy(() => import('./ContactDetail').then(module => ({ default: module.ContactDetail })));
 const Employees = lazy(() => import('./Employees').then(module => ({ default: module.Employees })));
 const EmployeeProfile = lazy(() => import('./EmployeeProfile').then(module => ({ default: module.EmployeeProfile })));
+const EmployeeFormPreviewPage = lazy(() => import('./EmployeeFormPreviewPage').then(module => ({ default: module.EmployeeFormPreviewPage })));
 
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center h-full">
@@ -189,6 +190,11 @@ export function Dashboard() {
           <Route path="employees/:employeeId" element={
             <StrictAdminRouteGuard>
               <EmployeeProfile />
+            </StrictAdminRouteGuard>
+          } />
+          <Route path="employees/:employeeId/forms/:formKey/preview" element={
+            <StrictAdminRouteGuard>
+              <EmployeeFormPreviewPage />
             </StrictAdminRouteGuard>
           } />
           <Route path="support" element={

@@ -5,7 +5,21 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from './ui/Button';
 import { createEmployee, listEmployees } from '../features/employees/api';
-import type { EmployeeListItem } from '../features/employees/types';
+import type { EmployeeListItem, EmployeeStatus } from '../features/employees/types';
+
+const EMPLOYEE_STATUS_OPTIONS: Array<{ value: EmployeeStatus; label: string }> = [
+  { value: 'not_hired', label: 'Not Hired' },
+  { value: 'hired', label: 'Hired' },
+  { value: 'on_leave', label: 'On Leave' },
+  { value: 'terminated', label: 'Terminated' },
+];
+
+const EMPLOYEE_STATUS_LABELS: Record<EmployeeStatus, string> = {
+  hired: 'Hired',
+  not_hired: 'Not Hired',
+  terminated: 'Terminated',
+  on_leave: 'On Leave',
+};
 
 const formatDate = (value: string | null) => {
   if (!value) return 'Not sent';
@@ -28,6 +42,7 @@ export function Employees() {
     email: '',
     phone: '',
     position_title: '',
+    employee_status: 'not_hired' as EmployeeStatus,
     interview_date: '',
     hire_date: '',
     start_date: '',
@@ -74,6 +89,7 @@ export function Employees() {
         email: '',
         phone: '',
         position_title: '',
+        employee_status: 'not_hired' as EmployeeStatus,
         interview_date: '',
         hire_date: '',
         start_date: '',
@@ -153,6 +169,20 @@ export function Employees() {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Employee status</label>
+                <select
+                  value={formData.employee_status}
+                  onChange={(event) => setFormData((current) => ({ ...current, employee_status: event.target.value as EmployeeStatus }))}
+                  className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-[#0F172A] dark:text-white"
+                >
+                  {EMPLOYEE_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Interview date</label>
                 <input
                   type="date"
@@ -214,6 +244,7 @@ export function Employees() {
                 <tr>
                   <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Employee</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Position</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Status</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Start Date</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Onboarding</th>
                   <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Packet Sent</th>
@@ -223,13 +254,13 @@ export function Employees() {
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-500">
+                    <td colSpan={7} className="px-6 py-10 text-center text-sm text-gray-500">
                       Loading employees...
                     </td>
                   </tr>
                 ) : filteredEmployees.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-500">
+                    <td colSpan={7} className="px-6 py-10 text-center text-sm text-gray-500">
                       No employees found.
                     </td>
                   </tr>
@@ -256,6 +287,7 @@ export function Employees() {
                         </div>
                       </td>
                       <td className="px-6 py-5 text-sm text-gray-700 dark:text-gray-300">{employee.position_title}</td>
+                      <td className="px-6 py-5 text-sm text-gray-700 dark:text-gray-300">{EMPLOYEE_STATUS_LABELS[employee.employee_status]}</td>
                       <td className="px-6 py-5 text-sm text-gray-700 dark:text-gray-300">{formatDate(employee.start_date)}</td>
                       <td className="px-6 py-5">
                         <div className="text-sm font-medium text-gray-900 dark:text-white">

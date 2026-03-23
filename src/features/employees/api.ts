@@ -7,6 +7,7 @@ import type {
   EmployeeFormSubmissionRecord,
   PublicEmployeeTokenAccess,
   EmployeeEmailPreview,
+  EmployeeStatus,
 } from './types';
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/employee-onboarding`;
@@ -95,6 +96,7 @@ export const createEmployee = async (input: {
   email: string;
   phone: string;
   position_title: string;
+  employee_status?: EmployeeStatus;
   interview_date?: string;
   hire_date?: string;
   start_date: string;
@@ -108,6 +110,7 @@ export const createEmployee = async (input: {
   const payload = {
     ...input,
     phone: input.phone || null,
+    employee_status: input.employee_status || 'not_hired',
     interview_date: input.interview_date || null,
     hire_date: input.hire_date || null,
     internal_office_notes: input.internal_office_notes || null,
@@ -159,6 +162,7 @@ export const updateEmployee = async (
       | 'email'
       | 'phone'
       | 'position_title'
+      | 'employee_status'
       | 'interview_date'
       | 'hire_date'
       | 'start_date'
@@ -326,6 +330,7 @@ export const portSubcontractorToEmployee = async (subcontractorProfileId: string
     email: subcontractor.email || '',
     phone: subcontractor.phone || '',
     position_title: subcontractor.company_name || 'Ported from subcontractor',
+    employee_status: 'not_hired',
     start_date: fallbackDate,
     internal_office_notes: 'Created from subcontractor profile.',
     linked_subcontractor_profile_id: subcontractor.id,
@@ -347,6 +352,10 @@ export const createSubcontractorUserFromEmployee = async (params: {
 
   if (employee.linked_subcontractor_profile_id) {
     return employee.linked_subcontractor_profile_id;
+  }
+
+  if (employee.employee_status !== 'hired') {
+    throw new Error('Only hired employees can be converted into subcontractor users.');
   }
 
   const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`, {
