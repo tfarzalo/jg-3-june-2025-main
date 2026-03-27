@@ -2,11 +2,55 @@ import { useEffect, useRef, useCallback } from 'react';
 
 const BLINK_INTERVAL_MS = 1000;
 
+// ── Favicon helpers ──────────────────────────────────────────────────────────
+
+/** Returns the current <link rel="icon"> element, creating one if absent. */
+function getFaviconEl(): HTMLLinkElement {
+  let el = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (!el) {
+    el = document.createElement('link');
+    el.rel = 'icon';
+    document.head.appendChild(el);
+  }
+  return el;
+}
+
+/**
+ * Draws a 32×32 canvas favicon and returns its data URI.
+ * `type`:
+ *   'green-dot'  — solid green circle (alert state)
+ *   'badge'      — green circle with white count number
+ */
+function buildFaviconDataUri(type: 'green-dot' | 'badge', count?: number): string {
+  const canvas = document.createElement('canvas');
+  canvas.width  = 32;
+  canvas.height = 32;
+  const ctx = canvas.getContext('2d')!;
+
+  // Green filled circle
+  ctx.beginPath();
+  ctx.arc(16, 16, 15, 0, Math.PI * 2);
+  ctx.fillStyle = '#16a34a'; // Tailwind green-700
+  ctx.fill();
+
+  if (type === 'badge' && count !== undefined && count > 0) {
+    const label = count > 99 ? '99+' : String(count);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${label.length > 2 ? 10 : 14}px sans-serif`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, 16, 17);
+  }
+
+  return canvas.toDataURL('image/png');
+}
+
 /**
  * Manages browser-tab notifications for incoming chat messages:
  *   1. Soft synthesized "ding" sound via Web Audio API (no file dependency)
  *   2. Unread count badge in the tab title  →  "(3) App Name"
- *   3. Alternating tab title blink when the tab is backgrounded
+ *   3. Favicon flashes green while the tab is backgrounded; shows a green
+ *      badge with the unread count when the tab regains focus (until read)
  *
  * Pass `unreadCount` from UnreadMessagesContext and `isAnyWindowOpen` to
  * tell the hook whether the user is actively looking at chat right now.
@@ -16,16 +60,18 @@ export function useChatNotifications(
   isAnyWindowOpen: boolean,
 ) {
   const originalTitle   = useRef(document.title);
+  const originalFavicon = useRef<string>('');
   const blinkInterval   = useRef<ReturnType<typeof setInterval> | null>(null);
   const blinkState      = useRef(false);
   const prevUnread      = useRef(unreadCount);
   const audioCtx        = useRef<AudioContext | null>(null);
   const isTabFocused    = useRef(!document.hidden);
 
-  // ── Capture the original title once on mount ────────────────────────────
+  // ── Capture the original title + favicon once on mount ─────────────────
   useEffect(() => {
     // Strip any leftover badge from a previous session (e.g. hot-reload)
     originalTitle.current = document.title.replace(/^\(\d+\)\s*/, '');
+    originalFavicon.current = getFaviconEl().href;
   }, []);
 
   // ── Track tab focus / visibility ─────────────────────────────────────────
@@ -71,6 +117,7 @@ export function useChatNotifications(
     return () => {
       stopBlink();
       document.title = originalTitle.current;
+      getFaviconEl().href = originalFavicon.current;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -82,6 +129,8 @@ export function useChatNotifications(
       blinkInterval.current = null;
     }
     blinkState.current = false;
+    // Restore original favicon immediately
+    getFaviconEl().href = originalFavicon.current;
   }, []);
 
   const playDing = useCallback(() => {
@@ -117,9 +166,10 @@ export function useChatNotifications(
     prevUnread.current = unreadCount;
 
     if (unreadCount === 0) {
-      // All read — restore title and stop blinking
+      // All read — restore title, favicon, and stop blinking
       stopBlink();
-      document.title = originalTitle.current;
+      document.title          = originalTitle.current;
+      getFaviconEl().href     = originalFavicon.current;
       return;
     }
 
@@ -137,11 +187,18 @@ export function useChatNotifications(
 
       // ② Start blinking only when tab is not focused
       if (!isTabFocused.current && !blinkInterval.current) {
+        const greenDot   = buildFaviconDataUri('green-dot');
+        const faviconEl  = getFaviconEl();
+
         blinkInterval.current = setInterval(() => {
           blinkState.current = !blinkState.current;
-          document.title = blinkState.current
-            ? `💬 New Message`
-            : `(${unreadCount}) ${baseTitle}`;
+          if (blinkState.current) {
+            document.title    = `💬 New Message`;
+            faviconEl.href    = greenDot;
+          } else {
+            document.title    = `(${unreadCount}) ${baseTitle}`;
+            faviconEl.href    = originalFavicon.current;
+          }
         }, BLINK_INTERVAL_MS);
       }
     }
@@ -151,10 +208,15 @@ export function useChatNotifications(
   useEffect(() => {
     const onFocus = () => {
       stopBlink();
-      // Restore count badge (non-zero) or clean title (zero)
-      document.title = unreadCount > 0
-        ? `(${unreadCount}) ${originalTitle.current}`
-        : originalTitle.current;
+      const faviconEl = getFaviconEl();
+      if (unreadCount > 0) {
+        // Show green badge with count on the favicon; keep count in title
+        document.title   = `(${unreadCount}) ${originalTitle.current}`;
+        faviconEl.href   = buildFaviconDataUri('badge', unreadCount);
+      } else {
+        document.title   = originalTitle.current;
+        faviconEl.href   = originalFavicon.current;
+      }
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
