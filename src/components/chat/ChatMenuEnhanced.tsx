@@ -4,6 +4,7 @@ import { useChatTray } from '../../contexts/ChatTrayProvider';
 import { useAuth } from '../../contexts/AuthProvider';
 import { supabase, getAvatarUrl } from '../../utils/supabase';
 import { getAvatarProps } from '../../utils/avatarUtils';
+import { ChatAvatar } from './ChatAvatar';
 import { toast } from 'sonner';
 import { useUnreadMessages } from '../../contexts/UnreadMessagesProvider';
 import { RealtimeChannel } from '@supabase/supabase-js';
@@ -924,17 +925,11 @@ export function ChatMenuEnhanced() {
                         <div className="flex items-center space-x-3">
                           {/* Avatar */}
                           <div className="flex-shrink-0">
-                            {avatarProps?.avatarUrl ? (
-                              <img
-                                src={avatarProps.avatarUrl}
-                                alt={chatUser?.full_name || 'User'}
-                                className="w-10 h-10 rounded-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
-                                {avatarProps?.initials || 'U'}
-                              </div>
-                            )}
+                            <ChatAvatar
+                              avatarUrl={avatarProps?.avatarUrl}
+                              initials={avatarProps?.initials || 'U'}
+                              alt={chatUser?.full_name || 'User'}
+                            />
                           </div>
 
                           {/* Chat Info */}
@@ -1031,17 +1026,11 @@ export function ChatMenuEnhanced() {
                           className="px-4 py-3 hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors cursor-pointer"
                         >
                           <div className="flex items-center space-x-3">
-                            {avatarProps.avatarUrl ? (
-                              <img
-                                src={avatarProps.avatarUrl}
-                                alt={searchUser.full_name || 'User'}
-                                className="w-10 h-10 rounded-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
-                                {avatarProps.initials}
-                              </div>
-                            )}
+                            <ChatAvatar
+                              avatarUrl={avatarProps.avatarUrl}
+                              initials={avatarProps.initials}
+                              alt={searchUser.full_name || 'User'}
+                            />
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                                 {searchUser.full_name || searchUser.email}
@@ -1084,17 +1073,11 @@ export function ChatMenuEnhanced() {
               {/* Selected User Info */}
               <div className="px-4 py-4 border-b border-gray-200 dark:border-[#2D3B4E] bg-gray-50 dark:bg-[#2D3B4E]">
                 <div className="flex items-center space-x-3">
-                  {getAvatarProps(selectedUser).avatarUrl ? (
-                    <img
-                      src={getAvatarProps(selectedUser).avatarUrl!}
-                      alt={selectedUser.full_name || 'User'}
-                      className="w-10 h-10 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium">
-                      {getAvatarProps(selectedUser).initials}
-                    </div>
-                  )}
+                  <ChatAvatar
+                    avatarUrl={getAvatarProps(selectedUser).avatarUrl}
+                    initials={getAvatarProps(selectedUser).initials}
+                    alt={selectedUser.full_name || 'User'}
+                  />
                   <div>
                     <p className="text-sm font-medium text-gray-900 dark:text-white">
                       {selectedUser.full_name || selectedUser.email}

@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthProvider';
 import { useNavigate } from 'react-router-dom';
 import { supabase, getAvatarUrl } from '../../utils/supabase';
 import { getAvatarProps } from '../../utils/avatarUtils';
+import { ChatAvatar } from './ChatAvatar';
 import { toast } from 'sonner';
 import { useUnreadMessages } from '../../contexts/UnreadMessagesProvider';
 

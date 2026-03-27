@@ -5,6 +5,7 @@ import { ChatWindow } from './ChatWindow';
 import { useAuth } from '../../contexts/AuthProvider';
 import { supabase } from '../../utils/supabase';
 import { getAvatarProps } from '../../utils/avatarUtils';
+import { ChatAvatar } from './ChatAvatar';
 
 interface ChatInfo {
   id: string;
@@ -150,44 +151,14 @@ export function ChatDock() {
                   animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
                 } : undefined}
               >
-                {/* Avatar - smaller size with proper image handling */}
-                <div className="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden">
-                  {(() => {
-                    if (!chatUser) {
-                      return <span className="text-xs font-medium text-gray-600 dark:text-gray-300">U</span>;
-                    }
-                    
-                    const avatarProps = getAvatarProps(chatUser);
-                    
-                    if (avatarProps.avatarUrl) {
-                      return (
-                        <img
-                          src={avatarProps.avatarUrl}
-                          alt={chatUser.full_name || 'User'}
-                          className="w-6 h-6 rounded-full object-cover"
-                          onError={(e) => {
-                            // Fallback to initials if image fails to load
-                            const target = e.currentTarget;
-                            target.style.display = 'none';
-                            const parent = target.parentElement;
-                            if (parent) {
-                              const span = document.createElement('span');
-                              span.className = 'text-xs font-medium text-gray-600 dark:text-gray-300';
-                              span.textContent = avatarProps.initials;
-                              parent.appendChild(span);
-                            }
-                          }}
-                        />
-                      );
-                    }
-                    
-                    return (
-                      <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
-                        {avatarProps.initials}
-                      </span>
-                    );
-                  })()}
-                </div>
+                {/* Avatar - smaller size */}
+                <ChatAvatar
+                  avatarUrl={chatUser ? getAvatarProps(chatUser).avatarUrl : null}
+                  initials={chatUser ? getAvatarProps(chatUser).initials : 'U'}
+                  size="w-6 h-6"
+                  textSize="text-xs"
+                  alt={chatUser?.full_name || 'User'}
+                />
                 
                 {/* Username - wider to fit full name */}
                 <span className="text-xs text-gray-700 dark:text-gray-300 truncate max-w-28">

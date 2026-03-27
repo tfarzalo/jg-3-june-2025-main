@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 
-const BLINK_INTERVAL_MS = 1000;
+const BLINK_INTERVAL_MS  = 400;   // fast flash — more eye-catching
+const SOUND_REPEAT_MS    = 8000;  // re-ring every 8 s while tab is backgrounded and unread > 0
 
 // ── Favicon helpers ──────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ export function useChatNotifications(
   const originalTitle   = useRef(document.title);
   const originalFavicon = useRef<string>('');
   const blinkInterval   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const soundInterval   = useRef<ReturnType<typeof setInterval> | null>(null);
   const blinkState      = useRef(false);
   const prevUnread      = useRef(unreadCount);
   const audioCtx        = useRef<AudioContext | null>(null);
@@ -116,6 +118,7 @@ export function useChatNotifications(
   useEffect(() => {
     return () => {
       stopBlink();
+      stopSoundRepeat();
       document.title = originalTitle.current;
       getFaviconEl().href = originalFavicon.current;
     };
@@ -133,28 +136,45 @@ export function useChatNotifications(
     getFaviconEl().href = originalFavicon.current;
   }, []);
 
-  const playDing = useCallback(() => {
+  const stopSoundRepeat = useCallback(() => {
+    if (soundInterval.current) {
+      clearInterval(soundInterval.current);
+      soundInterval.current = null;
+    }
+  }, []);
+
+  /**
+   * Two-tone ascending chime: a quick low note followed immediately by a
+   * higher note — noticeably louder and more distinct than the old soft ding.
+   */
+  const playChime = useCallback(() => {
     try {
       const ctx = audioCtx.current;
       if (!ctx) return;
       if (ctx.state === 'suspended') void ctx.resume();
 
-      // Soft 880 → 440 Hz triangle wave "ding", 350 ms
-      const osc  = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
 
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.2);
+      const playNote = (freq: number, startAt: number, duration: number) => {
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
 
-      gain.gain.setValueAtTime(0, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+        osc.type = 'sine'; // sine = cleaner, more bell-like than triangle
+        osc.frequency.setValueAtTime(freq, startAt);
 
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.35);
+        gain.gain.setValueAtTime(0,    startAt);
+        gain.gain.linearRampToValueAtTime(0.55, startAt + 0.01); // louder attack
+        gain.gain.exponentialRampToValueAtTime(0.001, startAt + duration);
+
+        osc.start(startAt);
+        osc.stop(startAt + duration);
+      };
+
+      // Low note → high note, 120 ms apart
+      playNote(660, now,         0.45);  // E5
+      playNote(880, now + 0.12,  0.45);  // A5
     } catch {
       // Silently fail — tab blink + title badge still work
     }
@@ -166,8 +186,9 @@ export function useChatNotifications(
     prevUnread.current = unreadCount;
 
     if (unreadCount === 0) {
-      // All read — restore title, favicon, and stop blinking
+      // All read — restore title, favicon, and stop blinking + sound repeat
       stopBlink();
+      stopSoundRepeat();
       document.title          = originalTitle.current;
       getFaviconEl().href     = originalFavicon.current;
       return;
@@ -180,12 +201,23 @@ export function useChatNotifications(
     const newMessages = unreadCount > prev;
 
     if (newMessages) {
-      // ① Play sound if tab is blurred OR window is not open
+      // ① Play chime immediately if tab is blurred OR no chat window is open
       if (!isTabFocused.current || !isAnyWindowOpen) {
-        playDing();
+        playChime();
+
+        // ② Keep re-ringing every SOUND_REPEAT_MS until tab is focused
+        if (!isTabFocused.current && !soundInterval.current) {
+          soundInterval.current = setInterval(() => {
+            if (!isTabFocused.current) {
+              playChime();
+            } else {
+              stopSoundRepeat();
+            }
+          }, SOUND_REPEAT_MS);
+        }
       }
 
-      // ② Start blinking only when tab is not focused
+      // ③ Start fast-blinking only when tab is not focused
       if (!isTabFocused.current && !blinkInterval.current) {
         const greenDot   = buildFaviconDataUri('green-dot');
         const faviconEl  = getFaviconEl();
@@ -193,7 +225,7 @@ export function useChatNotifications(
         blinkInterval.current = setInterval(() => {
           blinkState.current = !blinkState.current;
           if (blinkState.current) {
-            document.title    = `💬 New Message`;
+            document.title    = `� NEW MESSAGE`;
             faviconEl.href    = greenDot;
           } else {
             document.title    = `(${unreadCount}) ${baseTitle}`;
@@ -202,12 +234,13 @@ export function useChatNotifications(
         }, BLINK_INTERVAL_MS);
       }
     }
-  }, [unreadCount, isAnyWindowOpen, stopBlink, playDing]);
+  }, [unreadCount, isAnyWindowOpen, stopBlink, stopSoundRepeat, playChime]);
 
-  // ── Stop blinking when tab regains focus ─────────────────────────────────
+  // ── Stop blinking + sound repeat when tab regains focus ──────────────────
   useEffect(() => {
     const onFocus = () => {
       stopBlink();
+      stopSoundRepeat();
       const faviconEl = getFaviconEl();
       if (unreadCount > 0) {
         // Show green badge with count on the favicon; keep count in title
@@ -220,5 +253,5 @@ export function useChatNotifications(
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [unreadCount, stopBlink]);
+  }, [unreadCount, stopBlink, stopSoundRepeat]);
 }

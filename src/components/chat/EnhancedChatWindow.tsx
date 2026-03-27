@@ -4,6 +4,7 @@ import { useChatTray } from '../../contexts/ChatTrayProvider';
 import { useAuth } from '../../contexts/AuthProvider';
 import { supabase } from '../../utils/supabase';
 import { getAvatarProps } from '../../utils/avatarUtils';
+import { ChatAvatar } from './ChatAvatar';
 import { EnhancedChatApi } from '../../services/enhancedChatApi';
 
 interface ChatWindowProps {
@@ -288,33 +289,19 @@ export function EnhancedChatWindow({ conversationId, currentUserId }: ChatWindow
       <div className="flex items-center justify-between p-3 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center space-x-2">
           {/* Avatar */}
-          <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
-            {(() => {
-              if (!otherParticipant) {
-                return <span className="text-sm font-semibold text-gray-600 dark:text-gray-300">U</span>;
-              }
-              
-              const avatarProps = getAvatarProps(otherParticipant);
-              return avatarProps.avatarUrl ? (
-                <img
-                  src={avatarProps.avatarUrl}
-                  alt={otherParticipant.full_name || 'User'}
-                  className="w-8 h-8 rounded-full object-cover"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
-                    const parent = target.parentElement;
-                    if (parent) {
-                      parent.innerHTML = `<span class="text-sm font-semibold text-gray-600 dark:text-gray-300">${avatarProps.initials}</span>`;
-                    }
-                  }}
-                />
-              ) : (
-                <span className="text-sm font-semibold text-gray-600 dark:text-gray-300">
-                  {avatarProps.initials}
-                </span>
-              );
-            })()}
+          <div className="flex-shrink-0">
+            {otherParticipant ? (
+              <ChatAvatar
+                avatarUrl={getAvatarProps(otherParticipant).avatarUrl}
+                initials={getAvatarProps(otherParticipant).initials}
+                size="w-8 h-8"
+                alt={otherParticipant.full_name || 'User'}
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                <span className="text-sm font-semibold text-gray-600 dark:text-gray-300">U</span>
+              </div>
+            )}
           </div>
           
           {/* Title and Subject */}

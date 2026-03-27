@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Archive, ArchiveRestore, Trash2, MoreVertical, Clock } from 'lucide-react';
 import { getAvatarProps } from '../../utils/avatarUtils';
+import { ChatAvatar } from './ChatAvatar';
 
 interface User {
   id: string;
@@ -106,27 +107,13 @@ export function EnhancedConversationItem({
     >
       {/* Avatar with status indicator */}
       <div className="relative flex-shrink-0">
-        <div className="w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
-          {avatarProps.avatarUrl ? (
-            <img
-              src={avatarProps.avatarUrl}
-              alt={getUserDisplayName(conversationUser)}
-              className="w-12 h-12 rounded-full object-cover"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                target.style.display = 'none';
-                const parent = target.parentElement;
-                if (parent) {
-                  parent.innerHTML = `<span class="text-lg font-semibold text-gray-600 dark:text-gray-300">${avatarProps.initials}</span>`;
-                }
-              }}
-            />
-          ) : (
-            <span className="text-lg font-semibold text-gray-600 dark:text-gray-300">
-              {avatarProps.initials}
-            </span>
-          )}
-        </div>
+        <ChatAvatar
+          avatarUrl={avatarProps.avatarUrl}
+          initials={avatarProps.initials}
+          size="w-12 h-12"
+          textSize="text-lg"
+          alt={getUserDisplayName(conversationUser)}
+        />
         
         {/* Online status indicator */}
         {conversationUser?.is_online && !isDeleted && (
