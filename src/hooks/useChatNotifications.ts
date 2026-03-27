@@ -53,12 +53,19 @@ function buildFaviconDataUri(type: 'green-dot' | 'badge', count?: number): strin
  *   3. Favicon flashes green while the tab is backgrounded; shows a green
  *      badge with the unread count when the tab regains focus (until read)
  *
- * Pass `unreadCount` from UnreadMessagesContext and `isAnyWindowOpen` to
- * tell the hook whether the user is actively looking at chat right now.
+ * Notifications persist until the user actually reads the message
+ * (i.e. `unreadCount` reaches 0 via `markAsRead`). Having a chat window
+ * open in another tab does NOT clear notifications — only truly reading
+ * the message does.
+ *
+ * `isAnyWindowOpen` is kept for API compatibility but is no longer used to
+ * suppress notifications so that switching tabs doesn't silently swallow
+ * the unread indicator.
  */
 export function useChatNotifications(
   unreadCount: number,
-  isAnyWindowOpen: boolean,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _isAnyWindowOpen: boolean,
 ) {
   const originalTitle   = useRef(document.title);
   const originalFavicon = useRef<string>('');
@@ -201,12 +208,15 @@ export function useChatNotifications(
     const newMessages = unreadCount > prev;
 
     if (newMessages) {
-      // ① Play chime immediately if tab is blurred OR no chat window is open
-      if (!isTabFocused.current || !isAnyWindowOpen) {
+      // ① Play chime only when the tab is backgrounded — the user isn't
+      //    looking at the screen, so a sound is warranted regardless of
+      //    whether a chat window is technically "open". Having a chat window
+      //    open in another tab does NOT count as "reading" the message.
+      if (!isTabFocused.current) {
         playChime();
 
-        // ② Keep re-ringing every SOUND_REPEAT_MS until tab is focused
-        if (!isTabFocused.current && !soundInterval.current) {
+        // ② Keep re-ringing every SOUND_REPEAT_MS while the tab stays hidden
+        if (!soundInterval.current) {
           soundInterval.current = setInterval(() => {
             if (!isTabFocused.current) {
               playChime();
@@ -234,7 +244,7 @@ export function useChatNotifications(
         }, BLINK_INTERVAL_MS);
       }
     }
-  }, [unreadCount, isAnyWindowOpen, stopBlink, stopSoundRepeat, playChime]);
+  }, [unreadCount, stopBlink, stopSoundRepeat, playChime]);
 
   // ── Stop blinking + sound repeat when tab regains focus ──────────────────
   useEffect(() => {
