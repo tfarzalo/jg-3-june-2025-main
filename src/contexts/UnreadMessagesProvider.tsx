@@ -3,6 +3,7 @@ import { useAuth } from './AuthProvider';
 import { useChatTray } from './ChatTrayProvider';
 import { supabase } from '../utils/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { useChatNotifications } from '../hooks/useChatNotifications';
 
 interface UnreadMessagesContextType {
   unreadCount: number;
@@ -39,12 +40,16 @@ interface Message {
 
 export const UnreadMessagesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const { autoOpenChatForMessage } = useChatTray();
+  const { autoOpenChatForMessage, openChats } = useChatTray();
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadConversations, setUnreadConversations] = useState<Set<string>>(new Set());
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [users, setUsers] = useState<Map<string, { full_name: string | null; email: string }>>(new Map());
   const [refreshTrigger, setRefreshTrigger] = useState(0); // Force re-render trigger
+
+  // Tab title badge, blinking tab, and notification sound
+  const isAnyWindowOpen = openChats.some(c => !c.minimized);
+  useChatNotifications(unreadCount, isAnyWindowOpen);
 
   // Function to calculate unread count for the current user
   const calculateUnreadCount = useCallback(async () => {
