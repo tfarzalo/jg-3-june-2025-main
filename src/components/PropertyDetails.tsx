@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { PropertyMap } from './PropertyMap';
-import { formatAddress } from '../lib/utils/formatUtils';
+import { coercePhoneList, formatAddress, formatPhoneNumber } from '../lib/utils/formatUtils';
 import { formatDate, formatDisplayDate } from '../lib/dateUtils';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
@@ -62,16 +62,19 @@ interface Property {
   community_manager_name: string;
   community_manager_email: string;
   community_manager_phone: string;
+  community_manager_additional_phones?: string[] | null;
   community_manager_title: string | null;
   community_manager_secondary_email?: string | null;
   maintenance_supervisor_name: string;
   maintenance_supervisor_email: string;
   maintenance_supervisor_phone: string;
+  maintenance_supervisor_additional_phones?: string[] | null;
   maintenance_supervisor_title: string | null;
   maintenance_supervisor_secondary_email?: string | null;
   point_of_contact: string;
   primary_contact_name: string;
   primary_contact_phone: string;
+  primary_contact_additional_phones?: string[] | null;
   primary_contact_role: string;
   primary_contact_email?: string | null;
   primary_contact_secondary_email?: string | null;
@@ -80,6 +83,7 @@ interface Property {
   ap_name: string;
   ap_email: string;
   ap_phone: string;
+  ap_additional_phones?: string[] | null;
   ap_secondary_email?: string | null;
   billing_notes: string;
   extra_charges_notes: string;
@@ -205,6 +209,7 @@ interface PropertyContact {
   name: string | null;
   email: string | null;
   phone: string | null;
+  additional_phones?: string[] | null;
   secondary_email?: string | null;
   is_subcontractor_contact?: boolean;
   is_accounts_receivable_contact?: boolean;
@@ -707,7 +712,11 @@ export function PropertyDetails() {
           .eq('property_id', propertyId);
 
         if (contactsError) throw contactsError;
-        setContacts(contactsData || []);
+        setContacts((contactsData || []).map((contact) => ({
+          ...contact,
+          phone: formatPhoneNumber(contact.phone),
+          additional_phones: coercePhoneList((contact as any).additional_phones),
+        })));
         const currentEmail = propertyData.primary_contact_email || propertyData.ap_email || null;
         if (currentEmail) {
           if (currentEmail === propertyData.community_manager_email) {
@@ -1308,7 +1317,7 @@ export function PropertyDetails() {
                   <Phone className="h-4 w-4 text-gray-500 dark:text-gray-400 mt-1 mr-3 flex-shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-gray-600 dark:text-gray-400 text-xs font-medium uppercase tracking-wide">Phone</p>
-                    <p className="text-gray-900 dark:text-white text-sm">{property.phone}</p>
+                    <p className="text-gray-900 dark:text-white text-sm">{formatPhoneNumber(property.phone)}</p>
                   </div>
                 </div>
               )}
@@ -1409,6 +1418,7 @@ export function PropertyDetails() {
                 email: property.community_manager_email || '',
                 secondary_email: property.community_manager_secondary_email,
                 phone: property.community_manager_phone || '',
+                additional_phones: coercePhoneList(property.community_manager_additional_phones),
                 title: property.community_manager_title || 'Community Manager'
               },
               maintenance_supervisor: {
@@ -1416,6 +1426,7 @@ export function PropertyDetails() {
                 email: property.maintenance_supervisor_email || '',
                 secondary_email: property.maintenance_supervisor_secondary_email,
                 phone: property.maintenance_supervisor_phone || '',
+                additional_phones: coercePhoneList(property.maintenance_supervisor_additional_phones),
                 title: property.maintenance_supervisor_title || 'Maintenance Supervisor'
               },
               primary_contact: {
@@ -1423,6 +1434,7 @@ export function PropertyDetails() {
                 email: property.primary_contact_email || '',
                 secondary_email: property.primary_contact_secondary_email,
                 phone: property.primary_contact_phone || '',
+                additional_phones: coercePhoneList(property.primary_contact_additional_phones),
                 title: property.primary_contact_role || 'Primary Contact'
               },
               ap: {
@@ -1430,6 +1442,7 @@ export function PropertyDetails() {
                 email: property.ap_email || '',
                 secondary_email: property.ap_secondary_email,
                 phone: property.ap_phone || '',
+                additional_phones: coercePhoneList(property.ap_additional_phones),
                 title: 'Accounts Payable'
               }
             }}
@@ -1474,6 +1487,7 @@ export function PropertyDetails() {
               email: c.email || '',
               secondary_email: c.secondary_email,
               phone: c.phone || '',
+              additional_phones: coercePhoneList((c as any).additional_phones),
               is_subcontractor_contact: c.is_subcontractor_contact || false,
               is_accounts_receivable_contact: c.is_accounts_receivable_contact || false,
               is_approval_recipient: c.is_approval_recipient || false,

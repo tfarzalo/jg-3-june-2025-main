@@ -1,5 +1,6 @@
 import { EMPLOYEE_FORM_KEYS } from '../../../shared/employeeOnboarding';
 import { supabase } from '../../utils/supabase';
+import { formatPhoneNumber } from '../../lib/utils/formatUtils';
 import type {
   EmployeeListItem,
   EmployeeProfileData,
@@ -85,6 +86,7 @@ export const listEmployees = async (): Promise<EmployeeListItem[]> => {
     const employeeCounts = counts.get(employee.id) || { complete: 0, total: EMPLOYEE_FORM_KEYS.length };
     return {
       ...employee,
+      phone: formatPhoneNumber(employee.phone),
       completed_forms_count: employeeCounts.complete,
       total_forms_count: employeeCounts.total || EMPLOYEE_FORM_KEYS.length,
     };
@@ -109,7 +111,7 @@ export const createEmployee = async (input: {
 
   const payload = {
     ...input,
-    phone: input.phone || null,
+    phone: formatPhoneNumber(input.phone) || null,
     employee_status: input.employee_status || 'not_hired',
     interview_date: input.interview_date || null,
     hire_date: input.hire_date || null,
@@ -124,7 +126,10 @@ export const createEmployee = async (input: {
     throw error;
   }
 
-  return data as EmployeeRecord;
+  return {
+    ...(data as EmployeeRecord),
+    phone: formatPhoneNumber((data as EmployeeRecord).phone),
+  };
 };
 
 export const getEmployeeProfile = async (employeeId: string): Promise<EmployeeProfileData> => {
@@ -148,7 +153,10 @@ export const getEmployeeProfile = async (employeeId: string): Promise<EmployeePr
   }
 
   return {
-    employee: employee as EmployeeRecord,
+    employee: {
+      ...(employee as EmployeeRecord),
+      phone: formatPhoneNumber((employee as EmployeeRecord).phone),
+    },
     submissions: sortSubmissionRecords((submissions || []) as EmployeeFormSubmissionRecord[]),
   };
 };
@@ -177,6 +185,7 @@ export const updateEmployee = async (
 
   const payload = {
     ...input,
+    phone: input.phone === undefined ? undefined : formatPhoneNumber(input.phone) || null,
     updated_by: user?.id || null,
   };
 
@@ -191,7 +200,10 @@ export const updateEmployee = async (
     throw error;
   }
 
-  return data as EmployeeRecord;
+  return {
+    ...(data as EmployeeRecord),
+    phone: formatPhoneNumber((data as EmployeeRecord).phone),
+  };
 };
 
 export const sendEmployeeOnboardingPacket = async (params: {

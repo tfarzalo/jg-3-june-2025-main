@@ -21,6 +21,7 @@ export interface PropertyContactFormData {
   email: string;
   secondary_email?: string;
   phone: string;
+  additional_phones?: string[];
   is_subcontractor_contact?: boolean;
   is_accounts_receivable_contact?: boolean;
   is_approval_recipient?: boolean;
@@ -35,6 +36,7 @@ export interface SystemContactFormData {
   email: string;
   secondary_email: string;
   phone: string;
+  additional_phones?: string[];
   title?: string;
   roles: ContactRoles;
 }

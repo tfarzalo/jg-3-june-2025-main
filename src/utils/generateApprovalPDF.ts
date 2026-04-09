@@ -201,8 +201,7 @@ export async function generateApprovalPDF(options: GeneratePDFOptions): Promise<
   // Images section
   if (images && images.length > 0 && supabaseUrl) {
     yPosition += 10;
-    
-    // Check if we need a new page
+
     if (yPosition > 250) {
       doc.addPage();
       yPosition = 20;
@@ -213,59 +212,66 @@ export async function generateApprovalPDF(options: GeneratePDFOptions): Promise<
     doc.text(`Job Photos (${images.length})`, 15, yPosition);
     yPosition += 7;
 
-    try {
-      // Load images and add them to PDF
-      const imagesPerRow = 2;
-      const imageWidth = 80;
-      const imageHeight = 80;
-      const margin = 15;
-      const spacing = 10;
+    const imagesPerRow = 2;
+    const imageWidth = 80;
+    const imageHeight = 80;
+    const margin = 15;
+    const spacing = 10;
+    const captionHeight = 10;
+    const rowHeight = imageHeight + captionHeight + spacing;
 
+    try {
       for (let i = 0; i < images.length; i++) {
         const image = images[i];
         const col = i % imagesPerRow;
-        const row = Math.floor(i / imagesPerRow);
-        
-        const xPosition = margin + col * (imageWidth + spacing);
-        const currentYPosition = yPosition + row * (imageHeight + spacing + 10);
 
-        // Check if we need a new page
-        if (currentYPosition + imageHeight > 280) {
-          doc.addPage();
-          yPosition = 20;
-          continue;
+        // Start a new row: check if it fits on the current page
+        if (col === 0) {
+          if (yPosition + rowHeight > 275) {
+            doc.addPage();
+            yPosition = 20;
+          }
         }
+
+        const xPosition = margin + col * (imageWidth + spacing);
 
         try {
           const imageUrl = image.public_url || `${supabaseUrl}/storage/v1/object/public/job-images/${image.file_path}`;
           const response = await fetch(imageUrl);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const blob = await response.blob();
-          const dataUrl = await new Promise<string>((resolve) => {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
             reader.readAsDataURL(blob);
           });
 
-          // Add image
-          doc.addImage(dataUrl, 'JPEG', xPosition, currentYPosition, imageWidth, imageHeight);
-          
-          // Add label
+          const format = blob.type === 'image/png' ? 'PNG' : 'JPEG';
+          doc.addImage(dataUrl, format, xPosition, yPosition, imageWidth, imageHeight);
+
+          // Caption
           doc.setFontSize(8);
           doc.setFont('helvetica', 'normal');
           const label = image.image_type || image.file_name;
-          doc.text(label, xPosition + imageWidth / 2, currentYPosition + imageHeight + 5, { 
+          doc.text(label, xPosition + imageWidth / 2, yPosition + imageHeight + 5, {
             align: 'center',
-            maxWidth: imageWidth 
+            maxWidth: imageWidth
           });
         } catch (imgError) {
           console.error('Error loading image for PDF:', imgError);
-          // Draw placeholder
           doc.setFillColor(229, 231, 235);
-          doc.rect(xPosition, currentYPosition, imageWidth, imageHeight, 'F');
+          doc.rect(xPosition, yPosition, imageWidth, imageHeight, 'F');
           doc.setTextColor(107, 114, 128);
-          doc.text('Image unavailable', xPosition + imageWidth / 2, currentYPosition + imageHeight / 2, {
+          doc.text('Image unavailable', xPosition + imageWidth / 2, yPosition + imageHeight / 2, {
             align: 'center'
           });
+          doc.setTextColor(0, 0, 0);
+        }
+
+        // Advance yPosition after each completed row
+        if (col === imagesPerRow - 1 || i === images.length - 1) {
+          yPosition += rowHeight;
         }
       }
     } catch (error) {

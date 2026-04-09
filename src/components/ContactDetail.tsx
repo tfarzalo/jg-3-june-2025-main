@@ -23,6 +23,7 @@ import {
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { CreatePropertyFromContactModal } from './CreatePropertyFromContactModal';
+import { formatPhoneNumber } from '../lib/utils/formatUtils';
 
 interface Contact {
   lead_id: string;
@@ -179,7 +180,7 @@ export function ContactDetail() {
         last_name: data.last_name || '',
         email: data.email || '',
         secondary_email: data.secondary_email || '',
-        phone: data.phone || '',
+        phone: formatPhoneNumber(data.phone),
         company: data.company || '',
         job_title: data.job_title || '',
         status_name: data.status_name || 'Manual Contact',
@@ -204,7 +205,7 @@ export function ContactDetail() {
         first_name: contactData.first_name,
         last_name: contactData.last_name,
         email: contactData.email,
-        phone: contactData.phone,
+        phone: formatPhoneNumber(contactData.phone),
         company: contactData.company,
         job_title: contactData.job_title,
         property_name: contactData.property_name,
@@ -342,7 +343,7 @@ export function ContactDetail() {
           first_name: formData.first_name,
           last_name: formData.last_name,
           email: formData.email,
-          phone: formData.phone,
+          phone: formatPhoneNumber(formData.phone),
           company: formData.company,
           job_title: formData.job_title,
           property_name: formData.property_name,
@@ -756,11 +757,11 @@ export function ContactDetail() {
                     <input
                       type="tel"
                       value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      onChange={(e) => setFormData({ ...formData, phone: formatPhoneNumber(e.target.value) })}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     />
                   ) : (
-                    <p className="text-gray-900 dark:text-white">{contact.phone}</p>
+                    <p className="text-gray-900 dark:text-white">{formatPhoneNumber(contact.phone)}</p>
                   )}
                 </div>
                 <div>

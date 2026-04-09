@@ -8,6 +8,7 @@ import { supabase, getAvatarUrl } from '../utils/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { ChatDock } from '../components/chat/ChatDock';
 import { EnhancedChatApi } from '../services/enhancedChatApi';
+import { toDialablePhoneNumber } from '../lib/utils/formatUtils';
 
 interface User {
   id: string;
@@ -1444,7 +1445,7 @@ function MessagingPage() {
                     const conversationUser = getConversationUser(selectedConversation);
                     return conversationUser?.phone ? (
                       <a
-                        href={`tel:${conversationUser.phone}`}
+                        href={`tel:${toDialablePhoneNumber(conversationUser.phone)}`}
                         className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
                       >
                         <Phone className="h-5 w-5" />

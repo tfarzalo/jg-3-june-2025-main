@@ -14,6 +14,7 @@ import {
   updateEmployee,
 } from '../features/employees/api';
 import type { EmployeeEmailPreview, EmployeeProfileData, EmployeeRecord, EmployeeStatus } from '../features/employees/types';
+import { formatPhoneNumber } from '../lib/utils/formatUtils';
 
 const EMPLOYEE_STATUS_OPTIONS: Array<{ value: EmployeeStatus; label: string }> = [
   { value: 'not_hired', label: 'Not Hired' },
@@ -110,7 +111,7 @@ export function EmployeeProfile() {
     setEmployeeForm({
       full_name: profile.employee.full_name || '',
       email: profile.employee.email || '',
-      phone: profile.employee.phone || '',
+      phone: formatPhoneNumber(profile.employee.phone),
       position_title: profile.employee.position_title || '',
       employee_status: profile.employee.employee_status || 'not_hired',
       interview_date: profile.employee.interview_date || '',
@@ -192,7 +193,7 @@ export function EmployeeProfile() {
     setEmployeeForm({
       full_name: profile.employee.full_name || '',
       email: profile.employee.email || '',
-      phone: profile.employee.phone || '',
+      phone: formatPhoneNumber(profile.employee.phone),
       position_title: profile.employee.position_title || '',
       employee_status: profile.employee.employee_status || 'not_hired',
       interview_date: profile.employee.interview_date || '',
@@ -377,9 +378,11 @@ export function EmployeeProfile() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Phone</label>
                     <input
+                      type="tel"
                       value={employeeForm.phone}
-                      onChange={(event) => setEmployeeForm((current) => ({ ...current, phone: event.target.value }))}
+                      onChange={(event) => setEmployeeForm((current) => ({ ...current, phone: formatPhoneNumber(event.target.value) }))}
                       className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-[#0F172A] dark:text-white"
+                      placeholder="123-456-7890"
                     />
                   </div>
                   <div>
@@ -461,7 +464,7 @@ export function EmployeeProfile() {
                   </div>
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-[#0F172A]">
                     <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Phone</div>
-                    <div className="mt-2 text-sm text-gray-900 dark:text-white">{profile.employee.phone || 'Not provided'}</div>
+                    <div className="mt-2 text-sm text-gray-900 dark:text-white">{formatPhoneNumber(profile.employee.phone) || 'Not provided'}</div>
                   </div>
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-[#0F172A]">
                     <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Position / title</div>
@@ -553,7 +556,7 @@ export function EmployeeProfile() {
                 {profile.employee.phone && (
                   <div className="inline-flex items-center gap-2">
                     <Phone className="h-4 w-4" />
-                    {profile.employee.phone}
+                    {formatPhoneNumber(profile.employee.phone)}
                   </div>
                 )}
                 <div>Linked subcontractor: {linkedSubcontractorId ? 'Yes' : 'No'}</div>

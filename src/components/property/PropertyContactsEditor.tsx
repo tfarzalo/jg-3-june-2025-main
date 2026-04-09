@@ -25,6 +25,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { ContactRoles, SystemContactKey } from '../../types/contacts';
+import { useUserRole } from '../../contexts/UserRoleContext';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ interface PropertyContact {
   email: string;
   secondary_email?: string;
   phone: string;
+  additional_phones?: string[];
   is_subcontractor_contact?: boolean;
   is_accounts_receivable_contact?: boolean;
   is_approval_recipient?: boolean;
@@ -54,6 +56,7 @@ interface SystemContactData {
   email: string;
   secondary_email: string;
   phone: string;
+  additional_phones?: string[];
   title?: string;
 }
 
@@ -66,7 +69,7 @@ interface PropertyContactsEditorProps {
   };
   systemContactRoles: Record<string, Partial<ContactRoles>>;
   customContacts: PropertyContact[];
-  onSystemContactChange: (key: SystemContactKey, field: string, value: string) => void;
+  onSystemContactChange: (key: SystemContactKey, field: string, value: any) => void;
   onSystemContactRoleChange: (key: SystemContactKey, role: keyof ContactRoles, value: boolean) => void;
   onCustomContactChange: (id: string, field: keyof PropertyContact, value: any) => void;
   onCustomContactAdd: () => void;
@@ -170,6 +173,7 @@ export function PropertyContactsEditor({
   onCustomContactAdd,
   onCustomContactDelete,
 }: PropertyContactsEditorProps) {
+  const { isAdmin } = useUserRole();
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
   const [showSecondaryEmail, setShowSecondaryEmail] = useState<Record<string, boolean>>({});
 
@@ -178,6 +182,113 @@ export function PropertyContactsEditor({
 
   const toggleSecondary = (id: string) =>
     setShowSecondaryEmail((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  const getSystemContactAssociations = (roles: Partial<ContactRoles>) => {
+    const associations: string[] = [];
+
+    if (roles.subcontractor) associations.push('Subcontractor contact');
+    if (roles.accountsReceivable) associations.push('AR contact');
+    if (roles.approvalRecipient) associations.push('Approval emails');
+    if (roles.primaryApproval) associations.push('Primary approval recipient');
+    if (roles.notificationRecipient) associations.push('Notification emails');
+    if (roles.primaryNotification) associations.push('Primary notification recipient');
+
+    return associations;
+  };
+
+  const handleDeleteSystemContact = (
+    key: SystemContactKey,
+    defaultLabel: string,
+    data: SystemContactData,
+    roles: Partial<ContactRoles>,
+  ) => {
+    const label = data.title || defaultLabel;
+    const associations = getSystemContactAssociations(roles);
+    const hasContent = Boolean(
+      data.name ||
+      data.email ||
+      data.secondary_email ||
+      data.phone ||
+      (data.additional_phones && data.additional_phones.length > 0),
+    );
+
+    if (!hasContent && associations.length === 0) {
+      return;
+    }
+
+    const warning = associations.length > 0
+      ? `Delete ${label}? This contact is currently assigned to ${associations.join(', ')}. This will clear the contact and remove those assignments.`
+      : `Delete ${label}? This will clear the contact's name, emails, phone numbers, and role assignments.`;
+
+    if (!window.confirm(warning)) {
+      return;
+    }
+
+    onSystemContactChange(key, 'name', '');
+    onSystemContactChange(key, 'email', '');
+    onSystemContactChange(key, 'secondary_email', '');
+    onSystemContactChange(key, 'phone', '');
+    onSystemContactChange(key, 'additional_phones', []);
+    onSystemContactChange(key, 'title', defaultLabel);
+
+    onSystemContactRoleChange(key, 'subcontractor', false);
+    onSystemContactRoleChange(key, 'accountsReceivable', false);
+    onSystemContactRoleChange(key, 'approvalRecipient', false);
+    onSystemContactRoleChange(key, 'primaryApproval', false);
+    onSystemContactRoleChange(key, 'notificationRecipient', false);
+    onSystemContactRoleChange(key, 'primaryNotification', false);
+
+    setExpandedCards((prev) => ({ ...prev, [key]: false }));
+    setShowSecondaryEmail((prev) => ({ ...prev, [key]: false }));
+  };
+
+  const renderAdditionalPhones = (
+    id: string,
+    additionalPhones: string[] | undefined,
+    onChange: (phones: string[]) => void
+  ) => {
+    const phones = additionalPhones || [];
+
+    return (
+      <div className="space-y-2">
+        <button
+          type="button"
+          onClick={() => onChange([...phones, ''])}
+          className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+        >
+          <Plus className="h-3 w-3" />
+          Add another phone
+        </button>
+        {phones.length > 0 && (
+          <div className="space-y-2">
+            {phones.map((phone, index) => (
+              <div key={`${id}-phone-${index}`} className="flex items-center gap-2">
+                <input
+                  type="tel"
+                  value={phone}
+                  placeholder="123-456-7890"
+                  className={inputCls}
+                  onChange={(e) => {
+                    const next = [...phones];
+                    next[index] = e.target.value;
+                    onChange(next);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => onChange(phones.filter((_, currentIndex) => currentIndex !== index))}
+                  className="flex-shrink-0 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                  title="Remove phone number"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ── Email recipient summary lists ───────────────────────────────────────────
   const allApproval = [
@@ -216,6 +327,14 @@ export function PropertyContactsEditor({
     const label = data.title || defaultLabel;
     const isExpanded = expandedCards[key] ?? false;
     const showSec = showSecondaryEmail[key] || !!data.secondary_email;
+    const canDeleteSystemContact = isAdmin && Boolean(
+      data.name ||
+      data.email ||
+      data.secondary_email ||
+      data.phone ||
+      (data.additional_phones && data.additional_phones.length > 0) ||
+      getSystemContactAssociations(roles).length > 0
+    );
 
     const badges = [
       roles.subcontractor && <Badge key="sub" color="blue">Subcontractor</Badge>,
@@ -230,27 +349,40 @@ export function PropertyContactsEditor({
 
     return (
       <div key={key} className={`rounded-xl border overflow-hidden ${accentCls}`}>
-        <button
-          type="button"
-          onClick={() => toggleCard(key)}
-          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-        >
-          <div className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold text-white ${avatarBg}`}>
-            {data.name ? initials(data.name) : <User className="h-4 w-4" />}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                {data.name || <span className="italic text-gray-400">No name set</span>}
-              </span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>
+        <div className="flex items-center gap-2 px-4 py-3">
+          <button
+            type="button"
+            onClick={() => toggleCard(key)}
+            className="flex items-center gap-3 flex-1 min-w-0 text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors rounded-lg"
+          >
+            <div className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold text-white ${avatarBg}`}>
+              {data.name ? initials(data.name) : <User className="h-4 w-4" />}
             </div>
-            {badges.length > 0 && <div className="flex items-center gap-1 mt-1 flex-wrap">{badges}</div>}
-          </div>
-          <div className="text-gray-400 flex-shrink-0">
-            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </div>
-        </button>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                  {data.name || <span className="italic text-gray-400">No name set</span>}
+                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>
+              </div>
+              {badges.length > 0 && <div className="flex items-center gap-1 mt-1 flex-wrap">{badges}</div>}
+            </div>
+            <div className="text-gray-400 flex-shrink-0">
+              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </div>
+          </button>
+
+          {canDeleteSystemContact && (
+            <button
+              type="button"
+              onClick={() => handleDeleteSystemContact(key, defaultLabel, data, roles)}
+              title="Delete system contact"
+              className="flex-shrink-0 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
+        </div>
 
         {isExpanded && (
           <div className="px-4 pb-5 pt-2 border-t border-gray-200 dark:border-gray-700 space-y-4 bg-white dark:bg-[#1E293B]">
@@ -310,9 +442,18 @@ export function PropertyContactsEditor({
               </div>
               <div>
                 <label className={labelCls}><Phone className="inline h-3 w-3 mr-1" />Phone</label>
-                <input type="tel" value={data.phone} placeholder="(000) 000-0000" className={inputCls}
+                <input type="tel" value={data.phone} placeholder="123-456-7890" className={inputCls}
                   onChange={(e) => onSystemContactChange(key, 'phone', e.target.value)} />
               </div>
+            </div>
+
+            <div>
+              <label className={labelCls}>Additional Phone Numbers</label>
+              {renderAdditionalPhones(
+                key,
+                data.additional_phones,
+                (phones) => onSystemContactChange(key, 'additional_phones', phones as any),
+              )}
             </div>
 
             {/* Secondary email */}
@@ -495,9 +636,18 @@ export function PropertyContactsEditor({
 
               <div>
                 <label className={labelCls}><Phone className="inline h-3 w-3 mr-1" />Phone</label>
-                <input type="tel" value={contact.phone || ''} placeholder="(000) 000-0000" className={inputCls}
+                <input type="tel" value={contact.phone || ''} placeholder="123-456-7890" className={inputCls}
                   onChange={(e) => onCustomContactChange(contact.id, 'phone', e.target.value)} />
               </div>
+            </div>
+
+            <div>
+              <label className={labelCls}>Additional Phone Numbers</label>
+              {renderAdditionalPhones(
+                contact.id,
+                contact.additional_phones,
+                (phones) => onCustomContactChange(contact.id, 'additional_phones', phones),
+              )}
             </div>
 
             {/* Secondary email */}

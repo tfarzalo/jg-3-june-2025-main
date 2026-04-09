@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Button } from './ui/Button';
 import { createEmployee, listEmployees } from '../features/employees/api';
 import type { EmployeeListItem, EmployeeStatus } from '../features/employees/types';
+import { formatPhoneNumber } from '../lib/utils/formatUtils';
 
 const EMPLOYEE_STATUS_OPTIONS: Array<{ value: EmployeeStatus; label: string }> = [
   { value: 'not_hired', label: 'Not Hired' },
@@ -222,9 +223,11 @@ export function Employees() {
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Phone number</label>
                 <input
+                  type="tel"
                   value={formData.phone}
-                  onChange={(event) => setFormData((current) => ({ ...current, phone: event.target.value }))}
+                  onChange={(event) => setFormData((current) => ({ ...current, phone: formatPhoneNumber(event.target.value) }))}
                   className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-[#0F172A] dark:text-white"
+                  placeholder="123-456-7890"
                 />
               </div>
             </div>

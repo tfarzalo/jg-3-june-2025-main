@@ -16,7 +16,7 @@ BEGIN
     FROM public.user_role_assignments ura
     JOIN public.user_roles ur ON ura.role_id = ur.id
     WHERE ura.user_id = auth.uid() 
-    AND ur.name IN ('Admin', 'JG Management')
+    AND ur.name IN ('Admin', 'JG Management', 'Super Admin')
   ) THEN
     RETURN TRUE;
   END IF;
@@ -26,7 +26,7 @@ BEGIN
     SELECT 1
     FROM public.profiles p
     WHERE p.id = auth.uid()
-    AND p.role IN ('admin', 'jg_management')
+    AND p.role IN ('admin', 'jg_management', 'is_super_admin')
   ) THEN
     RETURN TRUE;
   END IF;

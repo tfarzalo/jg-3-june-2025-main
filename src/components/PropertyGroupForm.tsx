@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Building2, User, Phone, Mail, MapPin, Plus, X, Check } from 'lucide-react';
 import { supabase } from '@/utils/supabase';
 import { useUserRole } from '../contexts/UserRoleContext';
+import { formatPhoneNumber, mapInputValueByField } from '../lib/utils/formatUtils';
 
 export function PropertyGroupForm() {
   const navigate = useNavigate();
@@ -67,7 +68,7 @@ export function PropertyGroupForm() {
         state: data.state || '',
         zip: data.zip || '',
         contact_name: data.contact_name || '',
-        contact_phone: data.contact_phone || '',
+        contact_phone: formatPhoneNumber(data.contact_phone),
         contact_email: data.contact_email || ''
       });
 
@@ -192,7 +193,7 @@ export function PropertyGroupForm() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name]: mapInputValueByField(name, value) }));
   };
 
   const handleAddProperty = (propertyId: string) => {
@@ -402,7 +403,7 @@ export function PropertyGroupForm() {
                     value={formData.contact_phone}
                     onChange={handleChange}
                     className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-                    placeholder="Enter phone number"
+                    placeholder="123-456-7890"
                   />
                 </div>
 

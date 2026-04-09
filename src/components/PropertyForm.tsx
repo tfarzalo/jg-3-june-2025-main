@@ -12,6 +12,7 @@ import { UnitMapUpload } from './ui/UnitMapUpload';
 import { toast } from 'sonner';
 import { uploadPropertyUnitMap } from '../lib/utils/fileUpload';
 import { useUserRole } from '../contexts/UserRoleContext';
+import { formatPhoneNumber, mapInputValueByField, normalizePhoneList } from '../lib/utils/formatUtils';
 
 interface PropertyManagementGroup {
   id: string;
@@ -26,6 +27,7 @@ interface PropertyContact {
   email: string;
   secondary_email?: string;
   phone: string;
+  additional_phones?: string[];
   is_subcontractor_contact?: boolean;
   is_accounts_receivable_contact?: boolean;
   is_approval_recipient?: boolean;
@@ -48,10 +50,10 @@ export function PropertyForm() {
   
   // New contact management state
   const [systemContacts, setSystemContacts] = useState({
-    community_manager: { name: '', email: '', secondary_email: '', phone: '', title: 'Community Manager' },
-    maintenance_supervisor: { name: '', email: '', secondary_email: '', phone: '', title: 'Maintenance Supervisor' },
-    primary_contact: { name: '', email: '', secondary_email: '', phone: '', title: 'Primary Contact' },
-    ap: { name: '', email: '', secondary_email: '', phone: '', title: 'Accounts Payable' }
+    community_manager: { name: '', email: '', secondary_email: '', phone: '', additional_phones: [] as string[], title: 'Community Manager' },
+    maintenance_supervisor: { name: '', email: '', secondary_email: '', phone: '', additional_phones: [] as string[], title: 'Maintenance Supervisor' },
+    primary_contact: { name: '', email: '', secondary_email: '', phone: '', additional_phones: [] as string[], title: 'Primary Contact' },
+    ap: { name: '', email: '', secondary_email: '', phone: '', additional_phones: [] as string[], title: 'Accounts Payable' }
   });
   
   const [systemContactRoles, setSystemContactRoles] = useState<Record<string, Partial<ContactRoles>>>({
@@ -115,12 +117,18 @@ export function PropertyForm() {
   });
 
   // Handler functions for PropertyContactsEditor
-  const handleSystemContactChange = (key: SystemContactKey, field: string, value: string) => {
+  const handleSystemContactChange = (key: SystemContactKey, field: string, value: any) => {
     setSystemContacts(prev => ({
       ...prev,
       [key]: {
         ...prev[key],
-        [field]: value
+        [field]: field === 'phone'
+          ? formatPhoneNumber(String(value))
+          : field === 'additional_phones'
+            // Keep raw array in state (including empty strings so the input fields render);
+            // normalization (dedup + format) happens at save time in handleSubmit.
+            ? (Array.isArray(value) ? value : [])
+            : value
       }
     }));
   };
@@ -210,7 +218,16 @@ export function PropertyForm() {
         return contact;
       }
       
-      const updated = { ...contact, [field]: value };
+      const updated = {
+        ...contact,
+        [field]: field === 'phone'
+          ? formatPhoneNumber(String(value))
+          : field === 'additional_phones'
+            // Keep raw array in state (including empty strings so the input fields render);
+            // normalization (dedup + format) happens at save time in handleSubmit.
+            ? (Array.isArray(value) ? value : [])
+            : value
+      };
       
       // If unchecking approval recipient, also uncheck primary
       if (field === 'is_approval_recipient' && !value) {
@@ -277,6 +294,7 @@ export function PropertyForm() {
         email: '',
         secondary_email: '',
         phone: '',
+        additional_phones: [],
         is_new: true
       }
     ]);
@@ -338,14 +356,17 @@ export function PropertyForm() {
         community_manager_name: systemContacts.community_manager.name,
         community_manager_email: systemContacts.community_manager.email,
         community_manager_phone: systemContacts.community_manager.phone,
+        community_manager_additional_phones: normalizePhoneList(systemContacts.community_manager.additional_phones || []),
         community_manager_title: systemContacts.community_manager.title || 'Community Manager',
         maintenance_supervisor_name: systemContacts.maintenance_supervisor.name,
         maintenance_supervisor_email: systemContacts.maintenance_supervisor.email,
         maintenance_supervisor_phone: systemContacts.maintenance_supervisor.phone,
+        maintenance_supervisor_additional_phones: normalizePhoneList(systemContacts.maintenance_supervisor.additional_phones || []),
         maintenance_supervisor_title: systemContacts.maintenance_supervisor.title || 'Maintenance Supervisor',
         ap_name: systemContacts.ap.name,
         ap_email: systemContacts.ap.email,
         ap_phone: systemContacts.ap.phone,
+        ap_additional_phones: normalizePhoneList(systemContacts.ap.additional_phones || []),
         // System contact roles
         community_manager_is_subcontractor: systemContactRoles.community_manager?.subcontractor || false,
         community_manager_is_ar: systemContactRoles.community_manager?.accountsReceivable || false,
@@ -385,6 +406,7 @@ export function PropertyForm() {
         cleanedFormData.primary_contact_role = contact.title;
         cleanedFormData.primary_contact_email = contact.email;
         cleanedFormData.primary_contact_phone = contact.phone;
+        cleanedFormData.primary_contact_additional_phones = normalizePhoneList(contact.additional_phones || []);
       } else {
         // Check custom contacts
         const customSubContact = contacts.find(c => c.is_subcontractor_contact);
@@ -393,12 +415,14 @@ export function PropertyForm() {
           cleanedFormData.primary_contact_role = customSubContact.position;
           cleanedFormData.primary_contact_email = customSubContact.email;
           cleanedFormData.primary_contact_phone = customSubContact.phone;
+          cleanedFormData.primary_contact_additional_phones = normalizePhoneList(customSubContact.additional_phones || []);
         } else {
           // Fallback to community manager
           cleanedFormData.primary_contact_name = systemContacts.community_manager.name;
           cleanedFormData.primary_contact_role = systemContacts.community_manager.title;
           cleanedFormData.primary_contact_email = systemContacts.community_manager.email;
           cleanedFormData.primary_contact_phone = systemContacts.community_manager.phone;
+          cleanedFormData.primary_contact_additional_phones = normalizePhoneList(systemContacts.community_manager.additional_phones || []);
         }
       }
 
@@ -449,6 +473,7 @@ export function PropertyForm() {
           email: c.email,
           secondary_email: c.secondary_email || null,
           phone: c.phone,
+          additional_phones: normalizePhoneList(c.additional_phones || []),
           is_subcontractor_contact: c.is_subcontractor_contact || false,
           is_accounts_receivable_contact: c.is_accounts_receivable_contact || false,
           is_approval_recipient: c.is_approval_recipient || false,
@@ -526,7 +551,7 @@ export function PropertyForm() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => ({ ...prev, [name]: mapInputValueByField(name, value) }));
   };
 
   return (
@@ -730,7 +755,7 @@ export function PropertyForm() {
                     value={formData.phone}
                     onChange={handleChange}
                     className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="Enter phone number"
+                    placeholder="123-456-7890"
                   />
                 </div>
               </div>

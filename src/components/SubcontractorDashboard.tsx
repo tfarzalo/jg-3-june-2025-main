@@ -11,17 +11,21 @@ import {
   DollarSign,
   Palette,
   User,
-  Globe
+  Globe,
+  Camera,
+  X,
+  CheckCircle
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
-import { format, addDays, isSameDay } from 'date-fns';
+import { format, addDays, isSameDay, isToday as dateFnsIsToday } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useUserRole } from '../contexts/UserRoleContext';
 import { LoadingScreen } from './ui/LoadingScreen';
 import { Lightbox } from './Lightbox';
 import { SubcontractorDashboardActions } from './SubcontractorDashboardActions';
 import { AssignmentCountdownTimer } from './AssignmentCountdownTimer';
+import ImageUpload from './ImageUpload';
 
 
 
@@ -56,7 +60,10 @@ interface Job {
   } | null;
   work_order?: {
     id: string;
+    submission_date?: string | null;
   } | null;
+  /** True when the job has a work order submitted on the same calendar day (used to show After Photos button) */
+  hasWorkOrderSubmittedToday?: boolean;
 }
 
 interface PropertyDetails {
@@ -140,6 +147,13 @@ export function SubcontractorDashboard() {
     imageUrl: '',
     propertyName: ''
   });
+  const [afterPhotosModal, setAfterPhotosModal] = useState<{
+    isOpen: boolean;
+    jobId: string;
+    workOrderId: string;
+    workOrderNum: number;
+    propertyName: string;
+  }>({ isOpen: false, jobId: '', workOrderId: '', workOrderNum: 0, propertyName: '' });
   const [userProfile, setUserProfile] = useState<any>(null);
   const { role } = useUserRole();
   const location = useLocation();
@@ -194,7 +208,12 @@ export function SubcontractorDashboard() {
       notesTab: "Notes",
       generalPropertyNotes: "General Property Notes",
       noGeneralPropertyNotes: "No general property notes",
-      noGeneralPropertyNotesMessage: "No notes are currently available for this property."
+      noGeneralPropertyNotesMessage: "No notes are currently available for this property.",
+      addAfterPhotos: "Add After Photos",
+      addAfterPhotosShort: "After Photos",
+      afterPhotosModalTitle: "Upload After Photos",
+      afterPhotosModalSubtitle: "Upload photos showing the completed work for",
+      afterPhotosDone: "Done"
     },
     es: {
       viewingAs: "Estás viendo el panel de subcontratista como",
@@ -239,7 +258,12 @@ export function SubcontractorDashboard() {
       notesTab: "Notas",
       generalPropertyNotes: "Notas Generales de la Propiedad",
       noGeneralPropertyNotes: "No hay notas generales de la propiedad",
-      noGeneralPropertyNotesMessage: "No hay notas disponibles actualmente para esta propiedad."
+      noGeneralPropertyNotesMessage: "No hay notas disponibles actualmente para esta propiedad.",
+      addAfterPhotos: "Agregar Fotos Finales",
+      addAfterPhotosShort: "Fotos Finales",
+      afterPhotosModalTitle: "Subir Fotos Finales",
+      afterPhotosModalSubtitle: "Sube fotos del trabajo completado para",
+      afterPhotosDone: "Listo"
     }
   };
 
@@ -597,8 +621,8 @@ export function SubcontractorDashboard() {
       console.log('fetchJobsForDate: Fetching Job Request phase ID.');
       const { data: phaseData, error: phaseError } = await supabase
         .from('job_phases')
-        .select('id')
-        .eq('job_phase_label', 'Job Request');
+        .select('id, job_phase_label')
+        .in('job_phase_label', ['Job Request', 'Pending Work Order', 'Work Order']);
         
       if (phaseError) {
         console.error('fetchJobsForDate: Supabase job_phases fetch error:', phaseError);
@@ -606,15 +630,26 @@ export function SubcontractorDashboard() {
       }
       
       if (!phaseData || phaseData.length === 0) {
-        console.warn('fetchJobsForDate: "Job Request" phase not found in job_phases table.');
-        return []; // No jobs to fetch if phase not found
+        console.warn('fetchJobsForDate: phases not found in job_phases table.');
+        return [];
       }
       
-      const jobRequestPhaseId = phaseData[0].id;
+      const jobRequestPhaseId = phaseData.find(p => p.job_phase_label === 'Job Request')?.id;
+      const pendingWOPhaseId = phaseData.find(p => p.job_phase_label === 'Pending Work Order')?.id;
+      const workOrderPhaseId = phaseData.find(p => p.job_phase_label === 'Work Order')?.id;
+
+      if (!jobRequestPhaseId) {
+        console.warn('fetchJobsForDate: "Job Request" phase not found in job_phases table.');
+        return [];
+      }
+
+      const activePhaseIds = [jobRequestPhaseId, pendingWOPhaseId, workOrderPhaseId].filter(Boolean) as string[];
+
       console.log('fetchJobsForDate: Job Request phase ID:', jobRequestPhaseId);
       
-      // Get jobs assigned to this subcontractor for the selected date that are in Job Request phase
-      console.log(`fetchJobsForDate: Fetching jobs for userId ${userId} in phase ${jobRequestPhaseId} between ${startOfDate} and ${endOfDate}`);
+      // Get jobs assigned to this subcontractor for the selected date
+      // Include Job Request phase jobs + Pending Work Order / Work Order phase jobs (for After Photos)
+      console.log(`fetchJobsForDate: Fetching jobs for userId ${userId} between ${startOfDate} and ${endOfDate}`);
       const { data: jobsData, error: jobsError } = await supabase
         .from('jobs')
         .select(`
@@ -647,11 +682,12 @@ export function SubcontractorDashboard() {
             job_type_label
           ),
           work_order:work_orders (
-            id
+            id,
+            submission_date
           )
         `)
         .eq('assigned_to', userId)
-        .eq('current_phase_id', jobRequestPhaseId)
+        .in('current_phase_id', activePhaseIds)
         .gte('scheduled_date', startOfDate)
         .lte('scheduled_date', endOfDate)
         .order('scheduled_date', { ascending: true });
@@ -664,14 +700,20 @@ export function SubcontractorDashboard() {
             console.log('fetchJobsForDate: Raw jobs data received:', jobsData);
 
       // Map the data to match the Job interface and flatten nested arrays
-      const mappedJobs: Job[] = (jobsData || []).map(job => ({
-        ...job,
-        property: Array.isArray(job.property) ? job.property[0] : job.property,
-        job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase,
-        job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
-        work_order: Array.isArray(job.work_order) ? job.work_order[0] : job.work_order,
-        unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
-      }));
+      const mappedJobs: Job[] = (jobsData || []).map(job => {
+        const wo = Array.isArray(job.work_order) ? job.work_order[0] : job.work_order;
+        const submissionDate = wo?.submission_date ? new Date(wo.submission_date) : null;
+        const hasWorkOrderSubmittedToday = submissionDate ? dateFnsIsToday(submissionDate) : false;
+        return {
+          ...job,
+          property: Array.isArray(job.property) ? job.property[0] : job.property,
+          job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase,
+          job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
+          work_order: wo,
+          unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
+          hasWorkOrderSubmittedToday,
+        };
+      });
 
       
       console.log('fetchJobsForDate: Mapped jobs:', mappedJobs);
@@ -704,7 +746,11 @@ export function SubcontractorDashboard() {
     if (tab === 'pending') {
       return jobs.filter(j => j.assignment_status === 'pending' || !j.assignment_status);
     }
-    return jobs.filter(j => j.assignment_status && j.assignment_status !== 'pending' && j.assignment_status !== 'declined');
+    // Accepted tab: accepted/active jobs + jobs that already have a WO submitted today (for After Photos)
+    return jobs.filter(j =>
+      (j.assignment_status && j.assignment_status !== 'pending' && j.assignment_status !== 'declined') ||
+      j.hasWorkOrderSubmittedToday
+    );
   };
 
   const getFirstName = (fullName: string) => {
@@ -1223,6 +1269,21 @@ export function SubcontractorDashboard() {
                             language={language}
                           />
                         </div>
+                      ) : job.hasWorkOrderSubmittedToday && job.work_order?.id ? (
+                        // Work order submitted today — offer After Photos upload
+                        <button
+                          onClick={() => setAfterPhotosModal({
+                            isOpen: true,
+                            jobId: job.id,
+                            workOrderId: job.work_order!.id,
+                            workOrderNum: job.work_order_num,
+                            propertyName: job.property?.property_name ?? '',
+                          })}
+                          className="inline-flex items-center justify-center w-full px-3 py-2.5 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white text-sm font-semibold rounded-lg transition-colors touch-manipulation"
+                        >
+                          <Camera className="h-4 w-4 mr-2 flex-shrink-0" />
+                          {text.addAfterPhotos}
+                        </button>
                       ) : (
                         <Link
                           to={`/dashboard/jobs/${job.id}/new-work-order${isPreview ? `?userId=${previewUserId}` : ''}`}
@@ -1553,6 +1614,73 @@ export function SubcontractorDashboard() {
           imageUrl={unitMapModalOpen.imageUrl}
           imageAlt={`${unitMapModalOpen.propertyName} Unit Map`}
         />
+      )}
+
+      {/* After Photos Upload Modal */}
+      {afterPhotosModal.isOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={(e) => {
+            // Close when tapping the backdrop
+            if (e.target === e.currentTarget)
+              setAfterPhotosModal({ isOpen: false, jobId: '', workOrderId: '', workOrderNum: 0, propertyName: '' });
+          }}
+        >
+          {/* Sheet on mobile (slides up), card on sm+ */}
+          <div className="bg-white dark:bg-[#1E293B] rounded-t-2xl sm:rounded-xl shadow-2xl w-full sm:max-w-lg flex flex-col h-[92svh] sm:h-auto sm:max-h-[88vh]">
+
+            {/* Drag handle — mobile only */}
+            <div className="flex justify-center pt-3 pb-1 sm:hidden">
+              <div className="w-10 h-1 bg-gray-300 dark:bg-gray-600 rounded-full" />
+            </div>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+              <div className="flex items-center space-x-3 min-w-0">
+                <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg flex-shrink-0">
+                  <Camera className="h-5 w-5 text-green-600 dark:text-green-400" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-semibold text-gray-900 dark:text-white leading-tight">
+                    {text.afterPhotosModalTitle}
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                    {afterPhotosModal.propertyName}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAfterPhotosModal({ isOpen: false, jobId: '', workOrderId: '', workOrderNum: 0, propertyName: '' })}
+                className="ml-3 flex-shrink-0 p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors touch-manipulation"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Scrollable upload area */}
+            <div className="flex-1 overflow-y-auto p-4">
+              <ImageUpload
+                jobId={afterPhotosModal.jobId}
+                workOrderId={afterPhotosModal.workOrderId}
+                folder="after"
+                onUploadComplete={() => refreshJobsForSelectedDate()}
+                onError={(err) => setError(err)}
+              />
+            </div>
+
+            {/* Footer — full-width button on mobile */}
+            <div className="flex-shrink-0 p-4 border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={() => setAfterPhotosModal({ isOpen: false, jobId: '', workOrderId: '', workOrderNum: 0, propertyName: '' })}
+                className="w-full sm:w-auto sm:ml-auto flex items-center justify-center px-6 py-3 sm:py-2 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white text-base sm:text-sm font-semibold rounded-xl sm:rounded-lg transition-colors touch-manipulation"
+              >
+                <CheckCircle className="h-5 w-5 sm:h-4 sm:w-4 mr-2" />
+                {text.afterPhotosDone}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

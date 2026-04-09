@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Building2, X, Save, Loader2 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
+import { formatPhoneNumber } from '../lib/utils/formatUtils';
 
 interface CreatePropertyFromContactModalProps {
   isOpen: boolean;
@@ -33,9 +34,9 @@ export function CreatePropertyFromContactModal({
     city: contactData.address?.city || '',
     state: contactData.address?.state || '',
     zip: contactData.address?.zip || '',
-    phone: contactData.phone || '',
+    phone: formatPhoneNumber(contactData.phone),
     primary_contact_name: `${contactData.first_name} ${contactData.last_name}`.trim(),
-    primary_contact_phone: contactData.phone || '',
+    primary_contact_phone: formatPhoneNumber(contactData.phone),
     primary_contact_role: 'Primary Contact',
     ap_email: contactData.email || '',
   });
@@ -50,9 +51,9 @@ export function CreatePropertyFromContactModal({
         city: contactData.address?.city || '',
         state: contactData.address?.state || '',
         zip: contactData.address?.zip || '',
-        phone: contactData.phone || '',
+        phone: formatPhoneNumber(contactData.phone),
         primary_contact_name: `${contactData.first_name} ${contactData.last_name}`.trim(),
-        primary_contact_phone: contactData.phone || '',
+        primary_contact_phone: formatPhoneNumber(contactData.phone),
         primary_contact_role: 'Primary Contact',
         ap_email: contactData.email || '',
       });
@@ -264,9 +265,9 @@ export function CreatePropertyFromContactModal({
               <input
                 type="tel"
                 value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, phone: formatPhoneNumber(e.target.value) })}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                placeholder="Property phone"
+                placeholder="123-456-7890"
               />
             </div>
           </div>
@@ -298,9 +299,9 @@ export function CreatePropertyFromContactModal({
                 <input
                   type="tel"
                   value={formData.primary_contact_phone}
-                  onChange={(e) => setFormData({ ...formData, primary_contact_phone: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, primary_contact_phone: formatPhoneNumber(e.target.value) })}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  placeholder="Contact phone"
+                  placeholder="123-456-7890"
                 />
               </div>
 

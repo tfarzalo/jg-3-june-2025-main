@@ -19,6 +19,7 @@ import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { SubcontractorJobHistory } from './users/SubcontractorJobHistory';
 import { formatDisplayDate } from '../lib/dateUtils';
+import { formatPhoneNumber, mapInputValueByField } from '../lib/utils/formatUtils';
 
 interface UserProfileData {
   id: string;
@@ -236,6 +237,9 @@ export function UserProfile() {
         console.log('Profile data loaded:', data);
         setProfile({
           ...data,
+          mobile_phone: formatPhoneNumber(data.mobile_phone),
+          sms_phone: formatPhoneNumber(data.sms_phone),
+          emergency_contact_phone: formatPhoneNumber(data.emergency_contact_phone),
           work_schedule: data.work_schedule || []
         });
         
@@ -391,7 +395,7 @@ export function UserProfile() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setProfile(prev => ({ ...prev, [name]: value }));
+    setProfile(prev => ({ ...prev, [name]: mapInputValueByField(name, value) }));
   };
 
   const handleWorkScheduleChange = (day: string) => {
@@ -441,8 +445,8 @@ export function UserProfile() {
           full_name: profile.full_name,
           nickname: profile.nickname,
           avatar_url: avatarPath,
-          mobile_phone: profile.mobile_phone,
-          sms_phone: profile.sms_phone,
+          mobile_phone: formatPhoneNumber(profile.mobile_phone),
+          sms_phone: formatPhoneNumber(profile.sms_phone),
           bio: profile.bio,
           username: profile.username,
           work_schedule: profile.work_schedule,
@@ -653,7 +657,7 @@ export function UserProfile() {
                   value={profile.mobile_phone || ''}
                   onChange={handleInputChange}
                   className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter your mobile phone"
+                  placeholder="123-456-7890"
                 />
               </div>
 
@@ -668,7 +672,7 @@ export function UserProfile() {
                   value={profile.sms_phone || ''}
                   onChange={handleInputChange}
                   className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter your SMS phone"
+                  placeholder="123-456-7890"
                 />
               </div>
 

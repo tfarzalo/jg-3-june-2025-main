@@ -14,6 +14,7 @@ import {
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
+import { formatPhoneNumber } from '../lib/utils/formatUtils';
 
 interface LeadStatus {
   id: string;
@@ -251,9 +252,9 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
                   <input
                     type="tel"
                     value={formData.phone}
-                    onChange={(e) => { setFormData({ ...formData, phone: e.target.value }); setHasChanges(true); }}
+                    onChange={(e) => { setFormData({ ...formData, phone: formatPhoneNumber(e.target.value) }); setHasChanges(true); }}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="Enter phone number"
+                    placeholder="123-456-7890"
                   />
                 </div>
                 <div>

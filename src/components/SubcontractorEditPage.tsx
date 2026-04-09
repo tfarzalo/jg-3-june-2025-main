@@ -19,6 +19,7 @@ import {
   Lock,
   Briefcase
 } from 'lucide-react';
+import { formatPhoneNumber, mapInputValueByField } from '../lib/utils/formatUtils';
 interface SubcontractorData {
   id: string;
   email: string;
@@ -140,7 +141,7 @@ useEffect(() => {
         setFormData({
           email: data.email || '',
           full_name: data.full_name || '',
-          phone: data.phone || '',
+          phone: formatPhoneNumber(data.phone),
           address: data.address || '',
           company_name: data.company_name || '',
           password: '',
@@ -171,7 +172,7 @@ useEffect(() => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: mapInputValueByField(name, value)
     }));
   };
 

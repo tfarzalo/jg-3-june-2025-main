@@ -18,7 +18,7 @@ interface WorkOrderFile {
 interface ImageGalleryProps {
   workOrderId?: string | null;
   jobId?: string | null;
-  folder: 'before' | 'sprinkler' | 'other' | 'job_files';
+  folder: 'before' | 'after' | 'sprinkler' | 'other' | 'job_files';
   allowDelete?: boolean;
 }
 

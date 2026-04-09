@@ -1,5 +1,6 @@
 import React from 'react';
 import { Users, Mail, Phone, Star, CheckCircle, Bell, Plus } from 'lucide-react';
+import { formatPhoneNumber, normalizePhoneList } from '../../lib/utils/formatUtils';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -8,6 +9,7 @@ interface SystemContact {
   email: string;
   secondary_email?: string | null;
   phone: string;
+  additional_phones?: string[] | null;
   title: string;
 }
 
@@ -18,6 +20,7 @@ interface CustomContact {
   email: string;
   secondary_email?: string | null;
   phone: string;
+  additional_phones?: string[] | null;
   is_subcontractor_contact?: boolean;
   is_accounts_receivable_contact?: boolean;
   is_approval_recipient?: boolean;
@@ -86,15 +89,43 @@ interface PersonCard {
   key: string;
   name: string;
   email: string;
-  phone: string;
+  phones: string[];
   roles: string[];            // display labels e.g. "Community Manager", "Accounts Payable"
   isPrimary: boolean;
   receivesApproval: boolean;
   receivesNotifications: boolean;
 }
 
+function normalizeKeyText(value: string | null | undefined): string {
+  return (value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function buildPersonKey(
+  name: string,
+  email: string,
+  phone: string,
+  additionalPhones: string[] | null | undefined,
+): string {
+  const normalizedName = normalizeKeyText(name);
+  const normalizedEmail = normalizeKeyText(email);
+  const normalizedPhones = normalizePhoneList([phone, ...(additionalPhones || [])])
+    .map((entry) => entry.replace(/\D/g, ''))
+    .filter(Boolean);
+
+  if (normalizedEmail) {
+    return `${normalizedName}|email:${normalizedEmail}`;
+  }
+
+  if (normalizedName && normalizedPhones[0]) {
+    return `${normalizedName}|phone:${normalizedPhones[0]}`;
+  }
+
+  return `${normalizedName}|${normalizedPhones[0] || ''}`;
+}
+
 function buildCards(
   systemContacts: PropertyContactsViewerProps['systemContacts'],
+  systemContactRoles: PropertyContactsViewerProps['systemContactRoles'],
   customContacts: CustomContact[],
 ): PersonCard[] {
   const map = new Map<string, PersonCard>();
@@ -103,17 +134,18 @@ function buildCards(
     name: string,
     email: string,
     phone: string,
+    additionalPhones: string[] | null | undefined,
     role: string,
     isPrimary: boolean,
     receivesApproval: boolean,
     receivesNotifications: boolean,
   ) => {
     if (!name && !email) return;
-    // Key: normalise name + email so duplicates collapse
-    const key = `${(name || '').toLowerCase().trim()}|${(email || '').toLowerCase().trim()}`;
+    const key = buildPersonKey(name, email, phone, additionalPhones);
     if (map.has(key)) {
       const card = map.get(key)!;
       if (role && !card.roles.includes(role)) card.roles.push(role);
+      card.phones = normalizePhoneList([...card.phones, phone, ...(additionalPhones || [])]);
       card.isPrimary = card.isPrimary || isPrimary;
       card.receivesApproval = card.receivesApproval || receivesApproval;
       card.receivesNotifications = card.receivesNotifications || receivesNotifications;
@@ -122,7 +154,7 @@ function buildCards(
         key,
         name: name || '',
         email: email || '',
-        phone: phone || '',
+        phones: normalizePhoneList([phone, ...(additionalPhones || [])]),
         roles: role ? [role] : [],
         isPrimary,
         receivesApproval,
@@ -133,29 +165,42 @@ function buildCards(
 
   // System contacts
   const sys = systemContacts;
+  const sysRoles = systemContactRoles;
   addPerson(
-    sys.community_manager.name, sys.community_manager.email, sys.community_manager.phone,
-    sys.community_manager.title || 'Community Manager', false, false, false,
+    sys.community_manager.name, sys.community_manager.email, sys.community_manager.phone, sys.community_manager.additional_phones,
+    sys.community_manager.title || 'Community Manager',
+    false,
+    !!(sysRoles.community_manager?.approvalRecipient || sysRoles.community_manager?.primaryApproval),
+    !!(sysRoles.community_manager?.notificationRecipient || sysRoles.community_manager?.primaryNotification),
   );
   addPerson(
-    sys.maintenance_supervisor.name, sys.maintenance_supervisor.email, sys.maintenance_supervisor.phone,
-    sys.maintenance_supervisor.title || 'Maintenance Supervisor', false, false, false,
+    sys.maintenance_supervisor.name, sys.maintenance_supervisor.email, sys.maintenance_supervisor.phone, sys.maintenance_supervisor.additional_phones,
+    sys.maintenance_supervisor.title || 'Maintenance Supervisor',
+    false,
+    !!(sysRoles.maintenance_supervisor?.approvalRecipient || sysRoles.maintenance_supervisor?.primaryApproval),
+    !!(sysRoles.maintenance_supervisor?.notificationRecipient || sysRoles.maintenance_supervisor?.primaryNotification),
   );
-  // primary_contact might duplicate CM — that's intentional dedup
+  // primary_contact is a derived slot and may intentionally match another contact.
   addPerson(
-    sys.primary_contact.name, sys.primary_contact.email, sys.primary_contact.phone,
-    sys.primary_contact.title || 'Primary Contact', false, false, false,
+    sys.primary_contact.name, sys.primary_contact.email, sys.primary_contact.phone, sys.primary_contact.additional_phones,
+    sys.primary_contact.title || 'Primary Contact',
+    true,
+    !!(sysRoles.primary_contact?.approvalRecipient || sysRoles.primary_contact?.primaryApproval),
+    !!(sysRoles.primary_contact?.notificationRecipient || sysRoles.primary_contact?.primaryNotification),
   );
   addPerson(
-    sys.ap.name, sys.ap.email, sys.ap.phone,
-    'Accounts Payable', false, false, false,
+    sys.ap.name, sys.ap.email, sys.ap.phone, sys.ap.additional_phones,
+    sys.ap.title || 'Accounts Payable',
+    false,
+    !!(sysRoles.ap?.approvalRecipient || sysRoles.ap?.primaryApproval),
+    !!(sysRoles.ap?.notificationRecipient || sysRoles.ap?.primaryNotification),
   );
 
   // Custom contacts
   customContacts.forEach(c => {
     const displayRole = c.custom_title || c.position || '';
     addPerson(
-      c.name, c.email, c.phone,
+      c.name, c.email, c.phone, c.additional_phones,
       displayRole,
       c.is_primary_contact || false,
       c.receives_approval_emails ?? c.is_approval_recipient ?? false,
@@ -182,18 +227,18 @@ const ContactCard: React.FC<{ card: PersonCard }> = ({ card }) => {
   const roleText = card.roles.filter(Boolean).join(' · ');
 
   return (
-    <div className="flex flex-col bg-white dark:bg-[#0F172A] border border-gray-200 dark:border-[#2D3B4E] rounded-xl p-4 shadow-sm min-w-0">
+    <div className="flex h-full flex-col bg-white dark:bg-[#0F172A] border border-gray-200 dark:border-[#2D3B4E] rounded-xl p-4 shadow-sm min-w-0">
       {/* Avatar + Name row */}
-      <div className="flex items-center gap-3 mb-2">
+      <div className="flex items-start gap-3 mb-2">
         <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm select-none ${color}`}>
           {initials}
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-gray-900 dark:text-white truncate leading-tight">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white leading-tight break-words">
             {card.name || <span className="text-gray-400 italic">Unnamed</span>}
           </p>
           {roleText && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate leading-tight mt-0.5">
+            <p className="text-xs text-gray-500 dark:text-gray-400 leading-tight mt-0.5 break-words whitespace-normal">
               {roleText}
             </p>
           )}
@@ -207,18 +252,18 @@ const ContactCard: React.FC<{ card: PersonCard }> = ({ card }) => {
             <Mail className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
             <a
               href={`mailto:${card.email}`}
-              className="text-xs text-blue-600 dark:text-blue-400 hover:underline truncate"
+              className="min-w-0 text-xs text-blue-600 dark:text-blue-400 hover:underline break-all whitespace-normal"
             >
               {card.email}
             </a>
           </div>
         )}
-        {card.phone && (
-          <div className="flex items-center gap-1.5 min-w-0">
+        {card.phones.map((phone, index) => (
+          <div key={`${card.key}-phone-${index}`} className="flex items-center gap-1.5 min-w-0">
             <Phone className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
-            <span className="text-xs text-gray-700 dark:text-gray-300 truncate">{card.phone}</span>
+            <span className="text-xs text-gray-700 dark:text-gray-300 break-words whitespace-normal">{formatPhoneNumber(phone)}</span>
           </div>
-        )}
+        ))}
       </div>
 
       {/* Status badges */}
@@ -254,7 +299,7 @@ export function PropertyContactsViewer({
   customContacts,
   onAddContact,
 }: PropertyContactsViewerProps) {
-  const cards = buildCards(systemContacts, customContacts);
+  const cards = buildCards(systemContacts, systemContactRoles, customContacts);
   const totalCount = cards.length;
 
   return (
@@ -288,7 +333,7 @@ export function PropertyContactsViewer({
             <p className="text-sm">No contacts have been added yet.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
             {cards.map(card => (
               <ContactCard key={card.key} card={card} />
             ))}

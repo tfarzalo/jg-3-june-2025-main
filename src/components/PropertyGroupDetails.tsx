@@ -5,6 +5,7 @@ import { supabase, type PropertyManagementGroup } from '../utils/supabase';
 import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
 import { PropertyMap } from './PropertyMap';
+import { formatPhoneNumber } from '../lib/utils/formatUtils';
 
 interface PropertyGroupWithProperties extends PropertyManagementGroup {
   properties: {
@@ -270,7 +271,7 @@ export function PropertyGroupDetails() {
                 <Phone className="h-5 w-5 text-gray-500 dark:text-gray-400 mt-1 mr-3 flex-shrink-0" />
                 <div>
                   <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">Contact Phone</p>
-                  <p className="text-gray-900 dark:text-white">{group.contact_phone || 'Not specified'}</p>
+                  <p className="text-gray-900 dark:text-white">{formatPhoneNumber(group.contact_phone) || 'Not specified'}</p>
                 </div>
               </div>
               <div className="flex items-start">

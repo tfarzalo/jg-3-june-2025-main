@@ -222,15 +222,27 @@ export function JobRequestForm() {
         .order('sort_order, name');
 
       if (error) throw error;
-      
-      // Get the corresponding job_categories IDs for these names
-      if (data && data.length > 0) {
-        const categoryNames = data.map(cat => cat.name);
-        
+
+      // Also fetch all default job categories so they always appear even if
+      // the property's billing setup hasn't been opened yet to auto-insert them.
+      const { data: defaultCatsData, error: defaultCatsError } = await supabase
+        .from('job_categories')
+        .select('id, name, description, sort_order')
+        .eq('is_default', true)
+        .order('sort_order, name');
+
+      if (defaultCatsError) throw defaultCatsError;
+
+      // Build the combined name list: billing_categories names + default category names
+      const billingCategoryNames = (data || []).map(cat => cat.name);
+      const defaultCategoryNames = (defaultCatsData || []).map(cat => cat.name);
+      const allNames = Array.from(new Set([...billingCategoryNames, ...defaultCategoryNames]));
+
+      if (allNames.length > 0) {
         const { data: jobCategoriesData, error: jobCategoriesError } = await supabase
           .from('job_categories')
           .select('id, name, description, sort_order')
-          .in('name', categoryNames)
+          .in('name', allNames)
           .order('sort_order, name');
           
         if (jobCategoriesError) throw jobCategoriesError;

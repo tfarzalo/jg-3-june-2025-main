@@ -27,6 +27,7 @@ import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { useUserRole } from '../hooks/useUserRole';
 import { NewContactForm } from './NewContactForm';
+import { formatPhoneNumber, toDialablePhoneNumber } from '../lib/utils/formatUtils';
 
 interface LeadStatus {
   id: string;
@@ -285,12 +286,15 @@ export function Contacts() {
   };
 
   const filteredContacts = contacts.filter(contact => {
+    const normalizedSearch = searchTerm.toLowerCase();
+    const searchPhoneDigits = toDialablePhoneNumber(searchTerm);
     const matchesSearch = 
-      contact.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.phone.includes(searchTerm);
+      contact.first_name.toLowerCase().includes(normalizedSearch) ||
+      contact.last_name.toLowerCase().includes(normalizedSearch) ||
+      contact.email.toLowerCase().includes(normalizedSearch) ||
+      contact.company.toLowerCase().includes(normalizedSearch) ||
+      formatPhoneNumber(contact.phone).includes(searchTerm) ||
+      (searchPhoneDigits.length > 0 && toDialablePhoneNumber(contact.phone).includes(searchPhoneDigits));
 
     const matchesStatus = statusFilter === 'all' || contact.status_name === statusFilter;
 
@@ -500,8 +504,8 @@ export function Contacts() {
             {contact.phone && (
               <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
                 <Phone className="h-4 w-4 mr-2" />
-                <a href={`tel:${contact.phone}`} className="hover:text-purple-600" onClick={(e) => e.stopPropagation()}>
-                    {contact.phone}
+                <a href={`tel:${toDialablePhoneNumber(contact.phone)}`} className="hover:text-purple-600" onClick={(e) => e.stopPropagation()}>
+                    {formatPhoneNumber(contact.phone)}
                   </a>
                 </div>
               )}

@@ -473,7 +473,7 @@ window.addEventListener('message', function(event) {
       case 'url':
         return (
           <input
-            type={field.field_type}
+            type={field.field_type === 'phone' ? 'tel' : field.field_type}
             id={fieldId}
             placeholder={field.placeholder}
             required={field.is_required}

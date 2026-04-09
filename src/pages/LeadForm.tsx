@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
+import { formatPhoneNumber } from '../lib/utils/formatUtils';
 
 interface FormField {
   id: string;
@@ -213,11 +214,11 @@ export function LeadForm() {
       case 'url':
         return (
           <input
-            type={field.field_type}
+            type={field.field_type === 'phone' ? 'tel' : field.field_type}
             id={fieldId}
             name={field.field_name}
-            value={value}
-            onChange={(e) => handleInputChange(field.field_name, e.target.value)}
+            value={field.field_type === 'phone' ? formatPhoneNumber(value) : value}
+            onChange={(e) => handleInputChange(field.field_name, field.field_type === 'phone' ? formatPhoneNumber(e.target.value) : e.target.value)}
             placeholder={field.placeholder}
             required={field.is_required}
             className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors bg-white dark:bg-[#0F172A] text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"

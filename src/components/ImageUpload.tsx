@@ -11,7 +11,7 @@ import { optimizeImage } from '../lib/utils/imageOptimization';
 interface ImageUploadProps {
   jobId: string;
   workOrderId?: string;
-  folder: 'before' | 'sprinkler' | 'other';
+  folder: 'before' | 'after' | 'sprinkler' | 'other';
   onUploadComplete?: (filePath: string) => void;
   onError?: (error: string) => void;
   readOnly?: boolean;
@@ -535,8 +535,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
         } catch (fileError) {
           const errorMsg = fileError instanceof Error ? fileError.message : 'Unknown error';
-          console.error(`  ❌ Failed to upload ${file.name}:`, fileError);
-          if (onError) onError(`${file.name}: ${errorMsg}`);
+          console.error(`  ❌ Failed to upload ${originalFile.name}:`, fileError);
+          if (onError) onError(`${originalFile.name}: ${errorMsg}`);
         }
       }
     } catch (error) {
@@ -647,8 +647,10 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       )}
       {!readOnly && (
         <div
-          className={`border-2 border-dashed rounded-lg p-6 text-center ${
-            isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+          className={`border-2 border-dashed rounded-xl p-5 text-center transition-colors ${
+            isDragging
+              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+              : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/40'
           }`}
           onDragEnter={handleDragEnter}
           onDragLeave={handleDragLeave}
@@ -665,17 +667,25 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           />
           <label
             htmlFor={fileInputId}
-            className="cursor-pointer text-blue-500 hover:text-blue-600"
+            className="cursor-pointer flex flex-col items-center gap-3 touch-manipulation"
           >
-            <div className="space-y-2">
-              <div className="text-gray-600">
-                Drag and drop files here, or click to select files
-              </div>
-              <div className="text-sm text-gray-500">
-                {folder === 'other' 
-                  ? 'All file types are supported'
-                  : 'Supported formats: JPG, PNG, GIF'}
-              </div>
+            {/* Large tap-friendly camera icon */}
+            <div className="w-16 h-16 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+              <svg className="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <circle cx="12" cy="13" r="3" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                Tap to add photos
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {folder === 'other'
+                  ? 'All file types supported'
+                  : 'JPG · PNG · HEIC · multiple allowed'}
+              </p>
             </div>
           </label>
         </div>
@@ -692,11 +702,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               {totalFilesToUpload - uploadingFiles.length} / {totalFilesToUpload} complete
             </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {uploadingFiles.map((file, index) => (
               <div key={index} className="flex items-center space-x-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-700 dark:text-gray-300 truncate">{file.file.name}</p>
+                  <p className="text-xs text-gray-700 dark:text-gray-300 truncate">{file.file.name}</p>
                   <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">
                     {Math.round(file.progress)}% {file.progress === 100 ? '✓' : '⏳'}
                   </p>
@@ -722,11 +732,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Uploaded Files ({uploadedFiles.length})
           </h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {uploadedFiles.map((file, index) => (
               <div key={index} className="group flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-750 transition-colors">
                 <div className="flex-1 min-w-0 mr-2">
-                  <p className="text-sm text-gray-700 dark:text-gray-300 truncate" title={file.file_name}>
+                  <p className="text-xs text-gray-700 dark:text-gray-300 truncate" title={file.file_name}>
                     {file.file_name}
                   </p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -740,7 +750,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                       e.stopPropagation();
                       handleDeleteImage(file.file_path);
                     }}
-                    className="flex-shrink-0 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="flex-shrink-0 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 opacity-60 group-hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity touch-manipulation"
                     title="Delete file"
                   >
                     <svg

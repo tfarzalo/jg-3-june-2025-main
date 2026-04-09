@@ -10,6 +10,7 @@ import {
 } from '../../../shared/employeeOnboarding';
 import type { EmployeeRecord } from '../../features/employees/types';
 import { saveEmployeeFormSubmission } from '../../features/employees/api';
+import { formatPhoneNumber } from '../../lib/utils/formatUtils';
 import { Button } from '../ui/Button';
 import { SignaturePad } from './SignaturePad';
 
@@ -183,9 +184,9 @@ export function EmployeeFormEditor({
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">{field.label}</label>
         <input
           type={field.type === 'phone' ? 'tel' : field.type}
-          value={typeof value === 'string' ? value : ''}
+          value={field.type === 'phone' ? formatPhoneNumber(typeof value === 'string' ? value : '') : typeof value === 'string' ? value : ''}
           placeholder={field.placeholder}
-          onChange={(event) => updateFieldValue(field.id, event.target.value)}
+          onChange={(event) => updateFieldValue(field.id, field.type === 'phone' ? formatPhoneNumber(event.target.value) : event.target.value)}
           className={inputClassName}
         />
       </div>

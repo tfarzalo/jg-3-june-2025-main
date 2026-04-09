@@ -1326,70 +1326,118 @@ export function JobDetails() {
       y += 15;
     }
     
-    // Add images if available
-    if (job.work_order?.id) {
-      try {
-        const { data: images, error } = await supabase
-          .storage
-          .from('work_orders')
-          .list(`${job?.work_order?.id ?? ''}`);
-          
-        if (!error && images && images.length > 0) {
-          // Check if we need a new page for images
-          if (y > pageHeight - 150) {
-            doc.addPage();
-            y = 20;
+    // Add images — query the `files` table and group by category so counts are accurate
+    try {
+      let fileQuery = supabase
+        .from('files')
+        .select('id, storage_path, path, name, category')
+        .order('created_at', { ascending: true });
+
+      if (workOrderId && jobIdForFiles) {
+        fileQuery = fileQuery.or(`work_order_id.eq.${workOrderId},job_id.eq.${jobIdForFiles}`);
+      } else if (workOrderId) {
+        fileQuery = fileQuery.eq('work_order_id', workOrderId);
+      } else if (jobIdForFiles) {
+        fileQuery = fileQuery.eq('job_id', jobIdForFiles);
+      }
+
+      const { data: fileRows, error: fileError } = await fileQuery;
+
+      if (!fileError && fileRows && fileRows.length > 0) {
+        // Normalise category values using the same alias map the UI uses
+        const normalise = (cat: string | null | undefined): string => {
+          if (!cat) return 'other_files';
+          const c = cat.trim().toLowerCase();
+          if (c === 'before' || c === 'before_images') return 'before_images';
+          if (c === 'after'  || c === 'after_images')  return 'after_images';
+          if (c === 'sprinkler' || c === 'sprinkler_images') return 'sprinkler_images';
+          if (c === 'other'  || c === 'other_files')   return 'other_files';
+          if (c === 'job_files') return 'job_files';
+          if (c === 'property_files') return 'property_files';
+          return c;
+        };
+
+        // Only include true photo sections — skip other_files, job_files, property_files
+        // (other_files are typically non-image documents and would confuse the PDF reader)
+        const PHOTO_SECTIONS: { key: string; label: string }[] = [
+          { key: 'before_images',    label: 'Before Images'    },
+          { key: 'after_images',     label: 'After Images'     },
+          { key: 'sprinkler_images', label: 'Sprinkler Images' },
+        ];
+
+        // Group rows into sections
+        const grouped: Record<string, typeof fileRows> = {};
+        for (const file of fileRows) {
+          const key = normalise(file.category);
+          if (!grouped[key]) grouped[key] = [];
+          grouped[key].push(file);
+        }
+
+        // Helper to render one image from a file row
+        const renderImage = async (file: (typeof fileRows)[0]) => {
+          const filePath = file.storage_path || file.path;
+          const previewResult = await getPreviewUrl(supabase, 'files', filePath);
+          if (!previewResult?.url) return;
+
+          const response = await fetch(previewResult.url);
+          if (!response.ok) return;
+          const blob = await response.blob();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+
+          const maxWidth = 170;
+          const maxHeight = 110;
+          const imgEl = new window.Image();
+          imgEl.src = dataUrl;
+          await new Promise<void>((resolve) => { imgEl.onload = () => resolve(); imgEl.onerror = () => resolve(); });
+
+          let w = imgEl.naturalWidth || maxWidth;
+          let h = imgEl.naturalHeight || maxHeight;
+          if (w > maxWidth) { h = (maxWidth * h) / w; w = maxWidth; }
+          if (h > maxHeight) { w = (maxHeight * w) / h; h = maxHeight; }
+
+          if (y + h > pageHeight - 20) { doc.addPage(); y = 20; }
+
+          const format = blob.type === 'image/png' ? 'PNG' : 'JPEG';
+          doc.addImage(dataUrl, format, margin, y, w, h);
+          y += h + 8;
+
+          if (file.name) {
+            doc.setFontSize(8);
+            doc.setTextColor(100, 100, 100);
+            doc.text(file.name, margin, y);
+            doc.setTextColor(0, 0, 0);
+            y += 8;
           }
-          
+        };
+
+        for (const section of PHOTO_SECTIONS) {
+          const sectionFiles = grouped[section.key];
+          if (!sectionFiles || sectionFiles.length === 0) continue;
+
+          if (y > pageHeight - 150) { doc.addPage(); y = 20; }
+
           doc.setFontSize(16);
-          doc.text('Job Images', margin, y);
-          y += 15;
-          
-          for (const image of images) {
+          doc.text(`${section.label} (${sectionFiles.length})`, margin, y);
+          y += 12;
+
+          for (const file of sectionFiles) {
             try {
-              const previewResult = await getPreviewUrl(supabase, 'work_orders', `${job?.work_order?.id ?? ''}/${image.name}`);
-              
-              if (previewResult) {
-                const img = new window.Image();
-                img.src = previewResult.url;
-                await new Promise((resolve) => {
-                  img.onload = resolve;
-                });
-                
-                // Calculate dimensions to maintain aspect ratio
-                const maxWidth = 170;
-                const maxHeight = 100;
-                let width = img.width;
-                let height = img.height;
-                
-                if (width > maxWidth) {
-                  height = (maxWidth * height) / width;
-                  width = maxWidth;
-                }
-                
-                if (height > maxHeight) {
-                  width = (maxHeight * width) / height;
-                  height = maxHeight;
-                }
-                
-                // Check if we need a new page for this image
-                if (y + height > pageHeight - 20) {
-                  doc.addPage();
-                  y = 20;
-                }
-                
-                // Add image to PDF
-                doc.addImage(img, 'JPEG', margin, y, width, height);
-                y += height + 10;
-              }
-            } catch (err) {
-              console.error('Error getting preview URL for image:', err);
+              await renderImage(file);
+            } catch (imgErr) {
+              console.error('Error embedding image in PDF:', imgErr);
             }
           }
+
+          y += 5; // gap between sections
         }
-      } catch (err) {
-        console.error('Error fetching images:', err);
       }
+    } catch (err) {
+      console.error('Error fetching images for PDF:', err);
     }
     
     doc.save(`work-order-${job?.work_order_num ?? 0}.pdf`);
@@ -1542,6 +1590,56 @@ export function JobDetails() {
       setReactivatedFromDecline(false);
     } catch (error) {
       console.error('Error cancelling job from decline banner:', error);
+      toast.error('Failed to cancel job');
+    } finally {
+      setCancellingJob(false);
+    }
+  };
+
+  const handleCancelJob = async () => {
+    if (!job) return;
+
+    setCancellingJob(true);
+
+    try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!userData.user) throw new Error('User not found');
+
+      const { data: cancelledPhase, error: phaseError } = await supabase
+        .from('job_phases')
+        .select('id')
+        .eq('job_phase_label', 'Cancelled')
+        .single();
+
+      if (phaseError) throw phaseError;
+
+      const { error: updateError } = await supabase
+        .from('jobs')
+        .update({ current_phase_id: cancelledPhase.id })
+        .eq('id', job.id);
+
+      if (updateError) throw updateError;
+
+      const { error: phaseChangeError } = await supabase
+        .from('job_phase_changes')
+        .insert({
+          job_id: job.id,
+          changed_by: userData.user.id,
+          from_phase_id: job?.job_phase?.id,
+          to_phase_id: cancelledPhase.id,
+          change_reason: 'Job cancelled by admin'
+        });
+
+      if (phaseChangeError) throw phaseChangeError;
+
+      await refetchJob(true);
+      await refetchPhaseChanges();
+      setShowCancelJobConfirm(false);
+      toast.success('Job moved to Cancelled phase');
+      setReactivatedFromDecline(false);
+    } catch (error) {
+      console.error('Error cancelling job:', error);
       toast.error('Failed to cancel job');
     } finally {
       setCancellingJob(false);
@@ -2362,6 +2460,16 @@ export function JobDetails() {
             </div>
           </div>
           <div className="flex space-x-3">
+            {(isAdmin || isJGManagement) && isCancelled && (
+              <button
+                onClick={handleReactivateJob}
+                disabled={reactivatingJob}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <CheckCircle className="h-4 w-4 mr-2" />
+                {reactivatingJob ? 'Re-Activating...' : 'Re-Activate Job'}
+              </button>
+            )}
             {canChangePhase && !isPendingWorkOrder && !isCancelled && (
               <>
                 {!isJobRequest && (
@@ -3415,6 +3523,26 @@ export function JobDetails() {
                         )}
                       </div>
                     </div>
+
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">
+                        After Images
+                      </h4>
+                      <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                        {jobIdForFiles && (
+                          <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="after" />
+                        )}
+                        {(isAdmin || isJGManagement) && jobIdForFiles && workOrderId && (
+                          <div className="mt-4">
+                            <ImageUpload
+                              jobId={jobIdForFiles}
+                              workOrderId={workOrderId}
+                              folder="after"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     
                     <div>
                       <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">
@@ -3806,7 +3934,7 @@ export function JobDetails() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleCancelJobFromDecline}
+                  onClick={handleCancelJob}
                   disabled={cancellingJob}
                   className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                 >
@@ -3972,6 +4100,36 @@ export function JobDetails() {
                     </button>
                   )}
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Cancel Job — always visible for admins on any non-cancelled, non-completed phase */}
+        {(isAdmin || isJGManagement) && !isCancelled && !isCompleted && (
+          <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg mb-6 overflow-hidden">
+            <div className="bg-gradient-to-r from-red-700 to-red-800 dark:from-red-800 dark:to-red-900 px-6 py-4">
+              <h2 className="text-xl font-semibold text-white flex items-center">
+                <AlertTriangle className="h-5 w-5 mr-2" />
+                Danger Zone
+              </h2>
+            </div>
+            <div className="p-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">Cancel this Job</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                    Move this job to the Cancelled phase. You can re-activate it later if needed.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowCancelJobConfirm(true)}
+                  disabled={cancellingJob}
+                  className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  {cancellingJob ? 'Cancelling...' : 'Cancel Job'}
+                </button>
               </div>
             </div>
           </div>

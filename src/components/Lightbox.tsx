@@ -129,13 +129,37 @@ export function Lightbox({
   const activeLabel = isMulti ? (images[currentIndex]?.label || `Image ${currentIndex + 1} of ${images.length}`) : null;
   const headerTitle = title || (activeAlt && activeAlt !== 'Image' ? activeAlt : 'Photo Viewer');
 
-  const handleDownload = () => {
-    const link = document.createElement('a');
-    link.href = activeUrl;
-    link.download = activeAlt || 'image';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownload = async () => {
+    try {
+      // Fetch the image as a blob so the browser always triggers a save
+      // rather than navigating to the URL (which happens with cross-origin signed URLs).
+      const response = await fetch(activeUrl);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      // Derive a sensible filename from the alt text or URL
+      const ext = blob.type.split('/')[1] || 'jpg';
+      const baseName = (activeAlt && activeAlt !== 'Image')
+        ? activeAlt.replace(/\.[^.]+$/, '')
+        : `image-${currentIndex + 1}`;
+      link.download = `${baseName}.${ext}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.error('Download failed, falling back to direct link:', err);
+      // Fallback: direct anchor (may open in new tab for cross-origin)
+      const link = document.createElement('a');
+      link.href = activeUrl;
+      link.download = activeAlt || 'image';
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   const zoomPct = Math.round(zoom * 100);
