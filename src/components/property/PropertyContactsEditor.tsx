@@ -529,8 +529,17 @@ export function PropertyContactsEditor({
             </div>
           </button>
 
-          <button type="button" onClick={() => onCustomContactDelete(contact.id)} title="Remove contact"
-            className="flex-shrink-0 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
+          <button
+            type="button"
+            onClick={() => {
+              const label = contact.name?.trim() || displayTitle || 'this contact';
+              if (window.confirm(`Are you sure you want to delete ${label}? This cannot be undone.`)) {
+                onCustomContactDelete(contact.id);
+              }
+            }}
+            title="Remove contact"
+            className="flex-shrink-0 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+          >
             <Trash2 className="h-4 w-4" />
           </button>
         </div>
