@@ -257,7 +257,13 @@ Deno.serve(async (req: Request) => {
   // ── Call Twilio REST API ─────────────────────────────────────────────────────
   const twilioUrl  = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
   const basicAuth  = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`); // never logged
-  const formBody   = new URLSearchParams({ To: to, From: TWILIO_PHONE_NUMBER!, Body: body });
+  const statusCallbackUrl = `${SUPABASE_URL}/functions/v1/handle-twilio-status`;
+  const formBody   = new URLSearchParams({
+    To:             to,
+    From:           TWILIO_PHONE_NUMBER!,
+    Body:           body,
+    StatusCallback: statusCallbackUrl,
+  });
 
   let twilioData:    TwilioMessageResponse | null = null;
   let twilioStatus   = 0;
