@@ -25,6 +25,8 @@ import { prepareCeilingAccentUpdate } from '../lib/workOrders/prepareCeilingAcce
 import ExtraChargesSection from './ExtraChargesSection';
 import { ExtraChargeLineItem } from '../types/extraCharges';
 import { validateAllExtraCharges } from '../utils/extraChargesValidation';
+import { isFrozenHistoricalSnapshot } from '../lib/jobs/historicalDataMode';
+import { dispatchSmsNotificationBatch } from '../lib/sms/dispatchSmsNotification';
 
 
 interface Job {
@@ -52,6 +54,8 @@ interface Job {
     job_phase_label: string;
     color_dark_mode: string;
   } | null;
+  historical_data_mode?: 'live' | 'snapshot';
+  active_snapshot_id?: string | null;
   work_order?: WorkOrder;
   is_occupied: boolean;
   is_full_paint: boolean;
@@ -1908,6 +1912,38 @@ const NewWorkOrder = () => {
       
       toast.success(existingWorkOrder ? 'Work order updated successfully' : 'Work order created successfully');
       
+      // Notify admins/managers via SMS that a work order was submitted (best-effort, new WO only)
+      if (!existingWorkOrder) {
+        try {
+          const { data: adminProfiles } = await supabase
+            .from('profiles')
+            .select('id')
+            .in('role', ['admin', 'is_super_admin', 'jg_management']);
+
+          if (adminProfiles && adminProfiles.length > 0) {
+            await dispatchSmsNotificationBatch(
+              adminProfiles.map((p: { id: string }) => ({
+                eventType: 'work_order_submitted' as const,
+                recipientUserId: p.id,
+                // job_id at top level lets the dispatcher fetch DB context
+                // (property name, unit number, work order num)
+                job_id: job.id,
+                context: {
+                  submittedByUserId: userData.user.id,
+                  // Fallback fields used if DB fetch fails
+                  jobId: job.id,
+                  workOrderNum: job.work_order_num,
+                  unitNumber: job.unit_number,
+                  propertyName: job.property?.property_name ?? null,
+                },
+              }))
+            );
+          }
+        } catch (smsErr) {
+          console.warn('[NewWorkOrder] SMS dispatch error (non-fatal):', smsErr);
+        }
+      }
+
       // Add a small delay to ensure database transactions are committed
       setTimeout(() => {
         // For subcontractors, redirect to subcontractor dashboard to see updated job list
@@ -1971,6 +2007,10 @@ const NewWorkOrder = () => {
     }
 
     try {
+      if (isFrozenHistoricalSnapshot(job.job_phase?.job_phase_label, job.historical_data_mode)) {
+        return 'This completed or archived job is frozen as a snapshot. Reopen it from Job Details before editing.';
+      }
+
       // If user is admin/manager, allow submission regardless of phase
       const { data: userData } = await supabase.auth.getUser();
       if (userData?.user?.id) {

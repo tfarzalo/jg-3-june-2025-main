@@ -15,6 +15,7 @@ export type BillingLine = {
 export async function getAdditionalBillingLines(
   supabase: SupabaseClient,
   workOrder: {
+    frozen_billing_lines?: BillingLine[] | null;
     painted_ceilings?: boolean | null;
     ceiling_billing_detail_id?: string | null;
     individual_ceiling_count?: number | null;
@@ -42,6 +43,10 @@ export async function getAdditionalBillingLines(
     }> | null;
   }
 ): Promise<{ lines: BillingLine[]; warnings: string[] }> {
+  if (Array.isArray(workOrder.frozen_billing_lines) && workOrder.frozen_billing_lines.length > 0) {
+    return { lines: workOrder.frozen_billing_lines, warnings: [] };
+  }
+
   const lines: BillingLine[] = [];
   const warnings: string[] = [];
 

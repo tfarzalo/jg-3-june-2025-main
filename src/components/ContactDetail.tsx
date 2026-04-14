@@ -24,6 +24,7 @@ import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { CreatePropertyFromContactModal } from './CreatePropertyFromContactModal';
 import { formatPhoneNumber } from '../lib/utils/formatUtils';
+import { normalizeToE164US, isStorablePhone } from '../lib/utils/phoneE164';
 
 interface Contact {
   lead_id: string;
@@ -111,6 +112,7 @@ export function ContactDetail() {
   const [newTag, setNewTag] = useState('');
   const [activeTab, setActiveTab] = useState<'overview' | 'notes' | 'communications' | 'history'>('overview');
   const [showCreatePropertyModal, setShowCreatePropertyModal] = useState(false);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -335,7 +337,17 @@ export function ContactDetail() {
   const handleSave = async () => {
     try {
       setSaving(true);
-      
+      setPhoneError(null);
+
+      // Validate + normalize phone before saving
+      const rawPhone = formData.phone || '';
+      if (rawPhone.trim() !== '' && !isStorablePhone(rawPhone)) {
+        setPhoneError('Please enter a valid U.S. phone number (e.g. 713-555-1234).');
+        setSaving(false);
+        return;
+      }
+      const normalizedPhone = normalizeToE164US(rawPhone);
+
       // Update contact
       const { error: contactError } = await supabase
         .from('contacts')
@@ -343,7 +355,7 @@ export function ContactDetail() {
           first_name: formData.first_name,
           last_name: formData.last_name,
           email: formData.email,
-          phone: formatPhoneNumber(formData.phone),
+          phone: normalizedPhone,
           company: formData.company,
           job_title: formData.job_title,
           property_name: formData.property_name,
@@ -754,12 +766,39 @@ export function ContactDetail() {
                     Phone
                   </label>
                   {editing ? (
-                    <input
-                      type="tel"
-                      value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: formatPhoneNumber(e.target.value) })}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
+                    <>
+                      <input
+                        type="tel"
+                        value={formData.phone}
+                        onChange={(e) => {
+                          setFormData({ ...formData, phone: e.target.value });
+                          setPhoneError(null);
+                        }}
+                        onBlur={(e) => {
+                          const raw = e.target.value;
+                          const normalized = normalizeToE164US(raw);
+                          if (normalized !== null) {
+                            setFormData(prev => ({ ...prev, phone: normalized }));
+                            setPhoneError(null);
+                          } else if (raw.trim() !== '') {
+                            setPhoneError('Please enter a valid U.S. phone number (e.g. 713-555-1234).');
+                          } else {
+                            setPhoneError(null);
+                          }
+                        }}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                          phoneError ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                        placeholder="(713) 555-1234"
+                        aria-describedby={phoneError ? 'contact_phone_error' : undefined}
+                        aria-invalid={!!phoneError}
+                      />
+                      {phoneError && (
+                        <p id="contact_phone_error" role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">
+                          {phoneError}
+                        </p>
+                      )}
+                    </>
                   ) : (
                     <p className="text-gray-900 dark:text-white">{formatPhoneNumber(contact.phone)}</p>
                   )}

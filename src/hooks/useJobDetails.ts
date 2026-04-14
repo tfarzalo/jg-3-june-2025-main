@@ -84,6 +84,17 @@ export interface Job {
     extra_hours: number;
     additional_comments: string | null;
     is_active: boolean;
+    frozen_billing_lines?: Array<{
+      key: string;
+      label: string;
+      qty: number;
+      unitLabel?: string;
+      rateBill: number;
+      rateSub: number;
+      amountBill: number;
+      amountSub: number;
+      orderKey?: number;
+    }>;
   };
   billing_details?: {
     bill_amount: number;
@@ -222,6 +233,10 @@ export interface Job {
   invoice_sent_date?: string;
   invoice_paid_date?: string;
   repair_amount?: number;
+  historical_data_mode?: 'live' | 'snapshot';
+  active_snapshot_id?: string | null;
+  snapshot_frozen_at?: string | null;
+  snapshot_phase_label?: string | null;
 }
 
 // Normalization helpers
@@ -318,6 +333,10 @@ export function useJobDetails(jobId: string | undefined) {
             description,
             scheduled_date,
             assigned_to,
+            historical_data_mode,
+            active_snapshot_id,
+            snapshot_frozen_at,
+            snapshot_last_phase_label,
             property:properties (
               id,
               property_name,
@@ -413,6 +432,10 @@ export function useJobDetails(jobId: string | undefined) {
               color_light_mode: jd.job_phase.color_light_mode,
               color_dark_mode: jd.job_phase.color_dark_mode,
             } : null,
+            historical_data_mode: jd.historical_data_mode ?? 'live',
+            active_snapshot_id: jd.active_snapshot_id ?? null,
+            snapshot_frozen_at: jd.snapshot_frozen_at ?? null,
+            snapshot_phase_label: jd.snapshot_last_phase_label ?? null,
           };
           setRawJob(normalizedShape as any);
           setError(null);

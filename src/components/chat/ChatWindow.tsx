@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthProvider';
 import { supabase } from '../../utils/supabase';
 import { getAvatarProps } from '../../utils/avatarUtils';
 import { ChatAvatar } from './ChatAvatar';
+import { dispatchSmsNotification } from '../../lib/sms/dispatchSmsNotification';
 
 interface ChatWindowProps {
   conversationId: string;
@@ -226,6 +227,19 @@ export function ChatWindow({ conversationId, currentUserId }: ChatWindowProps) {
         .from('conversations')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', conversationId);
+
+      // Fire SMS notification to the other participant (best-effort)
+      if (otherParticipant?.id) {
+        dispatchSmsNotification({
+          eventType: 'chat_received',
+          recipientUserId: otherParticipant.id,
+          context: {
+            senderName: user?.user_metadata?.full_name ?? user?.email ?? 'Someone',
+            conversationId,
+            messageBody: inputValue.trim(),
+          },
+        });
+      }
 
       setInputValue('');
     } catch (error) {

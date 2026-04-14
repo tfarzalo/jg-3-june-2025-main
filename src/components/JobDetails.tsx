@@ -64,7 +64,15 @@ import NotificationEmailModal from './NotificationEmailModal';
 import { EnhancedPropertyNotificationModal } from './EnhancedPropertyNotificationModal';
 import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
+import { JobDataModeIndicator } from './jobs/JobDataModeIndicator';
 import { getBackNavigationPath } from '../lib/utils';
+import {
+  ADMIN_JOB_CANCELLATION_OTHER_REASON,
+  ADMIN_JOB_CANCELLATION_REASONS,
+  extractJobCancellationReason,
+  resolveAdminJobCancellationReason,
+} from '../lib/jobs/cancellationReasons';
+import { isFrozenHistoricalSnapshot } from '../lib/jobs/historicalDataMode';
 
 type Property = {
   id: string;
@@ -234,6 +242,7 @@ export function JobDetails() {
   const canManageRepair = isAdmin || isJGManagement;
   const canEditRepairInCurrentPhase = phaseLabel === 'Job Request' || phaseLabel === 'Work Order';
   const isRepairLocked = canManageRepair && !canEditRepairInCurrentPhase;
+  const isHistoricalSnapshotJob = isFrozenHistoricalSnapshot(phaseLabel, job?.historical_data_mode);
   const unitSizeId = job?.unit_size?.id ?? null;
   const propertyName = job?.property?.name ?? '—';
   const workOrderNum = job?.work_order_num ?? '—';
@@ -245,6 +254,9 @@ export function JobDetails() {
   const [showPhaseChangeModal, setShowPhaseChangeModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCancelJobConfirm, setShowCancelJobConfirm] = useState(false);
+  const [showCancelReasonStep, setShowCancelReasonStep] = useState(false);
+  const [selectedCancelReason, setSelectedCancelReason] = useState('');
+  const [otherCancelReason, setOtherCancelReason] = useState('');
   const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
   const [changeReason, setChangeReason] = useState('');
   const [changingPhase, setChangingPhase] = useState(false);
@@ -268,6 +280,20 @@ export function JobDetails() {
   const [showApproveButton, setShowApproveButton] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [showEnhancedNotificationModal, setShowEnhancedNotificationModal] = useState(false);
+
+  const resetCancelJobFlow = () => {
+    setShowCancelJobConfirm(false);
+    setShowCancelReasonStep(false);
+    setSelectedCancelReason('');
+    setOtherCancelReason('');
+  };
+
+  const startCancelJobFlow = () => {
+    setShowCancelJobConfirm(true);
+    setShowCancelReasonStep(false);
+    setSelectedCancelReason('');
+    setOtherCancelReason('');
+  };
   const [notificationType, setNotificationType] = useState<'sprinkler_paint' | 'drywall_repairs' | 'extra_charges' | null>(null);
   const [additionalBillingLines, setAdditionalBillingLines] = useState<Array<{
     key: string;
@@ -295,6 +321,7 @@ export function JobDetails() {
   const [jobNotesLoading, setJobNotesLoading] = useState(false);
   const [jobNotesSaving, setJobNotesSaving] = useState(false);
   const [jobNotesError, setJobNotesError] = useState<string | null>(null);
+  const [reopeningHistoricalJob, setReopeningHistoricalJob] = useState(false);
   const [newJobNote, setNewJobNote] = useState({
     topic: '',
     note_content: '',
@@ -638,6 +665,7 @@ export function JobDetails() {
   useEffect(() => {
     const calculateAndUpdateTotalBilling = async () => {
       if (!job || !jobId) return;
+      if (isHistoricalSnapshotJob) return;
 
       // Get base billing amount from the job's billing category
       const standardBillAmount = job.billing_details?.bill_amount ?? 0;
@@ -666,7 +694,7 @@ export function JobDetails() {
     };
 
     calculateAndUpdateTotalBilling();
-  }, [job, jobId, supplementalBillingLines]);
+  }, [job, jobId, supplementalBillingLines, isHistoricalSnapshotJob]);
 
   // Fetch additional billing lines for ceilings and accent walls
   useEffect(() => {
@@ -1599,6 +1627,16 @@ export function JobDetails() {
   const handleCancelJob = async () => {
     if (!job) return;
 
+    const cancellationReason = resolveAdminJobCancellationReason(
+      selectedCancelReason,
+      otherCancelReason
+    );
+
+    if (!cancellationReason) {
+      toast.error('Select a cancellation reason');
+      return;
+    }
+
     setCancellingJob(true);
 
     try {
@@ -1628,14 +1666,14 @@ export function JobDetails() {
           changed_by: userData.user.id,
           from_phase_id: job?.job_phase?.id,
           to_phase_id: cancelledPhase.id,
-          change_reason: 'Job cancelled by admin'
+          change_reason: `Job cancelled by admin: ${cancellationReason}`
         });
 
       if (phaseChangeError) throw phaseChangeError;
 
       await refetchJob(true);
       await refetchPhaseChanges();
-      setShowCancelJobConfirm(false);
+      resetCancelJobFlow();
       toast.success('Job moved to Cancelled phase');
       setReactivatedFromDecline(false);
     } catch (error) {
@@ -1645,6 +1683,12 @@ export function JobDetails() {
       setCancellingJob(false);
     }
   };
+
+  const cancelReasonRequiresOtherInput =
+    selectedCancelReason === ADMIN_JOB_CANCELLATION_OTHER_REASON;
+  const canSubmitCancellationReason = Boolean(
+    resolveAdminJobCancellationReason(selectedCancelReason, otherCancelReason)
+  );
 
   const handleReactivateJob = async () => {
     if (!job) return;
@@ -2371,6 +2415,23 @@ export function JobDetails() {
   const isInvoicing = phaseLabel === 'Invoicing';
   const isCompleted = phaseLabel === 'Completed';
   const isCancelled = phaseLabel === 'Cancelled';
+  const cancellationReasonForBanner = useMemo(() => {
+    if (!isCancelled || phaseChanges.length === 0) {
+      return null;
+    }
+
+    const sortedChanges = [...phaseChanges].sort(
+      (a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime()
+    );
+
+    const latestCancellationChange = sortedChanges.find(
+      (change) =>
+        change.to_phase_label === 'Cancelled' ||
+        (change.change_reason || '').toLowerCase().includes('job cancelled')
+    );
+
+    return extractJobCancellationReason(latestCancellationChange?.change_reason);
+  }, [isCancelled, phaseChanges]);
 
   // Calculate profit if billing details are available
   const profitAmount = (job.billing_details?.bill_amount !== null && job.billing_details?.sub_pay_amount !== null && job.billing_details?.bill_amount !== undefined && job.billing_details?.sub_pay_amount !== undefined)
@@ -2394,6 +2455,10 @@ export function JobDetails() {
   // Add a helper function to handle phase change by phase object
   const handlePhaseChangeTo = async (phase) => {
     if (!phase || !job) return;
+    if (isHistoricalSnapshotJob) {
+      toast.error('Reopen the frozen job before changing phases.');
+      return;
+    }
     setChangingPhase(true);
     try {
       const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -2432,6 +2497,37 @@ export function JobDetails() {
     }
   };
 
+  const handleReopenHistoricalJob = async () => {
+    if (!jobId || !job || !(isAdmin || isJGManagement)) return;
+
+    const reason = window.prompt(
+      'Enter a reason for reopening this frozen job. The existing snapshot will be preserved.'
+    );
+
+    if (!reason || !reason.trim()) {
+      return;
+    }
+
+    setReopeningHistoricalJob(true);
+    try {
+      const { error } = await supabase.rpc('reopen_job_from_snapshot', {
+        p_job_id: jobId,
+        p_reason: reason.trim(),
+        p_target_phase_label: null,
+      });
+
+      if (error) throw error;
+
+      toast.success('Job reopened for editing. The previous snapshot was preserved.');
+      await Promise.all([refetchJob(), refetchPhaseChanges()]);
+    } catch (err) {
+      console.error('Error reopening frozen job:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to reopen frozen job');
+    } finally {
+      setReopeningHistoricalJob(false);
+    }
+  };
+
 
   return (
     <div className="p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
@@ -2457,9 +2553,23 @@ export function JobDetails() {
               >
                 {phaseLabel}
               </span>
+              <JobDataModeIndicator
+                phaseLabel={phaseLabel}
+                dataMode={job?.historical_data_mode}
+              />
             </div>
           </div>
           <div className="flex space-x-3">
+            {(isAdmin || isJGManagement) && isHistoricalSnapshotJob && (
+              <button
+                onClick={handleReopenHistoricalJob}
+                disabled={reopeningHistoricalJob}
+                className="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Edit className="h-4 w-4 mr-2" />
+                {reopeningHistoricalJob ? 'Reopening...' : 'Reopen Job'}
+              </button>
+            )}
             {(isAdmin || isJGManagement) && isCancelled && (
               <button
                 onClick={handleReactivateJob}
@@ -2470,7 +2580,7 @@ export function JobDetails() {
                 {reactivatingJob ? 'Re-Activating...' : 'Re-Activate Job'}
               </button>
             )}
-            {canChangePhase && !isPendingWorkOrder && !isCancelled && (
+            {canChangePhase && !isPendingWorkOrder && !isCancelled && !isHistoricalSnapshotJob && (
               <>
                 {!isJobRequest && (
                   <button
@@ -2522,6 +2632,22 @@ export function JobDetails() {
             )}
           </div>
         </div>
+
+        {isCancelled && cancellationReasonForBanner && (
+          <div className="mb-6 rounded-xl border border-red-200 dark:border-red-700/40 bg-red-50 dark:bg-red-900/20 px-6 py-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-red-900 dark:text-red-100">
+                  Cancelled
+                </p>
+                <p className="text-sm text-red-800 dark:text-red-200 mt-1">
+                  Reason for cancellation: {cancellationReasonForBanner}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           {/* Job Details */}
@@ -3214,7 +3340,7 @@ export function JobDetails() {
                           )}
                           {(isAdmin || isJGManagement) && !isCancelled && (
                             <button
-                              onClick={() => setShowCancelJobConfirm(true)}
+                              onClick={startCancelJobFlow}
                               className="inline-flex items-center px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
                               title="Move the job to the Cancelled phase"
                               disabled={cancellingJob}
@@ -3921,33 +4047,100 @@ export function JobDetails() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Cancel Job</h3>
-              <p className="text-gray-700 dark:text-gray-300 mb-6">
-                Are you sure you want to cancel this job? It will move to the Cancelled phase. To continue work later, you’ll need to use “Re-Activate Job” in the banner to return it to Pending Work Order.
-              </p>
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setShowCancelJobConfirm(false)}
-                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
-                >
-                  Keep Job Active
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCancelJob}
-                  disabled={cancellingJob}
-                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                >
-                  {cancellingJob ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
-                      Cancelling...
-                    </>
-                  ) : (
-                    'Yes, Cancel Job'
-                  )}
-                </button>
-              </div>
+              {!showCancelReasonStep ? (
+                <>
+                  <p className="text-gray-700 dark:text-gray-300 mb-6">
+                    Are you sure you want to cancel this job? It will move to the Cancelled phase. To continue work later, you'll need to use "Re-Activate Job" in the banner to return it to Pending Work Order.
+                  </p>
+                  <div className="flex justify-end space-x-3">
+                    <button
+                      type="button"
+                      onClick={resetCancelJobFlow}
+                      className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
+                    >
+                      Keep Job Active
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowCancelReasonStep(true)}
+                      className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                    >
+                      Yes, Continue
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-gray-700 dark:text-gray-300 mb-4">
+                    Select the reason this job is being cancelled.
+                  </p>
+                  <div className="space-y-3 mb-6">
+                    {ADMIN_JOB_CANCELLATION_REASONS.map((reason) => (
+                      <label
+                        key={reason}
+                        className="flex items-start gap-3 rounded-md border border-gray-200 dark:border-[#334155] px-3 py-2 cursor-pointer"
+                      >
+                        <input
+                          type="radio"
+                          name="cancel-job-reason"
+                          value={reason}
+                          checked={selectedCancelReason === reason}
+                          onChange={(e) => setSelectedCancelReason(e.target.value)}
+                          className="mt-1 h-4 w-4 text-red-600 focus:ring-red-500"
+                        />
+                        <span className="text-sm text-gray-800 dark:text-gray-200">{reason}</span>
+                      </label>
+                    ))}
+                    <label className="flex items-start gap-3 rounded-md border border-gray-200 dark:border-[#334155] px-3 py-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="cancel-job-reason"
+                        value={ADMIN_JOB_CANCELLATION_OTHER_REASON}
+                        checked={selectedCancelReason === ADMIN_JOB_CANCELLATION_OTHER_REASON}
+                        onChange={(e) => setSelectedCancelReason(e.target.value)}
+                        className="mt-1 h-4 w-4 text-red-600 focus:ring-red-500"
+                      />
+                      <div className="flex-1">
+                        <span className="text-sm text-gray-800 dark:text-gray-200">Other</span>
+                        {cancelReasonRequiresOtherInput && (
+                          <input
+                            type="text"
+                            value={otherCancelReason}
+                            onChange={(e) => setOtherCancelReason(e.target.value)}
+                            placeholder="Enter cancellation reason"
+                            className="mt-2 w-full rounded-md border border-gray-300 dark:border-[#475569] bg-white dark:bg-[#0F172A] px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                          />
+                        )}
+                      </div>
+                    </label>
+                  </div>
+                  <div className="flex justify-end space-x-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowCancelReasonStep(false)}
+                      disabled={cancellingJob}
+                      className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelJob}
+                      disabled={cancellingJob || !canSubmitCancellationReason}
+                      className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                    >
+                      {cancellingJob ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                          Cancelling...
+                        </>
+                      ) : (
+                        'Cancel Job'
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -4069,7 +4262,7 @@ export function JobDetails() {
             <div className="p-6">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                  {hasWorkOrder && (
+                  {hasWorkOrder && !isHistoricalSnapshotJob && (
                     <Link
                       to={`/dashboard/jobs/${jobId}/new-work-order?edit=true`}
                       className="inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors shadow-md hover:shadow-lg"
@@ -4080,6 +4273,11 @@ export function JobDetails() {
                       <Edit className="h-4 w-4 mr-2" />
                       {isAdmin || isJGManagement ? 'Edit Work Order' : 'View Work Order'}
                     </Link>
+                  )}
+                  {hasWorkOrder && isHistoricalSnapshotJob && (
+                    <div className="text-sm text-gray-600 dark:text-gray-300">
+                      Reopen this frozen job to edit the work order.
+                    </div>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-3">
@@ -4123,7 +4321,7 @@ export function JobDetails() {
                   </p>
                 </div>
                 <button
-                  onClick={() => setShowCancelJobConfirm(true)}
+                  onClick={startCancelJobFlow}
                   disabled={cancellingJob}
                   className="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                 >

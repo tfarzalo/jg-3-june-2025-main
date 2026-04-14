@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 import { SubcontractorJobHistory } from './users/SubcontractorJobHistory';
 import { formatDisplayDate } from '../lib/dateUtils';
 import { formatPhoneNumber, mapInputValueByField } from '../lib/utils/formatUtils';
+import { normalizeToE164US, isStorablePhone } from '../lib/utils/phoneE164';
 
 interface UserProfileData {
   id: string;
@@ -122,6 +123,7 @@ export function UserProfile() {
     system_alerts: true
   });
 
+  const [smsPhoneError, setSmsPhoneError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUserProfile(userId);
@@ -420,7 +422,19 @@ export function UserProfile() {
     e.preventDefault();
     setSaving(true);
     setError(null);
-    
+    setSmsPhoneError(null);
+
+    // Validate sms_phone before attempting to save
+    const rawSmsPhone = profile.sms_phone || '';
+    if (rawSmsPhone.trim() !== '' && !isStorablePhone(rawSmsPhone)) {
+      setSmsPhoneError('Please enter a valid U.S. mobile number (e.g. 713-555-1234).');
+      setSaving(false);
+      return;
+    }
+
+    // Normalize to E.164 for storage (empty → null)
+    const normalizedSmsPhone = normalizeToE164US(rawSmsPhone);
+
     try {
       // Upload avatar if changed
       let avatarPath = profile.avatar_url;
@@ -446,7 +460,7 @@ export function UserProfile() {
           nickname: profile.nickname,
           avatar_url: avatarPath,
           mobile_phone: formatPhoneNumber(profile.mobile_phone),
-          sms_phone: formatPhoneNumber(profile.sms_phone),
+          sms_phone: normalizedSmsPhone,
           bio: profile.bio,
           username: profile.username,
           work_schedule: profile.work_schedule,
@@ -671,9 +685,37 @@ export function UserProfile() {
                   name="sms_phone"
                   value={profile.sms_phone || ''}
                   onChange={handleInputChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="123-456-7890"
+                  onBlur={(e) => {
+                    const raw = e.target.value;
+                    const normalized = normalizeToE164US(raw);
+                    if (normalized !== null) {
+                      setProfile(prev => ({ ...prev, sms_phone: normalized }));
+                      setSmsPhoneError(null);
+                    } else if (raw.trim() !== '') {
+                      setSmsPhoneError('Please enter a valid U.S. mobile number (e.g. 713-555-1234).');
+                    } else {
+                      setSmsPhoneError(null);
+                    }
+                  }}
+                  className={`w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    smsPhoneError
+                      ? 'border-red-500 dark:border-red-400'
+                      : 'border-gray-300 dark:border-[#2D3B4E]'
+                  }`}
+                  placeholder="(713) 555-1234"
+                  aria-describedby={smsPhoneError ? 'sms_phone_error' : undefined}
+                  aria-invalid={!!smsPhoneError}
                 />
+                {smsPhoneError && (
+                  <p id="sms_phone_error" role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">
+                    {smsPhoneError}
+                  </p>
+                )}
+                {!smsPhoneError && (
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    U.S. numbers only. Enter any format — we'll save it as +1 format.
+                  </p>
+                )}
               </div>
 
               <div className="md:col-span-2">

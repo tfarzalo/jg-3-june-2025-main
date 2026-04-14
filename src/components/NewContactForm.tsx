@@ -15,6 +15,7 @@ import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
 import { formatPhoneNumber } from '../lib/utils/formatUtils';
+import { normalizeToE164US, isStorablePhone } from '../lib/utils/phoneE164';
 
 interface LeadStatus {
   id: string;
@@ -31,6 +32,7 @@ interface NewContactFormProps {
 
 export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
   const [loading, setLoading] = useState(false);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
   const [leadStatuses, setLeadStatuses] = useState<LeadStatus[]>([]);
@@ -87,6 +89,15 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
       return;
     }
 
+    // Validate + normalize phone
+    const rawPhone = formData.phone || '';
+    if (rawPhone.trim() !== '' && !isStorablePhone(rawPhone)) {
+      setPhoneError('Please enter a valid U.S. phone number (e.g. 713-555-1234).');
+      return;
+    }
+    const normalizedPhone = normalizeToE164US(rawPhone);
+    setPhoneError(null);
+
     try {
       setLoading(true);
       
@@ -97,7 +108,7 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
           first_name: formData.first_name,
           last_name: formData.last_name,
           email: formData.email || null,
-          phone: formData.phone || null,
+          phone: normalizedPhone,
           company: formData.company || null,
           job_title: formData.job_title || null,
           property_name: formData.property_name || null,
@@ -252,10 +263,35 @@ export function NewContactForm({ onClose, onSuccess }: NewContactFormProps) {
                   <input
                     type="tel"
                     value={formData.phone}
-                    onChange={(e) => { setFormData({ ...formData, phone: formatPhoneNumber(e.target.value) }); setHasChanges(true); }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="123-456-7890"
+                    onChange={(e) => {
+                      setFormData({ ...formData, phone: e.target.value });
+                      setPhoneError(null);
+                      setHasChanges(true);
+                    }}
+                    onBlur={(e) => {
+                      const raw = e.target.value;
+                      const normalized = normalizeToE164US(raw);
+                      if (normalized !== null) {
+                        setFormData(prev => ({ ...prev, phone: normalized }));
+                        setPhoneError(null);
+                      } else if (raw.trim() !== '') {
+                        setPhoneError('Please enter a valid U.S. phone number (e.g. 713-555-1234).');
+                      } else {
+                        setPhoneError(null);
+                      }
+                    }}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                      phoneError ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-gray-600'
+                    }`}
+                    placeholder="(713) 555-1234"
+                    aria-describedby={phoneError ? 'new_contact_phone_error' : undefined}
+                    aria-invalid={!!phoneError}
                   />
+                  {phoneError && (
+                    <p id="new_contact_phone_error" role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">
+                      {phoneError}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

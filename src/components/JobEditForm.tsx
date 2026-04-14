@@ -11,6 +11,11 @@ import { optimizeImage } from '../lib/utils/imageOptimization';
 import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
 import { buildStoragePath } from '../utils/storagePaths';
 import { FILE_CATEGORY_PATHS } from '../utils/fileCategories';
+import {
+  ADMIN_JOB_CANCELLATION_OTHER_REASON,
+  ADMIN_JOB_CANCELLATION_REASONS,
+  resolveAdminJobCancellationReason,
+} from '../lib/jobs/cancellationReasons';
 
 interface Property {
   id: string;
@@ -69,6 +74,9 @@ export function JobEditForm() {
   const [error, setError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showCancelReasonStep, setShowCancelReasonStep] = useState(false);
+  const [selectedCancelReason, setSelectedCancelReason] = useState('');
+  const [otherCancelReason, setOtherCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const [properties, setProperties] = useState<Property[]>([]);
   const [unitSizes, setUnitSizes] = useState<UnitSize[]>([]);
@@ -91,6 +99,20 @@ export function JobEditForm() {
     const fakeEvent = { preventDefault() {} } as any;
     await handleSubmit(fakeEvent);
   });
+
+  const resetCancelJobFlow = () => {
+    setShowCancelConfirm(false);
+    setShowCancelReasonStep(false);
+    setSelectedCancelReason('');
+    setOtherCancelReason('');
+  };
+
+  const startCancelJobFlow = () => {
+    setShowCancelConfirm(true);
+    setShowCancelReasonStep(false);
+    setSelectedCancelReason('');
+    setOtherCancelReason('');
+  };
 
   useEffect(() => {
     if (!jobId) {
@@ -666,6 +688,16 @@ export function JobEditForm() {
   // Handle job cancellation
   const handleCancelJob = async () => {
     if (!jobId) return;
+
+    const cancellationReason = resolveAdminJobCancellationReason(
+      selectedCancelReason,
+      otherCancelReason
+    );
+
+    if (!cancellationReason) {
+      setError('Select a cancellation reason');
+      return;
+    }
     
     setCancelling(true);
     setError(null);
@@ -703,13 +735,13 @@ export function JobEditForm() {
           changed_by: userData.user.id,
           from_phase_id: job?.job_phase?.id,
           to_phase_id: cancelledPhase.id,
-          change_reason: 'Job cancelled from Job Request edit page'
+          change_reason: `Job cancelled from Job Request edit page: ${cancellationReason}`
         });
 
       if (phaseChangeError) throw phaseChangeError;
       
       // Close the confirmation modal
-      setShowCancelConfirm(false);
+      resetCancelJobFlow();
       
       // Navigate back to jobs list
       navigate('/dashboard/jobs');
@@ -720,6 +752,12 @@ export function JobEditForm() {
       setCancelling(false);
     }
   };
+
+  const cancelReasonRequiresOtherInput =
+    selectedCancelReason === ADMIN_JOB_CANCELLATION_OTHER_REASON;
+  const canSubmitCancellationReason = Boolean(
+    resolveAdminJobCancellationReason(selectedCancelReason, otherCancelReason)
+  );
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -989,7 +1027,7 @@ export function JobEditForm() {
             <div className="flex space-x-3">
               <button
                 type="button"
-                onClick={() => setShowCancelConfirm(true)}
+                onClick={startCancelJobFlow}
                 className="inline-flex items-center px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition-colors"
               >
                 <XCircle className="h-4 w-4 mr-2" />
@@ -1058,26 +1096,93 @@ export function JobEditForm() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Cancel Job</h3>
-              <p className="text-gray-700 dark:text-gray-300 mb-6">
-                Are you sure you want to cancel this job? This will move the job to the Cancelled phase and cannot be undone.
-              </p>
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setShowCancelConfirm(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-400 bg-white dark:bg-[#2D3B4E] rounded-lg hover:bg-gray-50 dark:hover:bg-[#374151] transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCancelJob}
-                  disabled={cancelling}
-                  className="px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50"
-                >
-                  {cancelling ? 'Cancelling...' : 'Yes, Cancel Job'}
-                </button>
-              </div>
+              {!showCancelReasonStep ? (
+                <>
+                  <p className="text-gray-700 dark:text-gray-300 mb-6">
+                    Are you sure you want to cancel this job? This will move the job to the Cancelled phase and cannot be undone.
+                  </p>
+                  <div className="flex justify-end space-x-3">
+                    <button
+                      type="button"
+                      onClick={resetCancelJobFlow}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-400 bg-white dark:bg-[#2D3B4E] rounded-lg hover:bg-gray-50 dark:hover:bg-[#374151] transition-colors"
+                    >
+                      Keep Job Active
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowCancelReasonStep(true)}
+                      className="px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors"
+                    >
+                      Yes, Continue
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-gray-700 dark:text-gray-300 mb-4">
+                    Select the reason this job is being cancelled.
+                  </p>
+                  <div className="space-y-3 mb-6">
+                    {ADMIN_JOB_CANCELLATION_REASONS.map((reason) => (
+                      <label
+                        key={reason}
+                        className="flex items-start gap-3 rounded-md border border-gray-200 dark:border-[#334155] px-3 py-2 cursor-pointer"
+                      >
+                        <input
+                          type="radio"
+                          name="cancel-job-reason"
+                          value={reason}
+                          checked={selectedCancelReason === reason}
+                          onChange={(e) => setSelectedCancelReason(e.target.value)}
+                          className="mt-1 h-4 w-4 text-orange-600 focus:ring-orange-500"
+                        />
+                        <span className="text-sm text-gray-800 dark:text-gray-200">{reason}</span>
+                      </label>
+                    ))}
+                    <label className="flex items-start gap-3 rounded-md border border-gray-200 dark:border-[#334155] px-3 py-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="cancel-job-reason"
+                        value={ADMIN_JOB_CANCELLATION_OTHER_REASON}
+                        checked={selectedCancelReason === ADMIN_JOB_CANCELLATION_OTHER_REASON}
+                        onChange={(e) => setSelectedCancelReason(e.target.value)}
+                        className="mt-1 h-4 w-4 text-orange-600 focus:ring-orange-500"
+                      />
+                      <div className="flex-1">
+                        <span className="text-sm text-gray-800 dark:text-gray-200">Other</span>
+                        {cancelReasonRequiresOtherInput && (
+                          <input
+                            type="text"
+                            value={otherCancelReason}
+                            onChange={(e) => setOtherCancelReason(e.target.value)}
+                            placeholder="Enter cancellation reason"
+                            className="mt-2 w-full rounded-md border border-gray-300 dark:border-[#475569] bg-white dark:bg-[#0F172A] px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                          />
+                        )}
+                      </div>
+                    </label>
+                  </div>
+                  <div className="flex justify-end space-x-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowCancelReasonStep(false)}
+                      disabled={cancelling}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-400 bg-white dark:bg-[#2D3B4E] rounded-lg hover:bg-gray-50 dark:hover:bg-[#374151] transition-colors disabled:opacity-50"
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelJob}
+                      disabled={cancelling || !canSubmitCancellationReason}
+                      className="px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50"
+                    >
+                      {cancelling ? 'Cancelling...' : 'Cancel Job'}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

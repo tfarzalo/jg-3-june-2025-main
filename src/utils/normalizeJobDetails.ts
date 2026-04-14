@@ -77,6 +77,10 @@ export type JobDetailsNormalized = {
   debug_billing_joins?: any;
   repair_amount?: number;
   repair_sub_pay?: number;
+  historical_data_mode?: 'live' | 'snapshot';
+  active_snapshot_id?: string | null;
+  snapshot_frozen_at?: string | null;
+  snapshot_phase_label?: string | null;
 };
 
 export function normalizeJobDetails(d: any): JobDetailsNormalized {
@@ -170,5 +174,9 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
     debug_billing_joins: d?.debug_billing_joins ?? null,
     repair_amount: d?.repair_amount != null ? Number(d.repair_amount) : undefined,
     repair_sub_pay: d?.repair_sub_pay != null ? Number(d.repair_sub_pay) : undefined,
+    historical_data_mode: d?.historical_data_mode === 'snapshot' ? 'snapshot' : 'live',
+    active_snapshot_id: d?.active_snapshot_id ?? null,
+    snapshot_frozen_at: d?.snapshot_frozen_at ?? null,
+    snapshot_phase_label: d?.snapshot_phase_label ?? null,
   };
 }

@@ -88,6 +88,9 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
           invoice_paid,
           invoice_sent_date,
           invoice_paid_date,
+          historical_data_mode,
+          active_snapshot_id,
+          snapshot_frozen_at,
           purchase_order,
           property:properties (
             id,
@@ -188,6 +191,14 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
               : 0;
 
             // Additional services
+            const frozenLines = jd?.work_order?.frozen_billing_lines ?? [];
+            const frozenLinesTotal = Array.isArray(frozenLines)
+              ? frozenLines.reduce((sum: number, line: any) => {
+                  const amt = Number(line?.amountBill ?? 0) || 0;
+                  return sum + amt;
+                }, 0)
+              : 0;
+
             const additional = jd?.work_order?.additional_services ?? [];
             const additionalTotal = Array.isArray(additional)
               ? additional.reduce((sum: number, svc: any) => {
@@ -196,7 +207,7 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
                 }, 0)
               : 0;
 
-            const computed = base + extraLabor + lineItemsTotal + additionalTotal;
+            const computed = base + extraLabor + lineItemsTotal + Math.max(frozenLinesTotal, additionalTotal);
             total = computed > 0 ? computed : null;
           }
           billingRpcCache.set(jobId, total);
@@ -234,6 +245,9 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
             created_at: job.created_at,
             updated_at: job.updated_at,
             total_billing_amount: totalBillingAmount,
+            historical_data_mode: job.historical_data_mode === 'snapshot' ? 'snapshot' : 'live',
+            active_snapshot_id: job.active_snapshot_id ?? null,
+            snapshot_frozen_at: job.snapshot_frozen_at ?? null,
             invoice_sent: job.invoice_sent,
             invoice_paid: job.invoice_paid,
             invoice_sent_date: job.invoice_sent_date,
@@ -305,6 +319,9 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
               invoice_paid,
               invoice_sent_date,
               invoice_paid_date,
+              historical_data_mode,
+              active_snapshot_id,
+              snapshot_frozen_at,
               property:properties (
                 id,
                 property_name,
@@ -361,6 +378,13 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
                       return sum + calc;
                     }, 0)
                   : 0;
+                const frozenLines = jd?.work_order?.frozen_billing_lines ?? [];
+                const frozenLinesTotal = Array.isArray(frozenLines)
+                  ? frozenLines.reduce((sum: number, line: any) => {
+                      const amt = Number(line?.amountBill ?? 0) || 0;
+                      return sum + amt;
+                    }, 0)
+                  : 0;
                 const additional = jd?.work_order?.additional_services ?? [];
                 const additionalTotal = Array.isArray(additional)
                   ? additional.reduce((sum: number, svc: any) => {
@@ -368,7 +392,7 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
                       return sum + amt;
                     }, 0)
                   : 0;
-                const computed = base + extraLabor + lineItemsTotal + additionalTotal;
+                const computed = base + extraLabor + lineItemsTotal + Math.max(frozenLinesTotal, additionalTotal);
                 if (computed > 0) totalBillingAmount = computed;
               }
             }
@@ -380,6 +404,9 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
               unit_number: newJob.unit_number,
               scheduled_date: newJob.scheduled_date,
               total_billing_amount: totalBillingAmount,
+              historical_data_mode: newJob.historical_data_mode === 'snapshot' ? 'snapshot' : 'live',
+              active_snapshot_id: newJob.active_snapshot_id ?? null,
+              snapshot_frozen_at: newJob.snapshot_frozen_at ?? null,
               invoice_sent: newJob.invoice_sent,
               invoice_paid: newJob.invoice_paid,
               invoice_sent_date: newJob.invoice_sent_date,

@@ -14,7 +14,9 @@ import {
   Lock,
   Eye,
   EyeOff,
-  Loader2
+  Loader2,
+  MessageSquare,
+  ClipboardList
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
@@ -26,6 +28,8 @@ import { JobCategoryManager } from './admin/JobCategoryManager';
 import { UnitSizeManager } from './admin/UnitSizeManager';
 import { useUserRole } from '../hooks/useUserRole';
 import { MaintenancePage } from './MaintenancePage';
+import { SmsNotificationSettings } from './SmsNotificationSettings';
+import { SmsNotificationLogs } from './SmsNotificationLogs';
 
 interface AppSettingsData {
   id: string;
@@ -41,7 +45,7 @@ export function AppSettings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const [activeTab, setActiveTab] = useState<'overview' | 'email-templates' | 'lead-forms' | 'daily-agenda' | 'users' | 'sub-assignment-alerts' | 'bulk-schedule' | 'job-categories' | 'unit-sizes' | 'maintenance'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'email-templates' | 'lead-forms' | 'daily-agenda' | 'users' | 'sub-assignment-alerts' | 'sms-notifications' | 'sms-logs' | 'bulk-schedule' | 'job-categories' | 'unit-sizes' | 'maintenance'>('overview');
   const [subAssignmentRecipients, setSubAssignmentRecipients] = useState<string[]>([]);
   const [adminOptions, setAdminOptions] = useState<AppSettingsData[]>([]);
 
@@ -380,6 +384,34 @@ export function AppSettings() {
               </button>
 
               <button
+                onClick={() => setActiveTab('sms-notifications')}
+                className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'sms-notifications'
+                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
+                }`}
+              >
+                <MessageSquare className={`flex-shrink-0 -ml-1 mr-3 h-6 w-6 ${
+                  activeTab === 'sms-notifications' ? 'text-blue-700 dark:text-blue-200' : 'text-gray-400 group-hover:text-gray-500'
+                }`} />
+                <span className="truncate">SMS Notifications</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('sms-logs')}
+                className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'sms-logs'
+                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
+                }`}
+              >
+                <ClipboardList className={`flex-shrink-0 -ml-1 mr-3 h-6 w-6 ${
+                  activeTab === 'sms-logs' ? 'text-blue-700 dark:text-blue-200' : 'text-gray-400 group-hover:text-gray-500'
+                }`} />
+                <span className="truncate">SMS Logs</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab('bulk-schedule')}
                 className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'bulk-schedule'
@@ -533,6 +565,16 @@ export function AppSettings() {
             {/* Bulk Schedule Tab */}
             {activeTab === 'bulk-schedule' && (
               <JobImportManager />
+            )}
+
+            {/* SMS Notifications Tab */}
+            {activeTab === 'sms-notifications' && (
+              <SmsNotificationSettings />
+            )}
+
+            {/* SMS Logs Tab */}
+            {activeTab === 'sms-logs' && (
+              <SmsNotificationLogs />
             )}
 
             {/* Maintenance Mode Tab */}

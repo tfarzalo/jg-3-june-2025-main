@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "create-admin": "node scripts/create-admin.cjs"
+    "create-admin": "node scripts/create-admin.cjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@handsontable/react": "^16.2.0",
@@ -79,6 +80,7 @@
     "terser": "^5.28.1",
     "typescript": "^5.3.3",
     "typescript-eslint": "^7.1.0",
-    "vite": "^5.4.21"
+    "vite": "^5.4.21",
+    "vitest": "^4.1.4"
   }
 }

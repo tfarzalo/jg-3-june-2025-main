@@ -6,6 +6,7 @@ import { ApprovalImageGallery } from '../components/approval/ApprovalImageGaller
 import { generateApprovalPDF } from '../utils/generateApprovalPDF';
 import { sendInternalApprovalNotification } from '../utils/sendInternalApprovalNotification';
 import { Download } from 'lucide-react';
+import { dispatchSmsNotification } from '../lib/sms/dispatchSmsNotification';
 
 interface JobImage {
   id: string;
@@ -321,6 +322,34 @@ const ApprovalPage: React.FC = () => {
 
       console.log('Approval processed successfully');
       setApproved(true);
+
+      // Notify the assigned subcontractor via SMS (best-effort)
+      try {
+        const { data: jobRow } = await supabase
+          .from('jobs')
+          .select('assigned_to')
+          .eq('id', approvalData.job_id)
+          .single();
+
+        if (jobRow?.assigned_to) {
+          dispatchSmsNotification({
+            eventType: 'charges_approved',
+            recipientUserId: jobRow.assigned_to,
+            // job_id at top level lets the dispatcher fetch DB context
+            job_id: approvalData.job_id,
+            context: {
+              // Fallback fields used if DB fetch fails
+              jobId: approvalData.job_id,
+              workOrderNum: approvalData.job.work_order_num,
+              propertyName: approvalData.job.property.name,
+              unitNumber: approvalData.job.unit_number,
+              extraChargesTotal: approvalData.extra_charges_data.total,
+            },
+          });
+        }
+      } catch (smsErr) {
+        console.warn('[ApprovalPage] SMS dispatch error (non-fatal):', smsErr);
+      }
 
       // Send internal notification email (best-effort, non-blocking)
       try {

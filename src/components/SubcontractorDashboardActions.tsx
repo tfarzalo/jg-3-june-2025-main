@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { CheckCircle, XCircle } from 'lucide-react';
 import { formatDate } from '../lib/dateUtils';
 import { BlockingLoadingModal } from './ui/BlockingLoadingModal';
+import { dispatchSmsNotification } from '../lib/sms/dispatchSmsNotification';
 
 type DeclineReasonCode = 'schedule_conflict' | 'too_far' | 'scope_mismatch' | 'rate_issue' | 'other' | '';
 
@@ -216,6 +217,21 @@ Reason: ${decision === 'declined' ? (declineReason || 'n/a') : 'n/a'}${declineTe
           p_reference_id: jobId,
           p_reference_type: 'job'
         });
+
+        // SMS: only fire for 'accepted' decisions (job_accepted event)
+        if (decision === 'accepted') {
+          dispatchSmsNotification({
+            eventType: 'job_accepted',
+            recipientUserId: rec.user_id,
+            context: {
+              subcontractorName: subName,
+              jobId,
+              workOrderNum,
+              propertyName: propertyName ?? null,
+              scheduledDate: scheduledDate ?? null,
+            },
+          });
+        }
       }
     } catch (err) {
       console.error('Error sending sub assignment notifications', err);

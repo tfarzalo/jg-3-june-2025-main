@@ -21,6 +21,7 @@ import Papa from 'papaparse';
 import jsPDF from 'jspdf';
 import { supabase } from '@/utils/supabase';
 import { toast } from 'sonner';
+import { JobDataModeIndicator } from '@/components/jobs/JobDataModeIndicator';
 
 export interface Job {
   id: string;
@@ -58,6 +59,9 @@ export interface Job {
   } | null;
   work_order_num: number;
   total_billing_amount?: number;
+  historical_data_mode?: 'live' | 'snapshot';
+  active_snapshot_id?: string | null;
+  snapshot_frozen_at?: string | null;
   invoice_sent?: boolean;
   invoice_paid?: boolean;
   invoice_sent_date?: string;
@@ -1422,59 +1426,36 @@ export function JobListingPage({
 
   const handleUnarchiveSelected = async () => {
     if (selectedJobs.length === 0) return;
+
+    const reopenReason = window.prompt(
+      'Enter a reason for reopening these archived jobs. Existing snapshots will be preserved.'
+    );
+
+    if (!reopenReason || !reopenReason.trim()) {
+      return;
+    }
     
     setProcessing(true);
     try {
-      // Get the "Job Request" phase ID (default phase to restore to)
-      const { data: phaseData, error: phaseError } = await supabase
-        .from('job_phases')
-        .select('id')
-        .eq('job_phase_label', 'Job Request')
-        .single();
+      const reopenResults = await Promise.all(
+        selectedJobs.map(jobId =>
+          supabase.rpc('reopen_job_from_snapshot', {
+            p_job_id: jobId,
+            p_reason: reopenReason.trim(),
+            p_target_phase_label: null,
+          })
+        )
+      );
 
-      if (phaseError) throw phaseError;
-
-      // Get current user
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!userData.user) throw new Error('User not found');
-
-      // Get current phases for selected jobs
-      const { data: jobsData, error: jobsError } = await supabase
-        .from('jobs')
-        .select('id, current_phase_id')
-        .in('id', selectedJobs);
-
-      if (jobsError) throw jobsError;
-
-      // Update jobs to Job Request phase
-      const { error: updateError } = await supabase
-        .from('jobs')
-        .update({ current_phase_id: phaseData.id })
-        .in('id', selectedJobs);
-
-      if (updateError) throw updateError;
-
-      // Create phase change records
-      const phaseChanges = jobsData.map(job => ({
-        job_id: job.id,
-        changed_by: userData.user.id,
-        from_phase_id: job.current_phase_id,
-        to_phase_id: phaseData.id,
-        change_reason: 'Job unarchived'
-      }));
-
-      const { error: phaseChangeError } = await supabase
-        .from('job_phase_changes')
-        .insert(phaseChanges);
-
-      if (phaseChangeError) throw phaseChangeError;
+      const failedResult = reopenResults.find(result => result.error);
+      if (failedResult?.error) throw failedResult.error;
 
       // Clear selection and close confirmation
+      const reopenedCount = selectedJobs.length;
       setSelectedJobs([]);
       setShowUnarchiveConfirm(false);
       
-      toast.success(`Successfully unarchived ${selectedJobs.length} job${selectedJobs.length !== 1 ? 's' : ''}`);
+      toast.success(`Successfully reopened ${reopenedCount} archived job${reopenedCount !== 1 ? 's' : ''}`);
       
       // Refresh the job list
       if (refetch) {
@@ -1483,8 +1464,8 @@ export function JobListingPage({
         window.location.reload();
       }
     } catch (err) {
-      console.error('Error unarchiving jobs:', err);
-      toast.error('Failed to unarchive jobs. Please try again.');
+      console.error('Error reopening archived jobs:', err);
+      toast.error('Failed to reopen archived jobs. Please try again.');
     } finally {
       setProcessing(false);
     }
@@ -1654,8 +1635,8 @@ export function JobListingPage({
                     className="inline-flex items-center px-3 py-2 sm:px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
                   >
                     <Archive className="h-4 w-4 mr-2" />
-                    <span className="hidden sm:inline">Unarchive Selected ({selectedJobs.length})</span>
-                    <span className="sm:hidden">Unarchive</span>
+                    <span className="hidden sm:inline">Reopen Selected ({selectedJobs.length})</span>
+                    <span className="sm:hidden">Reopen</span>
                   </button>
                   <button
                     onClick={() => setShowDeleteConfirm(true)}
@@ -1953,15 +1934,21 @@ export function JobListingPage({
                   </td>
                   <td className="px-6 py-4 w-32 sm:w-auto">
                     {job.job_phase && (
-                      <span
-                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
-                        style={{
-                          backgroundColor: job.job_phase.color_dark_mode || '#4B5563',
-                          color: 'white'
-                        }}
-                      >
-                        {job.job_phase.job_phase_label}
-                      </span>
+                      <div className="inline-flex items-center gap-2">
+                        <span
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap"
+                          style={{
+                            backgroundColor: job.job_phase.color_dark_mode || '#4B5563',
+                            color: 'white'
+                          }}
+                        >
+                          {job.job_phase.job_phase_label}
+                        </span>
+                        <JobDataModeIndicator
+                          phaseLabel={job.job_phase.job_phase_label}
+                          dataMode={job.historical_data_mode}
+                        />
+                      </div>
                     )}
                   </td>
                   <td className="px-6 py-4">
@@ -2067,10 +2054,10 @@ export function JobListingPage({
       {showUnarchiveConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full shadow-xl">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Unarchive Selected Jobs</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Reopen Archived Jobs</h3>
             <p className="text-gray-700 dark:text-gray-300 mb-4">
-              Are you sure you want to unarchive {selectedJobs.length} selected job{selectedJobs.length !== 1 ? 's' : ''}? 
-              Unarchived jobs will be moved back to the Job Requests section.
+              Are you sure you want to reopen {selectedJobs.length} archived job{selectedJobs.length !== 1 ? 's' : ''}?
+              Their frozen snapshots will be preserved and you will be asked for a reason before the jobs become editable again.
             </p>
             <div className="flex justify-end space-x-3">
               <button
@@ -2084,7 +2071,7 @@ export function JobListingPage({
                 disabled={processing}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
-                {processing ? 'Unarchiving...' : 'Unarchive Jobs'}
+                {processing ? 'Reopening...' : 'Reopen Jobs'}
               </button>
             </div>
           </div>

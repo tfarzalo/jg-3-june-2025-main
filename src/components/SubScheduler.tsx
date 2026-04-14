@@ -20,6 +20,7 @@ import { format, addDays, subDays, parseISO } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { isAvailableOnDate, WorkingDays } from '../lib/availabilityUtils';
 import { AssignmentCountdownTimer } from './AssignmentCountdownTimer';
+import { dispatchSmsNotification } from '../lib/sms/dispatchSmsNotification';
 
 interface Job {
   id: string;
@@ -539,6 +540,26 @@ JG Painting Pros Inc.`;
         if (emailError) {
           throw new Error(emailError.message || 'Failed to send assignment email');
         }
+
+        // Fire SMS notification to the subcontractor (best-effort).
+        // Pass job_id (first job) at top level so the dispatcher can fetch
+        // authoritative DB context (property, unit, scheduled date, etc.).
+        // For multi-job batches the message uses the count; for single jobs
+        // the DB context provides rich detail.
+        dispatchSmsNotification({
+          eventType: 'job_assigned',
+          recipientUserId: subcontractor.id,
+          job_id: jobsForSub[0]?.id,
+          context: {
+            subcontractorName: subcontractor.full_name || subcontractor.email,
+            jobCount: jobsForSub.length,
+            jobIds: jobsForSub.map(j => j.id),
+            workOrderNums: jobsForSub.map(j => j.work_order_num),
+            // Single-job fallback fields (used when DB fetch unavailable)
+            workOrderNum: jobsForSub.length === 1 ? jobsForSub[0].work_order_num : undefined,
+            propertyName: jobsForSub.length === 1 ? (jobsForSub[0].property?.property_name ?? null) : null,
+          },
+        });
 
         const logEntries = jobsForSub.map(job => ({
           job_id: job.id,
