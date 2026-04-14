@@ -273,8 +273,9 @@ async function resolveEligibleRecipients(
 
   let query = supabase
     .from("user_sms_notification_settings")
-    .select(`user_id, sms_enabled, ${settingColumn}, profiles!inner ( id, full_name, sms_phone )`)
-    .not("profiles.sms_phone", "is", null);
+    .select(`user_id, sms_enabled, ${settingColumn}, profiles!inner ( id, full_name, sms_phone, sms_consent_given )`)
+    .not("profiles.sms_phone", "is", null)
+    .eq("profiles.sms_consent_given", true);
 
   if (explicitUserIds && explicitUserIds.length > 0) {
     query = query.in("user_id", explicitUserIds);
@@ -293,7 +294,7 @@ async function resolveEligibleRecipients(
   const skippedNoPhone: Array<{ user_id: string; reason: string }> = [];
 
   for (const row of data ?? []) {
-    const profile = row.profiles as { id: string; full_name: string | null; sms_phone: string | null } | null;
+    const profile = row.profiles as { id: string; full_name: string | null; sms_phone: string | null; sms_consent_given: boolean | null } | null;
     const phone   = profile?.sms_phone ?? null;
 
     if (explicitUserIds && explicitUserIds.length > 0) {
@@ -303,6 +304,10 @@ async function resolveEligibleRecipients(
       }
       if (!(row as Record<string, unknown>)[settingColumn]) {
         skippedNoPhone.push({ user_id: row.user_id, reason: `${settingColumn}=false` });
+        continue;
+      }
+      if (!profile?.sms_consent_given) {
+        skippedNoPhone.push({ user_id: row.user_id, reason: "sms_consent_not_given" });
         continue;
       }
     }

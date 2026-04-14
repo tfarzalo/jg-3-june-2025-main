@@ -30,6 +30,8 @@ interface UserProfileData {
   avatar_url: string | null;
   mobile_phone: string | null;
   sms_phone: string | null;
+  sms_consent_given: boolean;
+  sms_consent_given_at: string | null;
   bio: string | null;
   role: string;
   username: string | null;
@@ -108,6 +110,8 @@ export function UserProfile() {
     avatar_url: null,
     mobile_phone: '',
     sms_phone: '',
+    sms_consent_given: false,
+    sms_consent_given_at: null,
     bio: '',
     role: 'user',
     username: '',
@@ -241,6 +245,8 @@ export function UserProfile() {
           ...data,
           mobile_phone: formatPhoneNumber(data.mobile_phone),
           sms_phone: formatPhoneNumber(data.sms_phone),
+          sms_consent_given: data.sms_consent_given ?? false,
+          sms_consent_given_at: data.sms_consent_given_at ?? null,
           emergency_contact_phone: formatPhoneNumber(data.emergency_contact_phone),
           work_schedule: data.work_schedule || []
         });
@@ -461,6 +467,10 @@ export function UserProfile() {
           avatar_url: avatarPath,
           mobile_phone: formatPhoneNumber(profile.mobile_phone),
           sms_phone: normalizedSmsPhone,
+          sms_consent_given: profile.sms_consent_given,
+          sms_consent_given_at: profile.sms_consent_given
+            ? (profile.sms_consent_given_at ?? new Date().toISOString())
+            : null,
           bio: profile.bio,
           username: profile.username,
           work_schedule: profile.work_schedule,
@@ -679,6 +689,56 @@ export function UserProfile() {
                 <label htmlFor="sms_phone" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                   SMS Phone
                 </label>
+
+                {/* SMS Consent checkbox — sits above the phone field */}
+                <div className={`mb-3 rounded-lg border p-3 text-sm ${
+                  profile.sms_consent_given
+                    ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
+                    : 'bg-yellow-50 dark:bg-yellow-900/10 border-yellow-300 dark:border-yellow-700'
+                }`}>
+                  <label className="flex items-start gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 rounded border-gray-400 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      checked={profile.sms_consent_given}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setProfile(prev => ({
+                          ...prev,
+                          sms_consent_given: checked,
+                          sms_consent_given_at: checked ? new Date().toISOString() : null,
+                        }));
+                      }}
+                    />
+                    <span className="text-gray-700 dark:text-gray-300 leading-snug">
+                      I consent to receive SMS text message notifications from{' '}
+                      <strong>JG Painting Pros, Inc.</strong> at the mobile number provided.
+                      Message &amp; data rates may apply. Reply STOP to opt out at any time.{' '}
+                      <Link
+                        to="/sms-consent"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 dark:text-blue-400 underline hover:text-blue-700 dark:hover:text-blue-300 font-medium whitespace-nowrap"
+                      >
+                        View full SMS policy ↗
+                      </Link>
+                    </span>
+                  </label>
+                  {profile.sms_consent_given && profile.sms_consent_given_at && (
+                    <p className="mt-2 ml-7 text-xs text-green-700 dark:text-green-400">
+                      ✓ Consent given on {new Date(profile.sms_consent_given_at).toLocaleDateString('en-US', {
+                        year: 'numeric', month: 'long', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit',
+                      })}
+                    </p>
+                  )}
+                  {!profile.sms_consent_given && (
+                    <p className="mt-2 ml-7 text-xs text-yellow-700 dark:text-yellow-400">
+                      ⚠ SMS notifications will not be sent until consent is given.
+                    </p>
+                  )}
+                </div>
+
                 <input
                   type="tel"
                   id="sms_phone"

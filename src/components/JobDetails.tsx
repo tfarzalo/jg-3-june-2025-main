@@ -2376,6 +2376,25 @@ export function JobDetails() {
     };
   }, [job, derivedExtraCharges]);
 
+  const isCancelled = phaseLabel === 'Cancelled';
+  const cancellationReasonForBanner = useMemo(() => {
+    if (!isCancelled || phaseChanges.length === 0) {
+      return null;
+    }
+
+    const sortedChanges = [...phaseChanges].sort(
+      (a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime()
+    );
+
+    const latestCancellationChange = sortedChanges.find(
+      (change) =>
+        change.to_phase_label === 'Cancelled' ||
+        (change.change_reason || '').toLowerCase().includes('job cancelled')
+    );
+
+    return extractJobCancellationReason(latestCancellationChange?.change_reason);
+  }, [isCancelled, phaseChanges]);
+
   if (jobLoading || phasesLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -2414,24 +2433,6 @@ export function JobDetails() {
   const isPendingWorkOrder = phaseLabel === 'Pending Work Order';
   const isInvoicing = phaseLabel === 'Invoicing';
   const isCompleted = phaseLabel === 'Completed';
-  const isCancelled = phaseLabel === 'Cancelled';
-  const cancellationReasonForBanner = useMemo(() => {
-    if (!isCancelled || phaseChanges.length === 0) {
-      return null;
-    }
-
-    const sortedChanges = [...phaseChanges].sort(
-      (a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime()
-    );
-
-    const latestCancellationChange = sortedChanges.find(
-      (change) =>
-        change.to_phase_label === 'Cancelled' ||
-        (change.change_reason || '').toLowerCase().includes('job cancelled')
-    );
-
-    return extractJobCancellationReason(latestCancellationChange?.change_reason);
-  }, [isCancelled, phaseChanges]);
 
   // Calculate profit if billing details are available
   const profitAmount = (job.billing_details?.bill_amount !== null && job.billing_details?.sub_pay_amount !== null && job.billing_details?.bill_amount !== undefined && job.billing_details?.sub_pay_amount !== undefined)
