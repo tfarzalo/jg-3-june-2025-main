@@ -46,8 +46,7 @@ export function useWhatsNew(): UseWhatsNewResult {
             .select('*')
             .eq('is_published', true)
             .order('display_order', { ascending: true })
-            .order('updated_at', { ascending: false })
-            .limit(4),
+            .order('updated_at', { ascending: false }),
           supabase
             .from('profiles')
             .select('last_seen_whats_new_at')

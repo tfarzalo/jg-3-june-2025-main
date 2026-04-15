@@ -104,7 +104,7 @@ export function WhatsNewManager() {
   const previewEntries = useMemo(() => {
     const normalizedPublishedEntries = entries.filter((entry) => entry.is_published);
     if (!editingEntry) {
-      return normalizedPublishedEntries.slice(0, 5);
+      return normalizedPublishedEntries;
     }
 
     const draftPreviewEntry: WhatsNewEntry = {
@@ -124,11 +124,13 @@ export function WhatsNewManager() {
       updated_by: null,
     };
 
-    const remainingEntries = normalizedPublishedEntries
-      .filter((entry) => entry.id !== editingEntry.id)
-      .slice(0, 4);
+    if (!editingEntry.id) {
+      return [draftPreviewEntry, ...normalizedPublishedEntries];
+    }
 
-    return [draftPreviewEntry, ...remainingEntries];
+    return normalizedPublishedEntries.map((entry) =>
+      entry.id === editingEntry.id ? { ...draftPreviewEntry, display_order: entry.display_order } : entry
+    );
   }, [editingEntry, entries]);
 
   const startCreate = () => setEditingEntry({ ...EMPTY_DRAFT });
