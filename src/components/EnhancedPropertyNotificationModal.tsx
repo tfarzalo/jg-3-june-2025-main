@@ -15,6 +15,8 @@ import { supabase } from '../utils/supabase';
 import { formatDisplayDate } from '../lib/dateUtils';
 import { ExtraChargeLineItem } from '../types/extraCharges';
 import { getEmailRecipients } from '../lib/contacts/emailRecipientsAdapter';
+import { getPreviewUrl } from '../utils/storagePreviews';
+import { FOLDER_KEY_TO_CATEGORY, LEGACY_CATEGORY_ALIASES, normalizeCategory } from '../utils/fileCategories';
 
 interface Job {
   id: string;
@@ -49,6 +51,7 @@ interface Job {
     profit_amount?: number;
   };
   work_order?: {
+    id?: string | null;
     has_extra_charges?: boolean;
     extra_charges_description?: string;
     extra_hours?: number;
@@ -73,6 +76,7 @@ interface JobImage {
   file_path: string;
   file_name: string;
   image_type?: string;
+  category?: string | null;
   created_at: string;
 }
 
@@ -362,6 +366,12 @@ export function EnhancedPropertyNotificationModal({
   }, [job, notificationType]);
 
   const normalizeImageType = (image: JobImage): ImageBucket => {
+    const category = normalizeCategory(image.category);
+    if (category === 'before_images') return 'before';
+    if (category === 'after_images') return 'after';
+    if (category === 'sprinkler_images') return 'sprinkler';
+    if (category === 'other_files' || category === 'job_files' || category === 'property_files') return 'other';
+
     const source = image.image_type || image.file_name || '';
     const lowered = source.toLowerCase();
     if (lowered.includes('before')) return 'before';
@@ -397,68 +407,93 @@ export function EnhancedPropertyNotificationModal({
     }
   }, [job]);
 
-  const findWorkOrderFolderId = useCallback(async (): Promise<string | null> => {
-    if (!job?.property?.id || !job?.id || !job?.work_order_num) {
-      return null;
-    }
-    const workOrderCode = `WO-${String(job.work_order_num).padStart(6, '0')}`;
-    const { data, error } = await supabase
-      .from('files')
-      .select('id')
-      .eq('job_id', job.id)
-      .eq('type', 'folder/directory')
-      .eq('name', workOrderCode)
-      .maybeSingle();
-    if (error || !data?.id) {
-      return null;
-    }
-    return data.id;
-  }, [job?.property?.name, job?.work_order_num]);
-
   const fetchWorkOrderImages = useCallback(async (): Promise<JobImageWithMeta[]> => {
-    const folderId = await findWorkOrderFolderId();
-    if (!folderId) return [];
-    const folderNames: { bucket: ImageBucket; name: string }[] = [
-      { bucket: 'before', name: 'Before Images' },
-      { bucket: 'after', name: 'After Images' },
-      { bucket: 'sprinkler', name: 'Sprinkler Images' },
-      { bucket: 'other', name: 'Other Files' },
-    ];
-    const allFiles: JobImageWithMeta[] = [];
-    for (const entry of folderNames) {
-      const { data: subfolder } = await supabase
+    if (!job?.id && !job?.work_order?.id) return [];
+
+    try {
+      const relevantCategories = Array.from(
+        new Set([
+          ...LEGACY_CATEGORY_ALIASES[FOLDER_KEY_TO_CATEGORY.before],
+          ...LEGACY_CATEGORY_ALIASES[FOLDER_KEY_TO_CATEGORY.after],
+          ...LEGACY_CATEGORY_ALIASES[FOLDER_KEY_TO_CATEGORY.sprinkler],
+          ...LEGACY_CATEGORY_ALIASES[FOLDER_KEY_TO_CATEGORY.other],
+        ])
+      );
+
+      let query = supabase
         .from('files')
-        .select('id')
-        .eq('name', entry.name)
-        .eq('folder_id', folderId)
-        .eq('type', 'folder/directory')
-        .maybeSingle();
-      if (!subfolder?.id) continue;
-      const { data: filesData } = await supabase
-        .from('files')
-        .select('id, name, path, type, created_at')
-        .eq('folder_id', subfolder.id)
+        .select('id, name, path, storage_path, category, type, created_at, work_order_id, job_id')
+        .in('category', relevantCategories)
         .order('created_at', { ascending: true });
-      if (!filesData?.length) continue;
-      for (const file of filesData) {
-        const { data: signedData } = await supabase.storage
-          .from('files')
-          .createSignedUrl(file.path, 60 * 60);
-        const publicUrl = signedData?.signedUrl || getPublicUrl('files', file.path);
-        allFiles.push({
-          id: file.id,
-          file_name: file.name,
-          file_path: file.path,
-          image_type: entry.bucket,
-          created_at: file.created_at,
-          normalizedType: entry.bucket,
-          publicUrl,
-          source: 'files'
-        });
+
+      if (job?.work_order?.id && job?.id) {
+        query = query.or(`work_order_id.eq.${job.work_order.id},job_id.eq.${job.id}`);
+      } else if (job?.work_order?.id) {
+        query = query.eq('work_order_id', job.work_order.id);
+      } else if (job?.id) {
+        query = query.eq('job_id', job.id);
       }
+
+      const { data: filesData, error } = await query;
+      if (error) throw error;
+      if (!filesData?.length) return [];
+
+      const resolvedFiles = await Promise.all(
+        filesData.map(async (file) => {
+          const storagePath = file.storage_path || file.path;
+          if (!storagePath) return null;
+
+          try {
+            const previewResult = await getPreviewUrl(supabase, 'files', storagePath);
+            return {
+              id: file.id,
+              file_name: file.name,
+              file_path: storagePath,
+              image_type: file.category || file.name,
+              category: file.category,
+              created_at: file.created_at,
+              normalizedType: normalizeImageType({
+                id: file.id,
+                file_path: storagePath,
+                file_name: file.name,
+                image_type: file.category || file.name,
+                category: file.category,
+                created_at: file.created_at,
+              }),
+              publicUrl: previewResult.url,
+              source: 'files' as const,
+            };
+          } catch (previewError) {
+            console.error('Error creating preview URL for notification image:', storagePath, previewError);
+            const publicUrl = getPublicUrl('files', storagePath);
+            return {
+              id: file.id,
+              file_name: file.name,
+              file_path: storagePath,
+              image_type: file.category || file.name,
+              category: file.category,
+              created_at: file.created_at,
+              normalizedType: normalizeImageType({
+                id: file.id,
+                file_path: storagePath,
+                file_name: file.name,
+                image_type: file.category || file.name,
+                category: file.category,
+                created_at: file.created_at,
+              }),
+              publicUrl,
+              source: 'files' as const,
+            };
+          }
+        })
+      );
+
+      return resolvedFiles.filter((file): file is JobImageWithMeta => Boolean(file));
+    } catch (error) {
+      console.error('Error loading work order images from files table:', error);
+      return [];
     }
-    return allFiles;
-  }, [findWorkOrderFolderId]);
+  }, [job]);
 
   const fetchModalData = useCallback(async () => {
     if (!job) return;
