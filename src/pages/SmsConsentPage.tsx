@@ -45,7 +45,7 @@ export default function SmsConsentPage() {
             </div>
             <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300 text-sm">
               <Mail className="h-4 w-4 flex-shrink-0 text-blue-500" />
-              <span>jgpaintingpros@gmail.com</span>
+              <span>admin@jgpaintingprosinc.com</span>
             </div>
           </div>
         </div>
@@ -145,7 +145,7 @@ export default function SmsConsentPage() {
           </ul>
           <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm">
             After opting out, you may receive one final confirmation message. For help, reply
-            <strong> HELP</strong> to any message or contact us at jgpaintingpros@gmail.com.
+            <strong> HELP</strong> to any message or contact us at admin@jgpaintingprosinc.com.
           </p>
         </section>
 
@@ -171,8 +171,8 @@ export default function SmsConsentPage() {
           <p>Policy version {CONSENT_VERSION} &nbsp;·&nbsp; Effective {EFFECTIVE_DATE}</p>
           <p>
             Questions? Contact us at{' '}
-            <a href="mailto:jgpaintingpros@gmail.com" className="underline hover:text-blue-500">
-              jgpaintingpros@gmail.com
+            <a href="mailto:admin@jgpaintingprosinc.com" className="underline hover:text-blue-500">
+              admin@jgpaintingprosinc.com
             </a>
           </p>
         </footer>
