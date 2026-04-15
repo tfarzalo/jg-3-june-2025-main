@@ -14,6 +14,7 @@ interface EmailAttachment {
   path?: string;     // file path (alternative to content)
   contentType?: string;
   encoding?: string;
+  cid?: string;      // Content-ID for inline attachments referenced as cid: in HTML
 }
 
 Deno.serve(async (req) => {
@@ -134,7 +135,8 @@ Deno.serve(async (req) => {
           content: attachment.content,
           path: attachment.path,
           contentType: attachment.contentType || 'application/octet-stream',
-          encoding: attachment.encoding || 'base64'
+          encoding: attachment.encoding || 'base64',
+          cid: attachment.cid,   // Preserve CID for inline images
         };
       });
       

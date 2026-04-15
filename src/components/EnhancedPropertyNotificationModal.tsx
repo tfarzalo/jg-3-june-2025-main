@@ -899,7 +899,34 @@ export function EnhancedPropertyNotificationModal({
     );
   };
 
-  const buildSectionHtml = () => {
+  /**
+   * Fetch an image URL and return it as a base64-encoded data URI string,
+   * along with the detected content type.  Returns null on failure.
+   */
+  const fetchImageAsBase64 = async (url: string): Promise<{ base64: string; contentType: string } | null> => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const contentType = response.headers.get('content-type') || 'image/jpeg';
+      const arrayBuffer = await response.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuffer);
+      let binary = '';
+      for (let i = 0; i < uint8.byteLength; i++) {
+        binary += String.fromCharCode(uint8[i]);
+      }
+      const base64 = btoa(binary);
+      return { base64, contentType };
+    } catch {
+      return null;
+    }
+  };
+
+  /**
+   * Build section HTML for the email body.
+   * When cidMap is provided, images are referenced via cid: URIs (inline attachments).
+   * When not provided, images are referenced via their public/signed URLs (fallback).
+   */
+  const buildSectionHtml = (cidMap?: Record<string, string>) => {
     const sections: string[] = [];
     const rows = buildJobDetailsRows();
     const formatQty = (item: { hours?: number; quantity?: number; unit?: string }) => {
@@ -971,12 +998,18 @@ export function EnhancedPropertyNotificationModal({
       if (!images.length) return;
       const cards = images
         .map(
-          (image) => `
-            <td style="padding:8px;">
-              <img src="${image.publicUrl}" alt="${escapeHtml(image.file_name)}" style="width:100%;max-width:160px;height:120px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;" />
-              <p style="font-size:12px;color:#6b7280;margin-top:4px;">${escapeHtml(image.file_name)}</p>
-            </td>
-          `
+          (image) => {
+            // Use CID inline reference if available; fall back to public URL
+            const src = cidMap?.[image.id]
+              ? `cid:${cidMap[image.id]}`
+              : image.publicUrl;
+            return `
+              <td style="padding:8px;">
+                <img src="${src}" alt="${escapeHtml(image.file_name)}" style="width:100%;max-width:200px;height:150px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;" />
+                <p style="font-size:12px;color:#6b7280;margin-top:4px;">${escapeHtml(image.file_name)}</p>
+              </td>
+            `;
+          }
         )
         .join('');
       sections.push(`
@@ -1045,7 +1078,7 @@ export function EnhancedPropertyNotificationModal({
     return { token, expiresAt };
   };
 
-  const buildFinalEmailHtml = (approvalLink?: string) => {
+  const buildFinalEmailHtml = (approvalLink?: string, cidMap?: Record<string, string>) => {
     const bodyHtml = emailContent.trim().startsWith('<')
       ? emailContent
       : emailContent.replace(/\n/g, '<br />');
@@ -1060,7 +1093,7 @@ export function EnhancedPropertyNotificationModal({
         .replace(/{{\s*approval_button\s*}}/gi, buildApprovalLinkHtml(approvalLink));
     }
 
-    const sectionHtml = buildSectionHtml();
+    const sectionHtml = buildSectionHtml(cidMap);
     const previewDisclaimerHtml =
       notificationType === 'extra_charges' && selectedImages.length > 0
         ? `<p style="margin-top:16px;font-size:12px;color:#6b7280;">${escapeHtml(IMAGE_PREVIEW_DISCLAIMER)}</p>`
@@ -1123,7 +1156,65 @@ export function EnhancedPropertyNotificationModal({
         await checkPendingApproval();
       }
 
-      const finalHtml = buildFinalEmailHtml(approvalLink);
+      // --- Inline image embedding ---
+      // For notification-type emails (sprinkler_paint, drywall_repairs) the selected images
+      // must actually appear inside the email body. We fetch each selected image, convert it
+      // to base64, and reference it via a cid: URI so that email clients render it inline
+      // regardless of their "block remote images" setting.
+      const imagesToEmbed = selectedImages.filter((img) => {
+        // Only embed images that belong to a section the template includes
+        const sectionMap: Record<ImageBucket, string> = {
+          before: 'before_images',
+          after: 'after_images',
+          sprinkler: 'sprinkler_images',
+          other: 'other_images',
+        };
+        return safeSections.includes(sectionMap[img.normalizedType]);
+      });
+
+      // Build a CID map: imageId → cid content-id string
+      const cidMap: Record<string, string> = {};
+      const inlineAttachments: Array<{
+        filename: string;
+        content: string;
+        contentType: string;
+        encoding: string;
+        cid: string;
+      }> = [];
+
+      if (imagesToEmbed.length > 0) {
+        console.log(`📸 Fetching ${imagesToEmbed.length} image(s) for inline embedding…`);
+        const results = await Promise.all(
+          imagesToEmbed.map(async (img) => {
+            const data = await fetchImageAsBase64(img.publicUrl);
+            return { img, data };
+          })
+        );
+
+        for (const { img, data } of results) {
+          if (!data) {
+            console.warn(`⚠️ Could not fetch image for inline embedding: ${img.file_name}`);
+            continue;
+          }
+          const cid = `img_${img.id.replace(/-/g, '')}@jgpaintingpros.com`;
+          cidMap[img.id] = cid;
+          // Derive a safe filename with a proper extension
+          const ext = data.contentType.split('/')[1]?.split('+')[0] || 'jpg';
+          const safeFilename = img.file_name.includes('.')
+            ? img.file_name
+            : `${img.file_name}.${ext}`;
+          inlineAttachments.push({
+            filename: safeFilename,
+            content: data.base64,
+            contentType: data.contentType,
+            encoding: 'base64',
+            cid,
+          });
+        }
+        console.log(`✅ ${inlineAttachments.length} image(s) prepared as inline attachments`);
+      }
+
+      const finalHtml = buildFinalEmailHtml(approvalLink, cidMap);
       const allBcc = [
         ...(emailConfig?.default_bcc_emails || []),
         ...bccEmails.split(',').map((email) => email.trim()).filter(Boolean),
@@ -1137,6 +1228,7 @@ export function EnhancedPropertyNotificationModal({
           cc: ccEmails.split(',').map((email) => email.trim()).filter(Boolean),
           bcc: allBcc.filter(Boolean),
           from: emailConfig ? `${emailConfig.from_name} <${emailConfig.from_email}>` : undefined,
+          attachments: inlineAttachments.length > 0 ? inlineAttachments : undefined,
         },
       });
 
@@ -1219,7 +1311,11 @@ export function EnhancedPropertyNotificationModal({
       <div className="flex items-center justify-between">
         <div>
           <h4 className="text-sm font-medium text-gray-900 dark:text-white">Images to include</h4>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Selected images will be shown on the approval page.</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {notificationType === 'extra_charges'
+              ? 'Selected images will be shown on the approval page.'
+              : 'Selected images will be embedded directly in the email.'}
+          </p>
         </div>
         {jobImages.length > 0 && (
           <div className="space-x-2">
@@ -1467,7 +1563,10 @@ export function EnhancedPropertyNotificationModal({
         <div>
           <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Included Sections</h4>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-            These sections appear in the email. Image selection below controls what appears on the approval page.
+            These sections appear in the email.{' '}
+            {notificationType === 'extra_charges'
+              ? 'Image selection below controls what appears on the approval page.'
+              : 'Image selection below controls which images are embedded in the email.'}
           </p>
           {safeSections.length === 0 ? (
             <p className="text-sm text-gray-500 dark:text-gray-400">No additional sections will be included.</p>
@@ -1483,6 +1582,7 @@ export function EnhancedPropertyNotificationModal({
         </div>
 
         {notificationType === 'extra_charges' && renderImageSelection()}
+        {notificationType !== 'extra_charges' && safeSections.some(s => ['before_images', 'after_images', 'sprinkler_images', 'other_images'].includes(s)) && renderImageSelection()}
       </div>
     );
   };
@@ -1561,6 +1661,11 @@ export function EnhancedPropertyNotificationModal({
         {notificationType === 'extra_charges' && selectedImages.length > 0 && (
           <p className="text-xs text-gray-500 dark:text-gray-300">
             {IMAGE_PREVIEW_DISCLAIMER}
+          </p>
+        )}
+        {notificationType !== 'extra_charges' && selectedImages.length > 0 && (
+          <p className="text-xs text-green-700 dark:text-green-300 font-medium">
+            ✓ {selectedImages.length} image{selectedImages.length !== 1 ? 's' : ''} will be embedded directly in this email.
           </p>
         )}
         <div className="prose prose-sm max-w-none text-gray-900 dark:text-gray-100 dark:prose-invert" dangerouslySetInnerHTML={{ __html: emailSignature.replace(/\n/g, '<br/>') }} />
