@@ -16,7 +16,8 @@ import {
   EyeOff,
   Loader2,
   MessageSquare,
-  ClipboardList
+  ClipboardList,
+  Sparkles
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
@@ -30,6 +31,7 @@ import { useUserRole } from '../hooks/useUserRole';
 import { MaintenancePage } from './MaintenancePage';
 import { SmsNotificationSettings } from './SmsNotificationSettings';
 import { SmsNotificationLogs } from './SmsNotificationLogs';
+import { WhatsNewManager } from './admin/WhatsNewManager';
 
 interface AppSettingsData {
   id: string;
@@ -45,7 +47,7 @@ export function AppSettings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const [activeTab, setActiveTab] = useState<'overview' | 'email-templates' | 'lead-forms' | 'daily-agenda' | 'users' | 'sub-assignment-alerts' | 'sms-notifications' | 'sms-logs' | 'bulk-schedule' | 'job-categories' | 'unit-sizes' | 'maintenance'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'email-templates' | 'lead-forms' | 'daily-agenda' | 'users' | 'sub-assignment-alerts' | 'sms-notifications' | 'sms-logs' | 'bulk-schedule' | 'job-categories' | 'unit-sizes' | 'maintenance' | 'whats-new'>('overview');
   const [subAssignmentRecipients, setSubAssignmentRecipients] = useState<string[]>([]);
   const [adminOptions, setAdminOptions] = useState<AppSettingsData[]>([]);
 
@@ -438,6 +440,22 @@ export function AppSettings() {
                 }`} />
                 <span className="truncate">Maintenance Mode</span>
               </button>
+
+              {isSuperAdmin && (
+                <button
+                  onClick={() => setActiveTab('whats-new')}
+                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                    activeTab === 'whats-new'
+                      ? 'bg-violet-50 text-violet-700 dark:bg-violet-900/50 dark:text-violet-200'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
+                  }`}
+                >
+                  <Sparkles className={`flex-shrink-0 -ml-1 mr-3 h-6 w-6 ${
+                    activeTab === 'whats-new' ? 'text-violet-700 dark:text-violet-200' : 'text-gray-400 group-hover:text-gray-500'
+                  }`} />
+                  <span className="truncate">What&apos;s New</span>
+                </button>
+              )}
             </nav>
           </div>
 
@@ -827,6 +845,10 @@ export function AppSettings() {
                   </div>
                 )}
               </div>
+            )}
+
+            {activeTab === 'whats-new' && isSuperAdmin && (
+              <WhatsNewManager />
             )}
           </div>
         </div>

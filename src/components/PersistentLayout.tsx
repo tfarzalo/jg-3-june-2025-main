@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import Topbar from './ui/Topbar';
 import { Sidebar } from './Sidebar';
 import { useUserRole } from '../contexts/UserRoleContext';
+import { WhatsNewModal } from './whats-new/WhatsNewModal';
 
 export function PersistentLayout() {
   const { isSubcontractor } = useUserRole();
@@ -17,6 +18,7 @@ export function PersistentLayout() {
       )}
       <div className="flex-1 flex flex-col overflow-hidden">
         <Topbar showOnlyProfile={isSubcontractor} />
+        {!isSubcontractor && <WhatsNewModal />}
         <main className="flex-1 overflow-auto bg-gray-100 dark:bg-[#0F172A]">
           <Outlet />
         </main>

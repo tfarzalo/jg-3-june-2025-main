@@ -136,11 +136,7 @@ export default function SmsConsentPage() {
             </li>
             <li className="flex items-start gap-2">
               <span className="font-bold text-orange-500 mt-0.5">·</span>
-              Visit your <strong>User Profile</strong> in the app and uncheck the SMS consent checkbox.
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="font-bold text-orange-500 mt-0.5">·</span>
-              Disable individual notification types in your <strong>SMS Notification Settings</strong>.
+              Notify JG Painting Pros, Inc. management to remove your phone number from the SMS communications list.
             </li>
           </ul>
           <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm">
