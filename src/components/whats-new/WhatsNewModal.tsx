@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { X } from 'lucide-react';
+import { ChevronDown, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useWhatsNew } from '../../hooks/useWhatsNew';
 import {
@@ -24,6 +24,7 @@ export function WhatsNewModal({
 }: WhatsNewModalProps = {}) {
   const { entries, loading, shouldShowModal, dismiss } = useWhatsNew();
   const [closing, setClosing] = useState(false);
+  const [olderUpdatesExpanded, setOlderUpdatesExpanded] = useState(false);
 
   const effectiveEntries = previewEntries ?? entries;
   const isOpen = forceOpen ? effectiveEntries.length > 0 : shouldShowModal;
@@ -31,6 +32,15 @@ export function WhatsNewModal({
     const [first, ...rest] = effectiveEntries;
     return [first, rest.slice(0, 4)];
   }, [effectiveEntries]);
+  const [currentDateEntries, olderDateEntries] = useMemo(() => {
+    const current = previousEntries.filter((entry) =>
+      isWhatsNewCurrentDate(entry.updated_at || entry.created_at)
+    );
+    const older = previousEntries.filter((entry) =>
+      !isWhatsNewCurrentDate(entry.updated_at || entry.created_at)
+    );
+    return [current, older];
+  }, [previousEntries]);
 
   const handleClose = async () => {
     if (onPreviewClose) {
@@ -54,6 +64,52 @@ export function WhatsNewModal({
   }
 
   const featuredAccent = getWhatsNewAccentClasses(featuredEntry.icon_color);
+  const renderUpdateCard = (entry: WhatsNewEntry, isCurrent: boolean) => {
+    const accent = getWhatsNewAccentClasses(entry.icon_color);
+
+    return (
+      <div
+        key={entry.id}
+        className={`flex min-h-[144px] items-start gap-4 rounded-2xl border px-4 py-4 transition ${
+          isCurrent
+            ? 'border-slate-200/80 bg-slate-50/80 text-slate-600 dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-300'
+            : 'border-slate-200/70 bg-slate-100/70 text-slate-400 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-500'
+        }`}
+      >
+        <div className={`mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-xl text-white ${accent.pill} ${!isCurrent ? 'opacity-45 grayscale' : ''}`}>
+          {renderWhatsNewIcon(entry.icon_name, 'h-4 w-4')}
+        </div>
+        <div className="flex min-h-[112px] min-w-0 flex-1 flex-col justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className={`text-sm font-semibold ${isCurrent ? 'text-slate-800 dark:text-slate-200' : 'text-slate-500 dark:text-slate-500'}`}>
+                {entry.title}
+              </p>
+              {entry.badge_label && (
+                <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${getWhatsNewBadgeClasses(entry.badge_label)} ${!isCurrent ? 'opacity-50 grayscale' : 'opacity-80'}`}>
+                  {entry.badge_label}
+                </span>
+              )}
+            </div>
+            <p
+              className={`mt-2 text-sm leading-6 ${isCurrent ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'}`}
+              style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
+              {entry.description}
+            </p>
+          </div>
+          <span className="whitespace-nowrap text-xs uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+            {formatWhatsNewDate(entry.updated_at)}
+          </span>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
@@ -112,60 +168,42 @@ export function WhatsNewModal({
           <div className="flex items-center gap-3 pb-4">
             <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500">
-              Previous Highlights
+              Other Updates / Notes / News
             </p>
             <div className="h-px flex-1 bg-slate-200 dark:bg-slate-700" />
           </div>
 
           {previousEntries.length > 0 ? (
             <div className="grid gap-3">
-              {previousEntries.map((entry) => {
-                const accent = getWhatsNewAccentClasses(entry.icon_color);
-                const isCurrent = isWhatsNewCurrentDate(entry.updated_at || entry.created_at);
+              {currentDateEntries.map((entry) => renderUpdateCard(entry, true))}
 
-                return (
-                  <div
-                    key={entry.id}
-                    className={`flex min-h-[144px] items-start gap-4 rounded-2xl border px-4 py-4 transition ${
-                      isCurrent
-                        ? 'border-slate-200/80 bg-slate-50/80 text-slate-600 dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-300'
-                        : 'border-slate-200/70 bg-slate-100/70 text-slate-400 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-500'
-                    }`}
+              {olderDateEntries.length > 0 && (
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 dark:border-slate-700/60 dark:bg-slate-900/30">
+                  <button
+                    type="button"
+                    onClick={() => setOlderUpdatesExpanded((value) => !value)}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
                   >
-                    <div className={`mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-xl text-white ${accent.pill} ${!isCurrent ? 'opacity-45 grayscale' : ''}`}>
-                      {renderWhatsNewIcon(entry.icon_name, 'h-4 w-4')}
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                        Previous Date Updates
+                      </p>
+                      <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+                        {olderDateEntries.length} older item{olderDateEntries.length === 1 ? '' : 's'}
+                      </p>
                     </div>
-                    <div className="flex min-h-[112px] min-w-0 flex-1 flex-col justify-between">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className={`text-sm font-semibold ${isCurrent ? 'text-slate-800 dark:text-slate-200' : 'text-slate-500 dark:text-slate-500'}`}>
-                            {entry.title}
-                          </p>
-                          {entry.badge_label && (
-                            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${getWhatsNewBadgeClasses(entry.badge_label)} ${!isCurrent ? 'opacity-50 grayscale' : 'opacity-80'}`}>
-                              {entry.badge_label}
-                            </span>
-                          )}
-                        </div>
-                        <p
-                          className={`mt-2 text-sm leading-6 ${isCurrent ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'}`}
-                          style={{
-                            display: '-webkit-box',
-                            WebkitLineClamp: 3,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                          }}
-                        >
-                          {entry.description}
-                        </p>
-                      </div>
-                      <span className="whitespace-nowrap text-xs uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
-                        {formatWhatsNewDate(entry.updated_at)}
-                      </span>
+                    <span className={`inline-flex h-9 w-9 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm transition dark:bg-slate-800 dark:text-slate-300 ${olderUpdatesExpanded ? 'rotate-180' : ''}`}>
+                      <ChevronDown className="h-4 w-4" />
+                    </span>
+                  </button>
+
+                  {olderUpdatesExpanded && (
+                    <div className="grid gap-3 border-t border-slate-200/80 px-4 py-4 dark:border-slate-700/60">
+                      {olderDateEntries.map((entry) => renderUpdateCard(entry, false))}
                     </div>
-                  </div>
-                );
-              })}
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
