@@ -45,6 +45,7 @@ export function useWhatsNew(): UseWhatsNewResult {
             .from('whats_new_entries')
             .select('*')
             .eq('is_published', true)
+            .order('display_order', { ascending: true })
             .order('updated_at', { ascending: false })
             .limit(4),
           supabase
@@ -57,7 +58,14 @@ export function useWhatsNew(): UseWhatsNewResult {
       if (itemsError) throw itemsError;
       if (profileError) throw profileError;
 
-      setEntries((items ?? []) as WhatsNewEntry[]);
+      const visibleItems = ((items ?? []) as WhatsNewEntry[]).filter((entry) => {
+        if (isSuperAdmin) {
+          return entry.include_super_admin;
+        }
+        return true;
+      });
+
+      setEntries(visibleItems);
       setLastSeenAt(profile?.last_seen_whats_new_at ?? null);
       setError(null);
     } catch (err) {
@@ -66,7 +74,7 @@ export function useWhatsNew(): UseWhatsNewResult {
     } finally {
       setLoading(false);
     }
-  }, [canSeeWhatsNew, roleLoading, session?.user.id]);
+  }, [canSeeWhatsNew, isSuperAdmin, roleLoading, session?.user.id]);
 
   useEffect(() => {
     fetchWhatsNew();

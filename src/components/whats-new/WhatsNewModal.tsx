@@ -3,21 +3,41 @@ import { X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useWhatsNew } from '../../hooks/useWhatsNew';
 import {
+  type WhatsNewEntry,
   formatWhatsNewDate,
+  getWhatsNewAccentClasses,
   getWhatsNewBadgeClasses,
+  isWhatsNewCurrentDate,
   renderWhatsNewIcon,
 } from '../../lib/whatsNew/whatsNewOptions';
 
-export function WhatsNewModal() {
+interface WhatsNewModalProps {
+  forceOpen?: boolean;
+  previewEntries?: WhatsNewEntry[];
+  onPreviewClose?: () => void;
+}
+
+export function WhatsNewModal({
+  forceOpen = false,
+  previewEntries,
+  onPreviewClose,
+}: WhatsNewModalProps = {}) {
   const { entries, loading, shouldShowModal, dismiss } = useWhatsNew();
   const [closing, setClosing] = useState(false);
 
+  const effectiveEntries = previewEntries ?? entries;
+  const isOpen = forceOpen ? effectiveEntries.length > 0 : shouldShowModal;
   const [featuredEntry, previousEntries] = useMemo(() => {
-    const [first, ...rest] = entries;
-    return [first, rest];
-  }, [entries]);
+    const [first, ...rest] = effectiveEntries;
+    return [first, rest.slice(0, 4)];
+  }, [effectiveEntries]);
 
   const handleClose = async () => {
+    if (onPreviewClose) {
+      onPreviewClose();
+      return;
+    }
+
     try {
       setClosing(true);
       await dismiss();
@@ -29,9 +49,11 @@ export function WhatsNewModal() {
     }
   };
 
-  if (loading || !shouldShowModal || !featuredEntry) {
+  if ((loading && !forceOpen) || !isOpen || !featuredEntry) {
     return null;
   }
+
+  const featuredAccent = getWhatsNewAccentClasses(featuredEntry.icon_color);
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
@@ -52,12 +74,12 @@ export function WhatsNewModal() {
             <X className="h-5 w-5" />
           </button>
 
-          <div className="mb-5 inline-flex items-center gap-3 rounded-full border border-sky-200 bg-white/80 px-4 py-2 backdrop-blur dark:border-sky-500/30 dark:bg-slate-900/60">
-            <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-lg dark:bg-sky-400 dark:text-slate-950">
+          <div className={`mb-5 inline-flex items-center gap-3 rounded-full border bg-white/80 px-4 py-2 backdrop-blur dark:bg-slate-900/60 ${featuredAccent.border}`}>
+            <span className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl text-white shadow-lg ${featuredAccent.pill}`}>
               {renderWhatsNewIcon(featuredEntry.icon_name, 'h-5 w-5')}
             </span>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700 dark:text-sky-300">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-700 dark:text-slate-200">
                 What&apos;s New
               </p>
               <p className="text-sm text-slate-500 dark:text-slate-400">
@@ -97,34 +119,53 @@ export function WhatsNewModal() {
 
           {previousEntries.length > 0 ? (
             <div className="grid gap-3">
-              {previousEntries.map((entry) => (
-                <div
-                  key={entry.id}
-                  className="flex items-start gap-4 rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-4 text-slate-500 dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-400"
-                >
-                  <div className="mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                    {renderWhatsNewIcon(entry.icon_name, 'h-4 w-4')}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                        {entry.title}
-                      </p>
-                      {entry.badge_label && (
-                        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${getWhatsNewBadgeClasses(entry.badge_label)} opacity-75`}>
-                          {entry.badge_label}
-                        </span>
-                      )}
+              {previousEntries.map((entry) => {
+                const accent = getWhatsNewAccentClasses(entry.icon_color);
+                const isCurrent = isWhatsNewCurrentDate(entry.updated_at || entry.created_at);
+
+                return (
+                  <div
+                    key={entry.id}
+                    className={`flex min-h-[144px] items-start gap-4 rounded-2xl border px-4 py-4 transition ${
+                      isCurrent
+                        ? 'border-slate-200/80 bg-slate-50/80 text-slate-600 dark:border-slate-700/60 dark:bg-slate-900/50 dark:text-slate-300'
+                        : 'border-slate-200/70 bg-slate-100/70 text-slate-400 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-500'
+                    }`}
+                  >
+                    <div className={`mt-0.5 inline-flex h-10 w-10 items-center justify-center rounded-xl text-white ${accent.pill} ${!isCurrent ? 'opacity-45 grayscale' : ''}`}>
+                      {renderWhatsNewIcon(entry.icon_name, 'h-4 w-4')}
                     </div>
-                    <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
-                      {entry.description}
-                    </p>
+                    <div className="flex min-h-[112px] min-w-0 flex-1 flex-col justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className={`text-sm font-semibold ${isCurrent ? 'text-slate-800 dark:text-slate-200' : 'text-slate-500 dark:text-slate-500'}`}>
+                            {entry.title}
+                          </p>
+                          {entry.badge_label && (
+                            <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${getWhatsNewBadgeClasses(entry.badge_label)} ${!isCurrent ? 'opacity-50 grayscale' : 'opacity-80'}`}>
+                              {entry.badge_label}
+                            </span>
+                          )}
+                        </div>
+                        <p
+                          className={`mt-2 text-sm leading-6 ${isCurrent ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'}`}
+                          style={{
+                            display: '-webkit-box',
+                            WebkitLineClamp: 3,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {entry.description}
+                        </p>
+                      </div>
+                      <span className="whitespace-nowrap text-xs uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+                        {formatWhatsNewDate(entry.updated_at)}
+                      </span>
+                    </div>
                   </div>
-                  <span className="whitespace-nowrap text-xs uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
-                    {formatWhatsNewDate(entry.updated_at)}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-5 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
