@@ -3,7 +3,8 @@ import { useAuth } from '../contexts/AuthProvider';
 import { useUnreadMessages } from '../contexts/UnreadMessagesProvider';
 import { useChatTray } from '../contexts/ChatTrayProvider';
 import { useUserRole } from '../contexts/UserRoleContext';
-import { MessageCircle, Settings, Users, Plus, Search, Send, MoreVertical, Phone, Expand, ArrowLeft, Archive, ArchiveRestore, Trash2, Clock } from 'lucide-react';
+import { MessageCircle, Settings, Users, Plus, Search, Send, MoreVertical, Phone, Expand, ArrowLeft, Archive, ArchiveRestore, Trash2, Clock, Paperclip, X as XIcon, Image as ImageIcon } from 'lucide-react';
+import { Lightbox } from '../components/Lightbox';
 import { supabase, getAvatarUrl } from '../utils/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { ChatDock } from '../components/chat/ChatDock';
@@ -38,6 +39,7 @@ interface Message {
   conversation_id: string;
   sender_id: string;
   body: string;
+  attachments?: Array<{ url: string; type: string; name?: string }>;
   created_at: string;
   sender?: User;
 }
@@ -71,6 +73,16 @@ function MessagingPage() {
   const [selectedConversations, setSelectedConversations] = useState<Set<string>>(new Set());
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [lastMessages, setLastMessages] = useState<Record<string, { body: string; created_at: string; sender_id: string }>>({});
+  
+  // Image upload state
+  const [pendingImages, setPendingImages] = useState<Array<{ file: File; previewUrl: string }>>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  // Lightbox state
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxImages, setLightboxImages] = useState<Array<{ url: string; alt?: string }>>([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   
   // Real-time subscription references
   const messagesChannelRef = useRef<RealtimeChannel | null>(null);
@@ -470,53 +482,71 @@ function MessagingPage() {
   };
 
   const sendMessage = async () => {
-    if (newMessage.trim() && selectedConversation?.id && user?.id) {
-      try {
-        setSending(true);
-        
-        // Check if the conversation is archived and unarchive it if so
-        const isArchived = archivedConversations.some(conv => conv.id === selectedConversation.id);
-        if (isArchived) {
-          await handleUnarchiveChat(selectedConversation.id);
-        }
-        
-        const { data: newMessageData, error } = await supabase
-          .from('messages')
-          .insert({
-            conversation_id: selectedConversation.id,
-            sender_id: user.id,
-            body: newMessage.trim(),
-            created_at: new Date().toISOString()
-          })
-          .select()
-          .single();
-        
-        if (error) throw error;
-        
-        setMessages(prev => [...prev, {
-          ...newMessageData,
-          sender: {
-            id: user.id,
-            full_name: user.user_metadata?.full_name,
-            email: user.email,
-            avatar_url: user.user_metadata?.avatar_url
-          }
-        }]);
-        
-        await supabase
-          .from('conversations')
-          .update({ updated_at: new Date().toISOString() })
-          .eq('id', selectedConversation.id);
-        
-        setNewMessage('');
-        setTimeout(() => {
-          scrollToBottom();
-        }, 100);
-      } catch (error) {
-        console.error('Error sending message:', error);
-      } finally {
-        setSending(false);
+    if ((!newMessage.trim() && pendingImages.length === 0) || !selectedConversation?.id || !user?.id) return;
+    try {
+      setSending(true);
+      
+      // Check if the conversation is archived and unarchive it if so
+      const isArchived = archivedConversations.some(conv => conv.id === selectedConversation.id);
+      if (isArchived) {
+        await handleUnarchiveChat(selectedConversation.id);
       }
+
+      // Upload any pending images
+      let attachments: Array<{ url: string; type: string; name?: string }> = [];
+      if (pendingImages.length > 0) {
+        setUploadingImages(true);
+        for (const pending of pendingImages) {
+          const ext = pending.file.name.split('.').pop() || 'jpg';
+          const path = `chat-images/${selectedConversation.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+          const { error: uploadError } = await supabase.storage.from('files').upload(path, pending.file, { upsert: false });
+          if (!uploadError) {
+            const { data: publicData } = supabase.storage.from('files').getPublicUrl(path);
+            attachments.push({ url: publicData.publicUrl, type: pending.file.type, name: pending.file.name });
+          }
+        }
+        setUploadingImages(false);
+        setPendingImages([]);
+      }
+      
+      const { data: newMessageData, error } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: selectedConversation.id,
+          sender_id: user.id,
+          body: newMessage.trim(),
+          attachments: attachments.length > 0 ? attachments : null,
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      
+      if (error) throw error;
+      
+      setMessages(prev => [...prev, {
+        ...newMessageData,
+        sender: {
+          id: user.id,
+          full_name: user.user_metadata?.full_name,
+          email: user.email,
+          avatar_url: user.user_metadata?.avatar_url
+        }
+      }]);
+      
+      await supabase
+        .from('conversations')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', selectedConversation.id);
+      
+      setNewMessage('');
+      setTimeout(() => {
+        scrollToBottom();
+      }, 100);
+    } catch (error) {
+      console.error('Error sending message:', error);
+    } finally {
+      setSending(false);
+      setUploadingImages(false);
     }
   };
 
@@ -1567,7 +1597,28 @@ function MessagingPage() {
                                 ? 'bg-blue-600 text-white' 
                                 : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-600'
                             }`}>
-                              <p className="text-sm break-words">{message.body}</p>
+                              {/* Image attachments */}
+                              {message.attachments && message.attachments.length > 0 && (
+                                <div className={`flex flex-wrap gap-2 ${message.body ? 'mb-2' : ''}`}>
+                                  {message.attachments.map((att, idx) => (
+                                    att.type?.startsWith('image/') ? (
+                                      <img
+                                        key={idx}
+                                        src={att.url}
+                                        alt={att.name || 'Image'}
+                                        className="max-w-[200px] max-h-[200px] rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                        onClick={() => {
+                                          const imgs = message.attachments!.filter(a => a.type?.startsWith('image/')).map(a => ({ url: a.url, alt: a.name }));
+                                          setLightboxImages(imgs);
+                                          setLightboxIndex(idx);
+                                          setLightboxOpen(true);
+                                        }}
+                                      />
+                                    ) : null
+                                  ))}
+                                </div>
+                              )}
+                              {message.body && <p className="text-sm break-words">{message.body}</p>}
                               <p className={`text-[11px] leading-tight mt-1 ${
                                 isOwnMessage 
                                   ? 'text-blue-100' 
@@ -1594,7 +1645,51 @@ function MessagingPage() {
 
             {/* Message Input - Sticky Bottom */}
             <div className="sticky bottom-0 z-10 p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm">
+              {/* Pending image previews */}
+              {pendingImages.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {pendingImages.map((img, idx) => (
+                    <div key={idx} className="relative group">
+                      <img
+                        src={img.previewUrl}
+                        alt="pending"
+                        className="w-16 h-16 rounded-lg object-cover border border-gray-200 dark:border-gray-600"
+                      />
+                      <button
+                        onClick={() => setPendingImages(prev => {
+                          URL.revokeObjectURL(prev[idx].previewUrl);
+                          return prev.filter((_, i) => i !== idx);
+                        })}
+                        className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <XIcon className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="flex items-center space-x-3">
+                {/* Hidden file input */}
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    const newPending = files.map(f => ({ file: f, previewUrl: URL.createObjectURL(f) }));
+                    setPendingImages(prev => [...prev, ...newPending]);
+                    e.target.value = '';
+                  }}
+                />
+                <button
+                  onClick={() => imageInputRef.current?.click()}
+                  className="p-2 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                  title="Attach image"
+                >
+                  <Paperclip className="h-5 w-5" />
+                </button>
                 <input
                   type="text"
                   value={newMessage}
@@ -1602,12 +1697,8 @@ function MessagingPage() {
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
-                      if (newMessage.trim() && selectedConversation?.id && user?.id) {
-                        const target = e.target as HTMLInputElement;
-                        const sendButton = target.nextElementSibling as HTMLButtonElement;
-                        if (sendButton) {
-                          sendButton.click();
-                        }
+                      if ((newMessage.trim() || pendingImages.length > 0) && selectedConversation?.id && user?.id) {
+                        sendMessage();
                       }
                     }
                   }}
@@ -1616,10 +1707,14 @@ function MessagingPage() {
                 />
                 <button
                   onClick={sendMessage}
-                  disabled={sending || !newMessage.trim()}
+                  disabled={sending || uploadingImages || (!newMessage.trim() && pendingImages.length === 0)}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  <Send className="h-4 w-4" />
+                  {uploadingImages ? (
+                    <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
                 </button>
               </div>
             </div>
@@ -1689,7 +1784,13 @@ function MessagingPage() {
         </div>
       )}
 
-
+      {/* Image Lightbox */}
+      <Lightbox
+        isOpen={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+        images={lightboxImages}
+        initialIndex={lightboxIndex}
+      />
 
     </div>
   );

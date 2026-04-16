@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
-import { MessageCircle, Plus, X, ArrowLeft, Search, Send } from 'lucide-react';
+import { MessageCircle, Plus, X, ArrowLeft, Search, Send, Paperclip } from 'lucide-react';
+import { Lightbox } from '../Lightbox';
 import { useChatTray } from '../../contexts/ChatTrayProvider';
 import { useAuth } from '../../contexts/AuthProvider';
 import { supabase, getAvatarUrl } from '../../utils/supabase';
@@ -32,6 +33,7 @@ interface Message {
   conversation_id: string;
   sender_id: string;
   body: string;
+  attachments?: Array<{ url: string; type: string; name?: string }>;
   created_at: string;
   sender?: ChatUser;
 }
@@ -72,6 +74,16 @@ export function ChatMenuEnhanced() {
   const isInitialMessagePositionRef = useRef(false);
   const previousMessageCountRef = useRef(0);
   const shouldAutoScrollRef = useRef(true);
+
+  // Image upload state
+  const [pendingImages, setPendingImages] = useState<Array<{ file: File; previewUrl: string }>>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  // Lightbox state
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxImages, setLightboxImages] = useState<Array<{ url: string; alt?: string }>>([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
 
   // Helper function to format timestamp with both relative and absolute info
   const formatTimestamp = (timestamp: string) => {
@@ -720,9 +732,10 @@ export function ChatMenuEnhanced() {
   };
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !selectedChatId || !user?.id || sending) {
+    if ((!newMessage.trim() && pendingImages.length === 0) || !selectedChatId || !user?.id || sending) {
       console.log('Cannot send message:', { 
         hasMessage: !!newMessage.trim(), 
+        pendingImages: pendingImages.length,
         selectedChatId, 
         userId: user?.id, 
         sending 
@@ -734,6 +747,24 @@ export function ChatMenuEnhanced() {
     setSending(true);
     const messageText = newMessage.trim();
     setNewMessage(''); // Clear immediately for better UX
+
+    // Upload any pending images
+    let attachments: Array<{ url: string; type: string; name?: string }> = [];
+    if (pendingImages.length > 0) {
+      setUploadingImages(true);
+      const imagesToUpload = [...pendingImages];
+      setPendingImages([]);
+      for (const pending of imagesToUpload) {
+        const ext = pending.file.name.split('.').pop() || 'jpg';
+        const path = `chat-images/${selectedChatId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error: uploadError } = await supabase.storage.from('files').upload(path, pending.file, { upsert: false });
+        if (!uploadError) {
+          const { data: publicData } = supabase.storage.from('files').getPublicUrl(path);
+          attachments.push({ url: publicData.publicUrl, type: pending.file.type, name: pending.file.name });
+        }
+      }
+      setUploadingImages(false);
+    }
     
     try {
       const { data: insertedMessage, error } = await supabase
@@ -742,6 +773,7 @@ export function ChatMenuEnhanced() {
           conversation_id: selectedChatId,
           sender_id: user.id,
           body: messageText,
+          attachments: attachments.length > 0 ? attachments : null,
           created_at: new Date().toISOString()
         })
         .select(`
@@ -786,6 +818,7 @@ export function ChatMenuEnhanced() {
       setNewMessage(messageText); // Restore message on error
     } finally {
       setSending(false);
+      setUploadingImages(false);
     }
   };
 
@@ -1190,7 +1223,28 @@ export function ChatMenuEnhanced() {
                                 : 'bg-white dark:bg-[#1E293B] text-gray-900 dark:text-white rounded-bl-none'
                             }`}
                           >
-                            <p className="text-sm whitespace-pre-wrap break-words">{message.body}</p>
+                            {/* Image attachments */}
+                            {message.attachments && message.attachments.length > 0 && (
+                              <div className={`flex flex-wrap gap-1.5 ${message.body ? 'mb-2' : ''}`}>
+                                {message.attachments.map((att, idx) => (
+                                  att.type?.startsWith('image/') ? (
+                                    <img
+                                      key={idx}
+                                      src={att.url}
+                                      alt={att.name || 'Image'}
+                                      className="max-w-[160px] max-h-[160px] rounded-xl object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                      onClick={() => {
+                                        const imgs = message.attachments!.filter(a => a.type?.startsWith('image/')).map(a => ({ url: a.url, alt: a.name }));
+                                        setLightboxImages(imgs);
+                                        setLightboxIndex(idx);
+                                        setLightboxOpen(true);
+                                      }}
+                                    />
+                                  ) : null
+                                ))}
+                              </div>
+                            )}
+                            {message.body && <p className="text-sm whitespace-pre-wrap break-words">{message.body}</p>}
                           </div>
                           <p className={`text-xs text-gray-400 mt-1 px-3 ${isOwnMessage ? 'text-right' : 'text-left'}`}>
                             {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1206,7 +1260,51 @@ export function ChatMenuEnhanced() {
 
               {/* Message Input */}
               <div className="border-t border-gray-200 p-3 dark:border-[#2D3B4E] sm:p-4">
+                {/* Pending image previews */}
+                {pendingImages.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {pendingImages.map((img, idx) => (
+                      <div key={idx} className="relative group">
+                        <img
+                          src={img.previewUrl}
+                          alt="pending"
+                          className="w-14 h-14 rounded-lg object-cover border border-gray-200 dark:border-gray-600"
+                        />
+                        <button
+                          onClick={() => setPendingImages(prev => {
+                            URL.revokeObjectURL(prev[idx].previewUrl);
+                            return prev.filter((_, i) => i !== idx);
+                          })}
+                          className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex items-end space-x-2">
+                  {/* Hidden file input */}
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      const newPending = files.map(f => ({ file: f, previewUrl: URL.createObjectURL(f) }));
+                      setPendingImages(prev => [...prev, ...newPending]);
+                      e.target.value = '';
+                    }}
+                  />
+                  <button
+                    onClick={() => imageInputRef.current?.click()}
+                    className="flex min-h-[44px] min-w-[36px] items-center justify-center rounded-lg p-2 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                    title="Attach image"
+                  >
+                    <Paperclip className="h-5 w-5" />
+                  </button>
                   <textarea
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
@@ -1222,11 +1320,15 @@ export function ChatMenuEnhanced() {
                   />
                   <button
                     onClick={handleSendMessage}
-                    disabled={!newMessage.trim() || sending}
+                    disabled={(!newMessage.trim() && pendingImages.length === 0) || sending || uploadingImages}
                     className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg bg-blue-600 p-2.5 text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 dark:disabled:bg-gray-600"
                     title="Send message"
                   >
-                    <Send className="h-5 w-5" />
+                    {uploadingImages ? (
+                      <div className="h-5 w-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Send className="h-5 w-5" />
+                    )}
                   </button>
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -1237,6 +1339,14 @@ export function ChatMenuEnhanced() {
           )}
         </div>
       )}
+
+      {/* Image Lightbox */}
+      <Lightbox
+        isOpen={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+        images={lightboxImages}
+        initialIndex={lightboxIndex}
+      />
     </div>
   );
 }
