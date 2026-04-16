@@ -6,6 +6,7 @@ import {
   GripVertical,
   Loader2,
   Plus,
+  RefreshCw,
   Save,
   Sparkles,
   Trash2,
@@ -68,6 +69,8 @@ export function WhatsNewManager() {
   const [editingEntry, setEditingEntry] = useState<DraftEntry | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [draggedEntryId, setDraggedEntryId] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   const fetchEntries = async () => {
     try {
@@ -133,8 +136,26 @@ export function WhatsNewManager() {
     );
   }, [editingEntry, entries]);
 
-  const startCreate = () => setEditingEntry({ ...EMPTY_DRAFT });
+  const resetVisibility = async () => {
+    setResetting(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ last_seen_whats_new_at: null })
+        .in('role', ['admin', 'jg_management', 'is_super_admin']);
 
+      if (error) throw error;
+      toast.success('Visibility reset — all eligible users will see the modal on next load');
+      setResetConfirmOpen(false);
+    } catch (err) {
+      console.error('Error resetting What\'s New visibility:', err);
+      toast.error('Failed to reset visibility');
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const startCreate = () => setEditingEntry({ ...EMPTY_DRAFT });
   const startEdit = (entry: WhatsNewEntry) => {
     setEditingEntry({
       id: entry.id,
@@ -316,6 +337,10 @@ export function WhatsNewManager() {
                 <p className="text-slate-500 dark:text-slate-400">Published items</p>
                 <p className="text-2xl font-semibold text-slate-900 dark:text-white">{publishedCount}</p>
               </div>
+              <Button variant="secondary" onClick={() => setResetConfirmOpen(true)}>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Reset Visibility
+              </Button>
               <Button variant="secondary" onClick={() => setPreviewOpen(true)}>
                 <Eye className="mr-2 h-4 w-4" />
                 Preview Modal
@@ -655,6 +680,44 @@ export function WhatsNewManager() {
           previewEntries={previewEntries}
           onPreviewClose={() => setPreviewOpen(false)}
         />
+      )}
+
+      {resetConfirmOpen && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+            onClick={() => !resetting && setResetConfirmOpen(false)}
+          />
+          <div className="relative z-10 w-full max-w-md overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-[0_24px_60px_rgba(15,23,42,0.28)] dark:border-slate-700/60 dark:bg-[#1E293B]">
+            <div className="px-7 py-6">
+              <div className="mb-1 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-900/30">
+                <RefreshCw className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <h3 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">
+                Reset What&apos;s New Visibility
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
+                This will clear the dismissal record for <strong>all admin and management users</strong>. The What&apos;s New modal will reappear for them on their next page load (as long as there are published entries).
+              </p>
+              <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-300">
+                This does not affect which entries are visible — only whether users have already dismissed the modal.
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-3 border-t border-slate-200/70 px-7 py-5 dark:border-slate-700/60">
+              <Button variant="secondary" onClick={() => setResetConfirmOpen(false)} disabled={resetting}>
+                Cancel
+              </Button>
+              <Button onClick={resetVisibility} disabled={resetting}>
+                {resetting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                {resetting ? 'Resetting…' : 'Yes, Reset Visibility'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
