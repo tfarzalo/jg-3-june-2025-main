@@ -15,12 +15,15 @@ interface WhatsNewModalProps {
   forceOpen?: boolean;
   previewEntries?: WhatsNewEntry[];
   onPreviewClose?: () => void;
+  /** When true the modal is being shown as an admin preview — enables admin-specific wording */
+  isAdminPreview?: boolean;
 }
 
 export function WhatsNewModal({
   forceOpen = false,
   previewEntries,
   onPreviewClose,
+  isAdminPreview = false,
 }: WhatsNewModalProps = {}) {
   const { entries, loading, shouldShowModal, dismiss } = useWhatsNew();
   const [closing, setClosing] = useState(false);
@@ -137,7 +140,9 @@ export function WhatsNewModal({
               Latest Updates, Notes, and News
             </h2>
             <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
-              Entries appear in the order set in What&apos;s New settings.
+              {isAdminPreview
+                ? 'Admin preview — showing all published entries in display order.'
+                : "Here's what we've been working on for you."}
             </p>
           </div>
         </div>

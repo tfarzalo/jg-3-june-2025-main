@@ -651,6 +651,7 @@ export function WhatsNewManager() {
       {previewOpen && (
         <WhatsNewModal
           forceOpen
+          isAdminPreview
           previewEntries={previewEntries}
           onPreviewClose={() => setPreviewOpen(false)}
         />
