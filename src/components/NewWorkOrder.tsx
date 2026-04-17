@@ -2008,7 +2008,7 @@ const NewWorkOrder = () => {
 
     try {
       if (isFrozenHistoricalSnapshot(job.job_phase?.job_phase_label, job.historical_data_mode)) {
-        return 'This completed or archived job is frozen as a snapshot. Reopen it from Job Details before editing.';
+        return 'This completed, invoicing, or archived job is frozen as a snapshot. Reopen it from Job Details before editing.';
       }
 
       // If user is admin/manager, allow submission regardless of phase

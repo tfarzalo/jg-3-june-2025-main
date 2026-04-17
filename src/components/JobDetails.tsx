@@ -2456,7 +2456,15 @@ export function JobDetails() {
   // Add a helper function to handle phase change by phase object
   const handlePhaseChangeTo = async (phase) => {
     if (!phase || !job) return;
-    if (isHistoricalSnapshotJob) {
+
+    // A frozen job may only advance from Completed → Invoicing while keeping its snapshot.
+    // Any other direction or target on a frozen job requires a reopen first.
+    const isFrozenAdvanceToInvoicing =
+      isHistoricalSnapshotJob &&
+      isCompleted &&
+      phase.job_phase_label === 'Invoicing';
+
+    if (isHistoricalSnapshotJob && !isFrozenAdvanceToInvoicing) {
       toast.error('Reopen the frozen job before changing phases.');
       return;
     }
@@ -2466,10 +2474,16 @@ export function JobDetails() {
       if (userError) throw userError;
       if (!userData.user) throw new Error('User not found');
       
-      // Update job phase
+      // Update job phase — for a frozen advance to Invoicing, keep historical_data_mode = 'snapshot'
+      const updatePayload: Record<string, unknown> = { current_phase_id: phase.id };
+      if (isFrozenAdvanceToInvoicing) {
+        // Preserve the frozen snapshot state through to Invoicing
+        updatePayload.historical_data_mode = 'snapshot';
+      }
+
       const { error: updateError } = await supabase
         .from('jobs')
-        .update({ current_phase_id: phase.id })
+        .update(updatePayload)
         .eq('id', jobId);
       if (updateError) throw updateError;
       
@@ -2581,14 +2595,14 @@ export function JobDetails() {
                 {reactivatingJob ? 'Re-Activating...' : 'Re-Activate Job'}
               </button>
             )}
-            {canChangePhase && !isPendingWorkOrder && !isCancelled && !isHistoricalSnapshotJob && (
+            {canChangePhase && !isPendingWorkOrder && !isCancelled && !(isHistoricalSnapshotJob && !isCompleted) && (
               <>
                 {!isJobRequest && (
                   <button
                     onClick={() => {
                       if (currentNavPhaseIndex > 0) handlePhaseChangeTo(navPhases[currentNavPhaseIndex - 1]);
                     }}
-                    disabled={currentNavPhaseIndex === 0 || changingPhase}
+                    disabled={currentNavPhaseIndex === 0 || changingPhase || isHistoricalSnapshotJob}
                     className="inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{
                       backgroundColor: currentNavPhaseIndex > 0 ? navPhases[currentNavPhaseIndex - 1].color_dark_mode : '#6B7280'

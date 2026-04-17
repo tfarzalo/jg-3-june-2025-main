@@ -1,6 +1,6 @@
 export type HistoricalDataMode = 'live' | 'snapshot';
 
-export const HISTORICAL_PHASES = new Set(['Completed', 'Archived']);
+export const HISTORICAL_PHASES = new Set(['Completed', 'Invoicing', 'Archived']);
 
 export function isHistoricalPhase(phaseLabel?: string | null): boolean {
   return HISTORICAL_PHASES.has((phaseLabel ?? '').trim());
@@ -45,7 +45,7 @@ export function getHistoricalDataIndicator(
       code: 'S',
       label: 'Snapshot',
       bgClass: 'bg-emerald-600',
-      title: 'Snapshot data: this completed or archived job is frozen as a historical record.',
+      title: 'Snapshot data: this completed, invoicing, or archived job is frozen as a historical record.',
     };
   }
 
@@ -53,6 +53,6 @@ export function getHistoricalDataIndicator(
     code: 'L',
     label: 'Live',
     bgClass: 'bg-red-600',
-    title: 'Live data: this completed or archived job is still using mutable live data.',
+    title: 'Live data: this completed, invoicing, or archived job is still using mutable live data.',
   };
 }
