@@ -21,6 +21,7 @@ interface Job {
   invoice_sent_date?: string;
   invoice_paid_date?: string;
   purchase_order?: string | null;
+  historical_data_mode?: string | null;
   property: {
     id: string;
     property_name: string;
@@ -223,7 +224,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
         // Include invoice fields for invoicing phase
         const isInvoicingPhase = phaseLabel === 'Invoicing' || 
         (Array.isArray(phaseLabel) && phaseLabel.includes('Invoicing')) ||
-        phases.some(phase => phase.job_phase_label === 'Invoicing');
+        phases.includes('Invoicing');
         
         const selectFields = `
             id,
@@ -235,6 +236,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
             updated_at,
             assigned_to,
             purchase_order,
+            historical_data_mode,
             ${isInvoicingPhase ? 'invoice_sent, invoice_paid, invoice_sent_date, invoice_paid_date,' : ''}
             property:properties (
               id,
@@ -288,6 +290,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
           updated_at: job.updated_at,
           assigned_to: job.assigned_to,
           purchase_order: job.purchase_order,
+          historical_data_mode: job.historical_data_mode,
           invoice_sent: job.invoice_sent,
           invoice_paid: job.invoice_paid,
           invoice_sent_date: job.invoice_sent_date,
