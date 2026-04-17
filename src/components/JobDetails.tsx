@@ -322,6 +322,7 @@ export function JobDetails() {
   const [jobNotesSaving, setJobNotesSaving] = useState(false);
   const [jobNotesError, setJobNotesError] = useState<string | null>(null);
   const [reopeningHistoricalJob, setReopeningHistoricalJob] = useState(false);
+  const [showReopenConfirm, setShowReopenConfirm] = useState(false);
   const [newJobNote, setNewJobNote] = useState({
     topic: '',
     note_content: '',
@@ -2515,25 +2516,20 @@ export function JobDetails() {
   const handleReopenHistoricalJob = async () => {
     if (!jobId || !job || !(isAdmin || isJGManagement)) return;
 
-    const reason = window.prompt(
-      'Enter a reason for reopening this frozen job. The existing snapshot will be preserved.'
-    );
-
-    if (!reason || !reason.trim()) {
-      return;
-    }
-
     setReopeningHistoricalJob(true);
     try {
       const { error } = await supabase.rpc('reopen_job_from_snapshot', {
         p_job_id: jobId,
-        p_reason: reason.trim(),
+        p_reason: 'Reopened by user',
         p_target_phase_label: null,
       });
 
       if (error) throw error;
 
-      toast.success('Job reopened for editing. The previous snapshot was preserved.');
+      toast.success(
+        'Job reopened. The page will now refresh to show the latest live data. The job has returned to the Work Order phase.',
+        { duration: 5000 }
+      );
       await Promise.all([refetchJob(), refetchPhaseChanges()]);
     } catch (err) {
       console.error('Error reopening frozen job:', err);
@@ -2577,7 +2573,7 @@ export function JobDetails() {
           <div className="flex space-x-3">
             {(isAdmin || isJGManagement) && isHistoricalSnapshotJob && (
               <button
-                onClick={handleReopenHistoricalJob}
+                onClick={() => setShowReopenConfirm(true)}
                 disabled={reopeningHistoricalJob}
                 className="inline-flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -4390,6 +4386,34 @@ export function JobDetails() {
         )}
 
       </div>
+
+      {/* Reopen Job Confirmation Dialog */}
+      {showReopenConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Reopen Job?</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
+              This job will be reopened and returned to the <strong>Work Order</strong> phase. The page will refresh to show the latest live data.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowReopenConfirm(false)}
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { setShowReopenConfirm(false); handleReopenHistoricalJob(); }}
+                disabled={reopeningHistoricalJob}
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {reopeningHistoricalJob ? 'Reopening...' : 'Confirm Reopen'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
