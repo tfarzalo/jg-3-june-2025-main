@@ -41,6 +41,37 @@ export interface EmployeeFormDefinition {
   sections: EmployeeFormSectionDefinition[];
 }
 
+export const SMS_OPT_IN_FORM_KEY = 'new-hire-paperwork-7';
+export const SMS_OPT_IN_POLICY_VERSION = 'v1.0';
+export const SMS_OPT_IN_EFFECTIVE_DATE = 'April 14, 2026';
+export const SMS_OPT_IN_METADATA_KEY = '__sms_opt_in_meta';
+
+export const SMS_OPT_IN_FIELD_IDS = {
+  employeeName: 'sms_opt_in_employee_name',
+  email: 'sms_opt_in_email',
+  phone: 'sms_opt_in_phone',
+  consentDate: 'sms_opt_in_consent_date',
+  consentCheckbox: 'sms_opt_in_consent_checkbox',
+  optOutAcknowledgement: 'sms_opt_in_opt_out_acknowledgement',
+  signature: 'sms_opt_in_signature',
+} as const;
+
+export interface EmployeeSmsOptInMetadata {
+  consented_at: string | null;
+  consent_ip: string | null;
+  phone_e164: string | null;
+  policy_version: string | null;
+  effective_date: string | null;
+}
+
+export interface EmployeeSmsOptInSnapshot {
+  phone: string | null;
+  consented: boolean;
+  consentDate: string | null;
+  signature: string | null;
+  metadata: EmployeeSmsOptInMetadata | null;
+}
+
 const makeSampleFields = (
   prefix: string,
   dateLabel: string,
@@ -174,16 +205,72 @@ export const EMPLOYEE_ONBOARDING_FORMS: EmployeeFormDefinition[] = [
     ],
   },
   {
-    key: 'new-hire-paperwork-7',
-    title: 'New Hire Paperwork 7',
-    sourceFileName: 'New Hire Paperwork 7.pdf',
-    structureExtractedFromPdf: false,
+    key: SMS_OPT_IN_FORM_KEY,
+    title: 'SMS Messaging Opt-In Authorization',
+    sourceFileName: 'SMS Messaging Opt-In Authorization.pdf',
+    structureExtractedFromPdf: true,
     sections: [
       {
-        id: 'final-certification',
-        title: 'Final Certification',
-        description: 'Placeholder structure pending extraction from the source PDF.',
-        fields: makeSampleFields('form_7', 'Certification date', 'I certify this onboarding submission is complete', 'Final certification signature'),
+        id: 'sms-contact',
+        title: 'Mobile Contact Details',
+        description: 'Provide the mobile number that should receive work-related text notifications from JG Painting Pros, Inc.',
+        fields: [
+          {
+            id: SMS_OPT_IN_FIELD_IDS.employeeName,
+            label: 'Employee full name',
+            type: 'text',
+            required: true,
+            placeholder: 'Enter full legal name',
+          },
+          {
+            id: SMS_OPT_IN_FIELD_IDS.email,
+            label: 'Email address',
+            type: 'email',
+            required: true,
+            placeholder: 'name@example.com',
+          },
+          {
+            id: SMS_OPT_IN_FIELD_IDS.phone,
+            label: 'Mobile phone number for SMS notifications',
+            type: 'phone',
+            required: true,
+            placeholder: '123-456-7890',
+          },
+        ],
+      },
+      {
+        id: 'sms-consent',
+        title: 'SMS Consent',
+        description:
+          'By opting in, you agree to receive work-related SMS notifications about assignments, scheduling, work orders, approvals, and internal messaging. Message frequency varies. Message and data rates may apply.',
+        fields: [
+          {
+            id: SMS_OPT_IN_FIELD_IDS.consentDate,
+            label: 'Date of consent',
+            type: 'date',
+            required: true,
+          },
+          {
+            id: SMS_OPT_IN_FIELD_IDS.consentCheckbox,
+            label:
+              'I authorize JG Painting Pros, Inc. to send me automated and non-automated SMS text messages at the mobile number listed above. I understand consent is voluntary and is not a condition of employment or contract.',
+            type: 'checkbox',
+            required: true,
+          },
+          {
+            id: SMS_OPT_IN_FIELD_IDS.optOutAcknowledgement,
+            label:
+              'I understand I can opt out at any time by replying STOP, and I can reply HELP for assistance. I confirm I am the account holder or authorized user for this number.',
+            type: 'checkbox',
+            required: true,
+          },
+          {
+            id: SMS_OPT_IN_FIELD_IDS.signature,
+            label: 'Electronic signature',
+            type: 'signature',
+            required: true,
+          },
+        ],
       },
     ],
   },
@@ -253,6 +340,11 @@ export const buildEmployeeFieldDefaults = (
 
         if (field.type === 'date' && field.id.includes('effective_date')) {
           defaults[field.id] = employee.start_date || '';
+          continue;
+        }
+
+        if (field.id === SMS_OPT_IN_FIELD_IDS.consentDate) {
+          defaults[field.id] = new Date().toISOString().slice(0, 10);
         }
       }
     }
@@ -275,4 +367,52 @@ export const formatEmployeeFormValue = (value: unknown) => {
   }
 
   return String(value);
+};
+
+export const extractEmployeeSmsOptInSnapshot = (
+  payload: Record<string, unknown>,
+): EmployeeSmsOptInSnapshot => {
+  const metadataCandidate = payload[SMS_OPT_IN_METADATA_KEY];
+  const metadata =
+    metadataCandidate && typeof metadataCandidate === 'object' && !Array.isArray(metadataCandidate)
+      ? {
+          consented_at:
+            typeof (metadataCandidate as Record<string, unknown>).consented_at === 'string'
+              ? ((metadataCandidate as Record<string, unknown>).consented_at as string)
+              : null,
+          consent_ip:
+            typeof (metadataCandidate as Record<string, unknown>).consent_ip === 'string'
+              ? ((metadataCandidate as Record<string, unknown>).consent_ip as string)
+              : null,
+          phone_e164:
+            typeof (metadataCandidate as Record<string, unknown>).phone_e164 === 'string'
+              ? ((metadataCandidate as Record<string, unknown>).phone_e164 as string)
+              : null,
+          policy_version:
+            typeof (metadataCandidate as Record<string, unknown>).policy_version === 'string'
+              ? ((metadataCandidate as Record<string, unknown>).policy_version as string)
+              : null,
+          effective_date:
+            typeof (metadataCandidate as Record<string, unknown>).effective_date === 'string'
+              ? ((metadataCandidate as Record<string, unknown>).effective_date as string)
+              : null,
+        }
+      : null;
+
+  return {
+    phone:
+      typeof payload[SMS_OPT_IN_FIELD_IDS.phone] === 'string'
+        ? (payload[SMS_OPT_IN_FIELD_IDS.phone] as string)
+        : null,
+    consented: Boolean(payload[SMS_OPT_IN_FIELD_IDS.consentCheckbox]),
+    consentDate:
+      typeof payload[SMS_OPT_IN_FIELD_IDS.consentDate] === 'string'
+        ? (payload[SMS_OPT_IN_FIELD_IDS.consentDate] as string)
+        : null,
+    signature:
+      typeof payload[SMS_OPT_IN_FIELD_IDS.signature] === 'string'
+        ? (payload[SMS_OPT_IN_FIELD_IDS.signature] as string)
+        : null,
+    metadata,
+  };
 };

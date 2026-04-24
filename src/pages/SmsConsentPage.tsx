@@ -1,5 +1,6 @@
 import React from 'react';
-import { MessageSquare, MapPin, Phone, Mail, ShieldCheck, BellOff, Info, CheckCircle2 } from 'lucide-react';
+import { MessageSquare, MapPin, Phone, Mail, ShieldCheck, BellOff, Info, CheckCircle2, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const CONSENT_VERSION = 'v1.0';
 const EFFECTIVE_DATE  = 'April 14, 2026';
@@ -117,6 +118,20 @@ export default function SmsConsentPage() {
             By accepting consent you confirm that you are the account holder or have the authority
             to authorize messages to the provided number, and that you are 18 years of age or older.
           </p>
+        </section>
+
+        <section className="bg-white dark:bg-[#1E293B] rounded-2xl shadow border border-gray-200 dark:border-[#243349] p-8 space-y-4">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Public Opt-In Form Example</h2>
+          <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm">
+            Need to share the actual opt-in experience for carrier or provider review? Use the public example below.
+          </p>
+          <Link
+            to="/sms-opt-in-example"
+            className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition hover:border-blue-300 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200 dark:hover:bg-blue-900/40"
+          >
+            Open SMS Opt-In Form Example
+            <ExternalLink className="h-4 w-4" />
+          </Link>
         </section>
 
         {/* ── Opt Out ── */}

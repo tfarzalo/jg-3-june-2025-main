@@ -19,6 +19,7 @@ type Property = {
     company_name: string;
   };
   is_archived: boolean;
+  is_active: boolean;
 };
 
 export function Properties() {
@@ -30,6 +31,7 @@ export function Properties() {
   const [selectedProperties, setSelectedProperties] = useState<string[]>([]);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'active' | 'inactive'>('active');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -57,7 +59,6 @@ export function Properties() {
       setLoading(false);
     }
   };
-
   const handlePropertyClick = (propertyId: string) => {
     console.log('Navigating to property details with ID:', propertyId);
     const url = `/dashboard/properties/${propertyId}`;
@@ -121,6 +122,7 @@ export function Properties() {
 
   const filteredProperties = properties
     .filter(property => 
+      (activeTab === 'active' ? property.is_active !== false : property.is_active === false) &&
       property.property_name?.toLowerCase().includes(searchTerm.toLowerCase())
     )
     .sort((a, b) => {
@@ -164,6 +166,44 @@ export function Properties() {
       </div>
 
       <div className="space-y-6">
+        {/* Active / Inactive Tabs */}
+        <div className="flex items-center space-x-1 border-b border-gray-200 dark:border-[#2D3B4E]">
+          <button
+            onClick={() => { setActiveTab('active'); setSelectedProperties([]); }}
+            className={`px-5 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+              activeTab === 'active'
+                ? 'bg-white dark:bg-[#1E293B] text-blue-600 dark:text-blue-400 border border-b-white dark:border-b-[#1E293B] border-gray-200 dark:border-[#2D3B4E] -mb-px'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+            }`}
+          >
+            Active
+            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${
+              activeTab === 'active'
+                ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+            }`}>
+              {properties.filter(p => p.is_active !== false).length}
+            </span>
+          </button>
+          <button
+            onClick={() => { setActiveTab('inactive'); setSelectedProperties([]); }}
+            className={`px-5 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+              activeTab === 'inactive'
+                ? 'bg-white dark:bg-[#1E293B] text-red-600 dark:text-red-400 border border-b-white dark:border-b-[#1E293B] border-gray-200 dark:border-[#2D3B4E] -mb-px'
+                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+            }`}
+          >
+            Inactive
+            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${
+              activeTab === 'inactive'
+                ? 'bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+            }`}>
+              {properties.filter(p => p.is_active === false).length}
+            </span>
+          </button>
+        </div>
+
         <div className="flex items-center space-x-4">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />

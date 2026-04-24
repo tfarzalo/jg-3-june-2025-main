@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { CheckCircle, XCircle, Clock, AlertCircle, Image as ImageIcon } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { formatDate } from '../lib/dateUtils';
@@ -13,6 +13,7 @@ interface ApprovalData {
     type: string;
     status: string;
     expiresAt: string;
+    viewExpiresAt?: string | null;
     amount?: number;
     description?: string;
     requested_by?: string;
@@ -50,7 +51,7 @@ export function PublicApprovalPage() {
     try {
       setLoading(true);
       
-      const { data, error } = await supabase.functions.invoke('get-approval-details-by-token', {
+      const { data, error } = await supabase.functions.invoke('validate-approval-token', {
         body: { token }
       });
 
@@ -148,6 +149,19 @@ export function PublicApprovalPage() {
 
   const { approval, job, images } = approvalData;
   const isAlreadyProcessed = approval?.status !== 'pending';
+
+  const viewExpiresDate = approval?.viewExpiresAt
+    ? new Date(approval.viewExpiresAt)
+    : null;
+
+  const formatViewExpiry = (date: Date) => {
+    return date.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0F172A] py-8 px-4">
@@ -344,10 +358,35 @@ export function PublicApprovalPage() {
           </div>
         ) : (
           <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow-lg p-6 text-center">
-            <AlertCircle className="h-12 w-12 text-blue-500 mx-auto mb-3" />
-            <p className="text-gray-600 dark:text-gray-400">
-              This approval request has already been processed.
+            <div className={`inline-flex items-center justify-center w-14 h-14 rounded-full mb-4 ${
+              approval?.status === 'approved'
+                ? 'bg-green-100 dark:bg-green-900/30'
+                : 'bg-red-100 dark:bg-red-900/30'
+            }`}>
+              {approval?.status === 'approved' ? (
+                <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
+              ) : (
+                <XCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
+              )}
+            </div>
+            <p className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              This request has been{' '}
+              <span className={approval?.status === 'approved' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                {approval?.status === 'approved' ? 'Approved' : 'Declined'}
+              </span>
             </p>
+            <p className="text-gray-500 dark:text-gray-400 text-sm">
+              No further action can be taken on this request.
+            </p>
+            {viewExpiresDate && (
+              <div className="mt-4 inline-flex items-center space-x-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-400 rounded-lg px-4 py-2 text-sm">
+                <Clock className="h-4 w-4 flex-shrink-0" />
+                <span>
+                  This page will no longer be visible after{' '}
+                  <strong>{formatViewExpiry(viewExpiresDate)}</strong>.
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>

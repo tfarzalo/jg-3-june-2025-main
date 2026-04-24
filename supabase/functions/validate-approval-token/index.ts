@@ -36,20 +36,18 @@ serve(async (req) => {
       throw new Error("Token is required");
     }
 
-    // Validate the token directly from approval_tokens table
+    // Fetch the token without expiry/used filters so we can apply custom logic
     const { data: approval, error: validationError } = await supabase
       .from('approval_tokens')
       .select('*')
       .eq('token', token)
-      .is('used_at', null)
-      .gt('expires_at', new Date().toISOString())
       .single();
 
     if (validationError || !approval) {
       return new Response(
         JSON.stringify({ 
           valid: false,
-          error: "Invalid or expired token"
+          error: "Invalid token"
         }),
         { 
           headers: { 
@@ -59,6 +57,46 @@ serve(async (req) => {
           status: 404,
         }
       );
+    }
+
+    const now = new Date();
+    const VIEW_WINDOW_DAYS = 14;
+
+    if (approval.used_at) {
+      // Token was already used (approved/declined) — check if within 14-day view window
+      const usedAt = new Date(approval.used_at);
+      const viewExpiresAt = new Date(usedAt.getTime() + VIEW_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+
+      if (now > viewExpiresAt) {
+        return new Response(
+          JSON.stringify({ 
+            valid: false,
+            error: "This page is no longer available. The 14-day viewing period has ended."
+          }),
+          { 
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 410,
+          }
+        );
+      }
+
+      // Within view window — fall through to return data with viewExpiresAt
+      // (approval object is already fetched, continue below)
+    } else {
+      // Token not yet used — check action expiry
+      const expiresAt = new Date(approval.expires_at);
+      if (now > expiresAt) {
+        return new Response(
+          JSON.stringify({ 
+            valid: false,
+            error: "This approval link has expired."
+          }),
+          { 
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 410,
+          }
+        );
+      }
     }
 
     // Extract selected images from extra_charges_data
@@ -180,6 +218,29 @@ serve(async (req) => {
       );
     }
 
+    // Compute viewExpiresAt: if already used, 14 days after used_at; else null
+    const VIEW_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+    const viewExpiresAt = approval.used_at
+      ? new Date(new Date(approval.used_at).getTime() + VIEW_WINDOW_MS).toISOString()
+      : null;
+
+    // Determine the actual status
+    let resolvedStatus: string;
+    if (approval.used_at) {
+      // Look up real status from the approvals table via job_id and approval_type
+      const { data: approvalRecord } = await supabase
+        .from('approvals')
+        .select('status')
+        .eq('job_id', approval.job_id)
+        .eq('approval_type', approval.approval_type)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      resolvedStatus = approvalRecord?.status || 'approved';
+    } else {
+      resolvedStatus = 'pending';
+    }
+
     // Return success response with all data from approval_tokens
     return new Response(
       JSON.stringify({ 
@@ -187,8 +248,9 @@ serve(async (req) => {
         approval: {
           id: approval.id,
           type: approval.approval_type,
-          status: 'pending', // Tokens don't have used_at, so they're always pending
+          status: resolvedStatus,
           expiresAt: approval.expires_at,
+          viewExpiresAt,
           amount: approval.extra_charges_data?.total,
           description: approval.extra_charges_data?.items?.[0]?.description
         },

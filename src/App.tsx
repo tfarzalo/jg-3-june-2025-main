@@ -37,6 +37,7 @@ const SubcontractorDashboardPreview = lazy(() => import('./components/Subcontrac
 const NewWorkOrderPreview = lazy(() => import('./components/NewWorkOrderPreview'));
 const LeadForm = lazy(() => import('./pages/LeadForm').then(module => ({ default: module.LeadForm })));
 const SmsConsentPage = lazy(() => import('./pages/SmsConsentPage'));
+const SmsOptInExamplePage = lazy(() => import('./pages/SmsOptInExamplePage'));
 const FileEditorPage = lazy(() => import('./pages/FileEditorPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
 const EmployeeOnboardingPage = lazy(() => import('./pages/EmployeeOnboardingPage'));
@@ -124,6 +125,11 @@ const ProtectedLayout = () => (
         <Route path="/sms-consent" element={
           <Suspense fallback={<LoadingSpinner />}>
             <SmsConsentPage />
+          </Suspense>
+        } />
+        <Route path="/sms-opt-in-example" element={
+          <Suspense fallback={<LoadingSpinner />}>
+            <SmsOptInExamplePage />
           </Suspense>
         } />
         <Route path="/employee-onboarding/:token" element={

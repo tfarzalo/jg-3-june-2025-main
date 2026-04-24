@@ -1,6 +1,12 @@
-import { EMPLOYEE_FORM_KEYS } from '../../../shared/employeeOnboarding';
+import {
+  EMPLOYEE_FORM_KEYS,
+  EMPLOYEE_FORM_MAP,
+  SMS_OPT_IN_FORM_KEY,
+  extractEmployeeSmsOptInSnapshot,
+} from '../../../shared/employeeOnboarding';
 import { supabase } from '../../utils/supabase';
 import { formatPhoneNumber } from '../../lib/utils/formatUtils';
+import { normalizeToE164US } from '../../lib/utils/phoneE164';
 import type {
   EmployeeListItem,
   EmployeeProfileData,
@@ -15,7 +21,12 @@ const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/employee
 
 const sortSubmissionRecords = (items: EmployeeFormSubmissionRecord[]) => {
   const order = new Map(EMPLOYEE_FORM_KEYS.map((key, index) => [key, index]));
-  return [...items].sort((a, b) => (order.get(a.form_key) ?? 999) - (order.get(b.form_key) ?? 999));
+  return [...items]
+    .map((item) => ({
+      ...item,
+      form_title: EMPLOYEE_FORM_MAP[item.form_key]?.title || item.form_title,
+    }))
+    .sort((a, b) => (order.get(a.form_key) ?? 999) - (order.get(b.form_key) ?? 999));
 };
 
 const getAuthHeaders = async () => {
@@ -349,6 +360,94 @@ export const portSubcontractorToEmployee = async (subcontractorProfileId: string
   });
 };
 
+const syncEmployeeSmsConsentToProfile = async (employeeId: string, profileId: string) => {
+  const { data: smsSubmission, error: smsSubmissionError } = await supabase
+    .from('employee_form_submissions')
+    .select('submitted_at, form_payload')
+    .eq('employee_id', employeeId)
+    .eq('form_key', SMS_OPT_IN_FORM_KEY)
+    .maybeSingle();
+
+  if (smsSubmissionError) {
+    throw smsSubmissionError;
+  }
+
+  const payload =
+    smsSubmission?.form_payload && typeof smsSubmission.form_payload === 'object'
+      ? (smsSubmission.form_payload as Record<string, unknown>)
+      : null;
+
+  if (!payload) {
+    return;
+  }
+
+  const snapshot = extractEmployeeSmsOptInSnapshot(payload);
+  if (!snapshot.consented) {
+    return;
+  }
+
+  const smsPhone = snapshot.metadata?.phone_e164 ?? normalizeToE164US(snapshot.phone);
+  if (!smsPhone) {
+    return;
+  }
+
+  const consentedAt =
+    snapshot.metadata?.consented_at ?? smsSubmission?.submitted_at ?? new Date().toISOString();
+
+  const { error: profileSmsError } = await supabase
+    .from('profiles')
+    .update({
+      sms_phone: smsPhone,
+      sms_consent_given: true,
+      sms_consent_given_at: consentedAt,
+      sms_consent_ip: snapshot.metadata?.consent_ip ?? null,
+    })
+    .eq('id', profileId);
+
+  if (profileSmsError) {
+    throw profileSmsError;
+  }
+
+  const { data: existingSmsSettings, error: existingSmsSettingsError } = await supabase
+    .from('user_sms_notification_settings')
+    .select('*')
+    .eq('user_id', profileId)
+    .maybeSingle();
+
+  if (existingSmsSettingsError) {
+    throw existingSmsSettingsError;
+  }
+
+  const { error: settingsUpsertError } = await supabase
+    .from('user_sms_notification_settings')
+    .upsert(
+      existingSmsSettings
+        ? {
+            user_id: profileId,
+            sms_enabled: true,
+            notify_chat_received: existingSmsSettings.notify_chat_received,
+            notify_job_assigned: existingSmsSettings.notify_job_assigned,
+            notify_charges_approved: existingSmsSettings.notify_charges_approved,
+            notify_work_order_submitted: existingSmsSettings.notify_work_order_submitted,
+            notify_job_accepted: existingSmsSettings.notify_job_accepted,
+          }
+        : {
+            user_id: profileId,
+            sms_enabled: true,
+            notify_chat_received: true,
+            notify_job_assigned: true,
+            notify_charges_approved: true,
+            notify_work_order_submitted: false,
+            notify_job_accepted: false,
+          },
+      { onConflict: 'user_id' },
+    );
+
+  if (settingsUpsertError) {
+    throw settingsUpsertError;
+  }
+};
+
 export const createSubcontractorUserFromEmployee = async (params: {
   employee: EmployeeRecord;
   password: string;
@@ -412,6 +511,8 @@ export const createSubcontractorUserFromEmployee = async (params: {
   if (profileUpdateError) {
     throw profileUpdateError;
   }
+
+  await syncEmployeeSmsConsentToProfile(employee.id, newProfileId);
 
   await updateEmployee(employee.id, {
     linked_subcontractor_profile_id: newProfileId,

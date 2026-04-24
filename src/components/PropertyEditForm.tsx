@@ -95,6 +95,9 @@ export function PropertyEditForm() {
     // Paint Colors - will be handled by PaintColorsEditor
     paint_location: '',
 
+    // Status
+    is_active: true as boolean,
+
     // Compliance Information
     compliance_bid_approved: '',
     compliance_coi_address: '',
@@ -455,6 +458,7 @@ export function PropertyEditForm() {
         quickbooks_number: data.quickbooks_number || '',
         unit_map_file_path: data.unit_map_file_path || '',
         paint_location: data.paint_location || '',
+        is_active: data.is_active !== false,
         compliance_bid_approved: data.compliance_bid_approved || '',
         compliance_coi_address: data.compliance_coi_address || '',
         compliance_create_sub_prop_portal: data.compliance_create_sub_prop_portal || '',
@@ -811,6 +815,44 @@ export function PropertyEditForm() {
                 </select>
               </div>
 
+              {/* Active / Inactive Status */}
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-3">
+                  Property Status
+                </label>
+                <div className="flex items-center space-x-4">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, is_active: true }))}
+                    className={`flex items-center space-x-2 px-5 py-2.5 rounded-lg border-2 font-medium text-sm transition-colors ${
+                      formData.is_active
+                        ? 'bg-green-50 dark:bg-green-900/20 border-green-500 text-green-700 dark:text-green-400'
+                        : 'bg-white dark:bg-[#0F172A] border-gray-300 dark:border-[#2D3B4E] text-gray-500 dark:text-gray-400 hover:border-green-400'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${formData.is_active ? 'bg-green-500' : 'bg-gray-400'}`} />
+                    <span>Active</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, is_active: false }))}
+                    className={`flex items-center space-x-2 px-5 py-2.5 rounded-lg border-2 font-medium text-sm transition-colors ${
+                      !formData.is_active
+                        ? 'bg-red-50 dark:bg-red-900/20 border-red-500 text-red-700 dark:text-red-400'
+                        : 'bg-white dark:bg-[#0F172A] border-gray-300 dark:border-[#2D3B4E] text-gray-500 dark:text-gray-400 hover:border-red-400'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${!formData.is_active ? 'bg-red-500' : 'bg-gray-400'}`} />
+                    <span>Inactive</span>
+                  </button>
+                </div>
+                {!formData.is_active && (
+                  <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+                    This property is marked as inactive and will appear in the Inactive tab on the properties list.
+                  </p>
+                )}
+              </div>
+
               <div>
                 <label htmlFor="region" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                   Region
@@ -1104,7 +1146,7 @@ export function PropertyEditForm() {
                         type="text"
                         id={item.key}
                         name={item.key}
-                        value={formData[valueKey]}
+                        value={formData[valueKey] as string}
                         onChange={handleChange}
                         className="w-full h-11 px-3 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder={item.label}
@@ -1113,7 +1155,7 @@ export function PropertyEditForm() {
                       <select
                         id={item.key}
                         name={item.key}
-                        value={formData[valueKey]}
+                        value={formData[valueKey] as string}
                         onChange={handleChange}
                         className="w-full h-11 px-4 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >

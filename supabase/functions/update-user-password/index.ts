@@ -8,6 +8,8 @@ const corsHeaders = {
   "Access-Control-Max-Age": "86400",
 };
 
+const ALLOWED_ROLES = ["admin", "jg_management", "is_super_admin"];
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
@@ -65,8 +67,21 @@ serve(async (req) => {
         throw new Error("Error fetching user profile");
       }
       
-      if (profile.role !== "admin") {
-        throw new Error("Only admins can change user passwords");
+      if (!ALLOWED_ROLES.includes(profile.role)) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            code: "not_admin",
+            error: "Only admins, super admins, and JG management can change user passwords",
+          }),
+          {
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json",
+            },
+            status: 403,
+          },
+        );
       }
     } else {
       throw new Error("Authorization header is required");

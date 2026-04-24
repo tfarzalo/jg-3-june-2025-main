@@ -56,6 +56,8 @@ const generateToken = () => {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
+const MIN_PASSWORD_LENGTH = 8;
+
 export default function SubcontractorEditPage() {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
@@ -241,6 +243,32 @@ const ensureSubcontractorCalendarToken = useCallback(async (targetId: string) =>
     }
 }, []);
 
+  const updateSubcontractorPassword = useCallback(async (targetUserId: string, password: string) => {
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError || !session) {
+      throw new Error('You must be logged in to change passwords');
+    }
+
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        userId: targetUserId,
+        password,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result?.error || 'Failed to change password');
+    }
+  }, []);
+
 useEffect(() => {
   if (subcontractor?.id) {
     setCalendarToken(null);
@@ -265,23 +293,15 @@ useEffect(() => {
       return;
     }
     
-    if (formData.password.length < 6) {
-      toast.error('Password must be at least 6 characters long');
+    if (formData.password.length < MIN_PASSWORD_LENGTH) {
+      toast.error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long`);
       return;
     }
     
     try {
       setSaving(true);
       
-      // Update password using Supabase admin API
-      const { error: passwordError } = await supabase.auth.admin.updateUserById(
-        subcontractor.id,
-        { password: formData.password }
-      );
-      
-      if (passwordError) {
-        throw new Error(passwordError.message);
-      }
+      await updateSubcontractorPassword(subcontractor.id, formData.password);
       
       toast.success('Password changed successfully');
       
@@ -360,8 +380,8 @@ useEffect(() => {
       return;
     }
 
-    if (formData.password && formData.password.length < 6) {
-      toast.error('Password must be at least 6 characters long');
+    if (formData.password && formData.password.length < MIN_PASSWORD_LENGTH) {
+      toast.error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long`);
       return;
     }
 
@@ -408,12 +428,9 @@ useEffect(() => {
 
       // Update password if provided
       if (formData.password) {
-        const { error: passwordError } = await supabase.auth.admin.updateUserById(
-          userId,
-          { password: formData.password }
-        );
-
-        if (passwordError) {
+        try {
+          await updateSubcontractorPassword(userId, formData.password);
+        } catch (passwordError) {
           console.error('Password update error:', passwordError);
           toast.warning('Profile updated but password change failed. Please contact support.');
         }

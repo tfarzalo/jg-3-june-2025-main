@@ -78,6 +78,13 @@ serve(async (req) => {
       );
     }
 
+    // Mark the approval token as used so the 14-day view window begins
+    await supabase
+      .from('approval_tokens')
+      .update({ used_at: new Date().toISOString() })
+      .eq('token', token)
+      .is('used_at', null);
+
     // Add notes if provided
     if (notes) {
       await supabase

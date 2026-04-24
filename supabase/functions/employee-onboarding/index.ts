@@ -5,8 +5,14 @@ import { corsHeaders } from "../_shared/cors.ts";
 import {
   EMPLOYEE_FORM_KEYS,
   EMPLOYEE_FORM_MAP,
+  SMS_OPT_IN_EFFECTIVE_DATE,
+  SMS_OPT_IN_FIELD_IDS,
+  SMS_OPT_IN_FORM_KEY,
+  SMS_OPT_IN_METADATA_KEY,
+  SMS_OPT_IN_POLICY_VERSION,
   buildEmployeeFieldDefaults,
   buildEmployeeOnboardingUrl,
+  extractEmployeeSmsOptInSnapshot,
   formatEmployeeFormValue,
   type EmployeeBasicInfo,
   type EmployeeFormStatus,
@@ -20,6 +26,7 @@ type EmployeeRecord = {
   position_title: string;
   start_date: string;
   onboarding_packet_sent_at: string | null;
+  linked_subcontractor_profile_id?: string | null;
 };
 
 type EmployeeSubmissionRecord = {
@@ -76,6 +83,148 @@ const generateToken = () => {
   return Array.from(bytes)
     .map((value) => value.toString(16).padStart(2, "0"))
     .join("");
+};
+
+const normalizeUsPhoneToE164 = (value: unknown) => {
+  if (typeof value !== "string") return null;
+  const digits = value.replace(/\D/g, "");
+
+  if (digits.length === 10) {
+    return `+1${digits}`;
+  }
+
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `+${digits}`;
+  }
+
+  return null;
+};
+
+const extractClientIp = (req: Request) => {
+  const forwardedFor = req.headers.get("x-forwarded-for");
+  if (forwardedFor) {
+    return forwardedFor.split(",")[0]?.trim() || null;
+  }
+
+  return req.headers.get("x-real-ip") || req.headers.get("cf-connecting-ip") || null;
+};
+
+const buildDefaultSmsSettingsByRole = (role: string | null) => {
+  const adminLike = role === "admin" || role === "is_super_admin" || role === "jg_management";
+  const subcontractor = role === "subcontractor";
+
+  return {
+    sms_enabled: true,
+    notify_chat_received: adminLike || subcontractor,
+    notify_job_assigned: subcontractor,
+    notify_charges_approved: adminLike || subcontractor,
+    notify_work_order_submitted: adminLike,
+    notify_job_accepted: adminLike,
+  };
+};
+
+const syncSmsConsentToLinkedProfile = async (
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  req: Request,
+  employee: EmployeeRecord,
+  formKey: string,
+  values: Record<string, unknown>,
+) => {
+  if (formKey !== SMS_OPT_IN_FORM_KEY) {
+    return values;
+  }
+
+  const snapshot = extractEmployeeSmsOptInSnapshot(values);
+  const phoneE164 = normalizeUsPhoneToE164(snapshot.phone);
+
+  if (!snapshot.consented) {
+    throw new Error("SMS consent acknowledgement is required.");
+  }
+
+  if (!phoneE164) {
+    throw new Error("A valid U.S. mobile number is required for SMS consent.");
+  }
+
+  const consentedAt = new Date().toISOString();
+  const consentIp = extractClientIp(req);
+  const nextValues = {
+    ...values,
+    [SMS_OPT_IN_METADATA_KEY]: {
+      consented_at: consentedAt,
+      consent_ip: consentIp,
+      phone_e164: phoneE164,
+      policy_version: SMS_OPT_IN_POLICY_VERSION,
+      effective_date: SMS_OPT_IN_EFFECTIVE_DATE,
+    },
+  };
+
+  if (!employee.linked_subcontractor_profile_id) {
+    return nextValues;
+  }
+
+  const { data: linkedProfile, error: linkedProfileError } = await supabase
+    .from("profiles")
+    .select("id, role")
+    .eq("id", employee.linked_subcontractor_profile_id)
+    .maybeSingle();
+
+  if (linkedProfileError) {
+    throw new Error(`Unable to load linked user profile: ${linkedProfileError.message}`);
+  }
+
+  if (!linkedProfile) {
+    return nextValues;
+  }
+
+  const { error: profileUpdateError } = await supabase
+    .from("profiles")
+    .update({
+      sms_phone: phoneE164,
+      sms_consent_given: true,
+      sms_consent_given_at: consentedAt,
+      sms_consent_ip: consentIp,
+    })
+    .eq("id", linkedProfile.id);
+
+  if (profileUpdateError) {
+    throw new Error(`Unable to sync SMS consent to the linked profile: ${profileUpdateError.message}`);
+  }
+
+  const { data: existingSettings, error: existingSettingsError } = await supabase
+    .from("user_sms_notification_settings")
+    .select("*")
+    .eq("user_id", linkedProfile.id)
+    .maybeSingle();
+
+  if (existingSettingsError) {
+    throw new Error(`Unable to load SMS notification settings: ${existingSettingsError.message}`);
+  }
+
+  const defaults = buildDefaultSmsSettingsByRole((linkedProfile.role as string | null) ?? null);
+  const writeSettings = existingSettings
+    ? {
+        user_id: linkedProfile.id,
+        sms_enabled: true,
+        notify_chat_received: existingSettings.notify_chat_received,
+        notify_job_assigned: existingSettings.notify_job_assigned,
+        notify_charges_approved: existingSettings.notify_charges_approved,
+        notify_work_order_submitted: existingSettings.notify_work_order_submitted,
+        notify_job_accepted: existingSettings.notify_job_accepted,
+      }
+    : {
+        user_id: linkedProfile.id,
+        ...defaults,
+      };
+
+  const { error: settingsUpsertError } = await supabase
+    .from("user_sms_notification_settings")
+    .upsert(writeSettings, { onConflict: "user_id" });
+
+  if (settingsUpsertError) {
+    throw new Error(`Unable to enable SMS notifications for the linked profile: ${settingsUpsertError.message}`);
+  }
+
+  return nextValues;
 };
 
 const getAdminUser = async (supabase: ReturnType<typeof getSupabaseAdmin>, req: Request) => {
@@ -401,6 +550,7 @@ const handleSendPacket = async (
 
   for (const formKey of formKeys) {
     const submission = await getEmployeeSubmission(supabase, employeeId, formKey);
+    const submissionTitle = EMPLOYEE_FORM_MAP[formKey]?.title || submission.form_title;
 
     if (regenerate) {
       await supabase
@@ -431,7 +581,7 @@ const handleSendPacket = async (
       .single();
 
     if (tokenInsertError || !tokenRecord) {
-      throw new Error(`Unable to create onboarding token for ${submission.form_title}.`);
+      throw new Error(`Unable to create onboarding token for ${submissionTitle}.`);
     }
 
     const nextStatus: EmployeeFormStatus =
@@ -448,7 +598,7 @@ const handleSendPacket = async (
       .eq("id", submission.id);
 
     links.push({
-      title: submission.form_title,
+      title: submissionTitle,
       url: buildEmployeeOnboardingUrl(baseUrl, rawToken),
     });
   }
@@ -545,7 +695,7 @@ const handlePreviewEmail = async (
     });
 
     links.push({
-      title: submission.form_title,
+      title: EMPLOYEE_FORM_MAP[formKey]?.title || submission.form_title,
       url: previewLink.url,
     });
   }
@@ -647,7 +797,14 @@ const handleSaveSubmission = async (
 
   const now = new Date().toISOString();
   const nextRevision = (submission.pdf_revision || 0) + 1;
-  const mergedValues = buildEmployeeFieldDefaults(employee as EmployeeBasicInfo, payload);
+  let mergedValues = buildEmployeeFieldDefaults(employee as EmployeeBasicInfo, payload);
+  mergedValues = await syncSmsConsentToLinkedProfile(
+    supabase,
+    req,
+    employee,
+    submission.form_key,
+    mergedValues,
+  );
   const pdfBytes = await renderSubmissionPdf({
     employee,
     formKey: submission.form_key,

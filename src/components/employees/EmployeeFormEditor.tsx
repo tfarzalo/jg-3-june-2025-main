@@ -11,6 +11,7 @@ import {
 import type { EmployeeRecord } from '../../features/employees/types';
 import { saveEmployeeFormSubmission } from '../../features/employees/api';
 import { formatPhoneNumber } from '../../lib/utils/formatUtils';
+import { isStorablePhone } from '../../lib/utils/phoneE164';
 import { Button } from '../ui/Button';
 import { SignaturePad } from './SignaturePad';
 
@@ -22,6 +23,10 @@ interface EmployeeFormEditorProps {
   mode: 'admin' | 'public';
   token?: string;
   onSaved?: (result: { status: string; submittedAt: string | null }) => void;
+  onSubmitOverride?: (params: {
+    payload: Record<string, unknown>;
+    status: EmployeeFormStatus;
+  }) => Promise<void> | void;
 }
 
 const inputClassName =
@@ -35,6 +40,7 @@ export function EmployeeFormEditor({
   mode,
   token,
   onSaved,
+  onSubmitOverride,
 }: EmployeeFormEditorProps) {
   const formDefinition = EMPLOYEE_FORM_MAP[formKey];
   const resolvedFormDefinition = formDefinition || null;
@@ -79,6 +85,11 @@ export function EmployeeFormEditor({
         toast.error(`Complete the required field: ${field.label}`);
         return false;
       }
+
+      if (field.type === 'phone' && !isStorablePhone(String(value))) {
+        toast.error(`Enter a valid U.S. phone number for: ${field.label}`);
+        return false;
+      }
     }
     return true;
   };
@@ -89,16 +100,25 @@ export function EmployeeFormEditor({
 
     try {
       setSaving(true);
-      const result = await saveEmployeeFormSubmission({
-        employeeId: mode === 'admin' ? employee.id : undefined,
-        formKey,
-        token,
-        payload: values,
-        status: mode === 'admin' ? status : 'submitted',
-      });
+      const nextStatus = mode === 'admin' ? status : 'submitted';
 
-      toast.success(mode === 'admin' ? 'Submission saved and PDF regenerated.' : 'Form submitted successfully.');
-      onSaved?.({ status: result.status, submittedAt: result.submittedAt });
+      if (onSubmitOverride) {
+        await onSubmitOverride({
+          payload: values,
+          status: nextStatus,
+        });
+      } else {
+        const result = await saveEmployeeFormSubmission({
+          employeeId: mode === 'admin' ? employee.id : undefined,
+          formKey,
+          token,
+          payload: values,
+          status: nextStatus,
+        });
+
+        toast.success(mode === 'admin' ? 'Submission saved and PDF regenerated.' : 'Form submitted successfully.');
+        onSaved?.({ status: result.status, submittedAt: result.submittedAt });
+      }
     } catch (error) {
       console.error('Error saving employee form submission:', error);
       toast.error(error instanceof Error ? error.message : 'Unable to save this form.');
@@ -195,9 +215,11 @@ export function EmployeeFormEditor({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
-        {`Placeholder form — production version pending. Form structure based on ${formDefinition.title}.`}
-      </div>
+      {!resolvedFormDefinition.structureExtractedFromPdf && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
+          {`Placeholder form — production version pending. Form structure based on ${formDefinition.title}.`}
+        </div>
+      )}
 
       {!resolvedFormDefinition.structureExtractedFromPdf && (
         <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:border-blue-800/60 dark:bg-blue-950/30 dark:text-blue-200">
