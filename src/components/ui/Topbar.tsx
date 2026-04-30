@@ -14,7 +14,8 @@ import {
   Menu,
   ArrowRight,
   Activity as ActivityIcon,
-  Clock
+  Clock,
+  Palette
 } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 import { supabase, setupAvatarRefreshListener } from '../../utils/supabase';
@@ -29,6 +30,8 @@ import { ChatMenuEnhanced } from '../chat/ChatMenuEnhanced';
 import { getAvatarProps } from '../../utils/avatarUtils';
 import { useNotifications, Notification as UserNotification } from '../../hooks/useNotifications';
 import { MobileNav } from '../mobile/MobileNav';
+import { useHugh } from '../../contexts/HughContext';
+import { HughAssistant } from '../ai/HughAssistant';
 
 interface Profile {
   id: string;
@@ -43,8 +46,10 @@ interface TopbarProps {
 function Topbar({ showOnlyProfile = false }: TopbarProps) {
   const { theme, toggleTheme } = useTheme();
   const { session, signOut } = useAuth();
-  const { role, isAdmin } = useUserRole();
+  const { role, isAdmin, isSuperAdmin } = useUserRole();
   const navigate = useNavigate();
+  const { isOpen: hughOpen, toggleHugh } = useHugh();
+  const hughRef = useRef<HTMLDivElement>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -346,6 +351,29 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
               <Moon className="h-5 w-5" />
             )}
           </Button>
+
+          {/* Hugh AI Assistant - Only for admin and super admin */}
+          {isAdmin && !showOnlyProfile && (
+            <div className="relative" ref={hughRef}>
+              <button
+                id="hugh-trigger-btn"
+                onClick={toggleHugh}
+                className={`relative w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+                  hughOpen
+                    ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/30'
+                    : 'bg-gray-100 dark:bg-[#1E293B] text-gray-500 dark:text-gray-400 hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-purple-600 dark:hover:text-purple-400'
+                }`}
+                title="Ask Hugh (AI Assistant)"
+                aria-label="Hugh AI Assistant"
+              >
+                <Palette className="h-5 w-5" />
+                {hughOpen && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-white dark:border-[#0F172A]" />
+                )}
+              </button>
+              <HughAssistant />
+            </div>
+          )}
 
           {/* Chat Menu - For all users including subcontractors */}
           <div className="touch-manipulation">

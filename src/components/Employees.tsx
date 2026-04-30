@@ -4,8 +4,8 @@ import { Briefcase, ChevronRight, Mail, Phone, Plus, Search } from 'lucide-react
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from './ui/Button';
-import { createEmployee, listEmployees } from '../features/employees/api';
-import type { EmployeeListItem, EmployeeStatus } from '../features/employees/types';
+import { createEmployee, ensureEmployeeForProfile, listEmployeeRoster } from '../features/employees/api';
+import type { EmployeeRosterItem, EmployeeStatus } from '../features/employees/types';
 import { formatPhoneNumber } from '../lib/utils/formatUtils';
 
 const EMPLOYEE_STATUS_OPTIONS: Array<{ value: EmployeeStatus; label: string }> = [
@@ -22,8 +22,19 @@ const EMPLOYEE_STATUS_LABELS: Record<EmployeeStatus, string> = {
   on_leave: 'On Leave',
 };
 
-const formatDate = (value: string | null) => {
-  if (!value) return 'Not sent';
+const ROLE_LABELS: Record<string, string> = {
+  is_super_admin: 'Super Admin',
+  admin: 'Admin',
+  jg_management: 'JG Management',
+  subcontractor: 'Subcontractor',
+  user: 'User',
+  unlinked: 'Unlinked Employee Records',
+};
+
+const ROLE_ORDER = ['is_super_admin', 'admin', 'jg_management', 'subcontractor', 'user', 'unlinked'];
+
+const formatDate = (value: string | null, emptyLabel = 'Not available') => {
+  if (!value) return emptyLabel;
   try {
     return format(new Date(value), 'MMM d, yyyy');
   } catch {
@@ -33,11 +44,12 @@ const formatDate = (value: string | null) => {
 
 export function Employees() {
   const navigate = useNavigate();
-  const [employees, setEmployees] = useState<EmployeeListItem[]>([]);
+  const [employees, setEmployees] = useState<EmployeeRosterItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [openingRowKey, setOpeningRowKey] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
@@ -53,7 +65,7 @@ export function Employees() {
   const fetchEmployees = async () => {
     try {
       setLoading(true);
-      const data = await listEmployees();
+      const data = await listEmployeeRoster();
       setEmployees(data);
     } catch (error) {
       console.error('Error loading employees:', error);
@@ -71,12 +83,58 @@ export function Employees() {
     const term = search.trim().toLowerCase();
     if (!term) return employees;
     return employees.filter((employee) =>
-      [employee.full_name, employee.email, employee.position_title]
+      [employee.full_name, employee.email, employee.position_title, ROLE_LABELS[employee.role] || employee.role]
         .join(' ')
         .toLowerCase()
         .includes(term),
     );
   }, [employees, search]);
+
+  const groupedEmployees = useMemo(() => {
+    const grouped = new Map<string, EmployeeRosterItem[]>();
+
+    filteredEmployees.forEach((employee) => {
+      const key = employee.role;
+      const current = grouped.get(key) || [];
+      current.push(employee);
+      grouped.set(key, current);
+    });
+
+    return ROLE_ORDER
+      .map((role) => ({
+        role,
+        label: ROLE_LABELS[role] || role,
+        items: (grouped.get(role) || []).sort((a, b) => a.full_name.localeCompare(b.full_name)),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [filteredEmployees]);
+
+  const handleOpenEmployee = async (employee: EmployeeRosterItem) => {
+    const rowKey = employee.profile_id || employee.employee_id || employee.email;
+
+    try {
+      setOpeningRowKey(rowKey);
+
+      if (employee.employee_id) {
+        navigate(`/dashboard/employees/${employee.employee_id}`);
+        return;
+      }
+
+      if (!employee.profile_id) {
+        toast.error('This row is missing a linked user profile.');
+        return;
+      }
+
+      const ensuredEmployee = await ensureEmployeeForProfile(employee.profile_id);
+      await fetchEmployees();
+      navigate(`/dashboard/employees/${ensuredEmployee.id}`);
+    } catch (error) {
+      console.error('Error opening employee paperwork:', error);
+      toast.error(error instanceof Error ? error.message : 'Unable to open employee paperwork.');
+    } finally {
+      setOpeningRowKey(null);
+    }
+  };
 
   const handleCreateEmployee = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -240,94 +298,122 @@ export function Employees() {
           </form>
         )}
 
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[#111827]">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-[#0F172A]">
-                <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Employee</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Position</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Status</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Start Date</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Onboarding</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Packet Sent</th>
-                  <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Open</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {loading ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-10 text-center text-sm text-gray-500">
-                      Loading employees...
-                    </td>
-                  </tr>
-                ) : filteredEmployees.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-10 text-center text-sm text-gray-500">
-                      No employees found.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredEmployees.map((employee) => (
-                    <tr
-                      key={employee.id}
-                      className="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-[#0F172A]"
-                      onClick={() => navigate(`/dashboard/employees/${employee.id}`)}
-                    >
-                      <td className="px-6 py-5">
-                        <div className="font-medium text-gray-900 dark:text-white">{employee.full_name}</div>
-                        <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-500 dark:text-gray-400">
-                          <span className="inline-flex items-center gap-2">
-                            <Mail className="h-4 w-4" />
-                            {employee.email}
-                          </span>
-                          {employee.phone && (
-                            <span className="inline-flex items-center gap-2">
-                              <Phone className="h-4 w-4" />
-                              {employee.phone}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-5 text-sm text-gray-700 dark:text-gray-300">{employee.position_title}</td>
-                      <td className="px-6 py-5 text-sm text-gray-700 dark:text-gray-300">{EMPLOYEE_STATUS_LABELS[employee.employee_status]}</td>
-                      <td className="px-6 py-5 text-sm text-gray-700 dark:text-gray-300">{formatDate(employee.start_date)}</td>
-                      <td className="px-6 py-5">
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">
-                          {employee.completed_forms_count}/{employee.total_forms_count} complete
-                        </div>
-                        <div className="mt-2 h-2 w-40 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-                          <div
-                            className="h-full rounded-full bg-teal-500"
-                            style={{
-                              width: `${(employee.completed_forms_count / employee.total_forms_count) * 100}%`,
-                            }}
-                          />
-                        </div>
-                      </td>
-                      <td className="px-6 py-5 text-sm text-gray-700 dark:text-gray-300">
-                        {formatDate(employee.onboarding_packet_sent_at)}
-                      </td>
-                      <td className="px-6 py-5 text-right">
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            navigate(`/dashboard/employees/${employee.id}`);
-                          }}
-                        >
-                          Open
-                          <ChevronRight className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+        {loading ? (
+          <div className="rounded-2xl bg-white px-6 py-10 text-center text-sm text-gray-500 shadow-sm dark:bg-[#111827]">
+            Loading employee roster...
           </div>
-        </div>
+        ) : groupedEmployees.length === 0 ? (
+          <div className="rounded-2xl bg-white px-6 py-10 text-center text-sm text-gray-500 shadow-sm dark:bg-[#111827]">
+            No employees or user profiles matched your search.
+          </div>
+        ) : (
+          groupedEmployees.map((group) => (
+            <div key={group.role} className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-[#111827]">
+              <div className="border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{group.label}</h2>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                      {group.items.length} {group.items.length === 1 ? 'record' : 'records'} in this role group.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-[#0F172A]">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Employee / User</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Position</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Employee Status</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Paperwork</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Packet Sent</th>
+                      <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Open</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {group.items.map((employee) => {
+                      const rowKey = employee.profile_id || employee.employee_id || employee.email;
+                      const completionWidth = employee.paperwork_counts.total
+                        ? (employee.paperwork_counts.complete / employee.paperwork_counts.total) * 100
+                        : 0;
+
+                      return (
+                        <tr
+                          key={rowKey}
+                          className="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-[#0F172A]"
+                          onClick={() => handleOpenEmployee(employee)}
+                        >
+                          <td className="px-6 py-5">
+                            <div className="font-medium text-gray-900 dark:text-white">{employee.full_name}</div>
+                            <div className="mt-2 flex flex-wrap gap-4 text-sm text-gray-500 dark:text-gray-400">
+                              <span className="inline-flex items-center gap-2">
+                                <Mail className="h-4 w-4" />
+                                {employee.email}
+                              </span>
+                              {employee.phone && (
+                                <span className="inline-flex items-center gap-2">
+                                  <Phone className="h-4 w-4" />
+                                  {employee.phone}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                              {employee.has_employee_record
+                                ? `Paperwork record ready${employee.source === 'employee' && employee.role === 'unlinked' ? ' (not linked to a current user)' : ''}`
+                                : 'Current user detected. Click open to create or attach paperwork tracking.'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-5 text-sm text-gray-700 dark:text-gray-300">
+                            <div>{employee.position_title}</div>
+                            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                              Start {formatDate(employee.start_date, 'Not set')}
+                            </div>
+                          </td>
+                          <td className="px-6 py-5 text-sm text-gray-700 dark:text-gray-300">
+                            {EMPLOYEE_STATUS_LABELS[employee.employee_status]}
+                          </td>
+                          <td className="px-6 py-5">
+                            <div className="text-sm font-medium text-gray-900 dark:text-white">
+                              {employee.paperwork_counts.complete}/{employee.paperwork_counts.total} complete
+                            </div>
+                            <div className="mt-2 h-2 w-40 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                              <div
+                                className="h-full rounded-full bg-teal-500"
+                                style={{ width: `${completionWidth}%` }}
+                              />
+                            </div>
+                            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                              Pending review: {employee.paperwork_counts.submitted} · Sent: {employee.paperwork_counts.sent} · Not sent: {employee.paperwork_counts.not_sent}
+                            </div>
+                          </td>
+                          <td className="px-6 py-5 text-sm text-gray-700 dark:text-gray-300">
+                            {formatDate(employee.onboarding_packet_sent_at, 'Not sent')}
+                          </td>
+                          <td className="px-6 py-5 text-right">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleOpenEmployee(employee);
+                              }}
+                              loading={openingRowKey === rowKey}
+                            >
+                              {employee.has_employee_record ? 'Open' : 'Create & Open'}
+                              <ChevronRight className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

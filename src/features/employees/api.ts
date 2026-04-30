@@ -12,12 +12,25 @@ import type {
   EmployeeProfileData,
   EmployeeRecord,
   EmployeeFormSubmissionRecord,
+  EmployeePaperworkCounts,
+  EmployeeRosterItem,
   PublicEmployeeTokenAccess,
   EmployeeEmailPreview,
   EmployeeStatus,
+  LinkedEmployeeProfileSummary,
 } from './types';
 
 const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/employee-onboarding`;
+
+type ProfileRosterRecord = {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  role: string;
+  phone: string | null;
+  company_name: string | null;
+  created_at: string | null;
+};
 
 const sortSubmissionRecords = (items: EmployeeFormSubmissionRecord[]) => {
   const order = new Map(EMPLOYEE_FORM_KEYS.map((key, index) => [key, index]));
@@ -28,6 +41,78 @@ const sortSubmissionRecords = (items: EmployeeFormSubmissionRecord[]) => {
     }))
     .sort((a, b) => (order.get(a.form_key) ?? 999) - (order.get(b.form_key) ?? 999));
 };
+
+const createEmptyPaperworkCounts = (): EmployeePaperworkCounts => ({
+  not_sent: EMPLOYEE_FORM_KEYS.length,
+  sent: 0,
+  submitted: 0,
+  complete: 0,
+  total: EMPLOYEE_FORM_KEYS.length,
+});
+
+const normalizeEmployeeRecord = (employee: EmployeeRecord): EmployeeRecord => ({
+  ...employee,
+  phone: formatPhoneNumber(employee.phone),
+});
+
+const buildPaperworkCountsByEmployee = (
+  submissions: Array<{ employee_id: string; status: string }>,
+) => {
+  const counts = new Map<string, EmployeePaperworkCounts>();
+
+  submissions.forEach((submission) => {
+    const current = counts.get(submission.employee_id) || {
+      not_sent: 0,
+      sent: 0,
+      submitted: 0,
+      complete: 0,
+      total: 0,
+    };
+
+    current.total += 1;
+
+    if (submission.status === 'sent') current.sent += 1;
+    else if (submission.status === 'submitted') current.submitted += 1;
+    else if (submission.status === 'complete') current.complete += 1;
+    else current.not_sent += 1;
+
+    counts.set(submission.employee_id, current);
+  });
+
+  return counts;
+};
+
+const getDefaultPositionTitleForProfile = (profile: ProfileRosterRecord) => {
+  if (profile.role === 'subcontractor') {
+    return profile.company_name || 'Subcontractor';
+  }
+
+  if (profile.role === 'jg_management') {
+    return 'JG Management';
+  }
+
+  if (profile.role === 'is_super_admin') {
+    return 'Super Admin';
+  }
+
+  if (profile.role === 'admin') {
+    return 'Admin';
+  }
+
+  return 'Employee';
+};
+
+const getDefaultEmployeeStatusForProfile = (): EmployeeStatus => 'hired';
+
+const toLinkedProfileSummary = (profile: ProfileRosterRecord | null | undefined): LinkedEmployeeProfileSummary | null =>
+  profile && profile.email
+    ? {
+        id: profile.id,
+        full_name: profile.full_name,
+        email: profile.email,
+        role: profile.role,
+      }
+    : null;
 
 const getAuthHeaders = async () => {
   const {
@@ -96,12 +181,100 @@ export const listEmployees = async (): Promise<EmployeeListItem[]> => {
   return (employees || []).map((employee: EmployeeRecord) => {
     const employeeCounts = counts.get(employee.id) || { complete: 0, total: EMPLOYEE_FORM_KEYS.length };
     return {
-      ...employee,
-      phone: formatPhoneNumber(employee.phone),
+      ...normalizeEmployeeRecord(employee),
       completed_forms_count: employeeCounts.complete,
       total_forms_count: employeeCounts.total || EMPLOYEE_FORM_KEYS.length,
     };
   });
+};
+
+export const listEmployeeRoster = async (): Promise<EmployeeRosterItem[]> => {
+  const [{ data: employees, error: employeesError }, { data: profiles, error: profilesError }, { data: submissions, error: submissionsError }] =
+    await Promise.all([
+      supabase.from('employees').select('*').order('created_at', { ascending: false }),
+      supabase
+        .from('profiles')
+        .select('id, email, full_name, role, phone, company_name, created_at')
+        .order('role', { ascending: true })
+        .order('full_name', { ascending: true }),
+      supabase.from('employee_form_submissions').select('employee_id, status'),
+    ]);
+
+  if (employeesError) throw employeesError;
+  if (profilesError) throw profilesError;
+  if (submissionsError) throw submissionsError;
+
+  const employeeList = (employees || []) as EmployeeRecord[];
+  const profileList = ((profiles || []) as ProfileRosterRecord[]).filter((profile) => Boolean(profile.email));
+  const paperworkCounts = buildPaperworkCountsByEmployee(
+    (submissions || []) as Array<{ employee_id: string; status: string }>,
+  );
+
+  const employeesByLinkedProfileId = new Map<string, EmployeeRecord>();
+  const employeesByEmail = new Map<string, EmployeeRecord>();
+  const consumedEmployeeIds = new Set<string>();
+
+  employeeList.forEach((employee) => {
+    if (employee.linked_subcontractor_profile_id) {
+      employeesByLinkedProfileId.set(employee.linked_subcontractor_profile_id, employee);
+    }
+    if (employee.email) {
+      employeesByEmail.set(employee.email.trim().toLowerCase(), employee);
+    }
+  });
+
+  const roster: EmployeeRosterItem[] = profileList.map((profile) => {
+    const employee =
+      employeesByLinkedProfileId.get(profile.id) ||
+      employeesByEmail.get((profile.email || '').trim().toLowerCase()) ||
+      null;
+
+    if (employee) {
+      consumedEmployeeIds.add(employee.id);
+    }
+
+    const counts = employee ? paperworkCounts.get(employee.id) || createEmptyPaperworkCounts() : createEmptyPaperworkCounts();
+
+    return {
+      employee_id: employee?.id || null,
+      profile_id: profile.id,
+      linked_profile_id: employee?.linked_subcontractor_profile_id || profile.id,
+      full_name: employee?.full_name || profile.full_name || profile.email || 'Unnamed user',
+      email: employee?.email || profile.email || '',
+      phone: formatPhoneNumber(employee?.phone || profile.phone),
+      role: profile.role,
+      position_title: employee?.position_title || getDefaultPositionTitleForProfile(profile),
+      employee_status: employee?.employee_status || getDefaultEmployeeStatusForProfile(),
+      start_date: employee?.start_date || profile.created_at?.slice(0, 10) || null,
+      onboarding_packet_sent_at: employee?.onboarding_packet_sent_at || null,
+      paperwork_counts: counts,
+      has_employee_record: Boolean(employee),
+      source: 'profile',
+    };
+  });
+
+  employeeList.forEach((employee) => {
+    if (consumedEmployeeIds.has(employee.id)) return;
+
+    roster.push({
+      employee_id: employee.id,
+      profile_id: employee.linked_subcontractor_profile_id || null,
+      linked_profile_id: employee.linked_subcontractor_profile_id || null,
+      full_name: employee.full_name,
+      email: employee.email,
+      phone: formatPhoneNumber(employee.phone),
+      role: 'unlinked',
+      position_title: employee.position_title,
+      employee_status: employee.employee_status,
+      start_date: employee.start_date,
+      onboarding_packet_sent_at: employee.onboarding_packet_sent_at,
+      paperwork_counts: paperworkCounts.get(employee.id) || createEmptyPaperworkCounts(),
+      has_employee_record: true,
+      source: 'employee',
+    });
+  });
+
+  return roster;
 };
 
 export const createEmployee = async (input: {
@@ -163,12 +336,27 @@ export const getEmployeeProfile = async (employeeId: string): Promise<EmployeePr
     throw submissionsError;
   }
 
+  const linkedProfileId = (employee as EmployeeRecord).linked_subcontractor_profile_id;
+  let linkedProfile: LinkedEmployeeProfileSummary | null = null;
+
+  if (linkedProfileId) {
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, email, full_name, role, phone, company_name, created_at')
+      .eq('id', linkedProfileId)
+      .maybeSingle();
+
+    if (profileError) {
+      throw profileError;
+    }
+
+    linkedProfile = toLinkedProfileSummary((profile as ProfileRosterRecord | null) ?? null);
+  }
+
   return {
-    employee: {
-      ...(employee as EmployeeRecord),
-      phone: formatPhoneNumber((employee as EmployeeRecord).phone),
-    },
+    employee: normalizeEmployeeRecord(employee as EmployeeRecord),
     submissions: sortSubmissionRecords((submissions || []) as EmployeeFormSubmissionRecord[]),
+    linkedProfile,
   };
 };
 
@@ -212,8 +400,7 @@ export const updateEmployee = async (
   }
 
   return {
-    ...(data as EmployeeRecord),
-    phone: formatPhoneNumber((data as EmployeeRecord).phone),
+    ...normalizeEmployeeRecord(data as EmployeeRecord),
   };
 };
 
@@ -321,42 +508,70 @@ export const validateEmployeeOnboardingToken = async (token: string) => {
 };
 
 export const portSubcontractorToEmployee = async (subcontractorProfileId: string) => {
-  const { data: existingEmployee, error: existingEmployeeError } = await supabase
-    .from('employees')
-    .select('*')
-    .eq('linked_subcontractor_profile_id', subcontractorProfileId)
-    .maybeSingle();
+  return await ensureEmployeeForProfile(subcontractorProfileId);
+};
 
-  if (existingEmployeeError) {
-    throw existingEmployeeError;
-  }
-
-  if (existingEmployee) {
-    return existingEmployee as EmployeeRecord;
-  }
-
-  const { data: subcontractor, error: subcontractorError } = await supabase
+export const ensureEmployeeForProfile = async (profileId: string): Promise<EmployeeRecord> => {
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('id, email, full_name, phone, company_name, created_at')
-    .eq('id', subcontractorProfileId)
-    .eq('role', 'subcontractor')
+    .select('id, email, full_name, role, phone, company_name, created_at')
+    .eq('id', profileId)
     .single();
 
-  if (subcontractorError || !subcontractor) {
-    throw subcontractorError || new Error('Subcontractor profile not found.');
+  if (profileError || !profile) {
+    throw profileError || new Error('User profile not found.');
   }
 
-  const fallbackDate = subcontractor.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+  if (!profile.email) {
+    throw new Error('This user profile is missing an email address and cannot be linked to employee paperwork.');
+  }
+
+  const { data: linkedEmployee, error: linkedEmployeeError } = await supabase
+    .from('employees')
+    .select('*')
+    .eq('linked_subcontractor_profile_id', profileId)
+    .maybeSingle();
+
+  if (linkedEmployeeError) {
+    throw linkedEmployeeError;
+  }
+
+  if (linkedEmployee) {
+    return normalizeEmployeeRecord(linkedEmployee as EmployeeRecord);
+  }
+
+  const { data: emailMatchedEmployees, error: emailMatchedEmployeesError } = await supabase
+    .from('employees')
+    .select('*')
+    .ilike('email', profile.email)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (emailMatchedEmployeesError) {
+    throw emailMatchedEmployeesError;
+  }
+
+  const emailMatchedEmployee = ((emailMatchedEmployees || [])[0] as EmployeeRecord | undefined) || null;
+
+  if (emailMatchedEmployee) {
+    const updatedEmployee = await updateEmployee(emailMatchedEmployee.id, {
+      linked_subcontractor_profile_id: profile.id,
+      full_name: emailMatchedEmployee.full_name || profile.full_name || profile.email,
+      phone: emailMatchedEmployee.phone || profile.phone,
+    });
+
+    return updatedEmployee;
+  }
 
   return await createEmployee({
-    full_name: subcontractor.full_name || subcontractor.email || 'Ported subcontractor',
-    email: subcontractor.email || '',
-    phone: subcontractor.phone || '',
-    position_title: subcontractor.company_name || 'Ported from subcontractor',
-    employee_status: 'not_hired',
-    start_date: fallbackDate,
-    internal_office_notes: 'Created from subcontractor profile.',
-    linked_subcontractor_profile_id: subcontractor.id,
+    full_name: profile.full_name || profile.email,
+    email: profile.email,
+    phone: profile.phone || '',
+    position_title: getDefaultPositionTitleForProfile(profile as ProfileRosterRecord),
+    employee_status: getDefaultEmployeeStatusForProfile(),
+    start_date: profile.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+    internal_office_notes: `Auto-linked from existing ${profile.role} user profile.`,
+    linked_subcontractor_profile_id: profile.id,
   });
 };
 

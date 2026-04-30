@@ -20,6 +20,13 @@ export interface EmployeeRecord {
   updated_at: string;
 }
 
+export interface LinkedEmployeeProfileSummary {
+  id: string;
+  full_name: string | null;
+  email: string;
+  role: string;
+}
+
 export interface EmployeeFormSubmissionRecord {
   id: string;
   employee_id: string;
@@ -41,9 +48,35 @@ export interface EmployeeListItem extends EmployeeRecord {
   total_forms_count: number;
 }
 
+export interface EmployeePaperworkCounts {
+  not_sent: number;
+  sent: number;
+  submitted: number;
+  complete: number;
+  total: number;
+}
+
+export interface EmployeeRosterItem {
+  employee_id: string | null;
+  profile_id: string | null;
+  linked_profile_id: string | null;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  role: string;
+  position_title: string;
+  employee_status: EmployeeStatus;
+  start_date: string | null;
+  onboarding_packet_sent_at: string | null;
+  paperwork_counts: EmployeePaperworkCounts;
+  has_employee_record: boolean;
+  source: 'profile' | 'employee';
+}
+
 export interface EmployeeProfileData {
   employee: EmployeeRecord;
   submissions: EmployeeFormSubmissionRecord[];
+  linkedProfile: LinkedEmployeeProfileSummary | null;
 }
 
 export interface PublicEmployeeTokenAccess {

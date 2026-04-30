@@ -15,6 +15,7 @@ import { UserRoleProvider } from './contexts/UserRoleContext';
 import { SubcontractorPreviewProvider } from './contexts/SubcontractorPreviewContext';
 import { ChatTrayProvider } from './contexts/ChatTrayProvider';
 import { UnreadMessagesProvider } from './contexts/UnreadMessagesProvider';
+import { HughProvider } from './contexts/HughContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { MainLayout } from './components/ui/MainLayout';
 import { PersistentLayout } from './components/PersistentLayout';
@@ -74,7 +75,9 @@ const ProtectedLayout = () => (
           <SubcontractorPreviewProvider>
             <ChatTrayProvider>
               <UnreadMessagesProvider>
-                <ProtectedRoute />
+                <HughProvider>
+                  <ProtectedRoute />
+                </HughProvider>
               </UnreadMessagesProvider>
             </ChatTrayProvider>
           </SubcontractorPreviewProvider>

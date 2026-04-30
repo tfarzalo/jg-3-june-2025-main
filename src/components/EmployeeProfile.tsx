@@ -320,8 +320,28 @@ export function EmployeeProfile() {
     );
   }
 
-  const linkedSubcontractorId = profile.employee.linked_subcontractor_profile_id;
-  const canCreateSubcontractorUser = profile.employee.employee_status === 'hired' && !linkedSubcontractorId;
+  const linkedProfile = profile.linkedProfile;
+  const linkedProfileId = profile.employee.linked_subcontractor_profile_id;
+  const canCreateSubcontractorUser = profile.employee.employee_status === 'hired' && !linkedProfileId;
+  const linkedProfileLabel =
+    linkedProfile?.role === 'jg_management'
+      ? 'JG Management'
+      : linkedProfile?.role === 'is_super_admin'
+        ? 'Super Admin'
+        : linkedProfile?.role
+          ? linkedProfile.role.charAt(0).toUpperCase() + linkedProfile.role.slice(1)
+          : 'Linked User';
+
+  const openLinkedProfile = () => {
+    if (!linkedProfileId) return;
+
+    if (linkedProfile?.role === 'subcontractor') {
+      navigate(`/dashboard/subcontractor/edit/${linkedProfileId}`);
+      return;
+    }
+
+    navigate(`/dashboard/profile/${linkedProfileId}`);
+  };
 
   return (
     <div className="min-h-full bg-gray-100 px-6 py-6 dark:bg-[#0F172A]">
@@ -516,13 +536,13 @@ export function EmployeeProfile() {
                 <Button icon={Send} onClick={() => handleSendPacket()} loading={sendingPacket}>
                   Send Onboarding Packet
                 </Button>
-                {linkedSubcontractorId ? (
+                {linkedProfileId ? (
                   <Button
                     variant="ghost"
                     icon={ExternalLink}
-                    onClick={() => navigate(`/dashboard/subcontractor/edit/${linkedSubcontractorId}`)}
+                    onClick={openLinkedProfile}
                   >
-                    Open Linked Subcontractor
+                    Open Linked {linkedProfileLabel}
                   </Button>
                 ) : (
                   <Button
@@ -535,7 +555,7 @@ export function EmployeeProfile() {
                   </Button>
                 )}
               </div>
-              {!canCreateSubcontractorUser && !linkedSubcontractorId && (
+              {!canCreateSubcontractorUser && !linkedProfileId && (
                 <p className="text-sm text-amber-700 dark:text-amber-300">
                   Mark this employee as Hired before creating a subcontractor user.
                 </p>
@@ -559,7 +579,9 @@ export function EmployeeProfile() {
                     {formatPhoneNumber(profile.employee.phone)}
                   </div>
                 )}
-                <div>Linked subcontractor: {linkedSubcontractorId ? 'Yes' : 'No'}</div>
+                <div>
+                  Linked user: {linkedProfileId ? `${linkedProfileLabel}${linkedProfile?.email ? ` · ${linkedProfile.email}` : ''}` : 'No'}
+                </div>
               </div>
             </div>
           </div>
