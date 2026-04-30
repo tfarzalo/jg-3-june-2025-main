@@ -414,6 +414,7 @@ export const sendEmployeeOnboardingPacket = async (params: {
     success: true;
     message: string;
     linksSent: number;
+    formKeysSent?: string[];
   }>({
     action: 'send_packet',
     employeeId: params.employeeId,

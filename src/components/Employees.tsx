@@ -3,8 +3,9 @@ import { format } from 'date-fns';
 import { Briefcase, ChevronRight, Mail, Phone, Plus, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { EMPLOYEE_ONBOARDING_FORMS } from '../../shared/employeeOnboarding';
 import { Button } from './ui/Button';
-import { createEmployee, ensureEmployeeForProfile, listEmployeeRoster } from '../features/employees/api';
+import { createEmployee, ensureEmployeeForProfile, listEmployeeRoster, sendEmployeeOnboardingPacket } from '../features/employees/api';
 import type { EmployeeRosterItem, EmployeeStatus } from '../features/employees/types';
 import { formatPhoneNumber } from '../lib/utils/formatUtils';
 
@@ -50,6 +51,8 @@ export function Employees() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [openingRowKey, setOpeningRowKey] = useState<string | null>(null);
+  const [sendingRowKey, setSendingRowKey] = useState<string | null>(null);
+  const [selectedFormByRowKey, setSelectedFormByRowKey] = useState<Record<string, string>>({});
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
@@ -133,6 +136,41 @@ export function Employees() {
       toast.error(error instanceof Error ? error.message : 'Unable to open employee paperwork.');
     } finally {
       setOpeningRowKey(null);
+    }
+  };
+
+  const ensureEmployeeForRosterItem = async (employee: EmployeeRosterItem) => {
+    if (employee.employee_id) {
+      return employee.employee_id;
+    }
+
+    if (!employee.profile_id) {
+      throw new Error('This row is missing a linked user profile.');
+    }
+
+    const ensuredEmployee = await ensureEmployeeForProfile(employee.profile_id);
+    return ensuredEmployee.id;
+  };
+
+  const handleSendPaperwork = async (employee: EmployeeRosterItem, formKey?: string) => {
+    const rowKey = employee.profile_id || employee.employee_id || employee.email;
+
+    try {
+      setSendingRowKey(`${rowKey}:${formKey || 'bundle'}`);
+      const ensuredEmployeeId = await ensureEmployeeForRosterItem(employee);
+      await sendEmployeeOnboardingPacket({
+        employeeId: ensuredEmployeeId,
+        formKey,
+        regenerate: true,
+        baseUrl: window.location.origin,
+      });
+      toast.success(formKey ? 'Individual paperwork link sent.' : 'Full paperwork bundle sent.');
+      await fetchEmployees();
+    } catch (error) {
+      console.error('Error sending employee paperwork:', error);
+      toast.error(error instanceof Error ? error.message : 'Unable to send employee paperwork.');
+    } finally {
+      setSendingRowKey(null);
     }
   };
 
@@ -329,7 +367,7 @@ export function Employees() {
                       <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Employee Status</th>
                       <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Paperwork</th>
                       <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Packet Sent</th>
-                      <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Open</th>
+                      <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -338,6 +376,7 @@ export function Employees() {
                       const completionWidth = employee.paperwork_counts.total
                         ? (employee.paperwork_counts.complete / employee.paperwork_counts.total) * 100
                         : 0;
+                      const selectedFormKey = selectedFormByRowKey[rowKey] || EMPLOYEE_ONBOARDING_FORMS[0]?.key || '';
 
                       return (
                         <tr
@@ -392,18 +431,59 @@ export function Employees() {
                             {formatDate(employee.onboarding_packet_sent_at, 'Not sent')}
                           </td>
                           <td className="px-6 py-5 text-right">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void handleOpenEmployee(employee);
-                              }}
-                              loading={openingRowKey === rowKey}
-                            >
-                              {employee.has_employee_record ? 'Open' : 'Create & Open'}
-                              <ChevronRight className="h-4 w-4" />
-                            </Button>
+                            <div className="flex min-w-[360px] flex-wrap items-center justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                icon={Mail}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleSendPaperwork(employee);
+                                }}
+                                loading={sendingRowKey === `${rowKey}:bundle`}
+                              >
+                                Send Bundle
+                              </Button>
+                              <select
+                                value={selectedFormKey}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedFormByRowKey((current) => ({ ...current, [rowKey]: event.target.value }));
+                                }}
+                                className="h-9 max-w-[170px] rounded-lg border border-gray-300 bg-white px-2 text-xs text-gray-800 shadow-sm dark:border-gray-600 dark:bg-[#0F172A] dark:text-white"
+                                aria-label={`Select individual paperwork form for ${employee.full_name}`}
+                              >
+                                {EMPLOYEE_ONBOARDING_FORMS.map((form) => (
+                                  <option key={form.key} value={form.key}>
+                                    {form.title}
+                                  </option>
+                                ))}
+                              </select>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleSendPaperwork(employee, selectedFormKey);
+                                }}
+                                loading={sendingRowKey === `${rowKey}:${selectedFormKey}`}
+                              >
+                                Send One
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleOpenEmployee(employee);
+                                }}
+                                loading={openingRowKey === rowKey}
+                              >
+                                {employee.has_employee_record ? 'Open' : 'Create & Open'}
+                                <ChevronRight className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       );

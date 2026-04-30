@@ -6,7 +6,6 @@ import {
   EMPLOYEE_FORM_KEYS,
   EMPLOYEE_FORM_MAP,
   SMS_OPT_IN_EFFECTIVE_DATE,
-  SMS_OPT_IN_FIELD_IDS,
   SMS_OPT_IN_FORM_KEY,
   SMS_OPT_IN_METADATA_KEY,
   SMS_OPT_IN_POLICY_VERSION,
@@ -365,6 +364,68 @@ const renderSubmissionPdf = async (params: {
     doc.on("error", reject);
     doc.on("end", () => resolve(Buffer.concat(chunks)));
 
+    const drawCheckbox = (checked: boolean) => {
+      const boxSize = 12;
+      const x = doc.x;
+      const y = doc.y + 1;
+
+      doc
+        .lineWidth(1)
+        .strokeColor("#334155")
+        .rect(x, y, boxSize, boxSize)
+        .stroke();
+
+      if (checked) {
+        doc
+          .lineWidth(1.6)
+          .strokeColor("#0f766e")
+          .moveTo(x + 2.5, y + 6.5)
+          .lineTo(x + 5.2, y + 9.2)
+          .lineTo(x + 10, y + 3.2)
+          .stroke();
+      }
+
+      doc
+        .fillColor(checked ? "#0f766e" : "#475569")
+        .fontSize(10)
+        .text(checked ? "Confirmed" : "Not confirmed", x + boxSize + 8, y - 1);
+    };
+
+    const drawSignature = (value: string) => {
+      const boxWidth = 260;
+      const boxHeight = 88;
+      const x = doc.x;
+      const y = doc.y;
+
+      doc
+        .lineWidth(1)
+        .strokeColor("#cbd5e1")
+        .rect(x, y, boxWidth, boxHeight)
+        .stroke();
+
+      if (value.startsWith("data:image")) {
+        try {
+          const base64 = value.split(",")[1] || "";
+          const imageBuffer = Buffer.from(base64, "base64");
+          doc.image(imageBuffer, x + 10, y + 10, {
+            fit: [boxWidth - 20, boxHeight - 20],
+            align: "left",
+            valign: "center",
+          });
+        } catch {
+          doc.fillColor("#475569").fontSize(10).text("Signature image unavailable", x + 10, y + 34, {
+            width: boxWidth - 20,
+          });
+        }
+      } else {
+        doc.fillColor("#475569").fontSize(10).text("Signature not provided", x + 10, y + 34, {
+          width: boxWidth - 20,
+        });
+      }
+
+      doc.y = y + boxHeight + 6;
+    };
+
     doc.fillColor("#0f172a").fontSize(22).text("JG Painting Pros", { continued: false });
     doc.fillColor("#475569").fontSize(11).text("Employee onboarding submission", { paragraphGap: 4 });
     doc.moveDown(0.3);
@@ -396,19 +457,12 @@ const renderSubmissionPdf = async (params: {
         const value = mergedValues[field.id];
         doc.fillColor("#111827").fontSize(10).text(field.label, { continued: false });
 
-        if (field.type === "signature" && typeof value === "string" && value.startsWith("data:image")) {
-          try {
-            const base64 = value.split(",")[1] || "";
-            const imageBuffer = Buffer.from(base64, "base64");
-            doc.moveDown(0.2);
-            doc.image(imageBuffer, {
-              fit: [240, 80],
-              align: "left",
-            });
-            doc.moveDown(0.5);
-          } catch {
-            doc.fillColor("#475569").fontSize(10).text("Signature image unavailable");
-          }
+        if (field.type === "checkbox") {
+          doc.moveDown(0.15);
+          drawCheckbox(Boolean(value));
+        } else if (field.type === "signature") {
+          doc.moveDown(0.2);
+          drawSignature(typeof value === "string" ? value : "");
         } else {
           doc.fillColor("#475569").fontSize(10).text(formatEmployeeFormValue(value));
         }
@@ -638,6 +692,7 @@ const handleSendPacket = async (
   return json({
     success: true,
     linksSent: links.length,
+    formKeysSent: formKeys,
     message: requestedFormKey ? "Form link sent." : "Onboarding packet sent.",
   });
 };

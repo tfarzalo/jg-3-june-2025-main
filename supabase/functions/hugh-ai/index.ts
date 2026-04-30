@@ -29,133 +29,237 @@ serve(async (req) => {
     });
 
     const { message, history } = await req.json();
+    if (!message) throw new Error("message is required");
 
-    if (!message) {
-      throw new Error("message is required");
-    }
-
-    // ── Gather rich app context for Gemini ──────────────────────────────────
-
+    // ── Gather rich app context ──────────────────────────────────────────────
     const [
       { data: jobs },
       { data: properties },
       { data: phases },
       { data: profiles },
       { data: jobTypes },
+      { data: unitSizes },
       { data: propertyGroups },
+      { data: workOrders },
+      { data: jobCategories },
     ] = await Promise.all([
+      // Jobs — use correct FK name jobs_assigned_to_fkey and correct job_type column
       supabase
         .from("jobs")
         .select(`
-          id, work_order_num, unit_number, scheduled_date, created_at,
+          id,
+          work_order_num,
+          unit_number,
+          scheduled_date,
+          status,
+          assignment_status,
+          priority,
+          invoice_sent,
+          invoice_paid,
+          total_billing_amount,
+          purchase_order,
+          is_occupied,
+          created_at,
           property:properties(property_name, city, state),
-          job_phase:job_phases(job_phase_label),
-          job_type:job_types(name),
-          assigned_subcontractor:profiles!jobs_assigned_subcontractor_id_fkey(full_name)
+          phase:job_phases!jobs_current_phase_id_fkey(job_phase_label),
+          job_type:job_types!jobs_job_type_id_fkey(job_type_label),
+          assigned_to:profiles!jobs_assigned_to_fkey(full_name, company_name),
+          unit_size:unit_sizes!jobs_unit_size_id_fkey(unit_size_label)
         `)
         .order("created_at", { ascending: false })
         .limit(200),
 
+      // Properties
       supabase
         .from("properties")
-        .select("id, property_name, address, city, state, is_active, is_archived")
+        .select(`
+          id, property_name, address, city, state, is_active, is_archived,
+          community_manager_name, community_manager_email,
+          property_management_group:property_management_groups(company_name)
+        `)
         .eq("is_archived", false)
         .limit(300),
 
+      // Job phases in order
       supabase
         .from("job_phases")
-        .select("id, job_phase_label, sort_order"),
+        .select("id, job_phase_label, sort_order")
+        .order("sort_order"),
 
+      // All users/subcontractors
       supabase
         .from("profiles")
-        .select("id, full_name, role, email")
+        .select("id, full_name, role, email, company_name, phone")
         .limit(200),
 
+      // Job types — correct column name is job_type_label
       supabase
         .from("job_types")
-        .select("id, name"),
+        .select("id, job_type_label"),
 
+      // Unit sizes
+      supabase
+        .from("unit_sizes")
+        .select("id, unit_size_label")
+        .limit(100),
+
+      // Property management groups
       supabase
         .from("property_management_groups")
-        .select("id, company_name")
+        .select("id, company_name, group_status")
+        .eq("is_archived", false)
+        .limit(100),
+
+      // Work orders — most recent
+      supabase
+        .from("work_orders")
+        .select(`
+          id, unit_number, unit_size, is_occupied, is_full_paint,
+          bill_amount, sub_pay_amount, profit_amount,
+          submission_date, created_at,
+          job:jobs!work_orders_job_id_fkey(
+            work_order_num,
+            property:properties(property_name)
+          )
+        `)
+        .order("created_at", { ascending: false })
+        .limit(100),
+
+      // Job categories
+      supabase
+        .from("job_categories")
+        .select("id, name")
+        .eq("is_hidden", false)
         .limit(100),
     ]);
 
-    // Build a compact context string
+    // ── Build summaries ──────────────────────────────────────────────────────
     const activeProperties = (properties || []).filter(p => p.is_active !== false);
-    const inactiveProperties = (properties || []).filter(p => p.is_active === false);
+    const subcontractors = (profiles || []).filter(p => p.role === "subcontractor");
+    const adminUsers = (profiles || []).filter(p => ["admin", "is_super_admin", "jg_management"].includes(p.role));
 
-    const subcontractors = (profiles || []).filter(p =>
-      p.role === "subcontractor"
-    );
+    const phaseLabels = (phases || []).map(p => p.job_phase_label);
 
-    const phaseLabels = (phases || [])
-      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-      .map(p => p.job_phase_label);
-
-    const recentJobs = (jobs || []).slice(0, 100).map(j => ({
-      work_order: j.work_order_num,
+    // Jobs with all key fields
+    const jobSummaries = (jobs || []).slice(0, 150).map(j => ({
+      wo: j.work_order_num,
       unit: j.unit_number,
       property: (j.property as any)?.property_name,
       city: (j.property as any)?.city,
-      phase: (j.job_phase as any)?.job_phase_label,
-      type: (j.job_type as any)?.name,
-      scheduled: j.scheduled_date,
-      sub: (j.assigned_subcontractor as any)?.full_name,
+      phase: (j.phase as any)?.job_phase_label,
+      type: (j.job_type as any)?.job_type_label,
+      size: (j.unit_size as any)?.unit_size_label,
+      sub: (j.assigned_to as any)?.full_name || (j.assigned_to as any)?.company_name,
+      status: j.status,
+      assignment_status: j.assignment_status,
+      priority: j.priority,
+      scheduled: j.scheduled_date ? j.scheduled_date.split("T")[0] : null,
+      invoice_sent: j.invoice_sent,
+      invoice_paid: j.invoice_paid,
+      bill_amount: j.total_billing_amount,
+      po: j.purchase_order,
+      occupied: j.is_occupied,
     }));
 
+    // Phase breakdown counts
+    const phaseBreakdown: Record<string, number> = {};
+    for (const j of jobSummaries) {
+      const p = j.phase || "Unknown";
+      phaseBreakdown[p] = (phaseBreakdown[p] || 0) + 1;
+    }
+
+    // Subcontractor workload
+    const subWorkload: Record<string, number> = {};
+    for (const j of jobSummaries) {
+      if (j.sub) subWorkload[j.sub] = (subWorkload[j.sub] || 0) + 1;
+    }
+
+    // Work order billing summary
+    const woTotal = (workOrders || []).reduce((sum, wo) => sum + (Number(wo.bill_amount) || 0), 0);
+    const woProfitTotal = (workOrders || []).reduce((sum, wo) => sum + (Number(wo.profit_amount) || 0), 0);
+
+    // Invoice stats
+    const invoicePending = jobSummaries.filter(j => !j.invoice_sent).length;
+    const invoiceUnpaid = jobSummaries.filter(j => j.invoice_sent && !j.invoice_paid).length;
+
     const appContext = `
-You are Hugh, an AI assistant built into the JG Painting Pros property management and job tracking application. You have access to live data from the application.
+You are Hugh, an AI assistant built exclusively into the JG Painting Pros property management and job tracking application. You have live, real-time access to the application's database. Always answer from this data — never say you don't have access to job or property information.
 
-## APPLICATION DATA SUMMARY (as of now)
+Today's date: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
 
-### Job Phases (in order)
+═══════════════════════════════════════════════
+APPLICATION LIVE DATA SNAPSHOT
+═══════════════════════════════════════════════
+
+## JOB PHASES (in workflow order)
 ${phaseLabels.join(" → ")}
 
-### Job Types
-${(jobTypes || []).map(t => t.name).join(", ")}
+## JOB TYPES
+${(jobTypes || []).map(t => t.job_type_label).join(", ")}
 
-### Properties
-Active: ${activeProperties.length} properties
-Inactive: ${inactiveProperties.length} properties
-Active property list: ${activeProperties.slice(0, 50).map(p => `${p.property_name} (${p.city}, ${p.state})`).join("; ")}
+## JOB CATEGORIES
+${(jobCategories || []).map(c => c.name).join(", ")}
 
-### Property Management Groups
-${(propertyGroups || []).map(g => g.company_name).join(", ")}
+## UNIT SIZES AVAILABLE
+${(unitSizes || []).map(u => u.unit_size_label).join(", ")}
 
-### Subcontractors
-${subcontractors.map(s => s.full_name).join(", ")}
+## PROPERTIES (${activeProperties.length} active)
+${activeProperties.map(p => {
+  const mgGroup = (p.property_management_group as any)?.company_name;
+  return `- ${p.property_name} | ${p.city}, ${p.state}${mgGroup ? ` | Managed by: ${mgGroup}` : ""}`;
+}).join("\n")}
 
-### Recent Jobs (last 100)
-${JSON.stringify(recentJobs, null, 2)}
+## PROPERTY MANAGEMENT GROUPS
+${(propertyGroups || []).map(g => `- ${g.company_name} (${g.group_status || "active"})`).join("\n")}
 
-## YOUR ROLE
-- Help admins find, understand, analyze and act on anything in the app
-- Answer questions about jobs, properties, phases, subcontractors, schedules
-- Suggest which subcontractor might be best for a job based on patterns
-- Summarize workloads, statuses, upcoming schedules
-- Be concise, professional, and helpful
-- When referencing specific items, include key identifiers (work order #, property name, unit, etc.)
-- You can give recommendations, highlight issues, and proactively surface insights
-- Always respond in plain language suitable for a property management professional
+## TEAM MEMBERS (Admins/Management)
+${adminUsers.map(u => `- ${u.full_name} (${u.role}) | ${u.email}`).join("\n")}
+
+## SUBCONTRACTORS (${subcontractors.length} total)
+${subcontractors.map(s => `- ${s.full_name}${s.company_name ? ` / ${s.company_name}` : ""} | Active jobs: ${subWorkload[s.full_name] || 0}`).join("\n")}
+
+## JOB PHASE BREAKDOWN (all ${jobSummaries.length} jobs)
+${Object.entries(phaseBreakdown).sort((a, b) => b[1] - a[1]).map(([phase, count]) => `- ${phase}: ${count} jobs`).join("\n")}
+
+## INVOICE STATUS
+- Jobs with invoice NOT sent: ${invoicePending}
+- Jobs invoiced but NOT paid: ${invoiceUnpaid}
+- Jobs invoiced and paid: ${jobSummaries.filter(j => j.invoice_paid).length}
+
+## WORK ORDER BILLING SUMMARY (last ${(workOrders || []).length} work orders)
+- Total billed: $${woTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+- Total profit: $${woProfitTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+
+## ALL JOBS (work order #, unit, property, phase, type, size, assigned sub, status, scheduled date, billing)
+${JSON.stringify(jobSummaries, null, 2)}
+
+═══════════════════════════════════════════════
+YOUR ROLE & INSTRUCTIONS
+═══════════════════════════════════════════════
+- You have FULL access to this live data — always answer with specifics
+- Reference work order numbers, property names, subcontractor names, phases, and dates
+- Answer questions about any job, property, subcontractor, phase, billing, or scheduling
+- Provide counts, lists, summaries, and analysis when asked
+- Proactively surface insights: overdue jobs, unassigned work, invoice gaps, subcontractor workload imbalances
+- Recommend subcontractors based on current workload and property preferences
+- Be concise, professional, and direct — you're a tool for busy operations managers
+- Format responses clearly using bullet points or short tables when listing multiple items
 `;
 
-    // ── Build Gemini API request ─────────────────────────────────────────────
+    // ── Build Gemini conversation ────────────────────────────────────────────
+    const geminiContents: any[] = [];
 
-    // Convert history to Gemini format
-    const geminiContents = [];
-
-    // Add system context as first user turn (Gemini doesn't have system role)
+    // Inject system context as first turn
     geminiContents.push({
       role: "user",
-      parts: [{ text: `${appContext}\n\n---\nBegin conversation. Acknowledge you're ready.` }],
+      parts: [{ text: `${appContext}\n\n---\nBegin. Acknowledge you're ready with one brief sentence.` }],
     });
     geminiContents.push({
       role: "model",
-      parts: [{ text: "Hi! I'm Hugh, your JG Painting Pros AI assistant. I have access to your live job data, properties, subcontractors, and phases. How can I help you today?" }],
+      parts: [{ text: "Hi! I'm Hugh — I have live access to your jobs, properties, subcontractors, phases, and billing data. What can I help you with?" }],
     });
 
-    // Add prior conversation history
+    // Append conversation history
     if (history && Array.isArray(history)) {
       for (const msg of history) {
         geminiContents.push({
@@ -165,7 +269,7 @@ ${JSON.stringify(recentJobs, null, 2)}
       }
     }
 
-    // Add current user message
+    // Current user message
     geminiContents.push({
       role: "user",
       parts: [{ text: message }],
@@ -179,10 +283,10 @@ ${JSON.stringify(recentJobs, null, 2)}
         body: JSON.stringify({
           contents: geminiContents,
           generationConfig: {
-            temperature: 0.7,
+            temperature: 0.4,
             topK: 40,
             topP: 0.95,
-            maxOutputTokens: 1024,
+            maxOutputTokens: 2048,
           },
           safetySettings: [
             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
