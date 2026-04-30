@@ -226,8 +226,8 @@ export function HughAssistant() {
   return (
     <div
       ref={panelRef}
-      className="absolute right-0 top-[calc(100%+8px)] w-[420px] max-w-[calc(100vw-1rem)] bg-gray-50 dark:bg-[#0F172A] rounded-2xl shadow-2xl border border-gray-200 dark:border-[#1E293B] flex flex-col z-[9999] overflow-hidden"
-      style={{ maxHeight: 'calc(100vh - 100px)', height: '580px' }}
+      className="fixed top-[72px] left-1/2 -translate-x-1/2 w-[560px] max-w-[calc(100vw-1rem)] bg-gray-50 dark:bg-[#0F172A] rounded-2xl shadow-2xl border border-gray-200 dark:border-[#1E293B] flex flex-col z-[9999] overflow-hidden"
+      style={{ maxHeight: 'calc(100vh - 90px)', height: '620px' }}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-500 flex-shrink-0">

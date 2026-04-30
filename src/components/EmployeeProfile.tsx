@@ -13,7 +13,7 @@ import {
   sendEmployeeOnboardingPacket,
   updateEmployee,
 } from '../features/employees/api';
-import type { EmployeeEmailPreview, EmployeeProfileData, EmployeeRecord, EmployeeStatus } from '../features/employees/types';
+import type { EmployeeEmailPreview, EmployeeProfileData, EmployeeStatus } from '../features/employees/types';
 import { formatPhoneNumber } from '../lib/utils/formatUtils';
 
 const EMPLOYEE_STATUS_OPTIONS: Array<{ value: EmployeeStatus; label: string }> = [
@@ -151,8 +151,9 @@ export function EmployeeProfile() {
   const handleOpenPdf = async (formKey: string) => {
     if (!employeeId) return;
     try {
-      const url = await getEmployeePdfUrl(employeeId, formKey);
+      const url = await getEmployeePdfUrl(employeeId, formKey, true);
       window.open(url, '_blank', 'noopener,noreferrer');
+      await fetchProfile();
     } catch (error) {
       console.error('Error opening PDF:', error);
       toast.error(error instanceof Error ? error.message : 'Unable to open PDF.');

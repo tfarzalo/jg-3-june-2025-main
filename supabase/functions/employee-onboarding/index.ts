@@ -6,6 +6,7 @@ import {
   EMPLOYEE_FORM_KEYS,
   EMPLOYEE_FORM_MAP,
   SMS_OPT_IN_EFFECTIVE_DATE,
+  SMS_OPT_IN_FIELD_IDS,
   SMS_OPT_IN_FORM_KEY,
   SMS_OPT_IN_METADATA_KEY,
   SMS_OPT_IN_POLICY_VERSION,
@@ -364,6 +365,26 @@ const renderSubmissionPdf = async (params: {
     doc.on("error", reject);
     doc.on("end", () => resolve(Buffer.concat(chunks)));
 
+    const getStringValue = (fieldId: string) => {
+      const value = mergedValues[fieldId];
+      return typeof value === "string" ? value : "";
+    };
+
+    const isCheckedValue = (value: unknown) => {
+      if (typeof value === "boolean") return value;
+      if (typeof value === "string") {
+        return ["true", "yes", "on", "checked", "confirmed", "1"].includes(value.trim().toLowerCase());
+      }
+      if (typeof value === "number") return value === 1;
+      return false;
+    };
+
+    const ensureRoom = (height: number) => {
+      if (doc.y + height > doc.page.height - doc.page.margins.bottom - 42) {
+        doc.addPage();
+      }
+    };
+
     const drawCheckbox = (checked: boolean) => {
       const boxSize = 12;
       const x = doc.x;
@@ -396,6 +417,7 @@ const renderSubmissionPdf = async (params: {
       const boxHeight = 88;
       const x = doc.x;
       const y = doc.y;
+      const signatureValue = value.trim();
 
       doc
         .lineWidth(1)
@@ -403,9 +425,11 @@ const renderSubmissionPdf = async (params: {
         .rect(x, y, boxWidth, boxHeight)
         .stroke();
 
-      if (value.startsWith("data:image")) {
+      if (signatureValue) {
         try {
-          const base64 = value.split(",")[1] || "";
+          const base64 = signatureValue.startsWith("data:image")
+            ? signatureValue.split(",")[1] || ""
+            : signatureValue;
           const imageBuffer = Buffer.from(base64, "base64");
           doc.image(imageBuffer, x + 10, y + 10, {
             fit: [boxWidth - 20, boxHeight - 20],
@@ -424,6 +448,60 @@ const renderSubmissionPdf = async (params: {
       }
 
       doc.y = y + boxHeight + 6;
+    };
+
+    const drawSmsConfirmationSummary = () => {
+      if (params.formKey !== SMS_OPT_IN_FORM_KEY) {
+        return;
+      }
+
+      const consentConfirmed = isCheckedValue(mergedValues[SMS_OPT_IN_FIELD_IDS.consentCheckbox]);
+      const optOutConfirmed = isCheckedValue(mergedValues[SMS_OPT_IN_FIELD_IDS.optOutAcknowledgement]);
+      const signature = getStringValue(SMS_OPT_IN_FIELD_IDS.signature);
+
+      ensureRoom(210);
+      doc
+        .roundedRect(doc.page.margins.left, doc.y, doc.page.width - doc.page.margins.left - doc.page.margins.right, 198, 8)
+        .lineWidth(1)
+        .strokeColor("#99f6e4")
+        .fillAndStroke("#f0fdfa", "#99f6e4");
+
+      const blockX = doc.page.margins.left + 16;
+      doc.x = blockX;
+      doc.y += 14;
+      doc.fillColor("#0f172a").fontSize(13).text("Signed SMS Agreement Confirmation", {
+        width: doc.page.width - doc.page.margins.left - doc.page.margins.right - 32,
+      });
+      doc.moveDown(0.4);
+
+      doc.fillColor("#334155").fontSize(10).text(`Mobile number: ${formatEmployeeFormValue(mergedValues[SMS_OPT_IN_FIELD_IDS.phone])}`);
+      doc.text(`Consent date: ${formatEmployeeFormValue(mergedValues[SMS_OPT_IN_FIELD_IDS.consentDate])}`);
+      doc.moveDown(0.5);
+
+      doc.x = blockX;
+      drawCheckbox(consentConfirmed);
+      doc.x = blockX + 130;
+      doc.y -= 14;
+      doc.fillColor("#334155").fontSize(9).text("SMS terms and conditions accepted", {
+        width: 330,
+      });
+      doc.moveDown(0.8);
+
+      doc.x = blockX;
+      drawCheckbox(optOutConfirmed);
+      doc.x = blockX + 130;
+      doc.y -= 14;
+      doc.fillColor("#334155").fontSize(9).text("Opt-out and account-holder acknowledgement accepted", {
+        width: 330,
+      });
+      doc.moveDown(0.8);
+
+      doc.x = blockX;
+      doc.fillColor("#111827").fontSize(10).text("User-provided electronic signature");
+      doc.moveDown(0.2);
+      doc.x = blockX;
+      drawSignature(signature);
+      doc.moveDown(0.8);
     };
 
     doc.fillColor("#0f172a").fontSize(22).text("JG Painting Pros", { continued: false });
@@ -446,7 +524,10 @@ const renderSubmissionPdf = async (params: {
     doc.text(`Start Date: ${params.employee.start_date}`);
     doc.moveDown(0.8);
 
+    drawSmsConfirmationSummary();
+
     for (const section of formDefinition.sections) {
+      ensureRoom(70);
       doc.fillColor("#0f172a").fontSize(13).text(section.title, { underline: false });
       if (section.description) {
         doc.fillColor("#64748b").fontSize(10).text(section.description);
@@ -455,11 +536,12 @@ const renderSubmissionPdf = async (params: {
 
       for (const field of section.fields) {
         const value = mergedValues[field.id];
+        ensureRoom(field.type === "signature" ? 130 : 50);
         doc.fillColor("#111827").fontSize(10).text(field.label, { continued: false });
 
         if (field.type === "checkbox") {
           doc.moveDown(0.15);
-          drawCheckbox(Boolean(value));
+          drawCheckbox(isCheckedValue(value));
         } else if (field.type === "signature") {
           doc.moveDown(0.2);
           drawSignature(typeof value === "string" ? value : "");
@@ -504,6 +586,85 @@ const createSignedPdfUrl = async (
   }
 
   return data.signedUrl;
+};
+
+const createSubmissionPdfFile = async (params: {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  employee: EmployeeRecord;
+  submission: EmployeeSubmissionRecord;
+  actorId: string | null;
+}) => {
+  const formDefinition = EMPLOYEE_FORM_MAP[params.submission.form_key];
+  if (!formDefinition) {
+    throw new Error("Unsupported onboarding form.");
+  }
+
+  const now = new Date().toISOString();
+  const nextRevision = (params.submission.pdf_revision || 0) + 1;
+  const payload =
+    params.submission.form_payload && typeof params.submission.form_payload === "object"
+      ? params.submission.form_payload
+      : {};
+
+  const pdfBytes = await renderSubmissionPdf({
+    employee: params.employee,
+    formKey: params.submission.form_key,
+    values: payload,
+    submittedAt: params.submission.submitted_at || now,
+  });
+
+  const fileName = `${params.submission.form_key}-revision-${nextRevision}.pdf`;
+  const storagePath = `employees/${params.employee.id}/onboarding/${params.submission.form_key}/${Date.now()}-${fileName}`;
+
+  const { error: uploadError } = await params.supabase.storage
+    .from("files")
+    .upload(storagePath, pdfBytes, {
+      contentType: "application/pdf",
+      upsert: true,
+    });
+
+  if (uploadError) {
+    throw new Error(`Unable to upload generated PDF: ${uploadError.message}`);
+  }
+
+  const { data: pdfRow, error: pdfRowError } = await params.supabase
+    .from("employee_form_pdf_files")
+    .insert({
+      employee_id: params.employee.id,
+      form_key: params.submission.form_key,
+      revision: nextRevision,
+      storage_bucket: "files",
+      storage_path: storagePath,
+      file_name: fileName,
+      mime_type: "application/pdf",
+      byte_size: pdfBytes.byteLength,
+      created_by: params.actorId,
+    })
+    .select("*")
+    .single();
+
+  if (pdfRowError || !pdfRow) {
+    throw new Error("Unable to create the PDF reference record.");
+  }
+
+  const { error: submissionUpdateError } = await params.supabase
+    .from("employee_form_submissions")
+    .update({
+      form_structure_snapshot: formDefinition,
+      latest_pdf_file_id: pdfRow.id,
+      pdf_revision: nextRevision,
+      last_saved_by: params.actorId,
+    })
+    .eq("id", params.submission.id);
+
+  if (submissionUpdateError) {
+    throw new Error(`Unable to update the PDF reference: ${submissionUpdateError.message}`);
+  }
+
+  return {
+    pdfRow,
+    nextRevision,
+  };
 };
 
 const resolveTokenAccess = async (
@@ -941,15 +1102,27 @@ const handlePdfUrl = async (
   req: Request,
   body: Record<string, unknown>,
 ) => {
-  await getAdminUser(supabase, req);
+  const adminUser = await getAdminUser(supabase, req);
 
   const employeeId = String(body.employeeId || "");
   const formKey = String(body.formKey || "");
+  const regenerate = body.regenerate === true;
   if (!employeeId || !formKey) {
     throw new Error("Employee ID and form key are required.");
   }
 
-  const submission = await getEmployeeSubmission(supabase, employeeId, formKey);
+  let submission = await getEmployeeSubmission(supabase, employeeId, formKey);
+  if (regenerate) {
+    const employee = await getEmployeeRecord(supabase, employeeId);
+    await createSubmissionPdfFile({
+      supabase,
+      employee,
+      submission,
+      actorId: adminUser?.id || null,
+    });
+    submission = await getEmployeeSubmission(supabase, employeeId, formKey);
+  }
+
   if (!submission.latest_pdf_file_id) {
     throw new Error("No generated PDF is available for this form yet.");
   }

@@ -451,7 +451,7 @@ export const previewEmployeeFormLink = async (employeeId: string, formKey: strin
   return result.url;
 };
 
-export const getEmployeePdfUrl = async (employeeId: string, formKey: string) => {
+export const getEmployeePdfUrl = async (employeeId: string, formKey: string, regenerate = false) => {
   const result = await invokeEmployeeOnboardingFunction<{
     success: true;
     signedUrl: string;
@@ -459,6 +459,7 @@ export const getEmployeePdfUrl = async (employeeId: string, formKey: string) => 
     action: 'pdf_url',
     employeeId,
     formKey,
+    regenerate,
   });
 
   return result.signedUrl;
