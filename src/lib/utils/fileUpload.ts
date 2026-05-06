@@ -540,6 +540,26 @@ export async function setUnitMapPrimary(unitMapId: string, propertyId: string): 
 }
 
 /**
+ * Update the display_name (label) for a unit map image
+ */
+export async function updateUnitMapDisplayName(unitMapId: string, displayName: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('property_unit_maps')
+      .update({ display_name: displayName.trim() || null })
+      .eq('id', unitMapId);
+    if (error) {
+      console.error('updateUnitMapDisplayName error:', error);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error('updateUnitMapDisplayName error:', error);
+    return false;
+  }
+}
+
+/**
  * Fetch all unit map images for a property, ordered by sort_order
  */
 export async function getPropertyUnitMaps(propertyId: string): Promise<Array<{

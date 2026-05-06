@@ -30,7 +30,7 @@ export function UserRoleProvider({ children }: { children: React.ReactNode }) {
   // Super admin inherits all admin capabilities, plus the maintenance bypass
   const isSubcontractor = role === 'subcontractor';
   const isSuperAdmin = role === 'is_super_admin';
-  const isAdmin = role === 'admin' || isSuperAdmin;   // super admin IS an admin everywhere
+  const isAdmin = role === 'admin' || role === 'assistant_manager' || isSuperAdmin;   // super admin and assistant_manager inherit admin permissions
   const isJGManagement = role === 'jg_management';
 
   useEffect(() => {

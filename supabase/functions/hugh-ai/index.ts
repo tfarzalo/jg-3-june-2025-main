@@ -140,16 +140,23 @@ serve(async (req) => {
 
     const phaseLabels = (phases || []).map(p => p.job_phase_label);
 
-    // Jobs with all key fields
+    // Format work order number as WO-XXXXXX (zero-padded to 6 digits)
+    const formatWO = (num: number | null | undefined): string =>
+      num != null ? `WO-${String(num).padStart(6, "0")}` : "N/A";
+
+    // Jobs with all key fields + IDs for deep linking
     const jobSummaries = (jobs || []).slice(0, 150).map(j => ({
-      wo: j.work_order_num,
+      wo: formatWO(j.work_order_num),
+      job_link: `/dashboard/jobs/${j.id}`,
       unit: j.unit_number,
       property: (j.property as any)?.property_name,
+      property_link: j.property_id ? `/dashboard/properties/${j.property_id}` : null,
       city: (j.property as any)?.city,
       phase: (j.phase as any)?.job_phase_label,
       type: (j.job_type as any)?.job_type_label,
       size: (j.unit_size as any)?.unit_size_label,
       sub: (j.assigned_to as any)?.full_name || (j.assigned_to as any)?.company_name,
+      sub_link: j.assigned_to ? `/dashboard/profile/${(j.assigned_to as any)?.id || j.assigned_to}` : null,
       status: j.status,
       assignment_status: j.assignment_status,
       priority: j.priority,

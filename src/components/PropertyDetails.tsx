@@ -22,6 +22,7 @@ import {
   FolderOpen,
   Users,
   HardHat,
+  Clock,
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { PropertyMap } from './PropertyMap';
@@ -118,6 +119,7 @@ interface Property {
   paint_location: string;
   unit_map_file_id: string | null;
   unit_map_file_path: string | null;
+  updated_at?: string | null;
   // System contact roles
   community_manager_is_subcontractor?: boolean;
   community_manager_is_ar?: boolean;
@@ -245,6 +247,7 @@ export function PropertyDetails() {
   const [unitMapUrl, setUnitMapUrl] = useState<string | null>(null);
   const [unitMapImages, setUnitMapImages] = useState<Array<{ url: string; alt: string; label: string }>>([]);
   const [notificationContactSource, setNotificationContactSource] = useState<string>('community_manager');
+  const [lastEditedBy, setLastEditedBy] = useState<string | null>(null);
 
   // Preferred subcontractors
   interface SubcontractorUser { id: string; full_name: string; email: string | null; }
@@ -607,7 +610,26 @@ export function PropertyDetails() {
 
         setProperty(propertyData);
 
-        // Load preferred subcontractors from new columns
+        // Fetch last editor — two-step because activity_log.changed_by → auth.users (not profiles)
+        const { data: activityRows } = await supabase
+          .from('activity_log')
+          .select('changed_by')
+          .eq('entity_type', 'property')
+          .eq('entity_id', propertyId)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        const changedBy = activityRows?.[0]?.changed_by ?? null;
+        if (changedBy) {
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', changedBy)
+            .maybeSingle();
+          setLastEditedBy(profileData?.full_name || null);
+        } else {
+          setLastEditedBy(null);
+        }
         setPreferredSubA(propertyData.preferred_subcontractor_a_id || null);
         setPreferredSubB(propertyData.preferred_subcontractor_b_id || null);
         setPreferredSubC(propertyData.preferred_subcontractor_c_id || null);
@@ -1142,9 +1164,32 @@ export function PropertyDetails() {
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center space-x-3">
           <Building2 className="h-8 w-8 text-gray-600 dark:text-gray-400" />
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-            {property.property_name}
-          </h2>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+              {property.property_name}
+            </h2>
+            <div className="flex items-center gap-1.5 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                <Clock className="h-3 w-3 flex-shrink-0" />
+                <span>
+                  {property.updated_at ? (
+                    <>
+                      Last updated{' '}
+                      <span className="font-medium text-gray-700 dark:text-gray-300">
+                        {format(new Date(property.updated_at), 'MMM d, yyyy h:mm a')}
+                      </span>
+                      {lastEditedBy && (
+                        <>
+                          {' '}by{' '}
+                          <span className="font-medium text-gray-700 dark:text-gray-300">{lastEditedBy}</span>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <span className="italic">No update history available</span>
+                  )}
+                </span>
+              </div>
+          </div>
         </div>
         <div className="flex space-x-3">
           {!isSubcontractor && (
@@ -1855,6 +1900,11 @@ export function PropertyDetails() {
                             {!detail.is_hourly && (
                               <span className="text-green-600 dark:text-green-400 font-bold">Profit: ${detail.profit_amount}</span>
                             )}
+                            {!detail.is_hourly && detail.bill_amount > 0 && (
+                              <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                {(((detail.profit_amount ?? 0) / detail.bill_amount) * 100).toFixed(1)}%
+                              </span>
+                            )}
                             {detail.is_hourly && (
                               <span className="text-blue-600 dark:text-blue-400 font-bold">Hourly Rate</span>
                             )}
@@ -1885,6 +1935,11 @@ export function PropertyDetails() {
                             <span className="text-gray-600 dark:text-gray-400">Sub Pay: <span className="font-bold">${detail.sub_pay_amount}</span></span>
                             {!detail.is_hourly && (
                               <span className="text-green-600 dark:text-green-400 font-bold">Profit: ${detail.profit_amount}</span>
+                            )}
+                            {!detail.is_hourly && detail.bill_amount > 0 && (
+                              <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                {(((detail.profit_amount ?? 0) / detail.bill_amount) * 100).toFixed(1)}%
+                              </span>
                             )}
                             {detail.is_hourly && (
                               <span className="text-blue-600 dark:text-blue-400 font-bold">Hourly Rate</span>

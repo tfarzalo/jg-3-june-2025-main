@@ -651,10 +651,26 @@ export function PropertyEditForm() {
 
       const { error } = await supabase
         .from('properties')
-        .update(updateData)
+        .update({ ...updateData, updated_at: new Date().toISOString() })
         .eq('id', propertyId);
 
       if (error) throw error;
+
+      // Log who made the edit so PropertyDetails can show "last updated by"
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase.from('activity_log').insert({
+            entity_type: 'property',
+            entity_id: propertyId,
+            action: 'updated',
+            description: 'Property details updated',
+            changed_by: user.id,
+          });
+        }
+      } catch {
+        // Non-critical — don't block navigation
+      }
 
       // Save paint schemes (including empty arrays to clear existing schemes)
       if (propertyId) {

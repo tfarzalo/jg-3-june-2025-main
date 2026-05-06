@@ -73,6 +73,21 @@ const ApprovalPage: React.FC = () => {
   const [approvalLocked, setApprovalLocked] = useState(false);
   const [downloadingPDF, setDownloadingPDF] = useState(false);
 
+  // Post-decision read-only view (14-day window)
+  const [postDecisionView, setPostDecisionView] = useState<{
+    decision: 'approved' | 'declined';
+    decision_at: string;
+    approver_name: string | null;
+    approver_email: string | null;
+  } | null>(null);
+
+  // Approver identity form — shown before approve/decline is submitted
+  const [showApproverForm, setShowApproverForm] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'approve' | 'decline' | null>(null);
+  const [approverName, setApproverName] = useState('');
+  const [approverEmail, setApproverEmail] = useState('');
+  const [approverFormError, setApproverFormError] = useState('');
+
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
   console.log('ApprovalPage component mounted with token:', token);
@@ -150,7 +165,7 @@ const ApprovalPage: React.FC = () => {
           // Check if token exists at all (might be used or expired)
           const { data: anyTokenData, error: anyTokenError } = await supabase
             .from('approval_tokens')
-            .select('used_at, expires_at, created_at')
+            .select('used_at, expires_at, created_at, decision, decision_at, approver_name, approver_email')
             .eq('token', token)
             .single();
           
@@ -158,8 +173,39 @@ const ApprovalPage: React.FC = () => {
           
           if (anyTokenError) {
             setError('Invalid approval link - token not found in database');
-          } else if (anyTokenData.used_at) {
-            setError(`This approval link has already been used on ${new Date(anyTokenData.used_at).toLocaleString()}`);
+          } else if (anyTokenData.decision) {
+            // Token was already used — check 14-day post-decision read window
+            const decisionAt = new Date(anyTokenData.decision_at);
+            const fourteenDaysAfter = new Date(decisionAt.getTime() + 14 * 24 * 60 * 60 * 1000);
+            if (Date.now() <= fourteenDaysAfter.getTime()) {
+              // Within 14-day window — show read-only post-decision view
+              setPostDecisionView({
+                decision: anyTokenData.decision,
+                decision_at: anyTokenData.decision_at,
+                approver_name: anyTokenData.approver_name,
+                approver_email: anyTokenData.approver_email,
+              });
+              // Also load the full approval data for context
+              const { data: fullToken } = await supabase
+                .from('approval_tokens')
+                .select('*')
+                .eq('token', token!)
+                .single();
+              if (fullToken?.extra_charges_data?.job_details) {
+                const jd = fullToken.extra_charges_data.job_details;
+                setApprovalData({
+                  ...fullToken,
+                  job: {
+                    id: fullToken.job_id,
+                    work_order_num: jd.work_order_num,
+                    unit_number: jd.unit_number,
+                    property: { name: jd.property_name || 'Property', address: jd.property_address || '', address_2: '', city: '', state: '', zip: '' }
+                  }
+                } as ApprovalData);
+              }
+            } else {
+              setError(`This approval link has already been used on ${new Date(anyTokenData.used_at).toLocaleString()} and the 14-day viewing period has expired.`);
+            }
           } else if (new Date(anyTokenData.expires_at) < new Date()) {
             setError(`This approval link expired on ${new Date(anyTokenData.expires_at).toLocaleString()}`);
           } else {
@@ -299,7 +345,9 @@ const ApprovalPage: React.FC = () => {
 
       // Create approval promise
       const approvalPromise = supabase.rpc('process_approval_token', {
-        p_token: token
+        p_token: token,
+        p_approver_name: approverName || null,
+        p_approver_email: approverEmail || null
       });
 
       // Race between approval and timeout
@@ -431,7 +479,9 @@ const ApprovalPage: React.FC = () => {
       // Create decline promise
       const declinePromise = supabase.rpc('process_decline_token', {
         p_token: token,
-        p_decline_reason: null // Can be expanded later to capture user input
+        p_decline_reason: null,
+        p_approver_name: approverName || null,
+        p_approver_email: approverEmail || null
       });
 
       // Race between decline and timeout
@@ -803,6 +853,56 @@ const ApprovalPage: React.FC = () => {
 
   if (!approvalData) return null;
 
+  // 14-day post-decision read-only view
+  if (postDecisionView) {
+    const isApproved = postDecisionView.decision === 'approved';
+    const decisionDate = new Date(postDecisionView.decision_at).toLocaleString('en-US', {
+      month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
+    });
+    const approverLabel = postDecisionView.approver_name || postDecisionView.approver_email || 'the approver';
+    return (
+      <div className={`min-h-screen flex items-center justify-center ${isApproved ? 'bg-green-50' : 'bg-red-50'} py-8`}>
+        <div className="max-w-lg w-full mx-auto bg-white rounded-2xl shadow-lg overflow-hidden">
+          <div className={`${isApproved ? 'bg-gradient-to-r from-green-600 to-green-700' : 'bg-gradient-to-r from-red-600 to-red-700'} px-6 py-6 text-center`}>
+            <div className="text-5xl mb-3">{isApproved ? '✅' : '❌'}</div>
+            <h1 className="text-2xl font-bold text-white">{isApproved ? 'Extra Charges Approved' : 'Extra Charges Declined'}</h1>
+            <p className="text-white/80 text-sm mt-1">Record of decision — view-only</p>
+          </div>
+          <div className="px-6 py-6">
+            {approvalData && (
+              <div className={`border rounded-xl p-4 mb-5 ${isApproved ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <p className="font-semibold text-gray-900">Job #{approvalData.job.work_order_num.toString().padStart(6, '0')}</p>
+                <p className="text-gray-700 text-sm">{approvalData.job.property.name} · Unit {approvalData.job.unit_number}</p>
+                <p className="text-gray-700 font-medium mt-2">
+                  Total: ${approvalData.extra_charges_data.total.toFixed(2)}
+                </p>
+              </div>
+            )}
+            <div className="space-y-3 text-sm text-gray-700">
+              <div className="flex items-start gap-2">
+                <span className="font-semibold text-gray-900 w-28 shrink-0">Decision:</span>
+                <span className={`font-bold ${isApproved ? 'text-green-700' : 'text-red-700'}`}>
+                  {isApproved ? 'Approved' : 'Declined'}
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="font-semibold text-gray-900 w-28 shrink-0">Submitted by:</span>
+                <span>{approverLabel}</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="font-semibold text-gray-900 w-28 shrink-0">Date & Time:</span>
+                <span>{decisionDate}</span>
+              </div>
+            </div>
+            <div className="mt-6 pt-4 border-t border-gray-100 text-center text-xs text-gray-400">
+              This record link is available for 14 days after the decision was submitted.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const isExpiringSoon = new Date(approvalData.expires_at).getTime() - Date.now() < 24 * 60 * 60 * 1000; // 24 hours
 
   return (
@@ -887,7 +987,7 @@ const ApprovalPage: React.FC = () => {
 
               {/* Approve Button */}
               <button
-                onClick={handleApproval}
+                onClick={() => { setPendingAction('approve'); setApproverFormError(''); setShowApproverForm(true); }}
                 disabled={processing || declining}
                 className={`inline-flex items-center px-8 py-4 border border-transparent text-lg font-bold rounded-lg text-white transition-all shadow-lg ${
                   processing || declining
@@ -910,7 +1010,7 @@ const ApprovalPage: React.FC = () => {
 
               {/* Decline Link - Subtle text link below */}
               <button
-                onClick={handleDecline}
+                onClick={() => { setPendingAction('decline'); setApproverFormError(''); setShowApproverForm(true); }}
                 disabled={processing || declining}
                 className={`text-sm transition-colors ${
                   processing || declining
@@ -949,6 +1049,105 @@ const ApprovalPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Approver Identity Modal — shown before approve or decline is submitted */}
+      {showApproverForm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            {/* Modal Header */}
+            <div className={`px-6 py-5 ${pendingAction === 'approve' ? 'bg-gradient-to-r from-green-600 to-green-700' : 'bg-gradient-to-r from-red-600 to-red-700'}`}>
+              <h2 className="text-lg font-bold text-white">
+                {pendingAction === 'approve' ? '✅ Confirm Approval' : '❌ Confirm Decline'}
+              </h2>
+              <p className="text-white/80 text-sm mt-1">
+                {pendingAction === 'approve'
+                  ? 'Please enter your name and email to authorize these extra charges.'
+                  : 'Please enter your name and email to record your decline.'}
+              </p>
+            </div>
+
+            {/* Form Body */}
+            <div className="px-6 py-5">
+              {/* Charges summary */}
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-5">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">You are {pendingAction === 'approve' ? 'approving' : 'declining'}</p>
+                <p className="text-gray-900 font-semibold">
+                  Job #{approvalData.job.work_order_num.toString().padStart(6, '0')} · {approvalData.job.property.name}
+                </p>
+                <p className="text-gray-600 text-sm">Unit {approvalData.job.unit_number}</p>
+                <p className="text-gray-900 font-bold text-lg mt-2">
+                  ${approvalData.extra_charges_data.total.toFixed(2)} extra charges
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Your Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={approverName}
+                    onChange={e => setApproverName(e.target.value)}
+                    placeholder="First and Last Name"
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                    Your Email Address <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={approverEmail}
+                    onChange={e => setApproverEmail(e.target.value)}
+                    placeholder="you@company.com"
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {approverFormError && (
+                <p className="mt-3 text-sm text-red-600 font-medium">{approverFormError}</p>
+              )}
+
+              <div className="mt-6 flex flex-col gap-3">
+                <button
+                  onClick={() => {
+                    if (!approverName.trim()) { setApproverFormError('Please enter your name.'); return; }
+                    if (!approverEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(approverEmail)) {
+                      setApproverFormError('Please enter a valid email address.'); return;
+                    }
+                    setApproverFormError('');
+                    setShowApproverForm(false);
+                    if (pendingAction === 'approve') handleApproval();
+                    else handleDecline();
+                  }}
+                  className={`w-full py-3 rounded-xl font-bold text-white text-sm transition-colors ${
+                    pendingAction === 'approve'
+                      ? 'bg-green-600 hover:bg-green-700'
+                      : 'bg-red-600 hover:bg-red-700'
+                  }`}
+                >
+                  {pendingAction === 'approve'
+                    ? `✅ Confirm & Approve – $${approvalData.extra_charges_data.total.toFixed(2)}`
+                    : '❌ Confirm Decline'}
+                </button>
+                <button
+                  onClick={() => { setShowApproverForm(false); setPendingAction(null); }}
+                  className="w-full py-3 rounded-xl border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Cancel — Go Back
+                </button>
+              </div>
+
+              <p className="mt-4 text-xs text-gray-400 text-center">
+                Your identity will be recorded with this {pendingAction === 'approve' ? 'approval' : 'decline'} for audit purposes.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

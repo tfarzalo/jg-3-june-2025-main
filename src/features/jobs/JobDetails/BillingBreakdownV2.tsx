@@ -185,13 +185,20 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
   };
   const totalProfit = totals.bill - totals.sub;
 
+  // Profit margin percentages
+  const baseProfitPct = baseBill > 0 ? (baseProfit / baseBill) * 100 : 0;
+  const extraProfitPct = totalExtraBill > 0 ? (totalExtraProfit / totalExtraBill) * 100 : 0;
+  const totalProfitPct = totals.bill > 0 ? (totalProfit / totals.bill) * 100 : 0;
+
+  const formatPct = (val: number) => `${val.toFixed(1)}%`;
+
   return (
     <div className="space-y-8">
 
       {/* Base Billing Section */}
       <SectionCard title="Base Billing" accentColor="blue">
         <div className="bg-white/60 dark:bg-zinc-800/40 rounded-xl p-6 border border-zinc-200/60 dark:border-zinc-700/60">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-8">
             <div className="text-left">
               <div className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 mb-2 uppercase tracking-wide">Bill to Customer</div>
               <div className="text-3xl font-bold text-zinc-900 dark:text-zinc-100">{formatCurrency(baseBill)}</div>
@@ -204,6 +211,10 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
               <div className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 mb-2 uppercase tracking-wide">Profit Amount</div>
               <div className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(baseProfit)}</div>
             </div>
+            <div className="text-left">
+              <div className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 mb-2 uppercase tracking-wide">Profit Margin</div>
+              <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{formatPct(baseProfitPct)}</div>
+            </div>
           </div>
         </div>
       </SectionCard>
@@ -213,7 +224,7 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
         <SectionCard title="Extra Charges" accentColor="amber">
           <UnifiedChargesTable items={unifiedItems} />
           <div className="mt-6 bg-white/60 dark:bg-zinc-800/40 rounded-xl p-6 border border-zinc-200/60 dark:border-zinc-700/60">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-8">
               <div className="text-left">
                 <div className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 mb-2 uppercase tracking-wide">Total Bill to Customer</div>
                 <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{formatCurrency(totalExtraBill)}</div>
@@ -226,6 +237,10 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
                 <div className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 mb-2 uppercase tracking-wide">Total Profit Amount</div>
                 <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(totalExtraProfit)}</div>
               </div>
+              <div className="text-left">
+                <div className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 mb-2 uppercase tracking-wide">Profit Margin</div>
+                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{formatPct(extraProfitPct)}</div>
+              </div>
             </div>
           </div>
         </SectionCard>
@@ -234,7 +249,7 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
       {/* Grand Total Section */}
       <SectionCard title="Grand Total" accentColor="emerald">
         <div className="bg-gradient-to-br from-emerald-50/80 to-green-50/60 dark:from-emerald-900/30 dark:to-green-900/20 rounded-xl p-8 border-2 border-emerald-200/60 dark:border-emerald-700/60">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-8 mb-8">
             <div className="text-left">
               <div className="text-sm font-bold text-zinc-600 dark:text-zinc-400 mb-3 uppercase tracking-wider">Total Bill to Customer</div>
               <div className="text-4xl font-bold text-zinc-900 dark:text-zinc-100">{formatCurrency(totals.bill)}</div>
@@ -246,6 +261,10 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
             <div className="text-left">
               <div className="text-sm font-bold text-zinc-600 dark:text-zinc-400 mb-3 uppercase tracking-wider">Total Profit Amount</div>
               <div className="text-4xl font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(totalProfit)}</div>
+            </div>
+            <div className="text-left">
+              <div className="text-sm font-bold text-zinc-600 dark:text-zinc-400 mb-3 uppercase tracking-wider">Profit Margin</div>
+              <div className="text-4xl font-bold text-blue-600 dark:text-blue-400">{formatPct(totalProfitPct)}</div>
             </div>
           </div>
           
@@ -309,6 +328,10 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
                   <div className="flex justify-between items-center pt-3 border-t-2 border-zinc-200 dark:border-zinc-700">
                     <span className="font-bold text-zinc-800 dark:text-zinc-200">Total:</span>
                     <span className="font-bold text-lg text-emerald-600 dark:text-emerald-400">{formatCurrency(totalProfit)}</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-2 border-t border-zinc-200 dark:border-zinc-700">
+                    <span className="font-bold text-zinc-800 dark:text-zinc-200">Profit Margin:</span>
+                    <span className="font-bold text-lg text-blue-600 dark:text-blue-400">{formatPct(totalProfitPct)}</span>
                   </div>
                 </div>
               </div>

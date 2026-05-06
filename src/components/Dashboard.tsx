@@ -46,6 +46,8 @@ const ContactDetail = lazy(() => import('./ContactDetail').then(module => ({ def
 const Employees = lazy(() => import('./Employees').then(module => ({ default: module.Employees })));
 const EmployeeProfile = lazy(() => import('./EmployeeProfile').then(module => ({ default: module.EmployeeProfile })));
 const EmployeeFormPreviewPage = lazy(() => import('./EmployeeFormPreviewPage').then(module => ({ default: module.EmployeeFormPreviewPage })));
+// DEV calendar — remove this import when swapping to live
+const CalendarDevPage = lazy(() => import('./calendar-dev/CalendarDevPage'));
 
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center h-full">
@@ -135,6 +137,12 @@ export function Dashboard() {
           <Route path="calendar" element={
             <RouteGuard>
               <Calendar />
+            </RouteGuard>
+          } />
+          {/* DEV calendar — change path to "calendar" (and remove Route above) when going live */}
+          <Route path="calendar-dev" element={
+            <RouteGuard>
+              <CalendarDevPage />
             </RouteGuard>
           } />
           <Route path="activity" element={

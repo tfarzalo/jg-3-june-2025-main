@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Trash2, Star, ImagePlus } from 'lucide-react';
+import { Upload, Trash2, Star, ImagePlus, Pencil, Check, X } from 'lucide-react';
 import {
   uploadPropertyUnitMapMulti,
   deletePropertyUnitMapById,
   setUnitMapPrimary,
   getPropertyUnitMaps,
+  updateUnitMapDisplayName,
 } from '../../lib/utils/fileUpload';
 import { supabase } from '../../utils/supabase';
 import { getPreviewUrl } from '../../utils/storagePreviews';
@@ -59,6 +60,8 @@ export function UnitMapUpload({
   const [isUploading, setIsUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+  const [editingNameId, setEditingNameId] = useState<string | null>(null);
+  const [editingNameValue, setEditingNameValue] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadImages = useCallback(async () => {
@@ -167,6 +170,20 @@ export function UnitMapUpload({
     if (ok) await loadImages();
   };
 
+  const handleRenameStart = (item: UnitMapItem) => {
+    setEditingNameId(item.id);
+    setEditingNameValue(item.display_name || '');
+  };
+
+  const handleRenameSubmit = async (item: UnitMapItem) => {
+    if (item.id === 'legacy') { setEditingNameId(null); return; }
+    await updateUnitMapDisplayName(item.id, editingNameValue);
+    setEditingNameId(null);
+    await loadImages();
+  };
+
+  const handleRenameCancel = () => setEditingNameId(null);
+
   const openFileDialog = () => fileInputRef.current?.click();
 
   return (
@@ -230,6 +247,7 @@ export function UnitMapUpload({
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {images.map((item) => {
               const isLoading = loadingIds.has(item.id);
+              const isEditingName = editingNameId === item.id;
               return (
                 <div
                   key={item.id}
@@ -277,6 +295,17 @@ export function UnitMapUpload({
                             <Star className="h-4 w-4" />
                           </button>
                         )}
+                        {item.id !== 'legacy' && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleRenameStart(item); }}
+                            disabled={disabled}
+                            title="Rename label"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-blue-500 hover:bg-blue-400 rounded-full text-white shadow-lg"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
@@ -287,6 +316,50 @@ export function UnitMapUpload({
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </>
+                    )}
+                  </div>
+
+                  {/* Label / Rename row */}
+                  <div className="px-2 py-1.5 bg-white dark:bg-zinc-900 border-t border-gray-200 dark:border-gray-700">
+                    {isEditingName ? (
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          autoFocus
+                          type="text"
+                          value={editingNameValue}
+                          onChange={(e) => setEditingNameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleRenameSubmit(item);
+                            if (e.key === 'Escape') handleRenameCancel();
+                          }}
+                          placeholder="Enter label…"
+                          className="flex-1 min-w-0 text-xs px-1.5 py-0.5 rounded border border-blue-400 dark:border-blue-500 bg-white dark:bg-zinc-800 text-gray-900 dark:text-white focus:outline-none"
+                        />
+                        <button type="button" onClick={() => handleRenameSubmit(item)} className="p-0.5 text-emerald-600 hover:text-emerald-500">
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                        <button type="button" onClick={handleRenameCancel} className="p-0.5 text-gray-400 hover:text-gray-600">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className="flex items-center gap-1 cursor-pointer"
+                        onClick={(e) => { e.stopPropagation(); if (!disabled && item.id !== 'legacy') handleRenameStart(item); }}
+                        title={item.id !== 'legacy' ? 'Click to add or edit label' : undefined}
+                      >
+                        <span className="text-xs text-gray-600 dark:text-gray-400 truncate flex-1">
+                          {item.display_name
+                            ? item.display_name
+                            : item.id !== 'legacy' && !disabled
+                              ? <span className="italic text-blue-400 dark:text-blue-500">Add label…</span>
+                              : <span className="italic text-gray-400 dark:text-gray-500">No label</span>
+                          }
+                        </span>
+                        {item.id !== 'legacy' && !disabled && (
+                          <Pencil className="h-2.5 w-2.5 text-blue-400 dark:text-blue-500 flex-shrink-0" />
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -312,7 +385,8 @@ export function UnitMapUpload({
       <p className="text-xs text-gray-500 dark:text-gray-400">
         Upload images of the property unit map. Multiple images are supported — the{' '}
         <Star className="inline h-3 w-3 text-yellow-500" />{' '}
-        <strong>Primary</strong> image is shown first. Hover an image to set primary or remove it.
+        <strong>Primary</strong> image is shown first. Click the <Pencil className="inline h-3 w-3 text-blue-400" />{' '}
+        label beneath any image to name it (e.g. "Building A", "Floor 2"). Hover an image to set primary or remove it.
       </p>
     </div>
   );

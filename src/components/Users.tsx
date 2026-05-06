@@ -13,7 +13,10 @@ import {
   User,
   ShieldCheck,
   UserCog,
-  Eye
+  Eye,
+  Mail,
+  Send,
+  CheckCircle
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
@@ -60,6 +63,32 @@ export function Users() {
   const [showFilters, setShowFilters] = useState(false);
   const [roleFilter, setRoleFilter] = useState<string[]>([]);
   const [changingPassword, setChangingPassword] = useState(false);
+
+  // Welcome email prompt state (shown after subcontractor creation)
+  const [showWelcomeEmailPrompt, setShowWelcomeEmailPrompt] = useState(false);
+  const [sendingWelcomeEmail, setSendingWelcomeEmail] = useState(false);
+  const [showEmailPreview, setShowEmailPreview] = useState(false);
+  const [pendingWelcomeEmail, setPendingWelcomeEmail] = useState<{
+    userId: string;
+    email: string;
+    full_name: string;
+    password: string;
+  } | null>(null);
+
+  // Resend welcome email (no password — portal link only)
+  const [resendingEmailForUserId, setResendingEmailForUserId] = useState<string | null>(null);
+  const [showResendConfirm, setShowResendConfirm] = useState<User | null>(null);
+
+  // ── Temp password generator ────────────────────────────────────────────────
+  const generateTempPassword = (): string => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$';
+    let pwd = '';
+    const arr = new Uint32Array(12);
+    crypto.getRandomValues(arr);
+    arr.forEach(v => { pwd += chars[v % chars.length]; });
+    // Guarantee at least one upper, lower, digit, symbol
+    return pwd;
+  };
   
   // Use the new presence hooks
   const { isOnline } = usePresence();
@@ -208,8 +237,14 @@ export function Users() {
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (formData.password !== formData.confirmPassword) {
+    // For non-subcontractor roles, validate password match
+    if (formData.role !== 'subcontractor' && formData.password !== formData.confirmPassword) {
       toast.error('Passwords do not match');
+      return;
+    }
+    // Ensure subcontractor has a temp password
+    if (formData.role === 'subcontractor' && !formData.password) {
+      toast.error('Temporary password is missing — click ↻ to regenerate');
       return;
     }
 
@@ -268,6 +303,9 @@ export function Users() {
       
       const newUserId = result.user?.id;
       const createdRole = formData.role;
+      const createdEmail = formData.email;
+      const createdName = formData.full_name;
+      const createdPassword = formData.password;
       
       setShowAddUserModal(false);
       setFormData({
@@ -289,13 +327,15 @@ export function Users() {
       
       await fetchUsers();
       
-      // If the created user is a Subcontractor, navigate to their profile edit page
+      // If the created user is a Subcontractor, show welcome email prompt before redirecting
       if (createdRole === 'subcontractor' && newUserId) {
-        console.log('🔄 Redirecting to subcontractor edit page:', `/dashboard/subcontractor/edit/${newUserId}`);
-        toast.success('Redirecting to profile edit page...');
-        setTimeout(() => {
-          navigate(`/dashboard/subcontractor/edit/${newUserId}`);
-        }, 500);
+        setPendingWelcomeEmail({
+          userId: newUserId,
+          email: createdEmail,
+          full_name: createdName,
+          password: createdPassword,
+        });
+        setShowWelcomeEmailPrompt(true);
       }
     } catch (error) {
       console.error('❌ ERROR CREATING USER:', error);
@@ -478,9 +518,110 @@ export function Users() {
     }
   };
 
+  const buildWelcomeEmailHtml = (info: { full_name: string; email: string; password: string }) => {
+    const loginUrl = 'https://portal.jgpaintingpros.com';
+    const firstName = info.full_name?.split(' ')[0] || 'there';
+    return `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff;">
+        <div style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); padding: 40px 32px; border-radius: 12px 12px 0 0; text-align: center;">
+          <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">Welcome to JG Painting Pros</h1>
+          <p style="margin: 8px 0 0 0; color: #bfdbfe; font-size: 16px;">Your subcontractor account is ready</p>
+        </div>
+        <div style="padding: 36px 32px; background: #f8fafc; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">
+          <p style="margin: 0 0 24px 0; font-size: 17px; color: #1e293b; line-height: 1.6;">Hi ${firstName},</p>
+          <p style="margin: 0 0 28px 0; font-size: 15px; color: #475569; line-height: 1.7;">
+            Your subcontractor account has been created on the JG Painting Pros portal. You can log in at any time using the credentials below to view your assignments, job details, and more.
+          </p>
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 24px 28px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+            <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.08em;">Your Login Credentials</p>
+            <div style="margin-top: 16px;">
+              <p style="margin: 0 0 12px 0; font-size: 14px; color: #64748b;">
+                <span style="font-weight: 600; color: #1e293b; display: inline-block; width: 80px;">Email:</span>
+                <span style="color: #1d4ed8;">${info.email}</span>
+              </p>
+              <p style="margin: 0; font-size: 14px; color: #64748b;">
+                <span style="font-weight: 600; color: #1e293b; display: inline-block; width: 80px;">Password:</span>
+                <span style="font-family: 'Courier New', monospace; background: #f1f5f9; padding: 2px 8px; border-radius: 4px; color: #1e293b;">${info.password}</span>
+              </p>
+            </div>
+          </div>
+          <div style="background: #fefce8; border: 1px solid #fde047; border-radius: 8px; padding: 14px 18px; margin-bottom: 28px;">
+            <p style="margin: 0; font-size: 13px; color: #854d0e; line-height: 1.6;">
+              ⚠️ <strong>This is a temporary password.</strong> You will be prompted to create a new password the first time you log in. Please keep this email secure until then.
+            </p>
+          </div>
+          <div style="text-align: center; margin-bottom: 28px;">
+            <a href="${loginUrl}" style="display: inline-block; background: #1d4ed8; color: #ffffff; text-decoration: none; font-size: 15px; font-weight: 600; padding: 14px 36px; border-radius: 8px; letter-spacing: 0.01em;">
+              Log In to Your Account →
+            </a>
+          </div>
+          <p style="margin: 0; font-size: 13px; color: #94a3b8; text-align: center;">
+            Or copy and paste this link into your browser:<br/>
+            <a href="${loginUrl}" style="color: #3b82f6; text-decoration: none;">${loginUrl}</a>
+          </p>
+        </div>
+        <div style="padding: 24px 32px; background: #1e293b; border-radius: 0 0 12px 12px; text-align: center;">
+          <p style="margin: 0 0 4px 0; font-size: 13px; color: #94a3b8;">JG Painting Pros · Subcontractor Portal</p>
+          <p style="margin: 0; font-size: 12px; color: #64748b;">Please keep your credentials secure and do not share them.</p>
+        </div>
+      </div>
+    `;
+  };
+
+  const handleSendWelcomeEmail = async () => {
+    if (!pendingWelcomeEmail) return;
+    setSendingWelcomeEmail(true);
+    try {
+      const loginUrl = 'https://portal.jgpaintingpros.com';
+      const firstName = pendingWelcomeEmail.full_name?.split(' ')[0] || 'there';
+      const html = buildWelcomeEmailHtml(pendingWelcomeEmail);
+
+      const { error } = await supabase.functions.invoke('send-email', {
+        body: {
+          to: pendingWelcomeEmail.email,
+          subject: 'Welcome to JG Painting Pros – Your Account is Ready',
+          html,
+          text: `Hi ${firstName},\n\nYour subcontractor account has been created.\n\nEmail: ${pendingWelcomeEmail.email}\nTemporary Password: ${pendingWelcomeEmail.password}\n\nIMPORTANT: You will be prompted to create a new password the first time you log in.\n\nLog in at: ${loginUrl}\n\nPlease keep your credentials secure.\n\n— JG Painting Pros`
+        }
+      });
+
+      if (error) throw error;
+
+      toast.success(`Welcome email sent to ${pendingWelcomeEmail.email}`);
+    } catch (err) {
+      console.error('Error sending welcome email:', err);
+      toast.error('Failed to send welcome email');
+    } finally {
+      setSendingWelcomeEmail(false);
+      const userId = pendingWelcomeEmail?.userId;
+      setShowWelcomeEmailPrompt(false);
+      setPendingWelcomeEmail(null);
+      if (userId) {
+        setTimeout(() => navigate(`/dashboard/subcontractor/edit/${userId}`), 300);
+      }
+    }
+  };
+
+  const handleSkipWelcomeEmail = () => {
+    const userId = pendingWelcomeEmail?.userId;
+    setShowWelcomeEmailPrompt(false);
+    setPendingWelcomeEmail(null);
+    if (userId) {
+      navigate(`/dashboard/subcontractor/edit/${userId}`);
+    }
+  };
+
+  const formatRoleLabel = (role: string) => {
+    if (role === 'jg_management') return 'JG Management';
+    if (role === 'assistant_manager') return 'Assistant Manager';
+    return role.charAt(0).toUpperCase() + role.slice(1);
+  };
+
   const getRoleIcon = (role: string) => {
     switch (role) {
       case 'admin':
+        return <ShieldCheck className="h-3 w-3 mr-1" />;
+      case 'assistant_manager':
         return <ShieldCheck className="h-3 w-3 mr-1" />;
       case 'jg_management':
         return <UserCog className="h-3 w-3 mr-1" />;
@@ -495,6 +636,8 @@ export function Users() {
     switch (role) {
       case 'admin':
         return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400';
+      case 'assistant_manager':
+        return 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400';
       case 'jg_management':
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400';
       case 'subcontractor':
@@ -510,6 +653,57 @@ export function Users() {
   };
 
   // Render action buttons for a user
+  const handleResendWelcomeEmail = async (user: User) => {
+    setResendingEmailForUserId(user.id);
+    try {
+      const loginUrl = 'https://portal.jgpaintingpros.com';
+      const firstName = user.full_name?.split(' ')[0] || 'there';
+      const html = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff;">
+          <div style="background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); padding: 40px 32px; border-radius: 12px 12px 0 0; text-align: center;">
+            <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">Welcome to JG Painting Pros</h1>
+            <p style="margin: 8px 0 0 0; color: #bfdbfe; font-size: 16px;">Your subcontractor portal access</p>
+          </div>
+          <div style="padding: 36px 32px; background: #f8fafc; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">
+            <p style="margin: 0 0 24px 0; font-size: 17px; color: #1e293b; line-height: 1.6;">Hi ${firstName},</p>
+            <p style="margin: 0 0 28px 0; font-size: 15px; color: #475569; line-height: 1.7;">
+              This is a reminder that you have an active subcontractor account on the JG Painting Pros portal. Log in below to view your assignments and job details.
+            </p>
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 24px 28px; margin-bottom: 28px;">
+              <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 600; color: #94a3b8; text-transform: uppercase;">Your Login Email</p>
+              <p style="margin: 8px 0 0 0; font-size: 15px; color: #1d4ed8;">${user.email}</p>
+            </div>
+            <div style="text-align: center; margin-bottom: 28px;">
+              <a href="${loginUrl}" style="display: inline-block; background: #1d4ed8; color: #ffffff; text-decoration: none; font-size: 15px; font-weight: 600; padding: 14px 36px; border-radius: 8px;">
+                Log In to Your Account →
+              </a>
+            </div>
+            <p style="margin: 0; font-size: 13px; color: #94a3b8; text-align: center;">If you've forgotten your password, contact your JG Painting Pros administrator.</p>
+          </div>
+          <div style="padding: 24px 32px; background: #1e293b; border-radius: 0 0 12px 12px; text-align: center;">
+            <p style="margin: 0; font-size: 13px; color: #94a3b8;">JG Painting Pros · Subcontractor Portal</p>
+          </div>
+        </div>
+      `;
+      const { error } = await supabase.functions.invoke('send-email', {
+        body: {
+          to: user.email,
+          subject: 'Your JG Painting Pros Subcontractor Portal Access',
+          html,
+          text: `Hi ${firstName},\n\nThis is a reminder that you have an active subcontractor account.\n\nLogin email: ${user.email}\nPortal: ${loginUrl}\n\nIf you forgot your password, contact your administrator.\n\n— JG Painting Pros`,
+        },
+      });
+      if (error) throw error;
+      toast.success(`Welcome email resent to ${user.email}`);
+    } catch (err) {
+      console.error('Error resending welcome email:', err);
+      toast.error('Failed to resend welcome email');
+    } finally {
+      setResendingEmailForUserId(null);
+      setShowResendConfirm(null);
+    }
+  };
+
   const renderActionButtons = (user: User) => {
     return (
       <div className="flex justify-end space-x-3">
@@ -527,6 +721,20 @@ export function Users() {
             title="View Profile"
           >
             <Eye className="h-5 w-5" />
+          </button>
+        )}
+
+        {/* Resend Welcome Email — subcontractors only */}
+        {user.role === 'subcontractor' && (
+          <button
+            onClick={() => setShowResendConfirm(user)}
+            disabled={resendingEmailForUserId === user.id}
+            className="text-teal-600 dark:text-teal-400 hover:text-teal-800 dark:hover:text-teal-200 disabled:opacity-40"
+            title="Resend Welcome Email"
+          >
+            {resendingEmailForUserId === user.id
+              ? <Send className="h-5 w-5 animate-pulse" />
+              : <Mail className="h-5 w-5" />}
           </button>
         )}
         
@@ -657,7 +865,11 @@ export function Users() {
             </button>
             {isAdmin && (
               <button
-                onClick={() => setShowAddUserModal(true)}
+                onClick={() => {
+                  const tempPwd = generateTempPassword();
+                  setFormData(prev => ({ ...prev, email: '', full_name: '', role: 'subcontractor', password: tempPwd, confirmPassword: tempPwd }));
+                  setShowAddUserModal(true);
+                }}
                 className="px-3 py-2 sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
               >
                 <UserPlus className="h-4 w-4" />
@@ -685,7 +897,7 @@ export function Users() {
           
           {showFilters && (
             <div className="flex flex-wrap gap-2">
-              {['admin', 'jg_management', 'subcontractor', 'user'].map((role) => (
+              {['admin', 'assistant_manager', 'jg_management', 'subcontractor', 'user'].map((role) => (
                 <button
                   key={role}
                   onClick={() => {
@@ -701,7 +913,7 @@ export function Users() {
                       : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
                   }`}
                 >
-                  {role === 'jg_management' ? 'JG Management' : role.charAt(0).toUpperCase() + role.slice(1)}
+                  {role === 'jg_management' ? 'JG Management' : role === 'assistant_manager' ? 'Assistant Manager' : role.charAt(0).toUpperCase() + role.slice(1)}
                 </button>
               ))}
               {(searchTerm || roleFilter.length > 0) && (
@@ -764,7 +976,7 @@ export function Users() {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-gray-700 dark:text-gray-300">
                             {getRoleIcon(user.role)}
-                            {user.role === 'jg_management' ? 'JG Management' : user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                            {formatRoleLabel(user.role)}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
@@ -842,7 +1054,7 @@ export function Users() {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-gray-700 dark:text-gray-300">
                             {getRoleIcon(user.role)}
-                            {user.role === 'jg_management' ? 'JG Management' : user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                            {formatRoleLabel(user.role)}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
@@ -911,36 +1123,6 @@ export function Users() {
                 />
               </div>
               <div>
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Password
-                </label>
-                <input
-                  type="password"
-                  id="password"
-                  name="new-password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-[#1E293B]"
-                  autoComplete="new-password"
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Confirm Password
-                </label>
-                <input
-                  type="password"
-                  id="confirmPassword"
-                  name="confirm-password"
-                  value={formData.confirmPassword}
-                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-[#1E293B]"
-                  autoComplete="new-password"
-                  required
-                />
-              </div>
-              <div>
                 <label htmlFor="role" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Role
                 </label>
@@ -948,15 +1130,96 @@ export function Users() {
                   id="role"
                   name="role"
                   value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                  onChange={(e) => {
+                    const newRole = e.target.value;
+                    // Auto-generate temp password when switching to subcontractor
+                    const newPassword = newRole === 'subcontractor' ? generateTempPassword() : '';
+                    setFormData({ ...formData, role: newRole, password: newPassword, confirmPassword: newPassword });
+                  }}
                   className="w-full px-3 py-2 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-[#1E293B]"
                   autoComplete="off"
                 >
                   <option value="subcontractor">Subcontractor</option>
                   <option value="jg_management">JG Management</option>
+                  <option value="assistant_manager">Assistant Manager</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
+
+              {/* Password fields */}
+              {formData.role === 'subcontractor' ? (
+                /* Subcontractor — auto-generated temp password */
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Temporary Password <span className="text-xs font-normal text-gray-400">(auto-generated)</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={formData.password}
+                      className="flex-1 px-3 py-2 bg-gray-100 dark:bg-[#0F172A]/60 border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white font-mono text-sm select-all cursor-default"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(formData.password);
+                        toast.success('Password copied to clipboard');
+                      }}
+                      className="px-3 py-2 bg-gray-200 dark:bg-[#2D3B4E] hover:bg-gray-300 dark:hover:bg-[#3D4E63] rounded-lg text-gray-700 dark:text-gray-300 text-xs font-medium transition-colors"
+                      title="Copy password"
+                    >
+                      Copy
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, password: generateTempPassword(), confirmPassword: '' })}
+                      className="px-3 py-2 bg-gray-200 dark:bg-[#2D3B4E] hover:bg-gray-300 dark:hover:bg-[#3D4E63] rounded-lg text-gray-700 dark:text-gray-300 text-xs font-medium transition-colors"
+                      title="Regenerate"
+                    >
+                      ↻
+                    </button>
+                  </div>
+                  <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400 flex items-start gap-1">
+                    <span>⚠️</span>
+                    <span>This temporary password will be included in the welcome email. The user <strong>will be prompted to set a new password</strong> on first login.</span>
+                  </p>
+                </div>
+              ) : (
+                /* Non-subcontractor — manual password entry */
+                <>
+                  <div>
+                    <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Password
+                    </label>
+                    <input
+                      type="password"
+                      id="password"
+                      name="new-password"
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-[#1E293B]"
+                      autoComplete="new-password"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Confirm Password
+                    </label>
+                    <input
+                      type="password"
+                      id="confirmPassword"
+                      name="confirm-password"
+                      value={formData.confirmPassword}
+                      onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                      className="w-full px-3 py-2 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-[#1E293B]"
+                      autoComplete="new-password"
+                      required
+                    />
+                  </div>
+                </>
+              )}
               <div className="flex justify-end space-x-3 pt-4">
                 <button
                   type="button"
@@ -1027,6 +1290,7 @@ export function Users() {
                 >
                   <option value="subcontractor">Subcontractor</option>
                   <option value="jg_management">JG Management</option>
+                  <option value="assistant_manager">Assistant Manager</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
@@ -1129,6 +1393,188 @@ export function Users() {
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
               >
                 Delete User
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Welcome Email Confirmation Modal */}
+      {showWelcomeEmailPrompt && pendingWelcomeEmail && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-blue-700 to-blue-500 px-6 py-5 shrink-0">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                  <Mail className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Send Welcome Email?</h3>
+                  <p className="text-blue-100 text-sm">Subcontractor account created successfully</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Scrollable body */}
+            <div className="overflow-y-auto flex-1 px-6 py-5">
+              <p className="text-gray-700 dark:text-gray-300 text-sm mb-3">
+                Send a welcome email to <strong className="text-gray-900 dark:text-white">{pendingWelcomeEmail.full_name}</strong> with their login credentials?
+              </p>
+
+              {/* Admin notice */}
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg px-4 py-3 mb-4">
+                <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 mb-1">⚠️ Heads up — temporary password included</p>
+                <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                  This email will include the <strong>auto-generated temporary password</strong> shown on the previous screen.
+                  The recipient will be <strong>prompted to create a new password</strong> the first time they log in.
+                  Once they change it, the temporary password will no longer work.
+                </p>
+              </div>
+
+              {/* Toggle preview */}
+              <button
+                onClick={() => setShowEmailPreview(p => !p)}
+                className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline mb-4"
+              >
+                <Eye className="h-4 w-4" />
+                {showEmailPreview ? 'Hide email preview' : 'Show email preview'}
+              </button>
+
+              {/* Rendered email preview */}
+              {showEmailPreview && (
+                <div className="mb-5 rounded-xl overflow-hidden border border-gray-200 dark:border-[#334155] shadow-inner">
+                  <div className="bg-gray-100 dark:bg-[#0F172A] px-4 py-2 flex items-center gap-3 border-b border-gray-200 dark:border-[#334155]">
+                    <div className="flex gap-1.5">
+                      <div className="w-3 h-3 rounded-full bg-red-400" />
+                      <div className="w-3 h-3 rounded-full bg-yellow-400" />
+                      <div className="w-3 h-3 rounded-full bg-green-400" />
+                    </div>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Email Preview</span>
+                  </div>
+                  <div className="bg-white overflow-auto max-h-96">
+                    <iframe
+                      srcDoc={buildWelcomeEmailHtml(pendingWelcomeEmail)}
+                      className="w-full min-h-[420px] border-0"
+                      title="Welcome email preview"
+                      sandbox=""
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Quick info row */}
+              {!showEmailPreview && (
+                <div className="bg-gray-50 dark:bg-[#0F172A] border border-gray-200 dark:border-[#334155] rounded-xl p-4 mb-5 space-y-3">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">This email will include</p>
+                  <div className="flex gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs font-medium">
+                      <CheckCircle className="h-3 w-3" /> Login email address
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full text-xs font-medium">
+                      <CheckCircle className="h-3 w-3" /> Temporary password
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs font-medium">
+                      <CheckCircle className="h-3 w-3" /> Portal login link
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-xs font-medium">
+                      <CheckCircle className="h-3 w-3" /> Password-change reminder
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons — fixed at bottom */}
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-[#334155] shrink-0 flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={handleSendWelcomeEmail}
+                disabled={sendingWelcomeEmail}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl font-semibold transition-colors text-sm"
+              >
+                {sendingWelcomeEmail ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                    Sending…
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    Confirm &amp; Send Welcome Email
+                  </>
+                )}
+              </button>
+              <button
+                onClick={handleSkipWelcomeEmail}
+                disabled={sendingWelcomeEmail}
+                className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-xl font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-sm"
+              >
+                Skip for Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resend Welcome Email Confirm Modal */}
+      {showResendConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-[#1E293B] rounded-xl p-6 max-w-sm w-full shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-teal-100 dark:bg-teal-900/30 flex items-center justify-center flex-shrink-0">
+                <Mail className="h-5 w-5 text-teal-600 dark:text-teal-400" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white">Resend Welcome Email</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">{showResendConfirm.email}</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
+              Resend a portal access email to{' '}
+              <strong className="text-gray-900 dark:text-white">{showResendConfirm.full_name || showResendConfirm.email}</strong>.
+            </p>
+
+            {/* Admin notice */}
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2.5 mb-4 space-y-1">
+              <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">⚠️ No password in this email</p>
+              <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                This resend does <strong>not</strong> include a new password — it only sends their login email and a link to the portal.
+                If they've forgotten their password, use the <strong>Change Password</strong> (key icon) to reset it first, then resend.
+              </p>
+            </div>
+
+            {/* What's included */}
+            <div className="bg-gray-50 dark:bg-[#0F172A] border border-gray-200 dark:border-[#334155] rounded-lg px-3 py-2.5 mb-5 space-y-2">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">This email will include</p>
+              <div className="flex flex-wrap gap-1.5">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs font-medium">
+                  <CheckCircle className="h-3 w-3" /> Login email address
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs font-medium">
+                  <CheckCircle className="h-3 w-3" /> Portal login link
+                </span>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => handleResendWelcomeEmail(showResendConfirm)}
+                disabled={resendingEmailForUserId === showResendConfirm.id}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded-lg font-medium text-sm transition-colors"
+              >
+                {resendingEmailForUserId === showResendConfirm.id ? (
+                  <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" /> Sending…</>
+                ) : (
+                  <><Send className="h-4 w-4" /> Send Email</>
+                )}
+              </button>
+              <button
+                onClick={() => setShowResendConfirm(null)}
+                disabled={resendingEmailForUserId !== null}
+                className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
+                Cancel
               </button>
             </div>
           </div>

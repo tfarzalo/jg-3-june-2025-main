@@ -516,6 +516,19 @@ export function JobListingPage({
     setShowExportConfig(false);
   };
 
+  // Auto-save column selections to localStorage whenever they change
+  // so preferences persist even if the user closes without exporting
+  useEffect(() => {
+    if (!showExportConfig) return; // only auto-save while modal is open
+    const saved = localStorage.getItem('jobExportConfig');
+    let existing: any = {};
+    try { existing = saved ? JSON.parse(saved) : {}; } catch {}
+    localStorage.setItem('jobExportConfig', JSON.stringify({
+      ...existing,
+      columns: exportConfig.columns
+    }));
+  }, [exportConfig.columns, showExportConfig]);
+
   const toggleSection = (section: 'jobInfo' | 'billingInfo' | 'workOrderInfo') => {
     setExpandedSections(prev => ({
       ...prev,
@@ -826,7 +839,17 @@ export function JobListingPage({
       if (exportConfig.columns.accentWallCount) row['Accent Wall Count'] = workOrder?.accent_wall_count ? String(workOrder.accent_wall_count) : 'N/A';
       if (exportConfig.columns.hasExtraCharges) row['Has Extra Charges'] = workOrder?.has_extra_charges === true ? 'Yes' : workOrder?.has_extra_charges === false ? 'No' : 'N/A';
       if (exportConfig.columns.extraChargesDescription) {
-        row['Extra Charges Description'] = hasExtraChargeItems ? 'Itemized Extra Charges' : (workOrder?.extra_charges_description || 'N/A');
+        const descText = workOrder?.extra_charges_description || '';
+        if (hasExtraChargeItems && descText) {
+          row['Extra Charges Description'] = descText;
+        } else if (hasExtraChargeItems) {
+          // Build a readable summary from line items when no freeform description exists
+          row['Extra Charges Description'] = extraChargeLineItems
+            .map((item: any) => item.description || item.label || 'Extra charge')
+            .join('; ');
+        } else {
+          row['Extra Charges Description'] = descText || 'N/A';
+        }
       }
       if (exportConfig.columns.extraChargesLineItems) {
         row['Extra Charges Line Items'] = formatExtraChargeLineItems(extraChargeLineItems);
@@ -1153,7 +1176,16 @@ export function JobListingPage({
           accentWallType: workOrder?.accent_wall_type || 'N/A',
           accentWallCount: workOrder?.accent_wall_count ? String(workOrder.accent_wall_count) : 'N/A',
           hasExtraCharges: workOrder?.has_extra_charges === true ? 'Yes' : workOrder?.has_extra_charges === false ? 'No' : 'N/A',
-          extraChargesDescription: hasExtraChargeItems ? 'Itemized Extra Charges' : (workOrder?.extra_charges_description || 'N/A'),
+          extraChargesDescription: (() => {
+            const descText = workOrder?.extra_charges_description || '';
+            if (hasExtraChargeItems && descText) return descText;
+            if (hasExtraChargeItems) {
+              return extraChargeLineItems
+                .map((item: any) => item.description || item.label || 'Extra charge')
+                .join('; ');
+            }
+            return descText || 'N/A';
+          })(),
           extraChargesLineItems: formatExtraChargeLineItems(extraChargeLineItems),
           extraHours: ((hasExtraChargeItems ? extraChargeTotals.hours : workOrder?.extra_hours) ?? null) !== null
             ? String(hasExtraChargeItems ? extraChargeTotals.hours : workOrder?.extra_hours)
@@ -2508,11 +2540,14 @@ export function JobListingPage({
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
                           <span className="text-sm text-gray-700 dark:text-gray-300">Has Extra Charges</span>
                         </label>
-                        <label className="flex items-center space-x-2">
+                        <label className="flex items-center space-x-2" title="Exports the actual extra charges description text. For itemized charges, outputs each item description joined by semicolons.">
                           <input type="checkbox" checked={exportConfig.columns.extraChargesDescription}
                             onChange={(e) => setExportConfig(prev => ({...prev, columns: { ...prev.columns, extraChargesDescription: e.target.checked }}))}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
-                          <span className="text-sm text-gray-700 dark:text-gray-300">Extra Charges Description</span>
+                          <span className="text-sm text-gray-700 dark:text-gray-300">
+                            Extra Charges Description
+                            <span className="ml-1 text-xs text-blue-500 dark:text-blue-400">(text)</span>
+                          </span>
                         </label>
                         <label className="flex items-center space-x-2">
                           <input type="checkbox" checked={exportConfig.columns.extraChargesLineItems}
@@ -2703,8 +2738,8 @@ export function JobListingPage({
             </div>
 
             <div className="flex justify-between items-center mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Your field preferences will be saved for future exports.
+              <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                <span>✓</span> Field selections are saved automatically as you make changes.
               </p>
               <div className="flex space-x-3">
                 <button
