@@ -72,9 +72,9 @@ export function WhatsNewManager() {
   const [resetting, setResetting] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
-  const fetchEntries = async () => {
+  const fetchEntries = async (showSpinner = true) => {
     try {
-      setLoading(true);
+      if (showSpinner) setLoading(true);
       const { data, error } = await supabase
         .from('whats_new_entries')
         .select('*')
@@ -87,7 +87,7 @@ export function WhatsNewManager() {
       console.error('Error loading what\'s new entries:', err);
       toast.error('Failed to load What\'s New entries');
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   };
 
@@ -247,7 +247,7 @@ export function WhatsNewManager() {
         include_super_admin: editingEntry.include_super_admin,
         published_at: new Date().toISOString(),
         updated_by: actorId,
-        ...(editingEntry.id ? {} : { created_by: actorId, display_order: entries.length + 1 }),
+        ...(editingEntry.id ? {} : { created_by: actorId }),
       };
 
       if (editingEntry.id) {
@@ -257,16 +257,26 @@ export function WhatsNewManager() {
           .eq('id', editingEntry.id);
         if (error) throw error;
         toast.success('What\'s New entry updated');
+        setEditingEntry(null);
       } else {
+        // Get the current max display_order to append this entry at the end
+        const { data: maxData } = await supabase
+          .from('whats_new_entries')
+          .select('display_order')
+          .order('display_order', { ascending: false })
+          .limit(1)
+          .single();
+        const nextOrder = ((maxData?.display_order ?? 0) as number) + 1;
+
         const { error } = await supabase
           .from('whats_new_entries')
-          .insert(payload);
+          .insert({ ...payload, display_order: nextOrder });
         if (error) throw error;
-        toast.success('What\'s New entry created');
+        toast.success('What\'s New entry published — add another or cancel to close');
+        setEditingEntry({ ...EMPTY_DRAFT });
       }
 
-      setEditingEntry(null);
-      await fetchEntries();
+      await fetchEntries(false);
     } catch (err) {
       console.error('Error saving What\'s New entry:', err);
       toast.error('Failed to save What\'s New entry');
@@ -286,7 +296,7 @@ export function WhatsNewManager() {
 
       if (error) throw error;
       toast.success('What\'s New entry deleted');
-      await fetchEntries();
+      await fetchEntries(false);
     } catch (err) {
       console.error('Error deleting What\'s New entry:', err);
       toast.error('Failed to delete What\'s New entry');

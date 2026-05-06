@@ -1894,19 +1894,32 @@ export function PropertyDetails() {
                               {unitSizes[detail.unit_size_id]}
                             </span>
                           </div>
-                          <div className="flex space-x-6">
+                          <div className="flex flex-wrap gap-x-6 gap-y-1 items-center justify-end">
                             <span className="text-gray-600 dark:text-gray-400">Bill: <span className="font-bold">${detail.bill_amount}</span></span>
                             <span className="text-gray-600 dark:text-gray-400">Sub Pay: <span className="font-bold">${detail.sub_pay_amount}</span></span>
-                            {!detail.is_hourly && (
-                              <span className="text-green-600 dark:text-green-400 font-bold">Profit: ${detail.profit_amount}</span>
-                            )}
-                            {!detail.is_hourly && detail.bill_amount > 0 && (
-                              <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                                {(((detail.profit_amount ?? 0) / detail.bill_amount) * 100).toFixed(1)}%
-                              </span>
-                            )}
-                            {detail.is_hourly && (
-                              <span className="text-blue-600 dark:text-blue-400 font-bold">Hourly Rate</span>
+                            {detail.is_hourly ? (
+                              <>
+                                <span className="text-blue-600 dark:text-blue-400 font-bold">Hourly Rate</span>
+                                {detail.bill_amount > 0 && detail.sub_pay_amount != null && (
+                                  <>
+                                    <span className="text-green-600 dark:text-green-400 font-bold">
+                                      Profit: ${(detail.bill_amount - detail.sub_pay_amount).toFixed(2)}/hr
+                                    </span>
+                                    <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                      Margin: {(((detail.bill_amount - detail.sub_pay_amount) / detail.bill_amount) * 100).toFixed(1)}%
+                                    </span>
+                                  </>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-green-600 dark:text-green-400 font-bold">Profit: ${detail.profit_amount}</span>
+                                {detail.bill_amount > 0 && (
+                                  <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                    Margin: {(((detail.profit_amount ?? 0) / detail.bill_amount) * 100).toFixed(1)}%
+                                  </span>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
@@ -1930,19 +1943,32 @@ export function PropertyDetails() {
                               {unitSizes[detail.unit_size_id]}
                             </span>
                           </div>
-                          <div className="flex space-x-6">
+                          <div className="flex flex-wrap gap-x-6 gap-y-1 items-center justify-end">
                             <span className="text-gray-600 dark:text-gray-400">Bill: <span className="font-bold">${detail.bill_amount}</span></span>
                             <span className="text-gray-600 dark:text-gray-400">Sub Pay: <span className="font-bold">${detail.sub_pay_amount}</span></span>
-                            {!detail.is_hourly && (
-                              <span className="text-green-600 dark:text-green-400 font-bold">Profit: ${detail.profit_amount}</span>
-                            )}
-                            {!detail.is_hourly && detail.bill_amount > 0 && (
-                              <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                                {(((detail.profit_amount ?? 0) / detail.bill_amount) * 100).toFixed(1)}%
-                              </span>
-                            )}
-                            {detail.is_hourly && (
-                              <span className="text-blue-600 dark:text-blue-400 font-bold">Hourly Rate</span>
+                            {detail.is_hourly ? (
+                              <>
+                                <span className="text-blue-600 dark:text-blue-400 font-bold">Hourly Rate</span>
+                                {detail.bill_amount > 0 && detail.sub_pay_amount != null && (
+                                  <>
+                                    <span className="text-green-600 dark:text-green-400 font-bold">
+                                      Profit: ${(detail.bill_amount - detail.sub_pay_amount).toFixed(2)}/hr
+                                    </span>
+                                    <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                      Margin: {(((detail.bill_amount - detail.sub_pay_amount) / detail.bill_amount) * 100).toFixed(1)}%
+                                    </span>
+                                  </>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-green-600 dark:text-green-400 font-bold">Profit: ${detail.profit_amount}</span>
+                                {detail.bill_amount > 0 && (
+                                  <span className="text-blue-600 dark:text-blue-400 font-semibold">
+                                    Margin: {(((detail.profit_amount ?? 0) / detail.bill_amount) * 100).toFixed(1)}%
+                                  </span>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
