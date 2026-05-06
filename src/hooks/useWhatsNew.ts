@@ -57,14 +57,7 @@ export function useWhatsNew(): UseWhatsNewResult {
       if (itemsError) throw itemsError;
       if (profileError) throw profileError;
 
-      const visibleItems = ((items ?? []) as WhatsNewEntry[]).filter((entry) => {
-        if (isSuperAdmin) {
-          return entry.include_super_admin;
-        }
-        return true;
-      });
-
-      setEntries(visibleItems);
+      setEntries((items ?? []) as WhatsNewEntry[]);
       setLastSeenAt(profile?.last_seen_whats_new_at ?? null);
       setError(null);
     } catch (err) {
@@ -73,7 +66,7 @@ export function useWhatsNew(): UseWhatsNewResult {
     } finally {
       setLoading(false);
     }
-  }, [canSeeWhatsNew, isSuperAdmin, roleLoading, session?.user.id]);
+  }, [canSeeWhatsNew, roleLoading, session?.user.id]);
 
   useEffect(() => {
     fetchWhatsNew();
