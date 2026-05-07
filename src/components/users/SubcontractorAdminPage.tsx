@@ -97,8 +97,8 @@ export function SubcontractorAdminPage() {
                 <ClipboardList className="h-6 w-6 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
-                <h1 className="text-xl lg:text-2xl font-bold text-gray-900 dark:text-white">Subcontractor Admin View</h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400">{displayName}</p>
+                <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Subcontractor Admin View</p>
+                <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">{displayName}</h1>
               </div>
             </div>
           </div>
