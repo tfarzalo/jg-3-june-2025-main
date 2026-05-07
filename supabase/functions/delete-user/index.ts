@@ -293,8 +293,34 @@ serve(async (req) => {
       }
     }
 
-    // Delete profile from database
-    console.log("Deleting profile from database...");
+    // Delete user from auth first. profiles.id cascades from auth.users, so this
+    // avoids deleting the visible profile if auth deletion is blocked.
+    console.log("Deleting user from auth...");
+    const { error: authError } = await supabase.auth.admin.deleteUser(userId);
+
+    if (authError) {
+      console.error("Auth deletion failed:", authError);
+      const authMessage = authError.message || "";
+      const authStatus = "status" in authError
+        ? Number(authError.status)
+        : undefined;
+      const authUserMissing = authStatus === 404 ||
+        authMessage.toLowerCase().includes("not found");
+
+      if (!authUserMissing) {
+        throw new Error(`Auth user deletion failed; profile was not deleted: ${authMessage}`);
+      }
+
+      console.warn("Auth user was already missing; deleting orphaned profile only");
+    }
+
+    console.log(
+      authError ? "Auth user already absent" : "User deleted successfully from auth",
+    );
+
+    // The auth delete should cascade to profiles. This cleanup is intentionally
+    // kept as an idempotent fallback for orphaned profiles or cascade drift.
+    console.log("Deleting profile fallback from database...");
     const { error: profileError } = await supabase
       .from("profiles")
       .delete()
@@ -304,33 +330,7 @@ serve(async (req) => {
       console.error("Profile deletion failed:", profileError);
       throw new Error(`Profile deletion failed: ${profileError.message}`);
     }
-    console.log("Profile deleted successfully");
-
-    // Delete user from auth
-    console.log("Deleting user from auth...");
-    const { error: authError } = await supabase.auth.admin.deleteUser(userId);
-
-    if (authError) {
-      console.error("Auth deletion failed:", authError);
-      // Profile is already deleted, so we'll return a partial success
-      return new Response(
-        JSON.stringify({ 
-          success: true,
-          partial: true,
-          message: "Profile deleted but auth user deletion failed",
-          authError: authError.message
-        }),
-        { 
-          headers: { 
-            ...corsHeaders, 
-            "Content-Type": "application/json",
-          },
-          status: 200,
-        }
-      );
-    }
-
-    console.log("User deleted successfully from auth");
+    console.log("Profile cleanup completed");
 
     // Return success response
     return new Response(
