@@ -28,7 +28,6 @@ import { UserChip } from './UserChip';
 import { formatDistanceToNow } from 'date-fns';
 import { getAvailableWorkingDays, getWorkingDaysCount } from '../lib/availabilityUtils';
 import { useUserRole } from '../contexts/UserRoleContext';
-import { SubcontractorAdminView } from './users/SubcontractorAdminView';
 
 interface User {
   id: string;
@@ -65,7 +64,6 @@ export function Users() {
   const [showFilters, setShowFilters] = useState(false);
   const [roleFilter, setRoleFilter] = useState<string[]>([]);
   const [changingPassword, setChangingPassword] = useState(false);
-  const [subcontractorAdminUser, setSubcontractorAdminUser] = useState<User | null>(null);
 
   // Welcome email prompt state (shown after subcontractor creation)
   const [showWelcomeEmailPrompt, setShowWelcomeEmailPrompt] = useState(false);
@@ -731,7 +729,7 @@ export function Users() {
         {/* Subcontractor admin view */}
         {user.role === 'subcontractor' && (
           <button
-            onClick={() => setSubcontractorAdminUser(user)}
+            onClick={() => navigate(`/dashboard/users/subcontractors/${user.id}`)}
             className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-300"
             title="Subcontractor Admin View"
           >
@@ -987,7 +985,7 @@ export function Users() {
                           {user.role === 'subcontractor' ? (
                             <button
                               type="button"
-                              onClick={() => setSubcontractorAdminUser(user)}
+                              onClick={() => navigate(`/dashboard/users/subcontractors/${user.id}`)}
                               className="text-left rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                               title="Open subcontractor admin view"
                             >
@@ -1080,7 +1078,7 @@ export function Users() {
                           {user.role === 'subcontractor' ? (
                             <button
                               type="button"
-                              onClick={() => setSubcontractorAdminUser(user)}
+                              onClick={() => navigate(`/dashboard/users/subcontractors/${user.id}`)}
                               className="text-left rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                               title="Open subcontractor admin view"
                             >
@@ -1135,34 +1133,6 @@ export function Users() {
           </div>
         </div>
       </div>
-
-      {subcontractorAdminUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-[#2D3B4E] flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Subcontractor Admin View</h2>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Jobs and preferred-property assignments</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSubcontractorAdminUser(null)}
-                className="p-2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-[#0F172A]"
-                title="Close"
-              >
-                <XCircle className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="p-6 overflow-y-auto">
-              <SubcontractorAdminView
-                userId={subcontractorAdminUser.id}
-                userName={subcontractorAdminUser.full_name || subcontractorAdminUser.email}
-                userEmail={subcontractorAdminUser.email}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Add User Modal */}
       {showAddUserModal && (

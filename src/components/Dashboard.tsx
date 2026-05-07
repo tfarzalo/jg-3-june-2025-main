@@ -34,6 +34,7 @@ const FileUpload = lazy(() => import('./FileUpload').then(module => ({ default: 
 const Calendar = lazy(() => import('./Calendar').then(module => ({ default: module.Calendar })));
 const Activity = lazy(() => import('./Activity').then(module => ({ default: module.Activity })));
 const Users = lazy(() => import('./Users').then(module => ({ default: module.Users })));
+const SubcontractorAdminPage = lazy(() => import('./users/SubcontractorAdminPage').then(module => ({ default: module.SubcontractorAdminPage })));
 const AppSettings = lazy(() => import('./AppSettings').then(module => ({ default: module.AppSettings })));
 const UserProfile = lazy(() => import('./UserProfile').then(module => ({ default: module.UserProfile })));
 const SubScheduler = lazy(() => import('./SubScheduler'));
@@ -153,6 +154,11 @@ export function Dashboard() {
           <Route path="users" element={
             <RouteGuard>
               <Users />
+            </RouteGuard>
+          } />
+          <Route path="users/subcontractors/:userId" element={
+            <RouteGuard>
+              <SubcontractorAdminPage />
             </RouteGuard>
           } />
           <Route path="settings" element={

@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Briefcase, Building2, CalendarDays, CheckCircle2, Clock3, Search } from 'lucide-react';
+import { Briefcase, Building2, CalendarDays, CheckCircle2, ChevronDown, Clock3, Search } from 'lucide-react';
 import { supabase } from '../../utils/supabase';
 import { formatDisplayDate } from '../../lib/dateUtils';
 
 interface SubcontractorAdminViewProps {
   userId: string;
-  userName: string;
-  userEmail: string;
+  userName?: string;
+  userEmail?: string;
 }
 
 interface JobRow {
@@ -53,6 +53,8 @@ export function SubcontractorAdminView({ userId, userName, userEmail }: Subcontr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentJobsOpen, setCurrentJobsOpen] = useState(true);
+  const [jobHistoryOpen, setJobHistoryOpen] = useState(true);
 
   useEffect(() => {
     const fetchBreakdown = async () => {
@@ -188,6 +190,31 @@ export function SubcontractorAdminView({ userId, userName, userEmail }: Subcontr
     </div>
   );
 
+  const renderJobSection = (
+    title: string,
+    items: JobRow[],
+    emptyText: string,
+    icon: ReactNode,
+    isOpen: boolean,
+    onToggle: () => void
+  ) => (
+    <section className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg overflow-hidden bg-white dark:bg-[#1E293B]">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] flex items-center justify-between text-left hover:bg-gray-100 dark:hover:bg-[#162033] transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          {icon}
+          <span className="text-sm font-semibold text-gray-900 dark:text-white">{title}</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">({items.length})</span>
+        </span>
+        <ChevronDown className={`h-4 w-4 text-gray-500 transition-transform ${isOpen ? '' : '-rotate-90'}`} />
+      </button>
+      {isOpen && renderJobList(items, emptyText)}
+    </section>
+  );
+
   if (loading) {
     return (
       <div className="py-12 flex items-center justify-center text-gray-600 dark:text-gray-400">
@@ -228,8 +255,12 @@ export function SubcontractorAdminView({ userId, userName, userEmail }: Subcontr
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{userName}</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{userEmail}</p>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Subcontractor Work Overview</h3>
+          {(userName || userEmail) && (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {[userName, userEmail].filter(Boolean).join(' - ')}
+            </p>
+          )}
         </div>
         <div className="relative sm:w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -242,35 +273,42 @@ export function SubcontractorAdminView({ userId, userName, userEmail }: Subcontr
         </div>
       </div>
 
-      <section className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg overflow-hidden">
-        <div className="px-4 py-3 bg-gray-50 dark:bg-[#0F172A] flex items-center gap-2">
-          <Clock3 className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Current Jobs</h4>
-        </div>
-        {renderJobList(currentJobs, 'No current jobs assigned.')}
-      </section>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
+        <aside className="xl:col-span-1 space-y-4">
+          <section className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg overflow-hidden bg-white dark:bg-[#1E293B]">
+            <div className="px-4 py-3 bg-gray-50 dark:bg-[#0F172A]">
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Preferred Subcontractor 1</h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{slotOneProperties.length} propert{slotOneProperties.length === 1 ? 'y' : 'ies'}</p>
+            </div>
+            {renderPropertyList(slotOneProperties, 'No properties list this subcontractor in slot 1.')}
+          </section>
+          <section className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg overflow-hidden bg-white dark:bg-[#1E293B]">
+            <div className="px-4 py-3 bg-gray-50 dark:bg-[#0F172A]">
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Preferred Subcontractor 2</h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{slotTwoProperties.length} propert{slotTwoProperties.length === 1 ? 'y' : 'ies'}</p>
+            </div>
+            {renderPropertyList(slotTwoProperties, 'No properties list this subcontractor in slot 2.')}
+          </section>
+        </aside>
 
-      <section className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg overflow-hidden">
-        <div className="px-4 py-3 bg-gray-50 dark:bg-[#0F172A] flex items-center gap-2">
-          <CalendarDays className="h-4 w-4 text-green-600 dark:text-green-400" />
-          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Job History</h4>
+        <div className="xl:col-span-2 space-y-4">
+          {renderJobSection(
+            'Current Jobs',
+            currentJobs,
+            'No current jobs assigned.',
+            <Clock3 className="h-4 w-4 text-amber-600 dark:text-amber-400" />,
+            currentJobsOpen,
+            () => setCurrentJobsOpen(prev => !prev)
+          )}
+          {renderJobSection(
+            'Job History',
+            historicalJobs,
+            'No completed or archived jobs assigned.',
+            <CalendarDays className="h-4 w-4 text-green-600 dark:text-green-400" />,
+            jobHistoryOpen,
+            () => setJobHistoryOpen(prev => !prev)
+          )}
         </div>
-        {renderJobList(historicalJobs, 'No completed or archived jobs assigned.')}
-      </section>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <section className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50 dark:bg-[#0F172A]">
-            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Preferred Subcontractor 1</h4>
-          </div>
-          {renderPropertyList(slotOneProperties, 'No properties list this subcontractor in slot 1.')}
-        </section>
-        <section className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50 dark:bg-[#0F172A]">
-            <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Preferred Subcontractor 2</h4>
-          </div>
-          {renderPropertyList(slotTwoProperties, 'No properties list this subcontractor in slot 2.')}
-        </section>
       </div>
     </div>
   );
