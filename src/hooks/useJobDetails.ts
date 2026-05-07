@@ -333,6 +333,8 @@ export function useJobDetails(jobId: string | undefined) {
             description,
             scheduled_date,
             assigned_to,
+            assigned_to_name_snapshot,
+            assigned_to_email_snapshot,
             historical_data_mode,
             active_snapshot_id,
             snapshot_frozen_at,
@@ -433,6 +435,7 @@ export function useJobDetails(jobId: string | undefined) {
               color_dark_mode: jd.job_phase.color_dark_mode,
             } : null,
             historical_data_mode: jd.historical_data_mode ?? 'live',
+            assigned_to_name: jd.assigned_to_name_snapshot ?? jd.assigned_to_email_snapshot ?? null,
             active_snapshot_id: jd.active_snapshot_id ?? null,
             snapshot_frozen_at: jd.snapshot_frozen_at ?? null,
             snapshot_phase_label: jd.snapshot_last_phase_label ?? null,
@@ -470,8 +473,9 @@ export function useJobDetails(jobId: string | undefined) {
       console.log('Job data received:', data);
       console.log('Job data keys:', Object.keys(data));
 
-      // If job has an assigned_to value, fetch the subcontractor's name
-      let assignedToName = null;
+      // Prefer the static assignment label returned by the RPC, then refresh from
+      // the live profile only when that profile still exists.
+      let assignedToName = data.assigned_to_name || null;
       if (data.assigned_to) {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
@@ -481,7 +485,7 @@ export function useJobDetails(jobId: string | undefined) {
 
         if (profileError) {
           console.error('Error fetching subcontractor profile:', profileError);
-        } else if (profileData) {
+        } else if (profileData?.full_name) {
           assignedToName = profileData.full_name;
         }
       }

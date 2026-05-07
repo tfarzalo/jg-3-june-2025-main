@@ -81,6 +81,18 @@ interface Property {
   primary_contact_secondary_email?: string | null;
   subcontractor_a: string;
   subcontractor_b: string;
+  preferred_subcontractor_a_id?: string | null;
+  preferred_subcontractor_b_id?: string | null;
+  preferred_subcontractor_c_id?: string | null;
+  preferred_subcontractor_a_name_snapshot?: string | null;
+  preferred_subcontractor_a_email_snapshot?: string | null;
+  preferred_subcontractor_a_deleted_at?: string | null;
+  preferred_subcontractor_b_name_snapshot?: string | null;
+  preferred_subcontractor_b_email_snapshot?: string | null;
+  preferred_subcontractor_b_deleted_at?: string | null;
+  preferred_subcontractor_c_name_snapshot?: string | null;
+  preferred_subcontractor_c_email_snapshot?: string | null;
+  preferred_subcontractor_c_deleted_at?: string | null;
   ap_name: string;
   ap_email: string;
   ap_phone: string;
@@ -524,6 +536,29 @@ export function PropertyDetails() {
     } catch {
       toast.error('Failed to update preferred subcontractor');
     }
+  };
+
+  const getPreferredSubcontractorSnapshot = (slot: 'a' | 'b' | 'c') => {
+    if (!property) return { name: null as string | null, email: null as string | null, deletedAt: null as string | null };
+    if (slot === 'a') {
+      return {
+        name: property.preferred_subcontractor_a_name_snapshot || null,
+        email: property.preferred_subcontractor_a_email_snapshot || null,
+        deletedAt: property.preferred_subcontractor_a_deleted_at || null,
+      };
+    }
+    if (slot === 'b') {
+      return {
+        name: property.preferred_subcontractor_b_name_snapshot || null,
+        email: property.preferred_subcontractor_b_email_snapshot || null,
+        deletedAt: property.preferred_subcontractor_b_deleted_at || null,
+      };
+    }
+    return {
+      name: property.preferred_subcontractor_c_name_snapshot || null,
+      email: property.preferred_subcontractor_c_email_snapshot || null,
+      deletedAt: property.preferred_subcontractor_c_deleted_at || null,
+    };
   };
 
   const saveExclusionNote = async () => {
@@ -1565,6 +1600,9 @@ export function PropertyDetails() {
                 const label = ['A — Primary', 'B — Secondary', 'C — Tertiary'][idx];
                 const value = [preferredSubA, preferredSubB, preferredSubC][idx];
                 const selectedUser = subcontractorUsers.find(u => u.id === value);
+                const snapshot = getPreferredSubcontractorSnapshot(slot);
+                const displayName = selectedUser?.full_name || snapshot.name;
+                const displayEmail = selectedUser?.email || snapshot.email;
                 return (
                   <div key={slot} className="flex flex-col gap-2">
                     <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
@@ -1577,7 +1615,10 @@ export function PropertyDetails() {
                       <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
                         <HardHat className="h-4 w-4 text-indigo-500 flex-shrink-0" />
                         <span className="text-sm text-gray-900 dark:text-white">
-                          {selectedUser ? selectedUser.full_name : <span className="text-gray-400 italic">Not assigned</span>}
+                          {displayName ? displayName : <span className="text-gray-400 italic">Not assigned</span>}
+                          {!selectedUser && snapshot.deletedAt && displayName && (
+                            <span className="ml-2 text-xs text-gray-400">(deleted)</span>
+                          )}
                         </span>
                       </div>
                     ) : (
@@ -1587,7 +1628,11 @@ export function PropertyDetails() {
                           onChange={(e) => savePreferredSubcontractor(slot, e.target.value || null)}
                           className="w-full h-11 pl-3 pr-8 bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 appearance-none"
                         >
-                          <option value="">— Not assigned —</option>
+                          <option value="">
+                            {!value && displayName && snapshot.deletedAt
+                              ? `${displayName} (deleted)`
+                              : '— Not assigned —'}
+                          </option>
                           {subcontractorUsers.map(u => (
                             <option key={u.id} value={u.id}>{u.full_name}</option>
                           ))}
@@ -1595,9 +1640,10 @@ export function PropertyDetails() {
                         <HardHat className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                       </div>
                     )}
-                    {selectedUser && (
+                    {displayEmail && (
                       <p className="text-xs text-gray-500 dark:text-gray-400 truncate pl-1">
-                        {selectedUser.email}
+                        {displayEmail}
+                        {!selectedUser && snapshot.deletedAt ? ' (deleted)' : ''}
                       </p>
                     )}
                   </div>

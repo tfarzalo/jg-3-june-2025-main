@@ -16,7 +16,8 @@ import {
   Eye,
   Mail,
   Send,
-  CheckCircle
+  CheckCircle,
+  ClipboardList
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
@@ -27,6 +28,7 @@ import { UserChip } from './UserChip';
 import { formatDistanceToNow } from 'date-fns';
 import { getAvailableWorkingDays, getWorkingDaysCount } from '../lib/availabilityUtils';
 import { useUserRole } from '../contexts/UserRoleContext';
+import { SubcontractorAdminView } from './users/SubcontractorAdminView';
 
 interface User {
   id: string;
@@ -63,6 +65,7 @@ export function Users() {
   const [showFilters, setShowFilters] = useState(false);
   const [roleFilter, setRoleFilter] = useState<string[]>([]);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [subcontractorAdminUser, setSubcontractorAdminUser] = useState<User | null>(null);
 
   // Welcome email prompt state (shown after subcontractor creation)
   const [showWelcomeEmailPrompt, setShowWelcomeEmailPrompt] = useState(false);
@@ -97,6 +100,7 @@ export function Users() {
   // Get current user role for access control
   const { role: currentUserRole, isAdmin } = useUserRole();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const canDeleteUsers = ['admin', 'jg_management', 'assistant_manager', 'is_super_admin'].includes(currentUserRole || '');
   
   // Form state for adding/editing users
   const [formData, setFormData] = useState({
@@ -724,7 +728,17 @@ export function Users() {
           </button>
         )}
 
-        {/* Resend Welcome Email — subcontractors only */}
+        {/* Subcontractor admin view */}
+        {user.role === 'subcontractor' && (
+          <button
+            onClick={() => setSubcontractorAdminUser(user)}
+            className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-300"
+            title="Subcontractor Admin View"
+          >
+            <ClipboardList className="h-5 w-5" />
+          </button>
+        )}
+
         {user.role === 'subcontractor' && (
           <button
             onClick={() => setShowResendConfirm(user)}
@@ -792,17 +806,19 @@ export function Users() {
           </button>
         )}
         
-        {/* Delete User - Allow for all users */}
-        <button
-          onClick={() => {
-            setSelectedUser(user);
-            setShowDeleteConfirm(true);
-          }}
-          className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
-          title="Delete User"
-        >
-          <Trash2 className="h-5 w-5" />
-        </button>
+        {/* Delete User */}
+        {canDeleteUsers && (
+          <button
+            onClick={() => {
+              setSelectedUser(user);
+              setShowDeleteConfirm(true);
+            }}
+            className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
+            title="Delete User"
+          >
+            <Trash2 className="h-5 w-5" />
+          </button>
+        )}
       </div>
     );
   };
@@ -845,7 +861,11 @@ export function Users() {
           <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900 dark:text-white">Users</h1>
           <div className="flex items-center space-x-2 sm:space-x-3">
             <button
-              onClick={() => setRefreshing(true)}
+              onClick={async () => {
+                setRefreshing(true);
+                await fetchUsers();
+                setRefreshing(false);
+              }}
               disabled={refreshing}
               className="p-2 text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
               title="Refresh Users"
@@ -964,11 +984,26 @@ export function Users() {
                     {filteredUsers.filter(user => isOnline(user.id)).map((user) => (
                       <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <UserChip 
-                            user={user}
-                            isOnline={isOnline(user.id)}
-                            size="lg"
-                          />
+                          {user.role === 'subcontractor' ? (
+                            <button
+                              type="button"
+                              onClick={() => setSubcontractorAdminUser(user)}
+                              className="text-left rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              title="Open subcontractor admin view"
+                            >
+                              <UserChip
+                                user={user}
+                                isOnline={isOnline(user.id)}
+                                size="lg"
+                              />
+                            </button>
+                          ) : (
+                            <UserChip
+                              user={user}
+                              isOnline={isOnline(user.id)}
+                              size="lg"
+                            />
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-900 dark:text-white">{user.email}</div>
@@ -1042,11 +1077,26 @@ export function Users() {
                     {filteredUsers.filter(user => !isOnline(user.id)).map((user) => (
                       <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <UserChip 
-                            user={user}
-                            isOnline={isOnline(user.id)}
-                            size="lg"
-                          />
+                          {user.role === 'subcontractor' ? (
+                            <button
+                              type="button"
+                              onClick={() => setSubcontractorAdminUser(user)}
+                              className="text-left rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              title="Open subcontractor admin view"
+                            >
+                              <UserChip
+                                user={user}
+                                isOnline={isOnline(user.id)}
+                                size="lg"
+                              />
+                            </button>
+                          ) : (
+                            <UserChip
+                              user={user}
+                              isOnline={isOnline(user.id)}
+                              size="lg"
+                            />
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-900 dark:text-white">{user.email}</div>
@@ -1085,6 +1135,34 @@ export function Users() {
           </div>
         </div>
       </div>
+
+      {subcontractorAdminUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-[#2D3B4E] flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Subcontractor Admin View</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Jobs and preferred-property assignments</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSubcontractorAdminUser(null)}
+                className="p-2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-[#0F172A]"
+                title="Close"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto">
+              <SubcontractorAdminView
+                userId={subcontractorAdminUser.id}
+                userName={subcontractorAdminUser.full_name || subcontractorAdminUser.email}
+                userEmail={subcontractorAdminUser.email}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add User Modal */}
       {showAddUserModal && (

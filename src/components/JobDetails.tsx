@@ -2771,12 +2771,12 @@ export function JobDetails() {
                   </h3>
                   <div className="pl-5 flex items-center justify-between">
                     <span className="text-gray-900 dark:text-white font-medium">
-                      {job.assigned_to ? (
+                      {job.assigned_to || job.assigned_to_name ? (
                         (() => {
                           const assignedId = job.assigned_to;
                           const subcontractorsSafe = Array.isArray(subcontractors) ? subcontractors : [];
                           const found = assignedId ? subcontractorsSafe.find(s => s?.id === assignedId) : null;
-                          return found?.full_name || 'Unknown';
+                          return found?.full_name || job.assigned_to_name || 'Unknown';
                         })()
                       ) : (
                         <span className="text-gray-400 italic">Not assigned</span>
