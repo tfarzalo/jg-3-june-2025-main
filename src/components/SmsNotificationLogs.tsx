@@ -179,6 +179,7 @@ export function SmsNotificationLogs() {
         .select(
           'id, event_type, user_id, full_name, email, user_role, phone_last4, message_body, status, provider_message_sid, provider_status, error_message, skip_reason, delivered_at, failed_at, last_status_at, queue_id, metadata, created_at'
         )
+        .or('metadata->archived.is.null,metadata->archived.eq.false')
         .order('created_at', { ascending: false })
         .limit(MAX_ROWS);
 
