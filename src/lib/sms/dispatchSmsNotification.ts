@@ -14,7 +14,7 @@
  *  - Pass `throwOnError: true` when you want the caller to handle failures
  *    (useful for testing / diagnostics).
  *  - The Edge Function is responsible for checking per-user SMS settings,
- *    phone presence, and Twilio delivery. This helper just invokes it.
+ *    phone presence, and ClickSend delivery. This helper just invokes it.
  *
  * Edge Function contract (request body):
  *   {

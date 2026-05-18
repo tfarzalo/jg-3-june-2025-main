@@ -167,7 +167,7 @@ export default function SmsConsentPage() {
             Your mobile phone number is stored securely and used solely for the purpose of sending
             operational SMS notifications described on this page. We do not sell, rent, share, or
             transfer your mobile number to third parties for marketing purposes. Your number may
-            be shared with our SMS delivery provider (Twilio, Inc.) solely to facilitate message
+            be shared with our SMS delivery provider (ClickSend) solely to facilitate message
             delivery on our behalf.
           </p>
           <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-sm">

@@ -15,7 +15,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { MessageSquare, Phone, AlertTriangle, RefreshCw, Loader2 } from 'lucide-react';
+import { MessageSquare, Phone, AlertTriangle, RefreshCw, Loader2, CheckCircle2, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   getAllSmsSettings,
@@ -302,6 +302,40 @@ export function SmsNotificationSettings() {
 
   return (
     <div className="space-y-6">
+      {/* ClickSend Platform Info Banner */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg shadow-sm border border-blue-200 dark:border-blue-800/40 overflow-hidden">
+        <div className="p-4 flex items-start gap-3">
+          <div className="flex-shrink-0 mt-0.5">
+            <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
+              <CheckCircle2 className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+            </div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-2">
+              SMS Platform: ClickSend
+            </h3>
+            <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+              This system uses <strong>ClickSend</strong> for SMS delivery. Messages are sent via REST API with delivery receipt tracking. 
+              All configurations below control when notifications are triggered.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-blue-600 dark:text-blue-400">
+              <span className="flex items-center gap-1">
+                <Info className="h-3 w-3" />
+                Max message length: 1,224 characters
+              </span>
+              <span className="flex items-center gap-1">
+                <Info className="h-3 w-3" />
+                Phone format: E.164 (e.g., +12025551234)
+              </span>
+              <span className="flex items-center gap-1">
+                <Info className="h-3 w-3" />
+                Delivery receipts: Enabled via webhook
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Header card */}
       <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700">

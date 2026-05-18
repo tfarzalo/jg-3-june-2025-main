@@ -28,6 +28,7 @@ import {
   FlaskConical,
   Search,
   Filter,
+  Info,
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 
@@ -265,6 +266,23 @@ export function SmsNotificationLogs() {
 
   return (
     <div className="space-y-4">
+      {/* ClickSend Platform Info Banner */}
+      <div className="bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-lg shadow-sm border border-green-200 dark:border-green-800/40 overflow-hidden">
+        <div className="p-3 flex items-start gap-3">
+          <div className="flex-shrink-0">
+            <div className="h-6 w-6 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center">
+              <Info className="h-4 w-4 text-green-600 dark:text-green-400" />
+            </div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-green-700 dark:text-green-300">
+              <strong>SMS Provider: ClickSend</strong> — All messages below were sent or attempted via ClickSend API. 
+              The <code className="px-1 py-0.5 bg-green-100 dark:bg-green-900/40 rounded text-xs">provider_message_sid</code> shows ClickSend's message ID for delivery tracking.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* ── Header card ─────────────────────────────────────────────────── */}
       <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
         <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between gap-4 flex-wrap">
@@ -434,7 +452,7 @@ function LogRow({ row }: { row: SmsLogRow }) {
       : row.provider_status === 'failed' || row.provider_status === 'undelivered'
       ? `${row.provider_status === 'undelivered' ? 'Undelivered' : 'Delivery failed'}${row.failed_at ? ` at ${formatDate(row.failed_at)}` : ''}`
       : row.provider_status && row.last_status_at
-      ? `Twilio: ${row.provider_status} (${formatDate(row.last_status_at)})`
+      ? `ClickSend: ${row.provider_status} (${formatDate(row.last_status_at)})`
       : null;
 
   return (

@@ -9,7 +9,7 @@
  *   • Every template accepts a SmsTemplateData object (normalised) — no raw
  *     DB shapes or nested payloads passed directly into template logic.
  *   • Graceful fallback at every field — never produce malformed strings.
- *   • Max length guard ensures messages stay below Twilio's 1600-char limit
+ *   • Max length guard ensures messages stay below ClickSend's 1224-char limit
  *     and practical mobile readability limits.
  *   • Extendable: add a new event key + template function, nothing else changes.
  *

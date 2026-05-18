@@ -4,15 +4,15 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 /**
  * send-sms Edge Function
  * ─────────────────────────────────────────────────────────────────────────────
- * Sends a single outbound SMS via Twilio.
+ * Sends a single outbound SMS via ClickSend.
  *
  * LOW-LEVEL primitive — called by dispatch-sms-notification (and future tools).
  * Never reads phone numbers from untrusted client input.
  *
  * Secrets (Supabase Edge Function secrets — NEVER logged):
- *   TWILIO_ACCOUNT_SID   — Twilio Account SID
- *   TWILIO_AUTH_TOKEN    — Twilio Auth Token
- *   TWILIO_PHONE_NUMBER  — Twilio sender number (E.164 format)
+ *   CLICKSEND_USERNAME   — ClickSend account username
+ *   CLICKSEND_API_KEY    — ClickSend API key
+ *   CLICKSEND_SOURCE     — Source identifier (e.g., "JGManagement")
  *
  * Request body:
  * {
@@ -21,7 +21,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
  *   recipient_user_id?:   string   — profiles.id for audit log
  *   event_type?:          string   — event key (defaults "direct")
  *   metadata?:            object   — safe context for log row
- *   dry_run?:             boolean  — if true, skip Twilio, log as "simulated"
+ *   dry_run?:             boolean  — if true, skip ClickSend, log as "simulated"
  * }
  *
  * Response body:
@@ -50,8 +50,8 @@ const JSON_HEADERS = { ...CORS_HEADERS, "Content-Type": "application/json" };
 /** E.164 U.S. phone — matches profiles.sms_phone CHECK constraint exactly */
 const E164_US_REGEX = /^\+1[0-9]{10}$/;
 
-/** Twilio hard limit is 1600 chars */
-const MAX_BODY_LENGTH = 1600;
+/** ClickSend limit is 1224 chars for concatenated SMS */
+const MAX_BODY_LENGTH = 1224;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,12 +75,22 @@ interface SendSmsResponse {
   simulated?: boolean;
 }
 
-/** Partial Twilio REST API response */
-interface TwilioMessageResponse {
-  sid: string;
-  status: string;
-  error_code: number | null;
-  error_message: string | null;
+/** ClickSend REST API response structure */
+interface ClickSendResponse {
+  http_code: number;
+  response_code: string;
+  response_msg: string;
+  data?: {
+    messages?: Array<{
+      message_id: string;
+      status: string;
+      message_price?: string;
+      custom_string?: string;
+    }>;
+    _currency?: {
+      currency_name_short: string;
+    };
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -157,29 +167,23 @@ Deno.serve(async (req: Request) => {
   console.log("[send-sms] === INVOKED ===", new Date().toISOString());
 
   // ── Secrets ─────────────────────────────────────────────────────────────────
-  const TWILIO_ACCOUNT_SID   = Deno.env.get("TWILIO_ACCOUNT_SID");
-  const TWILIO_AUTH_TOKEN    = Deno.env.get("TWILIO_AUTH_TOKEN");
-  const TWILIO_PHONE_NUMBER  = Deno.env.get("TWILIO_PHONE_NUMBER");
+  const CLICKSEND_USERNAME   = Deno.env.get("CLICKSEND_USERNAME");
+  const CLICKSEND_API_KEY    = Deno.env.get("CLICKSEND_API_KEY");
+  const CLICKSEND_SOURCE     = Deno.env.get("CLICKSEND_SOURCE") || "JGManagement";
   const SUPABASE_URL         = Deno.env.get("SUPABASE_URL")!;
   const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
   const missingSecrets = [
-    !TWILIO_ACCOUNT_SID  && "TWILIO_ACCOUNT_SID",
-    !TWILIO_AUTH_TOKEN   && "TWILIO_AUTH_TOKEN",
-    !TWILIO_PHONE_NUMBER && "TWILIO_PHONE_NUMBER",
+    !CLICKSEND_USERNAME && "CLICKSEND_USERNAME",
+    !CLICKSEND_API_KEY  && "CLICKSEND_API_KEY",
   ].filter(Boolean) as string[];
 
   if (missingSecrets.length > 0) {
-    console.error("[send-sms] ❌ Missing Twilio secrets:", missingSecrets.join(", "));
+    console.error("[send-sms] ❌ Missing ClickSend secrets:", missingSecrets.join(", "));
     return jsonResponse(
-      { success: false, error: `Twilio not configured. Missing: ${missingSecrets.join(", ")}` },
+      { success: false, error: `ClickSend not configured. Missing: ${missingSecrets.join(", ")}` },
       500
     );
-  }
-
-  if (!E164_US_REGEX.test(TWILIO_PHONE_NUMBER!)) {
-    console.error("[send-sms] ❌ TWILIO_PHONE_NUMBER is not valid E.164 US format");
-    return jsonResponse({ success: false, error: "Twilio sender number is misconfigured" }, 500);
   }
 
   // ── Parse & validate request ─────────────────────────────────────────────────
@@ -225,7 +229,7 @@ Deno.serve(async (req: Request) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // ── Dry-run: log as "simulated", skip Twilio ─────────────────────────────────
+  // ── Dry-run: log as "simulated", skip ClickSend ─────────────────────────────────
   if (dry_run) {
     const logId = await writeLog(supabase, {
       event_type,
@@ -233,7 +237,7 @@ Deno.serve(async (req: Request) => {
       phone_last4:  toMasked,
       message_body: body,
       status:       "simulated",
-      skip_reason:  "dry_run=true — message was not sent to Twilio",
+      skip_reason:  "dry_run=true — message was not sent to ClickSend",
       queue_id:     queue_id ?? null,
       metadata:     { ...metadata, dry_run: true },
     });
@@ -241,7 +245,7 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ success: true, simulated: true, log_id: logId ?? undefined });
   }
 
-  // ── Write "queued" entry before calling Twilio ──────────────────────────────
+  // ── Write "queued" entry before calling ClickSend ──────────────────────────────
   // Guarantees a record exists even if the process crashes mid-flight.
   const queuedLogId = await writeLog(supabase, {
     event_type,
@@ -254,72 +258,81 @@ Deno.serve(async (req: Request) => {
   });
   console.log(`[send-sms] 📝 Queued | log_id=${queuedLogId ?? "-"}`);
 
-  // ── Call Twilio REST API ─────────────────────────────────────────────────────
-  const twilioUrl  = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
-  const basicAuth  = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`); // never logged
-  const statusCallbackUrl = `${SUPABASE_URL}/functions/v1/handle-twilio-status`;
-  const formBody   = new URLSearchParams({
-    To:             to,
-    From:           TWILIO_PHONE_NUMBER!,
-    Body:           body,
-    StatusCallback: statusCallbackUrl,
-  });
+  // ── Call ClickSend REST API ─────────────────────────────────────────────────────
+  const clickSendUrl  = "https://rest.clicksend.com/v3/sms/send";
+  const basicAuth     = btoa(`${CLICKSEND_USERNAME}:${CLICKSEND_API_KEY}`); // never logged
+  const deliveryUrl   = `${SUPABASE_URL}/functions/v1/handle-clicksend-delivery`;
+  
+  const requestBody = {
+    messages: [
+      {
+        source: CLICKSEND_SOURCE,
+        to: to,
+        body: body,
+        custom_string: queuedLogId || event_type, // Used to match delivery receipts
+      }
+    ]
+  };
 
-  let twilioData:    TwilioMessageResponse | null = null;
-  let twilioStatus   = 0;
+  let clickSendData: ClickSendResponse | null = null;
+  let httpStatus     = 0;
   let sendError:     string | null = null;
 
   try {
-    const twilioRes = await fetch(twilioUrl, {
+    const clickSendRes = await fetch(clickSendUrl, {
       method:  "POST",
       headers: {
         Authorization:  `Basic ${basicAuth}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept:         "application/json",
+        "Content-Type": "application/json",
       },
-      body: formBody.toString(),
+      body: JSON.stringify(requestBody),
     });
 
-    twilioStatus = twilioRes.status;
-    const raw    = await twilioRes.json();
+    httpStatus = clickSendRes.status;
+    const raw  = await clickSendRes.json();
 
-    if (!twilioRes.ok) {
-      // Extract only safe fields — avoid logging any encoded credential fragments
-      sendError = raw?.message
-        ? `Twilio error ${raw.code ?? twilioStatus}: ${raw.message}`
-        : `Twilio HTTP ${twilioStatus}`;
+    if (!clickSendRes.ok) {
+      sendError = raw?.response_msg
+        ? `ClickSend error: ${raw.response_msg}`
+        : `ClickSend HTTP ${httpStatus}`;
       console.error(
-        `[send-sms] ❌ Twilio rejected | http=${twilioStatus} | code=${raw?.code ?? "-"} | to=****${toMasked}`
+        `[send-sms] ❌ ClickSend rejected | http=${httpStatus} | code=${raw?.response_code ?? "-"} | to=****${toMasked}`
       );
     } else {
-      twilioData = raw as TwilioMessageResponse;
+      clickSendData = raw as ClickSendResponse;
+      const msgStatus = clickSendData.data?.messages?.[0]?.status;
+      const messageId = clickSendData.data?.messages?.[0]?.message_id;
       console.log(
-        `[send-sms] ✅ Twilio accepted | sid=${twilioData.sid} | status=${twilioData.status} | to=****${toMasked}`
+        `[send-sms] ✅ ClickSend accepted | message_id=${messageId} | status=${msgStatus} | to=****${toMasked}`
       );
     }
   } catch (fetchErr: unknown) {
     const msg  = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
-    sendError  = `Network error reaching Twilio: ${msg}`;
-    console.error("[send-sms] ❌ Twilio fetch threw:", msg);
+    sendError  = `Network error reaching ClickSend: ${msg}`;
+    console.error("[send-sms] ❌ ClickSend fetch threw:", msg);
   }
 
-  const success      = twilioData !== null && sendError === null;
+  const success      = clickSendData !== null && sendError === null;
   const finalStatus  = success ? "sent" : "failed";
 
   // ── Update queued row → final status ─────────────────────────────────────────
   if (queuedLogId) {
     try {
+      const messageId = clickSendData?.data?.messages?.[0]?.message_id ?? null;
+      const msgStatus = clickSendData?.data?.messages?.[0]?.status ?? null;
+      
       const { error: updateErr } = await supabase
         .from("sms_notification_logs")
         .update({
           status:               finalStatus,
-          provider_message_sid: twilioData?.sid    ?? null,
-          provider_status:      twilioData?.status ?? null,
-          error_message:        sendError          ?? null,
+          provider_message_sid: messageId,
+          provider_status:      msgStatus,
+          error_message:        sendError ?? null,
           metadata: {
             ...metadata,
-            completed_at:  new Date().toISOString(),
-            twilio_status: twilioData?.status ?? null,
+            completed_at:      new Date().toISOString(),
+            clicksend_status:  msgStatus,
+            clicksend_price:   clickSendData?.data?.messages?.[0]?.message_price ?? null,
           },
         })
         .eq("id", queuedLogId);
@@ -334,32 +347,38 @@ Deno.serve(async (req: Request) => {
     }
   } else {
     // Queued row never wrote — insert a fallback final row so no send is unlogged
+    const messageId = clickSendData?.data?.messages?.[0]?.message_id ?? null;
+    const msgStatus = clickSendData?.data?.messages?.[0]?.status ?? null;
+    
     const fallbackId = await writeLog(supabase, {
       event_type,
       user_id:             recipient_user_id ?? null,
       phone_last4:         toMasked,
       message_body:        body,
       status:              finalStatus,
-      provider_message_sid: twilioData?.sid    ?? null,
-      provider_status:      twilioData?.status ?? null,
+      provider_message_sid: messageId,
+      provider_status:      msgStatus,
       error_message:       sendError ?? null,
       queue_id:            queue_id ?? null,
       metadata: {
         ...metadata,
-        completed_at:  new Date().toISOString(),
-        twilio_status: twilioData?.status ?? null,
-        note:          "queued row was not written; this is a fallback final row",
+        completed_at:      new Date().toISOString(),
+        clicksend_status:  msgStatus,
+        note:              "queued row was not written; this is a fallback final row",
       },
     });
     console.log(`[send-sms] 📝 Fallback log written | log_id=${fallbackId ?? "-"}`);
   }
 
   // ── Respond ──────────────────────────────────────────────────────────────────
-  if (success && twilioData) {
+  if (success && clickSendData) {
+    const messageId = clickSendData.data?.messages?.[0]?.message_id;
+    const msgStatus = clickSendData.data?.messages?.[0]?.status;
+    
     return jsonResponse({
       success:              true,
-      provider_message_sid: twilioData.sid,
-      provider_status:      twilioData.status,
+      provider_message_sid: messageId ?? undefined,
+      provider_status:      msgStatus ?? undefined,
       log_id:               queuedLogId ?? undefined,
     });
   }

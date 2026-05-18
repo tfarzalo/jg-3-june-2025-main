@@ -25,8 +25,8 @@ CREATE TABLE IF NOT EXISTS sms_notification_logs (
   message_body          TEXT        NULL,
   status                TEXT        NOT NULL
                           CHECK (status IN ('queued', 'sent', 'failed', 'skipped', 'simulated')),
-  provider_message_sid  TEXT        NULL,   -- Twilio MessageSid on success
-  error_message         TEXT        NULL,   -- Twilio or network error text
+  provider_message_sid  TEXT        NULL,   -- ClickSend message_id on success
+  error_message         TEXT        NULL,   -- ClickSend or network error text
   -- skip_reason is set when status = 'skipped' or 'simulated'
   skip_reason           TEXT        NULL,
   -- Safe JSON context: job_id, work_order_num, conversation_id, dispatcher version, etc.
@@ -41,7 +41,7 @@ COMMENT ON COLUMN sms_notification_logs.phone_last4 IS
   'Last 4 digits of the destination E.164 number, e.g. "1234". Full number is never stored.';
 
 COMMENT ON COLUMN sms_notification_logs.status IS
-  'queued=about to send, sent=Twilio accepted, failed=error, skipped=settings/phone gate, simulated=dry-run';
+  'queued=about to send, sent=ClickSend accepted, failed=error, skipped=settings/phone gate, simulated=dry-run';
 
 COMMENT ON COLUMN sms_notification_logs.skip_reason IS
   'Human-readable reason when status=skipped or simulated, e.g. "sms_enabled=false".';

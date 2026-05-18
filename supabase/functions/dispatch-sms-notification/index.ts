@@ -15,7 +15,7 @@ import {
  * gates, renders a personalised message, then INSERTS into sms_notification_queue
  * (status=pending) for async delivery by process-sms-queue.
  *
- * No Twilio call is made here. That happens in process-sms-queue → send-sms.
+ * No ClickSend call is made here. That happens in process-sms-queue → send-sms.
  *
  * Request body:
  * {
