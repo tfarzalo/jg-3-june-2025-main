@@ -4,6 +4,11 @@
 **Issue:** Chat SMS notifications not appearing in logs  
 **Status:** 🔍 INVESTIGATING
 
+> **📚 Related Documentation:**
+> - [ClickSend Status Reference](./CLICKSEND_STATUS_REFERENCE.md) - Complete guide to SMS status values
+> - [Status Fix Deployment](./CLICKSEND_STATUS_FIX_DEPLOYMENT.md) - Deploying accurate status display
+> - [Migration Guide](./CLICKSEND_MIGRATION_GUIDE.md) - Full ClickSend migration docs
+
 ---
 
 ## ✅ What We've Verified

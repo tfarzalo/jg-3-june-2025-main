@@ -115,7 +115,7 @@ async function writeLog(
     user_id?: string | null;
     phone_last4: string;
     message_body: string;
-    status: "queued" | "sent" | "failed" | "skipped" | "simulated";
+    status: string; // Accepts any ClickSend status value (SUCCESS, REGISTRATION_NEEDED, etc.) or internal values (queued, failed, skipped, simulated)
     provider_message_sid?: string | null;
     provider_status?: string | null;
     error_message?: string | null;
@@ -313,14 +313,21 @@ Deno.serve(async (req: Request) => {
   }
 
   const success      = clickSendData !== null && sendError === null;
-  const finalStatus  = success ? "sent" : "failed";
+  const messageId    = clickSendData?.data?.messages?.[0]?.message_id ?? null;
+  const msgStatus    = clickSendData?.data?.messages?.[0]?.status ?? null;
+  
+  // Store the actual ClickSend status when available (SUCCESS, REGISTRATION_NEEDED, etc.)
+  // This gives us precise delivery information instead of generic "sent"/"failed"
+  // The database constraint was updated to allow any non-empty string via migration
+  // 20260518000004_allow_clicksend_status_values.sql
+  const finalStatus  = msgStatus ?? (sendError ? "failed" : "sent");
+  
+  console.log(`[send-sms] 📊 Final status: ${finalStatus} | msgStatus=${msgStatus ?? 'null'} | error=${sendError ? 'yes' : 'no'}`);
+
 
   // ── Update queued row → final status ─────────────────────────────────────────
   if (queuedLogId) {
     try {
-      const messageId = clickSendData?.data?.messages?.[0]?.message_id ?? null;
-      const msgStatus = clickSendData?.data?.messages?.[0]?.status ?? null;
-      
       const { error: updateErr } = await supabase
         .from("sms_notification_logs")
         .update({

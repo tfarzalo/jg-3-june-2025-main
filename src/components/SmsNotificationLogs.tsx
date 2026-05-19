@@ -34,7 +34,8 @@ import { supabase } from '../utils/supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type SmsStatus = 'queued' | 'sent' | 'failed' | 'skipped' | 'simulated';
+// Now accepts any string since ClickSend returns various statuses
+type SmsStatus = string;
 
 interface SmsLogRow {
   id: string;
@@ -63,10 +64,20 @@ interface SmsLogRow {
 const PAGE_SIZE = 50;
 const MAX_ROWS = 200;
 
+// ClickSend returns various status values. We map common ones and provide a fallback.
 const STATUS_CONFIG: Record<
-  SmsStatus,
+  string,
   { label: string; icon: React.ElementType; classes: string; dot: string }
 > = {
+  // ClickSend success statuses
+  SUCCESS: {
+    label: 'Success',
+    icon: CheckCircle2,
+    classes:
+      'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800/40',
+    dot: 'bg-green-500',
+  },
+  // Legacy "sent" status from before ClickSend migration
   sent: {
     label: 'Sent',
     icon: CheckCircle2,
@@ -74,6 +85,31 @@ const STATUS_CONFIG: Record<
       'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800/40',
     dot: 'bg-green-500',
   },
+  // ClickSend registration/opt-in required
+  REGISTRATION_NEEDED: {
+    label: 'Registration Required',
+    icon: AlertTriangle,
+    classes:
+      'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-800/40',
+    dot: 'bg-orange-500',
+  },
+  // ClickSend invalid number
+  INVALID_NUMBER: {
+    label: 'Invalid Number',
+    icon: XCircle,
+    classes:
+      'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800/40',
+    dot: 'bg-red-500',
+  },
+  // ClickSend opted out
+  OPTED_OUT: {
+    label: 'Opted Out',
+    icon: MinusCircle,
+    classes:
+      'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-300 dark:border-yellow-800/40',
+    dot: 'bg-yellow-400',
+  },
+  // Generic failure (network error, etc.)
   failed: {
     label: 'Failed',
     icon: XCircle,
@@ -81,6 +117,7 @@ const STATUS_CONFIG: Record<
       'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800/40',
     dot: 'bg-red-500',
   },
+  // Internal/user-initiated statuses
   skipped: {
     label: 'Skipped',
     icon: MinusCircle,
@@ -102,6 +139,15 @@ const STATUS_CONFIG: Record<
       'bg-gray-50 text-gray-600 border-gray-200 dark:bg-gray-800/40 dark:text-gray-300 dark:border-gray-700',
     dot: 'bg-gray-400',
   },
+};
+
+// Fallback for unknown ClickSend status values
+const FALLBACK_STATUS_CONFIG = {
+  label: 'Unknown',
+  icon: AlertTriangle,
+  classes:
+    'bg-gray-50 text-gray-600 border-gray-300 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700',
+  dot: 'bg-gray-400',
 };
 
 const EVENT_LABELS: Record<string, string> = {
@@ -130,14 +176,17 @@ function formatDate(iso: string): string {
 }
 
 function StatusBadge({ status }: { status: SmsStatus }) {
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.queued;
+  const cfg = STATUS_CONFIG[status] ?? FALLBACK_STATUS_CONFIG;
   const Icon = cfg.icon;
+  const displayLabel = cfg === FALLBACK_STATUS_CONFIG ? status : cfg.label;
+  
   return (
     <span
       className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full border ${cfg.classes}`}
+      title={cfg === FALLBACK_STATUS_CONFIG ? `ClickSend status: ${status}` : undefined}
     >
       <Icon className="h-3 w-3 flex-shrink-0" />
-      {cfg.label}
+      {displayLabel}
     </span>
   );
 }

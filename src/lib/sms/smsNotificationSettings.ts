@@ -176,6 +176,23 @@ export async function upsertOwnSmsSettings(
   // Strip read-only fields that must not appear in the upsert payload
   const { id, created_at, updated_at, user_id: _uid, ...writePayload } = payload as any;
 
+  // Sync sms_consent_given in profiles table when sms_enabled changes
+  // This ensures TCPA compliance and master toggle stay aligned
+  if ('sms_enabled' in updates) {
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({
+        sms_consent_given: updates.sms_enabled,
+        sms_consent_given_at: updates.sms_enabled ? new Date().toISOString() : null,
+      })
+      .eq('id', user.id);
+
+    if (profileError) {
+      console.warn('[smsNotificationSettings] Failed to sync sms_consent_given:', profileError);
+      // Don't throw - settings table update is more important
+    }
+  }
+
   const { data, error } = await supabase
     .from('user_sms_notification_settings')
     .upsert({ user_id: user.id, ...writePayload }, { onConflict: 'user_id' })
@@ -223,6 +240,23 @@ export async function adminUpsertSmsSettings(
       : {}),
     ...updates,
   };
+
+  // Sync sms_consent_given in profiles table when sms_enabled changes
+  // This ensures TCPA compliance and master toggle stay aligned
+  if ('sms_enabled' in updates) {
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({
+        sms_consent_given: updates.sms_enabled,
+        sms_consent_given_at: updates.sms_enabled ? new Date().toISOString() : null,
+      })
+      .eq('id', userId);
+
+    if (profileError) {
+      console.warn('[smsNotificationSettings] Failed to sync sms_consent_given:', profileError);
+      // Don't throw - settings table update is more important
+    }
+  }
 
   const { data, error } = await supabase
     .from('user_sms_notification_settings')

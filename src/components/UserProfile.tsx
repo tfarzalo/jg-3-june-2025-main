@@ -479,6 +479,20 @@ export function UserProfile() {
         .eq('id', profile.id);
         
       if (updateError) throw updateError;
+
+      // Sync sms_enabled in user_sms_notification_settings with sms_consent_given
+      // This ensures the admin SMS settings panel and TCPA consent stay aligned
+      const { error: smsSettingsError } = await supabase
+        .from('user_sms_notification_settings')
+        .upsert({
+          user_id: profile.id,
+          sms_enabled: profile.sms_consent_given,
+        }, { onConflict: 'user_id' });
+
+      if (smsSettingsError) {
+        console.warn('[UserProfile] Failed to sync sms_enabled:', smsSettingsError);
+        // Don't throw - profile update is more important
+      }
       
       // If avatar was updated, trigger global avatar refresh
       if (avatarFile) {

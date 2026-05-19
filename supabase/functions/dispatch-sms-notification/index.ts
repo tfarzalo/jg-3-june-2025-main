@@ -130,12 +130,22 @@ function isValidEventType(v: string): v is EventType {
 function eventToSettingColumn(e: EventType): string {
   const map: Record<EventType, string> = {
     job_assigned:         "notify_job_assigned",
-    job_accepted:         "notify_job_accepted",
-    work_order_submitted: "notify_work_order_submitted",
-    charges_approved:     "notify_charges_approved",
+    job_accepted:         "notify_job_accepted",         // Subcontractor setting (legacy)
+    work_order_submitted: "notify_work_order_submitted", // Subcontractor setting (legacy)
+    charges_approved:     "notify_charges_approved",     // Subcontractor setting (legacy)
     chat_received:        "notify_chat_received",
   };
   return map[e];
+}
+
+function eventToAdminSettingColumn(e: EventType): string | null {
+  // Admin-specific system-wide notification settings
+  const map: Partial<Record<EventType, string>> = {
+    job_accepted:         "notify_admin_job_accepted",
+    work_order_submitted: "notify_admin_work_order_submitted",
+    charges_approved:     "notify_admin_charges_approved",
+  };
+  return map[e] ?? null;
 }
 
 async function logSkip(
@@ -263,7 +273,201 @@ async function fetchSenderName(
 
 // ─── Recipient Resolution ─────────────────────────────────────────────────────
 
+/**
+ * Resolves eligible SMS recipients based on event type and user roles.
+ * 
+ * Role-based logic:
+ * - chat_received: Direct message to specific recipient(s)
+ * - job_assigned: Direct message to assigned subcontractor
+ * - job_accepted, work_order_submitted, charges_approved: System-wide to all admins
+ */
 async function resolveEligibleRecipients(
+  supabase: ReturnType<typeof createClient>,
+  eventType: EventType,
+  senderUserId: string | null | undefined,
+  explicitUserIds?: string[]
+): Promise<{ recipients: Recipient[]; skippedNoPhone: Array<{ user_id: string; reason: string }> }> {
+  
+  // For direct messages (chat, job assignment), use explicit recipients
+  if (eventType === "chat_received" || eventType === "job_assigned") {
+    return await resolveDirectMessageRecipients(supabase, eventType, explicitUserIds, senderUserId);
+  }
+  
+  // For admin-level system events, notify all admins with the setting enabled
+  const adminColumn = eventToAdminSettingColumn(eventType);
+  if (adminColumn) {
+    return await resolveAdminNotificationRecipients(supabase, eventType, adminColumn, senderUserId);
+  }
+  
+  // Default: use the original logic for any unmapped events
+  return await resolveDefaultRecipients(supabase, eventType, senderUserId, explicitUserIds);
+}
+
+/**
+ * Resolve recipients for admin system-wide notifications
+ * (job_accepted, work_order_submitted, charges_approved)
+ */
+async function resolveAdminNotificationRecipients(
+  supabase: ReturnType<typeof createClient>,
+  eventType: EventType,
+  adminSettingColumn: string,
+  senderUserId: string | null | undefined
+): Promise<{ recipients: Recipient[]; skippedNoPhone: Array<{ user_id: string; reason: string }> }> {
+  
+  console.log(`[dispatch-sms] 🔔 Resolving admin recipients for ${eventType} | column=${adminSettingColumn}`);
+  
+  // Query all admin/superadmin users with the admin setting enabled
+  const { data, error } = await supabase
+    .from("user_sms_notification_settings")
+    .select(`
+      user_id, 
+      sms_enabled, 
+      ${adminSettingColumn}, 
+      profiles!inner ( 
+        id, 
+        full_name, 
+        sms_phone, 
+        sms_consent_given,
+        role 
+      )
+    `)
+    .not("profiles.sms_phone", "is", null)
+    .eq("profiles.sms_consent_given", true)
+    .eq("sms_enabled", true)
+    .eq(adminSettingColumn, true)
+    .in("profiles.role", ["admin", "is_super_admin", "jg_management"]);
+  
+  if (error) {
+    console.error("[dispatch-sms] ❌ Admin recipient query failed:", error.message);
+    throw new Error(`Failed to query admin SMS recipients: ${error.message}`);
+  }
+  
+  const recipients: Recipient[] = [];
+  const skippedNoPhone: Array<{ user_id: string; reason: string }> = [];
+  
+  for (const row of data ?? []) {
+    const profile = row.profiles as { 
+      id: string; 
+      full_name: string | null; 
+      sms_phone: string | null; 
+      sms_consent_given: boolean | null;
+      role: string;
+    } | null;
+    
+    const phone = profile?.sms_phone ?? null;
+    
+    if (!phone) {
+      skippedNoPhone.push({ user_id: row.user_id, reason: "no sms_phone on profile" });
+      continue;
+    }
+    
+    // Don't notify the sender (e.g., if an admin triggered the event)
+    if (senderUserId && row.user_id === senderUserId) {
+      skippedNoPhone.push({ user_id: row.user_id, reason: "sender_excluded" });
+      continue;
+    }
+    
+    recipients.push({
+      user_id: row.user_id,
+      full_name: profile?.full_name ?? null,
+      sms_phone: phone,
+    });
+  }
+  
+  console.log(`[dispatch-sms] 👥 Found ${recipients.length} admin(s) for ${eventType}`);
+  return { recipients, skippedNoPhone };
+}
+
+/**
+ * Resolve recipients for direct messages (chat_received, job_assigned)
+ */
+async function resolveDirectMessageRecipients(
+  supabase: ReturnType<typeof createClient>,
+  eventType: EventType,
+  explicitUserIds: string[] | undefined,
+  senderUserId: string | null | undefined
+): Promise<{ recipients: Recipient[]; skippedNoPhone: Array<{ user_id: string; reason: string }> }> {
+  
+  if (!explicitUserIds || explicitUserIds.length === 0) {
+    console.warn(`[dispatch-sms] ⚠️  No explicit recipients for ${eventType}`);
+    return { recipients: [], skippedNoPhone: [] };
+  }
+  
+  const settingColumn = eventToSettingColumn(eventType);
+  console.log(`[dispatch-sms] 💬 Resolving direct message recipients for ${eventType} | recipients=${explicitUserIds.length}`);
+  
+  // Query specific recipients regardless of role
+  const { data, error } = await supabase
+    .from("user_sms_notification_settings")
+    .select(`
+      user_id, 
+      sms_enabled, 
+      ${settingColumn}, 
+      profiles!inner ( 
+        id, 
+        full_name, 
+        sms_phone, 
+        sms_consent_given 
+      )
+    `)
+    .in("user_id", explicitUserIds)
+    .not("profiles.sms_phone", "is", null)
+    .eq("profiles.sms_consent_given", true);
+  
+  if (error) {
+    console.error("[dispatch-sms] ❌ Direct message recipient query failed:", error.message);
+    throw new Error(`Failed to query direct message SMS recipients: ${error.message}`);
+  }
+  
+  const recipients: Recipient[] = [];
+  const skippedNoPhone: Array<{ user_id: string; reason: string }> = [];
+  
+  for (const row of data ?? []) {
+    const profile = row.profiles as { 
+      id: string; 
+      full_name: string | null; 
+      sms_phone: string | null; 
+      sms_consent_given: boolean | null;
+    } | null;
+    
+    const phone = profile?.sms_phone ?? null;
+    
+    // Check if user has SMS and event-specific notifications enabled
+    if (!row.sms_enabled) {
+      skippedNoPhone.push({ user_id: row.user_id, reason: "sms_enabled=false" });
+      continue;
+    }
+    
+    if (!(row as Record<string, unknown>)[settingColumn]) {
+      skippedNoPhone.push({ user_id: row.user_id, reason: `${settingColumn}=false` });
+      continue;
+    }
+    
+    if (!phone) {
+      skippedNoPhone.push({ user_id: row.user_id, reason: "no sms_phone on profile" });
+      continue;
+    }
+    
+    // Don't send to the sender
+    if (senderUserId && row.user_id === senderUserId) {
+      skippedNoPhone.push({ user_id: row.user_id, reason: "sender_excluded" });
+      continue;
+    }
+    
+    recipients.push({
+      user_id: row.user_id,
+      full_name: profile?.full_name ?? null,
+      sms_phone: phone,
+    });
+  }
+  
+  return { recipients, skippedNoPhone };
+}
+
+/**
+ * Default recipient resolution (fallback for unmapped events)
+ */
+async function resolveDefaultRecipients(
   supabase: ReturnType<typeof createClient>,
   eventType: EventType,
   senderUserId: string | null | undefined,

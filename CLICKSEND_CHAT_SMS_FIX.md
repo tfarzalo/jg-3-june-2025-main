@@ -1,4 +1,5 @@
-# ClickSend SMS Chat Notification Fix
+
+Bu# ClickSend SMS Chat Notification Fix
 
 **Date:** May 18, 2026  
 **Issue:** Chat messages not triggering SMS notifications  
