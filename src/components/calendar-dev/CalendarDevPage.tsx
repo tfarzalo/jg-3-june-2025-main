@@ -100,7 +100,7 @@ interface CalJob {
 interface JobPhase { id: string; job_phase_label: string; color_dark_mode: string; }
 
 interface RBCEvent {
-  id: string; title: string; start: Date; end: Date; allDay: boolean; resource: CalJob;
+  id: string; title: string; start: Date; end: Date; allDay: boolean; resource: CalJob | CalendarEvent; type: 'job' | 'event';
 }
 
 type ViewMode = 'month' | 'week' | 'day' | 'agenda';
@@ -109,13 +109,26 @@ type ViewMode = 'month' | 'week' | 'day' | 'agenda';
 function dateToStr(d: Date): string { return format(d, 'yyyy-MM-dd'); }
 function strToDate(s: string): Date { return new Date(`${s}T00:00:00`); }
 function jobToRBC(job: CalJob): RBCEvent {
+  const assignedText = job.assignedToName ? ` · ${job.assignedToName}` : ' · Unassigned';
   return {
-    id: job.id,
-    title: `WO-${String(job.workOrderNum).padStart(6, '0')} · ${job.propertyName}`,
+    id: `job-${job.id}`,
+    title: `WO-${String(job.workOrderNum).padStart(6, '0')} · ${job.propertyName} #${job.unitNumber}${assignedText}`,
     start: strToDate(job.scheduledDateRaw),
     end: strToDate(job.scheduledDateRaw),
     allDay: true,
     resource: job,
+    type: 'job',
+  };
+}
+function eventToRBC(event: CalendarEvent): RBCEvent {
+  return {
+    id: `event-${event.id}`,
+    title: event.title,
+    start: parseISO(event.start_at),
+    end: parseISO(event.end_at),
+    allDay: event.is_all_day,
+    resource: event,
+    type: 'event',
   };
 }
 function getEasternNow(): Date {
@@ -455,13 +468,16 @@ function DayCell({
               className={`w-full rounded px-1.5 py-[3px] cursor-grab active:cursor-grabbing transition-all duration-150 select-none
                 ${draggingId === (item as CalJob).id ? 'opacity-30 scale-95' : 'hover:brightness-110 hover:shadow-sm'}`}
               style={{ backgroundColor: `${(item as CalJob).phaseColor}22`, borderLeft: `3px solid ${(item as CalJob).phaseColor}` }}
-              title={`WO-${String((item as CalJob).workOrderNum).padStart(6, '0')} · ${(item as CalJob).propertyName}\nUnit: ${(item as CalJob).unitNumber}${(item as CalJob).assignedToName ? `\nAssigned: ${(item as CalJob).assignedToName}` : ''}`}
+              title={`WO-${String((item as CalJob).workOrderNum).padStart(6, '0')} · ${(item as CalJob).propertyName}\nUnit: ${(item as CalJob).unitNumber}${(item as CalJob).assignedToName ? `\nAssigned: ${(item as CalJob).assignedToName}` : '\nUnassigned'}`}
             >
               <div className="text-[10px] font-semibold truncate leading-tight" style={{ color: (item as CalJob).phaseColor }}>
                 WO-{String((item as CalJob).workOrderNum).padStart(6, '0')}
               </div>
               <div className="text-[10px] text-gray-600 dark:text-gray-400 truncate leading-tight">
-                {(item as CalJob).propertyName}
+                {(item as CalJob).propertyName} #{(item as CalJob).unitNumber}
+              </div>
+              <div className="text-[9px] text-gray-500 dark:text-gray-500 truncate leading-tight italic">
+                {(item as CalJob).assignedToName || 'Unassigned'}
               </div>
             </div>
           )
@@ -682,11 +698,23 @@ export function CalendarDevPage() {
     return map;
   }, [allJobs]);
 
-  // ── RBC events (week/day/agenda) ───────────────────────────────────────────────
+  // ── RBC events (week/day/agenda) - includes both jobs AND calendar events ─────
   const rbcEvents = useMemo(() => {
-    const src = filterSubId === 'all' ? jobs : jobs.filter((j) => j.assignedTo === filterSubId);
-    return src.map(jobToRBC);
-  }, [jobs, filterSubId]);
+    const jobEvents = filterSubId === 'all' ? jobs : jobs.filter((j) => j.assignedTo === filterSubId);
+    const rbcJobs = jobEvents.map(jobToRBC);
+    
+    // Include calendar events if "Events" is in the phase filter or no filter is active
+    let rbcCalEvents: RBCEvent[] = [];
+    if (selectedPhases.length === 0 || selectedPhases.includes('Events')) {
+      // Get all calendar events within the current view's date range
+      rbcCalEvents = calEvents
+        .filter((e) => !e.parent_event_id) // Exclude recurring instances (handled by getEventsForDay)
+        .filter((e) => !(e.title.includes('Paint') && e.title.includes('Callback') && e.title.includes('Repair')))
+        .map(eventToRBC);
+    }
+    
+    return [...rbcJobs, ...rbcCalEvents];
+  }, [jobs, calEvents, filterSubId, selectedPhases]);
 
   // ── Month DnD ──────────────────────────────────────────────────────────────────
   const handleDragStart = useCallback((job: CalJob) => setDraggingJob(job), []);
@@ -709,11 +737,14 @@ export function CalendarDevPage() {
     }
   }, [draggingJob]);
 
-  // ── RBC DnD (week/day) ─────────────────────────────────────────────────────────
+  // ── RBC DnD (week/day) - only allow dragging jobs, not events ─────────────────
   const handleRBCEventDrop = useCallback(async ({ event, start }: { event: RBCEvent; start: Date | string }) => {
+    // Only allow dragging jobs, not calendar events
+    if (event.type !== 'job') return;
+    
     const newDate = typeof start === 'string' ? new Date(start) : start;
     const newDateStr = dateToStr(newDate);
-    const job = event.resource;
+    const job = event.resource as CalJob;
     if (job.scheduledDateRaw === newDateStr) return;
     const originalDate = job.scheduledDateRaw;
     const update = (d: string) => {
@@ -739,7 +770,14 @@ export function CalendarDevPage() {
   }, []);
 
   // ── Event handlers ─────────────────────────────────────────────────────────────
-  const handleRBCSelectEvent = useCallback((event: RBCEvent) => setSelectedJob(event.resource), []);
+  const handleRBCSelectEvent = useCallback((event: RBCEvent) => {
+    if (event.type === 'job') {
+      setSelectedJob(event.resource as CalJob);
+    } else {
+      setSelectedEvent(event.resource as CalendarEvent);
+      setShowEventDetails(true);
+    }
+  }, []);
   const handleEventUpdated = (evt: CalendarEvent) => {
     setCalEvents((prev) => prev.map((e) => e.id === evt.id ? evt : e));
     setShowEventDetails(false); setSelectedEvent(null);
@@ -751,8 +789,10 @@ export function CalendarDevPage() {
 
   // ── RBC event styles ───────────────────────────────────────────────────────────
   const rbcEventStyleGetter = useCallback((event: RBCEvent) => {
-    const c = event.resource.phaseColor || '#3B82F6';
-    return { style: { backgroundColor: c, borderColor: c, color: '#fff', borderRadius: '4px', fontSize: '11px', padding: '2px 5px', cursor: 'grab' } };
+    const c = event.type === 'job' 
+      ? (event.resource as CalJob).phaseColor || '#3B82F6'
+      : (event.resource as CalendarEvent).color || '#3B82F6';
+    return { style: { backgroundColor: c, borderColor: c, color: '#fff', borderRadius: '4px', fontSize: '11px', padding: '2px 5px', cursor: event.type === 'job' ? 'grab' : 'pointer' } };
   }, []);
 
   // ── Nav label ─────────────────────────────────────────────────────────────────
@@ -933,7 +973,7 @@ export function CalendarDevPage() {
             eventPropGetter={rbcEventStyleGetter as any}
             onEventDrop={handleRBCEventDrop as any}
             onSelectEvent={handleRBCSelectEvent as any}
-            draggableAccessor={() => true}
+            draggableAccessor={(event: RBCEvent) => event.type === 'job'}
             resizable={false}
             step={30}
             timeslots={2}
