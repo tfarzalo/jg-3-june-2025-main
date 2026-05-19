@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { useUnreadMessages } from '../../contexts/UnreadMessagesProvider';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { EnhancedChatApi } from '../../services/enhancedChatApi';
+import { dispatchChatReceivedSms } from '../../lib/sms/dispatchSmsNotification';
 
 interface ChatUser {
   id: string;
@@ -811,6 +812,19 @@ export function ChatMenuEnhanced() {
         .from('conversations')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', selectedChatId);
+
+      const selectedConversation = allConversations.find((conversation) => conversation.id === selectedChatId);
+      const recipientUserId =
+        selectedConversation?.participants.find((participantId) => participantId !== user.id) ??
+        chatUsers[selectedChatId]?.id;
+
+      void dispatchChatReceivedSms({
+        recipientUserId,
+        senderUserId: user.id,
+        senderName: user.user_metadata?.full_name ?? user.email ?? 'Someone',
+        conversationId: selectedChatId,
+        messageBody: messageText,
+      });
 
     } catch (error) {
       console.error('Failed to send message:', error);

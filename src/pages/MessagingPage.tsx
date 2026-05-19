@@ -10,6 +10,7 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 import { ChatDock } from '../components/chat/ChatDock';
 import { EnhancedChatApi } from '../services/enhancedChatApi';
 import { toDialablePhoneNumber } from '../lib/utils/formatUtils';
+import { dispatchChatReceivedSms } from '../lib/sms/dispatchSmsNotification';
 
 interface User {
   id: string;
@@ -537,6 +538,15 @@ function MessagingPage() {
         .from('conversations')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', selectedConversation.id);
+
+      const recipientUserId = selectedConversation.participants.find((participantId) => participantId !== user.id);
+      void dispatchChatReceivedSms({
+        recipientUserId,
+        senderUserId: user.id,
+        senderName: user.user_metadata?.full_name ?? user.email ?? 'Someone',
+        conversationId: selectedConversation.id,
+        messageBody: newMessage.trim(),
+      });
       
       setNewMessage('');
       setTimeout(() => {

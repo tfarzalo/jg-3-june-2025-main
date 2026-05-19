@@ -15,12 +15,11 @@
 
 UPDATE sms_notification_logs
 SET metadata = jsonb_set(
-  COALESCE(metadata, '{}'::jsonb),
-  '{archived}',
-  'true'::jsonb
-),
-metadata = jsonb_set(
-  COALESCE(metadata, '{}'::jsonb),
+  jsonb_set(
+    COALESCE(metadata, '{}'::jsonb),
+    '{archived}',
+    'true'::jsonb
+  ),
   '{archived_reason}',
   '"Pre-ClickSend migration (Twilio data)"'::jsonb
 )

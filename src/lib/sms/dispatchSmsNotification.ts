@@ -124,6 +124,10 @@ export interface DispatchSmsPayload {
   eventType: SmsNotificationEventKey;
   /** profiles.id of the intended recipient. */
   recipientUserId: string;
+  /** Optional: profiles.id of the user who triggered the notification. */
+  sender_user_id?: string;
+  /** Optional: chat conversation id for audit/log context. */
+  conversation_id?: string;
   /**
    * Optional: top-level job_id for DB context fetching.
    * The Edge Function will also check context.jobId as a fallback.
@@ -132,6 +136,16 @@ export interface DispatchSmsPayload {
   job_id?: string;
   /** Arbitrary context data forwarded to the Edge Function for message templating. */
   context?: SmsEventContext | Record<string, unknown>;
+  /** Safe audit metadata forwarded to the Edge Function. */
+  metadata?: Record<string, unknown>;
+}
+
+export interface DispatchChatReceivedSmsParams {
+  recipientUserId: string | null | undefined;
+  senderUserId: string | null | undefined;
+  senderName?: string | null;
+  conversationId: string;
+  messageBody?: string;
 }
 
 // ─── Dispatch functions ───────────────────────────────────────────────────────
@@ -166,6 +180,40 @@ export async function dispatchSmsNotification(
     );
     if (throwOnError) throw err;
   }
+}
+
+/**
+ * Best-effort SMS alert for an in-app chat message.
+ *
+ * This does not send the chat message itself. It only asks the SMS dispatcher
+ * to notify the receiving app user that a new in-app message exists.
+ */
+export async function dispatchChatReceivedSms(
+  params: DispatchChatReceivedSmsParams,
+  throwOnError = false
+): Promise<void> {
+  const { recipientUserId, senderUserId, senderName, conversationId, messageBody } = params;
+
+  if (!recipientUserId || !senderUserId || recipientUserId === senderUserId) return;
+
+  return dispatchSmsNotification(
+    {
+      eventType: 'chat_received',
+      recipientUserId,
+      sender_user_id: senderUserId,
+      conversation_id: conversationId,
+      context: {
+        senderName: senderName ?? 'Someone',
+        conversationId,
+        messageBody,
+      },
+      metadata: {
+        source: 'app_chat',
+        conversation_id: conversationId,
+      },
+    },
+    throwOnError
+  );
 }
 
 /**
