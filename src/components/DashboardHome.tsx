@@ -434,7 +434,7 @@ export function DashboardHome() {
   };
 
   // Filter jobs by status  // Get today's jobs from the dedicated hook
-  const sortedTodaysJobs = todaysJobs.slice(0, 4);
+  const sortedTodaysJobs = todaysJobs;
   
   // Define allTodaysJobs - should be today's jobs, not all jobs
   const allTodaysJobs = todaysJobs || [];
@@ -677,11 +677,6 @@ export function DashboardHome() {
                     </div>
                   </Link>
                 ))}
-                {allTodaysJobs.length > 4 && (
-                  <div className="text-center py-2 text-sm text-gray-500 dark:text-gray-400">
-                    Showing 4 of {allTodaysJobs.length} jobs
-                  </div>
-                )}
               </div>
             )}
           </div>
@@ -984,11 +979,6 @@ export function DashboardHome() {
                     </div>
                   </Link>
                 ))}
-                {allTodaysJobs.length > 4 && (
-                  <div className="text-center py-2 text-sm text-gray-500 dark:text-gray-400">
-                    Showing 4 of {allTodaysJobs.length} jobs
-                  </div>
-                )}
               </div>
             )}
           </div>

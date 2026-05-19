@@ -1156,9 +1156,10 @@ export function CalendarDevPage() {
                 <div className="p-4">
                   {/* Daily Summary Header */}
                   {(() => {
+                    // Use phase-filtered jobs (jobsByDate) to match what's visible in the month grid
                     const dayJobs = filterSubId === 'all'
-                      ? (allJobsByDate.get(dateToStr(selectedDate)) || [])
-                      : (allJobsByDate.get(dateToStr(selectedDate)) || []).filter((j) => j.assignedTo === filterSubId);
+                      ? (jobsByDate.get(dateToStr(selectedDate)) || [])
+                      : (jobsByDate.get(dateToStr(selectedDate)) || []).filter((j) => j.assignedTo === filterSubId);
                     const totals = getJobTypeTotals(dayJobs);
                     
                     if (totals.total > 0) {
@@ -1190,9 +1191,10 @@ export function CalendarDevPage() {
 
                   {/* Jobs & Events List */}
                   {(() => {
+                    // Use phase-filtered jobs (jobsByDate) to match what's visible in the month grid
                     const dayJobs = filterSubId === 'all'
-                      ? (allJobsByDate.get(dateToStr(selectedDate)) || [])
-                      : (allJobsByDate.get(dateToStr(selectedDate)) || []).filter((j) => j.assignedTo === filterSubId);
+                      ? (jobsByDate.get(dateToStr(selectedDate)) || [])
+                      : (jobsByDate.get(dateToStr(selectedDate)) || []).filter((j) => j.assignedTo === filterSubId);
                     const dayEvents = getEventsForDay(selectedDate);
 
                     if (dayJobs.length === 0 && dayEvents.length === 0) {
