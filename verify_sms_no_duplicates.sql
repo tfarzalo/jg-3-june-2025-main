@@ -7,18 +7,18 @@
 -- Shows all SMS logs for admin events, grouped by event to spot duplicates
 
 SELECT 
-  event_type,
-  created_at,
-  user_id,
-  phone_last4,
-  status,
-  skip_reason,
-  SUBSTRING(message_body, 1, 80) as message_preview
-FROM sms_notification_logs
+  l.event_type,
+  l.created_at,
+  l.user_id,
+  l.phone_last4,
+  l.status,
+  l.skip_reason,
+  SUBSTRING(l.message_body, 1, 80) as message_preview
+FROM sms_notification_logs l
 WHERE 
-  event_type IN ('work_order_submitted', 'job_accepted', 'charges_approved')
-  AND created_at > NOW() - INTERVAL '24 hours'
-ORDER BY created_at DESC, event_type, user_id;
+  l.event_type IN ('work_order_submitted', 'job_accepted', 'charges_approved')
+  AND l.created_at > NOW() - INTERVAL '24 hours'
+ORDER BY l.created_at DESC, l.event_type, l.user_id;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 2. Count SMS per Admin per Event (Detect Duplicates)
@@ -27,18 +27,18 @@ ORDER BY created_at DESC, event_type, user_id;
 -- If count > 1 for same timestamp window, we have duplicates
 
 SELECT 
-  event_type,
-  user_id,
+  l.event_type,
+  l.user_id,
   p.full_name as admin_name,
   COUNT(*) as sms_count,
-  STRING_AGG(status, ', ') as all_statuses,
-  MAX(created_at) as most_recent
+  STRING_AGG(l.status, ', ') as all_statuses,
+  MAX(l.created_at) as most_recent
 FROM sms_notification_logs l
 LEFT JOIN profiles p ON l.user_id = p.id
 WHERE 
-  event_type IN ('work_order_submitted', 'job_accepted', 'charges_approved')
-  AND created_at > NOW() - INTERVAL '24 hours'
-GROUP BY event_type, user_id, p.full_name
+  l.event_type IN ('work_order_submitted', 'job_accepted', 'charges_approved')
+  AND l.created_at > NOW() - INTERVAL '24 hours'
+GROUP BY l.event_type, l.user_id, p.full_name
 HAVING COUNT(*) > 1  -- Only show potential duplicates
 ORDER BY most_recent DESC;
 
@@ -96,27 +96,27 @@ SELECT
 FROM sms_notification_queue q
 LEFT JOIN profiles p ON q.user_id = p.id
 WHERE 
-  event_type IN ('work_order_submitted', 'job_accepted', 'charges_approved')
-  AND created_at > NOW() - INTERVAL '24 hours'
-ORDER BY created_at DESC;
+  q.event_type IN ('work_order_submitted', 'job_accepted', 'charges_approved')
+  AND q.created_at > NOW() - INTERVAL '24 hours'
+ORDER BY q.created_at DESC;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 6. Summary Stats - SMS Sent Today
 -- ═══════════════════════════════════════════════════════════════════════════
 
 SELECT 
-  event_type,
-  status,
+  l.event_type,
+  l.status,
   COUNT(*) as count,
-  COUNT(DISTINCT user_id) as unique_admins,
-  MIN(created_at) as first_sent,
-  MAX(created_at) as last_sent
-FROM sms_notification_logs
+  COUNT(DISTINCT l.user_id) as unique_admins,
+  MIN(l.created_at) as first_sent,
+  MAX(l.created_at) as last_sent
+FROM sms_notification_logs l
 WHERE 
-  event_type IN ('work_order_submitted', 'job_accepted', 'charges_approved')
-  AND created_at > CURRENT_DATE
-GROUP BY event_type, status
-ORDER BY event_type, status;
+  l.event_type IN ('work_order_submitted', 'job_accepted', 'charges_approved')
+  AND l.created_at > CURRENT_DATE
+GROUP BY l.event_type, l.status
+ORDER BY l.event_type, l.status;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 7. Check for Rapid-Fire Duplicates (Within 60 Seconds)
