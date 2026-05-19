@@ -51,6 +51,8 @@ import {
   ExternalLink,
   Building2,
   RefreshCw,
+  PanelRightClose,
+  PanelRightOpen,
 } from 'lucide-react';
 
 import { supabase } from '../../utils/supabase';
@@ -61,6 +63,8 @@ import { getRecurringEventsForDay } from '../../utils/recurringEvents';
 import EventModal from '../calendar/EventModal';
 import EventDetailsModal from '../calendar/EventDetailsModal';
 import SubscribeCalendarsModal from '../calendar/SubscribeCalendarsModal';
+import { dispatchSmsNotification } from '../../lib/sms/dispatchSmsNotification';
+import { formatDisplayDate } from '../../lib/dateUtils';
 
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
@@ -79,7 +83,7 @@ const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const INITIAL_VISIBLE = 3;
 
 // ─── Types ───────────────────────────────────────────────────────────────────────
-interface SubcontractorProfile { id: string; full_name: string | null; }
+interface SubcontractorProfile { id: string; full_name: string | null; email: string | null; }
 
 interface CalJob {
   id: string;
@@ -162,16 +166,180 @@ function JobDetailModal({ job, subcontractors, onClose, onSaved }: JobDetailModa
   const handleSave = async () => {
     setSaving(true);
     const newSubId = selectedSubId || null;
+    const previousSubId = job.assignedTo || null;
     const newSubName = subcontractors.find((s) => s.id === newSubId)?.full_name || null;
+    const subcontractor = subcontractors.find((s) => s.id === newSubId);
+    
     try {
-      const { error } = await supabase.from('jobs').update({ assigned_to: newSubId }).eq('id', job.id);
+      // Only proceed if assignment actually changed
+      if (previousSubId === newSubId) {
+        toast('No changes to save', { icon: 'ℹ️' });
+        setSaving(false);
+        return;
+      }
+
+      // Calculate assignment deadline if this is a new assignment
+      let assignedAt = new Date().toISOString();
+      let assignmentDeadline: string | null = null;
+
+      if (newSubId) {
+        const { data: deadlineData, error: deadlineError } = await supabase
+          .rpc('calculate_assignment_deadline', { p_assigned_at: assignedAt });
+        
+        if (deadlineError) {
+          console.error('Error calculating deadline:', deadlineError);
+          // Fallback: set deadline to 3:30 PM ET today or next business day
+          const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+          const deadline = new Date(etNow);
+          deadline.setHours(15, 30, 0, 0); // 3:30 PM
+          if (etNow.getHours() >= 15 && etNow.getMinutes() >= 30) {
+            deadline.setDate(deadline.getDate() + 1);
+          }
+          assignmentDeadline = deadline.toISOString();
+        } else {
+          assignmentDeadline = deadlineData;
+        }
+      }
+
+      // Update the job assignment
+      const { error } = await supabase.from('jobs').update({ 
+        assigned_to: newSubId,
+        assigned_at: newSubId ? assignedAt : null,
+        assignment_deadline: assignmentDeadline,
+        assignment_status: newSubId ? 'pending' : null,
+        assignment_decision_at: null,
+      }).eq('id', job.id);
+      
       if (error) throw error;
+
+      // Send email and SMS notification if assigning to a new subcontractor
+      if (newSubId && subcontractor) {
+        await sendAssignmentNotification(job, subcontractor);
+      }
+
       toast.success(newSubName ? `Assigned to ${newSubName}` : 'Assignment cleared');
       onSaved({ ...job, assignedTo: newSubId, assignedToName: newSubName });
-    } catch {
+    } catch (err) {
+      console.error('Failed to save assignment:', err);
       toast.error('Failed to save assignment');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const sendAssignmentNotification = async (job: CalJob, subcontractor: SubcontractorProfile) => {
+    try {
+      // Create assignment decision token
+      const token = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${job.id}-${Date.now()}`;
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const sentAt = new Date().toISOString();
+
+      const { error: tokenError } = await supabase.from('assignment_tokens').insert({
+        job_id: job.id,
+        subcontractor_id: subcontractor.id,
+        token,
+        expires_at: expiresAt,
+        sent_at: sentAt
+      });
+
+      if (tokenError) {
+        console.error('Error creating assignment token:', tokenError);
+      }
+
+      // Send email notification if subcontractor has an email
+      if (subcontractor.email) {
+        const firstName = subcontractor.full_name?.split(' ')[0] || subcontractor.full_name || 'there';
+        const subject = 'New Job Assignment – Please Accept or Decline';
+        const scheduledDate = formatDisplayDate(job.scheduledDateRaw);
+        const decisionUrl = token
+          ? `https://portal.jgpaintingprosinc.com/assignment/decision?token=${encodeURIComponent(token)}&jobId=${encodeURIComponent(job.id)}`
+          : 'https://portal.jgpaintingprosinc.com/dashboard/subcontractor';
+
+        const html = `
+          <p>Hi ${firstName},</p>
+          <p>You have been assigned to the following job. Please review and accept or decline:</p>
+          <ul>
+            <li style="margin-bottom: 18px; padding: 14px 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #f9fafb;">
+              <div style="font-weight: 600; color: #111827; font-size: 15px;">${job.propertyName}</div>
+              <div style="margin-top: 6px; color: #374151; font-size: 14px;">
+                <div><strong>Work Order:</strong> WO-${String(job.workOrderNum).padStart(6, '0')}</div>
+                <div><strong>Unit:</strong> #${job.unitNumber}</div>
+                <div><strong>Scheduled Date:</strong> ${scheduledDate}</div>
+              </div>
+              <div style="margin-top: 12px;">
+                <a href="${decisionUrl}" style="display: inline-block; padding: 12px 16px; background: #0ea5e9; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 600;">
+                  Review &amp; Accept / Decline
+                </a>
+              </div>
+              <div style="margin-top: 8px; font-size: 12px; color: #6b7280;">This link is unique to this assignment and expires in 7 days.</div>
+            </li>
+          </ul>
+          <p style="margin-top: 16px;">You can also log in to your dashboard to review: <a href="https://portal.jgpaintingprosinc.com/dashboard/subcontractor">https://portal.jgpaintingprosinc.com/dashboard/subcontractor</a></p>
+          <p>Thank you,<br/>JG Painting Pros Inc.</p>
+        `;
+
+        const text = `Hi ${firstName},
+
+You have been assigned to the following job. Please review and accept or decline:
+
+${job.propertyName}
+Work Order: WO-${String(job.workOrderNum).padStart(6, '0')}
+Unit: #${job.unitNumber}
+Scheduled Date: ${scheduledDate}
+Respond: ${decisionUrl}
+
+Log in to view details: https://portal.jgpaintingprosinc.com/dashboard/subcontractor
+
+Thank you,
+JG Painting Pros Inc.`;
+
+        const { error: emailError } = await supabase.functions.invoke('send-email', {
+          body: {
+            to: subcontractor.email,
+            subject,
+            html,
+            text
+          }
+        });
+
+        if (emailError) {
+          console.error('Error sending assignment email:', emailError);
+        } else {
+          // Log the email
+          const { error: logError } = await supabase.from('email_logs').insert({
+            job_id: job.id,
+            recipient_email: subcontractor.email,
+            subject,
+            content: text,
+            notification_type: 'sub_assignment',
+            template_id: 'assignment_decision',
+            cc_emails: null,
+            bcc_emails: null
+          });
+
+          if (logError) {
+            console.error('Error logging assignment email:', logError);
+          }
+        }
+      }
+
+      // Send SMS notification (best-effort)
+      dispatchSmsNotification({
+        eventType: 'job_assigned',
+        recipientUserId: subcontractor.id,
+        job_id: job.id,
+        context: {
+          subcontractorName: subcontractor.full_name || subcontractor.email || 'Subcontractor',
+          jobCount: 1,
+          jobIds: [job.id],
+          workOrderNums: [job.workOrderNum],
+          workOrderNum: job.workOrderNum,
+          propertyName: job.propertyName,
+        },
+      });
+    } catch (err) {
+      console.error('Error sending assignment notification:', err);
+      // Don't throw - notification failures shouldn't prevent assignment
     }
   };
 
@@ -385,11 +553,12 @@ interface DayCellProps {
   onJobClick: (job: CalJob) => void;
   onEventClick: (evt: CalendarEvent) => void;
   onDayClick: (date: Date) => void;
+  isSelected: boolean;
 }
 
 function DayCell({
   date, currentMonth, jobs, calEvents, filterSubId, selectedPhases,
-  draggingId, onDragStart, onDrop, onJobClick, onEventClick, onDayClick,
+  draggingId, onDragStart, onDrop, onJobClick, onEventClick, onDayClick, isSelected,
 }: DayCellProps) {
   const [expanded, setExpanded] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -418,6 +587,7 @@ function DayCell({
       className={`min-h-[110px] flex flex-col border-b border-r border-gray-200 dark:border-[#2D3B4E] transition-colors duration-100 cursor-pointer
         ${!isCurrentMonth ? 'bg-gray-50 dark:bg-[#0a1120]' : 'bg-white dark:bg-[#1E293B] hover:bg-gray-50/50 dark:hover:bg-[#1a2942]'}
         ${isTodays ? 'ring-inset ring-2 ring-blue-400 dark:ring-blue-500' : ''}
+        ${isSelected ? 'ring-inset ring-2 ring-purple-400 dark:ring-purple-500' : ''}
         ${isDragOver ? '!bg-blue-50 dark:!bg-blue-900/25 ring-inset ring-2 ring-blue-400' : ''}
       `}
       onClick={() => onDayClick(date)}
@@ -519,10 +689,12 @@ export function CalendarDevPage() {
   const [showPhaseFilter, setShowPhaseFilter] = useState(false);
 
   const [currentDate, setCurrentDate] = useState(getEasternNow);
+  const [selectedDate, setSelectedDate] = useState(getEasternNow); // For Today's Agenda sidebar
   const [view, setView] = useState<ViewMode>('month');
   const [subcontractors, setSubcontractors] = useState<SubcontractorProfile[]>([]);
   const [filterSubId, setFilterSubId] = useState<string>('all');
   const [draggingJob, setDraggingJob] = useState<CalJob | null>(null);
+  const [showAgendaSidebar, setShowAgendaSidebar] = useState(true); // Toggle for Today's Agenda
 
   // Modals
   const [selectedJob, setSelectedJob] = useState<CalJob | null>(null);
@@ -545,7 +717,7 @@ export function CalendarDevPage() {
 
   // ── Fetch subcontractors ───────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.from('profiles').select('id, full_name').eq('role', 'subcontractor').order('full_name')
+    supabase.from('profiles').select('id, full_name, email').eq('role', 'subcontractor').order('full_name')
       .then(({ data }) => setSubcontractors((data as SubcontractorProfile[]) || []));
   }, []);
 
@@ -932,32 +1104,193 @@ export function CalendarDevPage() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
         </div>
       ) : view === 'month' ? (
-        <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow overflow-hidden border border-gray-200 dark:border-[#2D3B4E]"
-          onDragEnd={() => setDraggingJob(null)}>
-          <div className="grid grid-cols-7 border-b border-gray-200 dark:border-[#2D3B4E]">
-            {DAY_LABELS.map((d) => (
-              <div key={d} className="py-2.5 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{d}</div>
-            ))}
+        <div className="flex gap-4">
+          {/* Month Grid */}
+          <div className={`${showAgendaSidebar ? 'flex-1' : 'w-full'} bg-white dark:bg-[#1E293B] rounded-xl shadow overflow-hidden border border-gray-200 dark:border-[#2D3B4E]`}
+            onDragEnd={() => setDraggingJob(null)}>
+            <div className="grid grid-cols-7 border-b border-gray-200 dark:border-[#2D3B4E]">
+              {DAY_LABELS.map((d) => (
+                <div key={d} className="py-2.5 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{d}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7">
+              {monthDays.map((date, i) => (
+                <DayCell
+                  key={i}
+                  date={date}
+                  currentMonth={currentDate}
+                  jobs={jobsByDate.get(dateToStr(date)) || []}
+                  calEvents={getEventsForDay(date)}
+                  filterSubId={filterSubId}
+                  selectedPhases={selectedPhases}
+                  draggingId={draggingJob?.id ?? null}
+                  onDragStart={handleDragStart}
+                  onDrop={handleDrop}
+                  onJobClick={(job) => setSelectedJob(job)}
+                  onEventClick={(evt) => { setSelectedEvent(evt); setShowEventDetails(true); }}
+                  onDayClick={(d) => { setSelectedDate(d); if (!showAgendaSidebar) setShowAgendaSidebar(true); }}
+                  isSelected={dateToStr(date) === dateToStr(selectedDate)}
+                />
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-7">
-            {monthDays.map((date, i) => (
-              <DayCell
-                key={i}
-                date={date}
-                currentMonth={currentDate}
-                jobs={jobsByDate.get(dateToStr(date)) || []}
-                calEvents={getEventsForDay(date)}
-                filterSubId={filterSubId}
-                selectedPhases={selectedPhases}
-                draggingId={draggingJob?.id ?? null}
-                onDragStart={handleDragStart}
-                onDrop={handleDrop}
-                onJobClick={(job) => setSelectedJob(job)}
-                onEventClick={(evt) => { setSelectedEvent(evt); setShowEventDetails(true); }}
-                onDayClick={(d) => setDayPopup(d)}
-              />
-            ))}
-          </div>
+
+          {/* Today's Agenda Sidebar */}
+          {showAgendaSidebar && (
+            <div className="w-80 flex-shrink-0">
+              <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow border border-gray-200 dark:border-[#2D3B4E] h-fit sticky top-6">
+                <div className="p-4 border-b border-gray-200 dark:border-[#2D3B4E] flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+                    <CalendarIcon className="h-5 w-5 mr-2 text-blue-500" />
+                    {isToday(selectedDate) ? "Today's Agenda" : format(selectedDate, 'MMM d, yyyy')}
+                  </h3>
+                  <button
+                    onClick={() => setShowAgendaSidebar(false)}
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                    title="Close sidebar"
+                  >
+                    <PanelRightClose className="h-5 w-5" />
+                  </button>
+                </div>
+
+                <div className="p-4">
+                  {/* Daily Summary Header */}
+                  {(() => {
+                    const dayJobs = filterSubId === 'all'
+                      ? (allJobsByDate.get(dateToStr(selectedDate)) || [])
+                      : (allJobsByDate.get(dateToStr(selectedDate)) || []).filter((j) => j.assignedTo === filterSubId);
+                    const totals = getJobTypeTotals(dayJobs);
+                    
+                    if (totals.total > 0) {
+                      return (
+                        <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4 mb-4">
+                          <div className="grid grid-cols-4 gap-4 text-center">
+                            <div>
+                              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{totals.paint}</div>
+                              <div className="text-xs text-blue-600 dark:text-blue-400">Paint</div>
+                            </div>
+                            <div>
+                              <div className="text-2xl font-bold text-orange-500 dark:text-orange-400">{totals.callback}</div>
+                              <div className="text-xs text-orange-500 dark:text-orange-400">Callback</div>
+                            </div>
+                            <div>
+                              <div className="text-2xl font-bold text-red-500 dark:text-red-400">{totals.repair}</div>
+                              <div className="text-xs text-red-500 dark:text-red-400">Repair</div>
+                            </div>
+                            <div>
+                              <div className="text-2xl font-bold text-purple-700 dark:text-purple-400">{totals.total}</div>
+                              <div className="text-xs text-purple-700 dark:text-purple-400">Total</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
+                  {/* Jobs & Events List */}
+                  {(() => {
+                    const dayJobs = filterSubId === 'all'
+                      ? (allJobsByDate.get(dateToStr(selectedDate)) || [])
+                      : (allJobsByDate.get(dateToStr(selectedDate)) || []).filter((j) => j.assignedTo === filterSubId);
+                    const dayEvents = getEventsForDay(selectedDate);
+
+                    if (dayJobs.length === 0 && dayEvents.length === 0) {
+                      return (
+                        <div className="text-center py-8">
+                          <CalendarIcon className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                          <p className="text-gray-500 dark:text-gray-400">No jobs or events scheduled</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                        {/* Events */}
+                        {dayEvents.map((event) => (
+                          <div
+                            key={event.id}
+                            onClick={() => { setSelectedEvent(event); setShowEventDetails(true); }}
+                            className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer"
+                            style={{ backgroundColor: `${event.color}0A` }}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <h4 className="font-medium text-gray-900 dark:text-white text-sm">
+                                  {event.title}
+                                </h4>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                  {event.is_all_day 
+                                    ? 'All Day' 
+                                    : `${format(parseISO(event.start_at), 'h:mm a')} - ${format(parseISO(event.end_at), 'h:mm a')}`
+                                  }
+                                </p>
+                              </div>
+                              <span
+                                className="w-3 h-3 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: event.color }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* Jobs */}
+                        {dayJobs.map((job) => (
+                          <div
+                            key={job.id}
+                            onClick={() => setSelectedJob(job)}
+                            className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer"
+                            style={{ backgroundColor: `${job.phaseColor}0A` }}
+                          >
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex-1">
+                                <h4 className="font-medium text-gray-900 dark:text-white text-sm">
+                                  WO-{String(job.workOrderNum).padStart(6, '0')}
+                                </h4>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">
+                                  {job.propertyName}
+                                </p>
+                                <p className="text-xs text-gray-500 dark:text-gray-500">
+                                  Unit #{job.unitNumber}
+                                </p>
+                                {job.assignedToName && (
+                                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                    👤 {job.assignedToName}
+                                  </p>
+                                )}
+                                {!job.assignedToName && (
+                                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 italic">
+                                    Unassigned
+                                  </p>
+                                )}
+                              </div>
+                              <span
+                                className="text-xs px-2 py-1 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: job.phaseColor, color: 'white' }}
+                              >
+                                {job.phaseName}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Toggle button when sidebar is hidden */}
+          {!showAgendaSidebar && view === 'month' && (
+            <button
+              onClick={() => setShowAgendaSidebar(true)}
+              className="fixed right-6 top-24 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg shadow-lg transition-colors z-10"
+              title="Show Today's Agenda"
+            >
+              <PanelRightOpen className="h-5 w-5" />
+            </button>
+          )}
         </div>
       ) : (
         <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow p-3 border border-gray-200 dark:border-[#2D3B4E] calendar-dev-wrapper">
@@ -978,7 +1311,7 @@ export function CalendarDevPage() {
             step={30}
             timeslots={2}
             toolbar={false}
-            allDayAccessor={() => true}
+            allDayAccessor={(event: RBCEvent) => event.allDay}
           />
         </div>
       )}

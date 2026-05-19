@@ -614,6 +614,7 @@ export function Users() {
   };
 
   const formatRoleLabel = (role: string) => {
+    if (role === 'is_super_admin') return 'Super Admin';
     if (role === 'jg_management') return 'JG Management';
     if (role === 'assistant_manager') return 'Assistant Manager';
     return role.charAt(0).toUpperCase() + role.slice(1);
@@ -621,6 +622,8 @@ export function Users() {
 
   const getRoleIcon = (role: string) => {
     switch (role) {
+      case 'is_super_admin':
+        return <ShieldCheck className="h-3 w-3 mr-1" />;
       case 'admin':
         return <ShieldCheck className="h-3 w-3 mr-1" />;
       case 'assistant_manager':
@@ -636,6 +639,8 @@ export function Users() {
 
   const getRoleColor = (role: string) => {
     switch (role) {
+      case 'is_super_admin':
+        return 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400';
       case 'admin':
         return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400';
       case 'assistant_manager':

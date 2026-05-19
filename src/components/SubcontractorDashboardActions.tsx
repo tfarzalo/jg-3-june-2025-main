@@ -217,12 +217,19 @@ Reason: ${decision === 'declined' ? (declineReason || 'n/a') : 'n/a'}${declineTe
           p_reference_id: jobId,
           p_reference_type: 'job'
         });
+      }
 
-        // SMS: only fire for 'accepted' decisions (job_accepted event)
-        if (decision === 'accepted') {
+      // SMS: only fire for 'accepted' decisions (job_accepted event)
+      // The dispatch-sms-notification edge function will automatically find all admins
+      // with notify_admin_job_accepted enabled - only call once, not per recipient
+      if (decision === 'accepted') {
+        try {
+          const { data: userData } = await supabase.auth.getUser();
           dispatchSmsNotification({
             eventType: 'job_accepted',
-            recipientUserId: rec.user_id,
+            recipientUserId: '', // Empty - edge function will find all eligible admins
+            sender_user_id: userData.user?.id,
+            job_id: jobId,
             context: {
               subcontractorName: subName,
               jobId,
@@ -231,6 +238,8 @@ Reason: ${decision === 'declined' ? (declineReason || 'n/a') : 'n/a'}${declineTe
               scheduledDate: scheduledDate ?? null,
             },
           });
+        } catch (smsErr) {
+          console.warn('[SubcontractorDashboardActions] SMS dispatch error (non-fatal):', smsErr);
         }
       }
     } catch (err) {

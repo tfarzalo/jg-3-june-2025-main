@@ -26,7 +26,7 @@ import ExtraChargesSection from './ExtraChargesSection';
 import { ExtraChargeLineItem } from '../types/extraCharges';
 import { validateAllExtraCharges } from '../utils/extraChargesValidation';
 import { isFrozenHistoricalSnapshot } from '../lib/jobs/historicalDataMode';
-import { dispatchSmsNotificationBatch } from '../lib/sms/dispatchSmsNotification';
+import { dispatchSmsNotification, dispatchSmsNotificationBatch } from '../lib/sms/dispatchSmsNotification';
 
 
 interface Job {
@@ -1913,32 +1913,27 @@ const NewWorkOrder = () => {
       toast.success(existingWorkOrder ? 'Work order updated successfully' : 'Work order created successfully');
       
       // Notify admins/managers via SMS that a work order was submitted (best-effort, new WO only)
+      // The dispatch-sms-notification edge function will automatically find all admins
+      // with notify_admin_work_order_submitted enabled - no need to query them here
       if (!existingWorkOrder) {
         try {
-          const { data: adminProfiles } = await supabase
-            .from('profiles')
-            .select('id')
-            .in('role', ['admin', 'is_super_admin', 'jg_management']);
-
-          if (adminProfiles && adminProfiles.length > 0) {
-            await dispatchSmsNotificationBatch(
-              adminProfiles.map((p: { id: string }) => ({
-                eventType: 'work_order_submitted' as const,
-                recipientUserId: p.id,
-                // job_id at top level lets the dispatcher fetch DB context
-                // (property name, unit number, work order num)
-                job_id: job.id,
-                context: {
-                  submittedByUserId: userData.user.id,
-                  // Fallback fields used if DB fetch fails
-                  jobId: job.id,
-                  workOrderNum: job.work_order_num,
-                  unitNumber: job.unit_number,
-                  propertyName: job.property?.property_name ?? null,
-                },
-              }))
-            );
-          }
+          await dispatchSmsNotification({
+            eventType: 'work_order_submitted' as const,
+            // Don't set recipientUserId - let edge function find all eligible admins
+            recipientUserId: '', // Will be ignored when edge function detects admin event
+            sender_user_id: userData.user.id,
+            // job_id at top level lets the dispatcher fetch DB context
+            // (property name, unit number, work order num)
+            job_id: job.id,
+            context: {
+              submittedByUserId: userData.user.id,
+              // Fallback fields used if DB fetch fails
+              jobId: job.id,
+              workOrderNum: job.work_order_num,
+              unitNumber: job.unit_number,
+              propertyName: job.property?.property_name ?? null,
+            },
+          });
         } catch (smsErr) {
           console.warn('[NewWorkOrder] SMS dispatch error (non-fatal):', smsErr);
         }
