@@ -84,7 +84,6 @@ interface Property {
   preferred_subcontractor_a_id?: string | null;
   preferred_subcontractor_b_id?: string | null;
   preferred_subcontractor_c_id?: string | null;
-  preferred_subcontractor_d_id?: string | null;
   preferred_subcontractor_a_name_snapshot?: string | null;
   preferred_subcontractor_a_email_snapshot?: string | null;
   preferred_subcontractor_a_deleted_at?: string | null;
@@ -94,9 +93,6 @@ interface Property {
   preferred_subcontractor_c_name_snapshot?: string | null;
   preferred_subcontractor_c_email_snapshot?: string | null;
   preferred_subcontractor_c_deleted_at?: string | null;
-  preferred_subcontractor_d_name_snapshot?: string | null;
-  preferred_subcontractor_d_email_snapshot?: string | null;
-  preferred_subcontractor_d_deleted_at?: string | null;
   ap_name: string;
   ap_email: string;
   ap_phone: string;
@@ -271,7 +267,6 @@ export function PropertyDetails() {
   const [preferredSubA, setPreferredSubA] = useState<string | null>(null);
   const [preferredSubB, setPreferredSubB] = useState<string | null>(null);
   const [preferredSubC, setPreferredSubC] = useState<string | null>(null);
-  const [preferredSubD, setPreferredSubD] = useState<string | null>(null);
   const [exclusionNote, setExclusionNote] = useState<string>('');
   const [exclusionNoteDraft, setExclusionNoteDraft] = useState<string>('');
   const [editingExclusionNote, setEditingExclusionNote] = useState(false);
@@ -416,7 +411,12 @@ export function PropertyDetails() {
         return;
       }
 
-      setGeneralNotes(data || []);
+      // Supabase may return related `creator` as an array; normalize to a single object or null
+      const normalized = (data || []).map((item: any) => ({
+        ...item,
+        creator: Array.isArray(item.creator) ? (item.creator[0] || null) : (item.creator || null),
+      }));
+      setGeneralNotes(normalized);
     } catch (error) {
       console.error('Error fetching property general notes:', error);
       setGeneralNotes([]);
@@ -528,7 +528,7 @@ export function PropertyDetails() {
     }
   };
 
-  const savePreferredSubcontractor = async (slot: 'a' | 'b' | 'c' | 'd', userId: string | null) => {
+  const savePreferredSubcontractor = async (slot: 'a' | 'b' | 'c', userId: string | null) => {
     if (!propertyId) return;
     const col = `preferred_subcontractor_${slot}_id`;
     try {
@@ -537,14 +537,13 @@ export function PropertyDetails() {
       if (slot === 'a') setPreferredSubA(userId);
       if (slot === 'b') setPreferredSubB(userId);
       if (slot === 'c') setPreferredSubC(userId);
-      if (slot === 'd') setPreferredSubD(userId);
       toast.success('Preferred subcontractor updated');
     } catch {
       toast.error('Failed to update preferred subcontractor');
     }
   };
 
-  const getPreferredSubcontractorSnapshot = (slot: 'a' | 'b' | 'c' | 'd') => {
+  const getPreferredSubcontractorSnapshot = (slot: 'a' | 'b' | 'c') => {
     if (!property) return { name: null as string | null, email: null as string | null, deletedAt: null as string | null };
     if (slot === 'a') {
       return {
@@ -560,17 +559,10 @@ export function PropertyDetails() {
         deletedAt: property.preferred_subcontractor_b_deleted_at || null,
       };
     }
-    if (slot === 'c') {
-      return {
-        name: property.preferred_subcontractor_c_name_snapshot || null,
-        email: property.preferred_subcontractor_c_email_snapshot || null,
-        deletedAt: property.preferred_subcontractor_c_deleted_at || null,
-      };
-    }
     return {
-      name: property.preferred_subcontractor_d_name_snapshot || null,
-      email: property.preferred_subcontractor_d_email_snapshot || null,
-      deletedAt: property.preferred_subcontractor_d_deleted_at || null,
+      name: property.preferred_subcontractor_c_name_snapshot || null,
+      email: property.preferred_subcontractor_c_email_snapshot || null,
+      deletedAt: property.preferred_subcontractor_c_deleted_at || null,
     };
   };
 
@@ -681,7 +673,6 @@ export function PropertyDetails() {
         setPreferredSubA(propertyData.preferred_subcontractor_a_id || null);
         setPreferredSubB(propertyData.preferred_subcontractor_b_id || null);
         setPreferredSubC(propertyData.preferred_subcontractor_c_id || null);
-        setPreferredSubD(propertyData.preferred_subcontractor_d_id || null);
         const note = propertyData.subcontractor_exclusion_note || '';
         setExclusionNote(note);
         setExclusionNoteDraft(note);
@@ -1093,7 +1084,7 @@ export function PropertyDetails() {
       toast.success('General property note added successfully');
     } catch (err) {
       console.error('Error adding property general note:', err);
-      toast.error('Failed to add general property note');
+      toast.error('Failed to add painter note');
     }
   };
 
@@ -1110,7 +1101,7 @@ export function PropertyDetails() {
       toast.success('General property note deleted successfully');
     } catch (err) {
       console.error('Error deleting property general note:', err);
-      toast.error('Failed to delete general property note');
+      toast.error('Failed to delete painter note');
     }
   };
 
@@ -1152,7 +1143,7 @@ export function PropertyDetails() {
       toast.success('General property note updated successfully');
     } catch (err) {
       console.error('Error updating property general note:', err);
-      toast.error('Failed to update general property note');
+      toast.error('Failed to update painter note');
     }
   };
 
@@ -1605,14 +1596,14 @@ export function PropertyDetails() {
               Preferred Subcontractors
             </h3>
             {!isSubcontractor && (
-              <span className="text-indigo-200 text-xs">Select up to 4 preferred subcontractors for this property</span>
+              <span className="text-indigo-200 text-xs">Select up to 3 preferred subcontractors for this property</span>
             )}
           </div>
           <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-              {(['a', 'b', 'c', 'd'] as const).map((slot, idx) => {
-                const label = ['A — Primary', 'B — Secondary', 'C — Tertiary', 'D — Fourth'][idx];
-                const value = [preferredSubA, preferredSubB, preferredSubC, preferredSubD][idx];
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {(['a', 'b', 'c'] as const).map((slot, idx) => {
+                const label = ['A — Primary', 'B — Secondary', 'C — Tertiary'][idx];
+                const value = [preferredSubA, preferredSubB, preferredSubC][idx];
                 const selectedUser = subcontractorUsers.find(u => u.id === value);
                 const snapshot = getPreferredSubcontractorSnapshot(slot);
                 const displayName = selectedUser?.full_name || snapshot.name;
@@ -1621,7 +1612,7 @@ export function PropertyDetails() {
                   <div key={slot} className="flex flex-col gap-2">
                     <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
                       <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-xs font-bold">
-                        {['A', 'B', 'C', 'D'][idx]}
+                        {['A', 'B', 'C'][idx]}
                       </span>
                       {label}
                     </p>
@@ -2230,115 +2221,181 @@ export function PropertyDetails() {
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold text-white flex items-center">
                 <FileText className="h-5 w-5 mr-2" />
-                In-House Notes
+                {isAdmin ? 'In-House Notes' : isSubcontractor ? 'Painter Notes' : 'Notes and Important Updates'}
               </h3>
-              <button
-                onClick={() => setShowUpdateForm(true)}
-                className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-medium rounded-lg transition-colors backdrop-blur-sm"
-              >
-                <Plus className="h-4 w-4 mr-2 inline-block" />
-                Add Update
-              </button>
+              {/* Show add button for callbacks-style notes for admins and subcontractors; otherwise keep Add Update for general updates */}
+              {(isAdmin || isSubcontractor) ? (
+                <button
+                  onClick={() => setShowCallbackForm(true)}
+                  className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-medium rounded-lg transition-colors backdrop-blur-sm"
+                >
+                  <Plus className="h-4 w-4 mr-2 inline-block" />
+                  Add Note
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowUpdateForm(true)}
+                  className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-medium rounded-lg transition-colors backdrop-blur-sm"
+                >
+                  <Plus className="h-4 w-4 mr-2 inline-block" />
+                  Add Update
+                </button>
+              )}
             </div>
           </div>
           
           {/* Content */}
           <div className="p-6">
 
-            {updates.length === 0 ? (
-              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                <FileText className="h-12 w-12 mx-auto mb-3 text-gray-400" />
-                <p className="font-medium">No updates recorded for this property</p>
-                <p className="text-sm">Click "Add Update" to get started</p>
-              </div>
+            {/* If admin or subcontractor, render callbacks-style notes (Painter Notes / In-House Notes) */}
+            {(isAdmin || isSubcontractor) ? (
+              callbacks.length === 0 ? (
+                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                  <Clipboard className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                  <p className="font-medium">No notes recorded for this property</p>
+                  <p className="text-sm">Click "Add Note" to get started</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {callbacks.map((callback) => (
+                    <div
+                      key={callback.id}
+                      className="border-l-4 border-slate-300 dark:border-slate-700 bg-gray-50 dark:bg-[#0F172A] rounded-r-xl p-4"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center rounded-full bg-slate-200 dark:bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                              {callback.painter || (isAdmin ? 'In-House' : 'Painter Note')}
+                            </span>
+                            {callback.unit_number && (
+                              <span className="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/40 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:text-blue-200">
+                                Unit {callback.unit_number}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-gray-900 dark:text-white whitespace-pre-wrap mt-3">
+                            {callback.reason}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2 mt-3 text-sm text-gray-500 dark:text-gray-400">
+                            <span>{formatDate(callback.callback_date || callback.created_at)}</span>
+                            <span>•</span>
+                            <span>{format(new Date(callback.created_at), 'h:mm a')}</span>
+                            <span>•</span>
+                            <span>{callback.poster?.full_name || 'Unknown'}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowDeleteCallbackConfirm(callback.id)}
+                              className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg text-red-600 dark:text-red-400 transition-colors"
+                              aria-label="Delete note"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-[#0F172A]">
-                    <tr>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Update Type</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Note / Update</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Posted By</th>
-                      <th scope="col" className="px-6 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white dark:bg-[#1E293B] divide-y divide-gray-200 dark:divide-gray-700">
-                    {updates.map((update) => (
-                      <tr key={update.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                          {formatDate(update.update_date)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                          {update.update_type}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                          {update.note}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                          {update.poster?.full_name || 'Unknown'}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <button
-                            onClick={() => setShowDeleteUpdateConfirm(update.id)}
-                            className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </td>
+              /* default: keep existing updates table for other users */
+              updates.length === 0 ? (
+                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                  <FileText className="h-12 w-12 mx-auto mb-3 text-gray-400" />
+                  <p className="font-medium">No updates recorded for this property</p>
+                  <p className="text-sm">Click "Add Update" to get started</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-[#0F172A]">
+                      <tr>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Date</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Update Type</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Note / Update</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Posted By</th>
+                        <th scope="col" className="px-6 py-3 text-right text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="bg-white dark:bg-[#1E293B] divide-y divide-gray-200 dark:divide-gray-700">
+                      {updates.map((update) => (
+                        <tr key={update.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                            {formatDate(update.update_date)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                            {update.update_type}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                            {update.note}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                            {update.poster?.full_name || 'Unknown'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <button
+                              onClick={() => setShowDeleteUpdateConfirm(update.id)}
+                              className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition-colors"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
             )}
           </div>
 
-          {/* Add Update Form */}
-          {showUpdateForm && (
+          {/* Add Callback Form (reused for Painter Notes / In-House Notes) */}
+          {showCallbackForm && (isAdmin || isSubcontractor) && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
               <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Property Update</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add New Note</h3>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Date
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Date</label>
                     <input
                       type="date"
-                      value={newUpdate.update_date}
-                      onChange={(e) => setNewUpdate({...newUpdate, update_date: e.target.value})}
+                      value={newCallback.callback_date}
+                      onChange={(e) => setNewCallback({...newCallback, callback_date: e.target.value})}
                       onClick={(e) => e.currentTarget.showPicker?.()}
                       className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Update Type
-                    </label>
-                    <select
-                      value={newUpdate.update_type}
-                      onChange={(e) => setNewUpdate({...newUpdate, update_type: e.target.value})}
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Painter</label>
+                    <input
+                      type="text"
+                      value={newCallback.painter}
+                      onChange={(e) => setNewCallback({...newCallback, painter: e.target.value})}
                       className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
-                      required
-                    >
-                      <option value="">Select update type</option>
-                      <option value="General Note">General Note</option>
-                      <option value="Price Change">Price Change</option>
-                      <option value="Contact Update">Contact Update</option>
-                      <option value="Policy Change">Policy Change</option>
-                      <option value="Maintenance Issue">Maintenance Issue</option>
-                    </select>
+                      placeholder="Enter painter or staff name"
+                    />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Note / Update
-                    </label>
-                    <textarea
-                      value={newUpdate.note}
-                      onChange={(e) => setNewUpdate({...newUpdate, note: e.target.value})}
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Unit #</label>
+                    <input
+                      type="text"
+                      value={newCallback.unit_number}
+                      onChange={(e) => setNewCallback({...newCallback, unit_number: e.target.value})}
                       className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
-                      placeholder="Enter update details"
+                      placeholder="Enter unit number"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Reason</label>
+                    <textarea
+                      value={newCallback.reason}
+                      onChange={(e) => setNewCallback({...newCallback, reason: e.target.value})}
+                      className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                      placeholder="Enter note details"
                       rows={3}
                       required
                     />
@@ -2347,42 +2404,40 @@ export function PropertyDetails() {
                 <div className="mt-6 flex justify-end space-x-3">
                   <button
                     type="button"
-                    onClick={() => setShowUpdateForm(false)}
+                    onClick={() => setShowCallbackForm(false)}
                     className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
-                    onClick={handleAddUpdate}
+                    onClick={handleAddCallback}
                     className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                   >
-                    Add Update
+                    Add Note
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Delete Update Confirmation */}
-          {showDeleteUpdateConfirm && (
+          {/* Delete Callback Confirmation (reused) */}
+          {showDeleteCallbackConfirm && (isAdmin || isSubcontractor) && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
               <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Delete Update</h3>
-                <p className="text-gray-700 dark:text-gray-300 mb-6">
-                  Are you sure you want to delete this update? This action cannot be undone.
-                </p>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Delete Note</h3>
+                <p className="text-gray-700 dark:text-gray-300 mb-6">Are you sure you want to delete this note? This action cannot be undone.</p>
                 <div className="flex justify-end space-x-3">
                   <button
                     type="button"
-                    onClick={() => setShowDeleteUpdateConfirm(null)}
+                    onClick={() => setShowDeleteCallbackConfirm(null)}
                     className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleDeleteUpdate(showDeleteUpdateConfirm)}
+                    onClick={() => handleDeleteCallback(showDeleteCallbackConfirm)}
                     className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
                   >
                     Delete
@@ -2444,7 +2499,7 @@ export function PropertyDetails() {
                               value={editingGeneralNote.note_content}
                               onChange={(e) => setEditingGeneralNote({ ...editingGeneralNote, note_content: e.target.value })}
                               className="w-full rounded-md bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
-                              placeholder="Enter general property note"
+                              placeholder="Enter painter note"
                               rows={4}
                             />
                           </div>
@@ -2476,7 +2531,7 @@ export function PropertyDetails() {
                                 type="button"
                                 onClick={() => handleSaveGeneralNote(note.id)}
                                 className="p-2 hover:bg-green-100 dark:hover:bg-green-900/30 rounded-lg text-green-600 dark:text-green-400 transition-colors"
-                                aria-label="Save general property note"
+                                aria-label="Save painter note"
                               >
                                 <Save className="h-4 w-4" />
                               </button>
@@ -2484,7 +2539,7 @@ export function PropertyDetails() {
                                 type="button"
                                 onClick={handleCancelEditGeneralNote}
                                 className="p-2 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
-                                aria-label="Cancel editing general property note"
+                                aria-label="Cancel editing painter note"
                               >
                                 <X className="h-4 w-4" />
                               </button>
@@ -2495,19 +2550,19 @@ export function PropertyDetails() {
                                 type="button"
                                 onClick={() => handleStartEditGeneralNote(note)}
                                 className="p-2 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg text-blue-600 dark:text-blue-400 transition-colors"
-                                aria-label="Edit general property note"
+                                aria-label="Edit painter note"
                               >
                                 <Edit className="h-4 w-4" />
                               </button>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  if (window.confirm('Delete this general property note?')) {
+                                  if (window.confirm('Delete this painter note?')) {
                                     handleDeleteGeneralNote(note.id);
                                   }
                                 }}
                                 className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg text-red-600 dark:text-red-400 transition-colors"
-                                aria-label="Delete general property note"
+                                aria-label="Delete painter note"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
@@ -2525,7 +2580,7 @@ export function PropertyDetails() {
           {showGeneralNoteForm && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
               <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add General Property Note</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Painter Note</h3>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -2547,7 +2602,7 @@ export function PropertyDetails() {
                       value={newGeneralNote.note_content}
                       onChange={(e) => setNewGeneralNote({ ...newGeneralNote, note_content: e.target.value })}
                       className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
-                      placeholder="Enter general property note"
+                      placeholder="Enter painter note"
                       rows={4}
                     />
                   </div>

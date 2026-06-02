@@ -2735,6 +2735,15 @@ export function JobDetails() {
                 {reactivatingJob ? 'Re-Activating...' : 'Re-Activate Job'}
               </button>
             )}
+            {isCancelled && job?.cancellation_trip_charge_added && (
+              <button
+                onClick={generateInvoicePDF}
+                className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download Invoice
+              </button>
+            )}
             {canChangePhase && !isPendingWorkOrder && !isCancelled && !(isHistoricalSnapshotJob && !isCompleted) && (
               <>
                 {!isJobRequest && (

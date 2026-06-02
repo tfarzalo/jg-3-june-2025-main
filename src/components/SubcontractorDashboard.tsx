@@ -206,9 +206,9 @@ export function SubcontractorDashboard() {
       paintingDashboard: "PAINTING DASHBOARD",
       propertyInfoTab: "Property Info",
       notesTab: "Notes",
-      generalPropertyNotes: "General Property Notes",
-      noGeneralPropertyNotes: "No general property notes",
-      noGeneralPropertyNotesMessage: "No notes are currently available for this property.",
+      painterNotes: "Painter Notes",
+      noPainterNotes: "No painter notes",
+      noGeneralPropertyNotesMessage: "No painter notes are currently available for this property.",
       addAfterPhotos: "Add After Photos",
       addAfterPhotosShort: "After Photos",
       afterPhotosModalTitle: "Upload After Photos",
@@ -256,9 +256,9 @@ export function SubcontractorDashboard() {
       paintingDashboard: "PANEL DE PINTURA",
       propertyInfoTab: "Información de la Propiedad",
       notesTab: "Notas",
-      generalPropertyNotes: "Notas Generales de la Propiedad",
-      noGeneralPropertyNotes: "No hay notas generales de la propiedad",
-      noGeneralPropertyNotesMessage: "No hay notas disponibles actualmente para esta propiedad.",
+      painterNotes: "Notas del Pintor",
+      noPainterNotes: "No hay notas del pintor",
+      noGeneralPropertyNotesMessage: "No hay notas del pintor disponibles actualmente para esta propiedad.",
       addAfterPhotos: "Agregar Fotos Finales",
       addAfterPhotosShort: "Fotos Finales",
       afterPhotosModalTitle: "Subir Fotos Finales",
@@ -835,13 +835,16 @@ export function SubcontractorDashboard() {
         if (notesError) {
           console.error('Error fetching property general notes:', notesError);
         } else {
-          propertyGeneralNotes = (notesData || []).map((note: any) => ({
-            id: note.id,
-            topic: note.topic,
-            note_content: note.note_content,
-            created_at: note.created_at,
-            creator_name: note.creator?.full_name || 'Unknown'
-          }));
+          propertyGeneralNotes = (notesData || []).map((note: any) => {
+            const creator = Array.isArray(note.creator) ? note.creator[0] : note.creator;
+            return {
+              id: note.id,
+              topic: note.topic,
+              note_content: note.note_content,
+              created_at: note.created_at,
+              creator_name: creator?.full_name || 'Unknown'
+            };
+          });
         }
       } catch (notesErr) {
         console.error('Error fetching property general notes:', notesErr);
@@ -1340,40 +1343,44 @@ export function SubcontractorDashboard() {
                                 </div>
 
                                 {activePropertyTab === 'notes' ? (
-                                  <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
-                                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                                      <FileText className="h-5 w-5 mr-2 text-slate-600 dark:text-slate-300" />
-                                      {text.generalPropertyNotes}
-                                    </h4>
+                                  <div className="space-y-4">
                                     {cachedPropertyDetails?.property_general_notes?.length ? (
-                                      <div className="space-y-4">
-                                        {cachedPropertyDetails.property_general_notes.map((note) => (
-                                          <div
-                                            key={note.id}
-                                            className="border-l-4 border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1E293B] rounded-r-xl p-4"
-                                          >
-                                            <div className="flex flex-wrap items-center gap-2">
-                                              <span className="inline-flex items-center rounded-full bg-slate-200 dark:bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
-                                                {note.topic}
-                                              </span>
+                                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
+                                        <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                                          <FileText className="h-5 w-5 mr-2 text-slate-600 dark:text-slate-300" />
+                                          {text.painterNotes}
+                                        </h4>
+                                        <div className="space-y-4">
+                                          {cachedPropertyDetails.property_general_notes.map((note) => (
+                                            <div
+                                              key={note.id}
+                                              className="border-l-4 border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1E293B] rounded-r-xl p-4"
+                                            >
+                                              <div className="flex flex-wrap items-center gap-2">
+                                                <span className="inline-flex items-center rounded-full bg-slate-200 dark:bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                                                  {note.topic}
+                                                </span>
+                                              </div>
+                                              <p className="text-gray-900 dark:text-white whitespace-pre-wrap mt-3 text-sm">
+                                                {note.note_content}
+                                              </p>
+                                              <div className="flex flex-wrap items-center gap-2 mt-3 text-xs text-gray-500 dark:text-gray-400">
+                                                <span>{format(new Date(note.created_at), 'MMM d, yyyy')}</span>
+                                                <span>•</span>
+                                                <span>{format(new Date(note.created_at), 'h:mm a')}</span>
+                                                <span>•</span>
+                                                <span>{note.creator_name}</span>
+                                              </div>
                                             </div>
-                                            <p className="text-gray-900 dark:text-white whitespace-pre-wrap mt-3 text-sm">
-                                              {note.note_content}
-                                            </p>
-                                            <div className="flex flex-wrap items-center gap-2 mt-3 text-xs text-gray-500 dark:text-gray-400">
-                                              <span>{format(new Date(note.created_at), 'MMM d, yyyy')}</span>
-                                              <span>•</span>
-                                              <span>{format(new Date(note.created_at), 'h:mm a')}</span>
-                                              <span>•</span>
-                                              <span>{note.creator_name}</span>
-                                            </div>
-                                          </div>
-                                        ))}
+                                          ))}
+                                        </div>
                                       </div>
-                                    ) : (
+                                    ) : null}
+
+                                    {!cachedPropertyDetails?.property_general_notes?.length && (
                                       <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                                         <FileText className="h-10 w-10 mx-auto mb-3 text-gray-400" />
-                                        <p className="font-medium">{text.noGeneralPropertyNotes}</p>
+                                        <p className="font-medium">{text.noPainterNotes}</p>
                                         <p className="text-sm mt-1">{text.noGeneralPropertyNotesMessage}</p>
                                       </div>
                                     )}
