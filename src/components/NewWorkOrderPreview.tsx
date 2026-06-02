@@ -1996,7 +1996,7 @@ const NewWorkOrderPreview = () => {
     // Track uploaded images for subcontractor requirements
     if (folder === 'before') {
       setBeforeImagesUploaded(true);
-    } else if (folder === 'sprinkler') {
+    } else if (folder === 'sprinkler' || folder === 'sprinkler_with_cover' || folder === 'sprinkler_without_cover') {
       setSprinklerImagesUploaded(true);
     }
     
@@ -2404,20 +2404,35 @@ const NewWorkOrderPreview = () => {
                           Paint on Sprinklers
                         </label>
                       </div>
-                      <div className="mt-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Sprinkler Images {isSubcontractor && <span className="text-red-500">*</span>}
-                        </label>
-                        <ImageUpload
-                          jobId={jobId || ''}
-                          workOrderId={existingWorkOrder?.id || ''}
-                          folder="sprinkler"
-                          onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler')}
-                          onError={handleUploadError}
-                          required={isSubcontractor}
-                        />
+                      <div className="mt-4 space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Sprinkler Images with Cover {isSubcontractor && <span className="text-red-500">*</span>}
+                          </label>
+                          <ImageUpload
+                            jobId={jobId || ''}
+                            workOrderId={existingWorkOrder?.id || ''}
+                            folder="sprinkler_with_cover"
+                            onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_with_cover')}
+                            onError={handleUploadError}
+                            required={isSubcontractor}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Sprinkler Images without Cover {isSubcontractor && <span className="text-red-500">*</span>}
+                          </label>
+                          <ImageUpload
+                            jobId={jobId || ''}
+                            workOrderId={existingWorkOrder?.id || ''}
+                            folder="sprinkler_without_cover"
+                            onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_without_cover')}
+                            onError={handleUploadError}
+                            required={isSubcontractor}
+                          />
+                        </div>
                         {isSubcontractor && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
                             Sprinkler images are required when unit has sprinklers.
                           </p>
                         )}

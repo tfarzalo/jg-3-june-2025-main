@@ -27,6 +27,7 @@ interface MobileNavProps {
 
 export function MobileNav({ onClose }: MobileNavProps) {
   const { isAdmin, isJGManagement, isSubcontractor } = useUserRole();
+  const canManageSettings = isAdmin || isJGManagement;
   const { unreadCount } = useUnreadMessages();
 
   const getIconColor = (label: string) => {
@@ -376,7 +377,7 @@ export function MobileNav({ onClose }: MobileNavProps) {
           <HelpCircle className="h-5 w-5 mr-3 flex-shrink-0" style={{ color: getIconColor('Support') }} />
           <span className="truncate">Support</span>
         </NavLink>
-        {isAdmin && (
+        {canManageSettings && (
           <NavLink
             to="/dashboard/settings"
             onClick={onClose}

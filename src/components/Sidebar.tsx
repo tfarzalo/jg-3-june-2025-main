@@ -117,6 +117,7 @@ export function Sidebar() {
   const navigate = useNavigate();
   const { theme } = useTheme();
   const { isAdmin, isSuperAdmin, isJGManagement, isSubcontractor } = useUserRole();
+  const canManageSettings = isAdmin || isSuperAdmin || isJGManagement;
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const { user } = useAuth();
@@ -273,8 +274,8 @@ export function Sidebar() {
           { icon: Activity, label: 'Activity Log', to: '/dashboard/activity', dataTutorial: 'activity' },
         ]
       },
-      // Show settings for admin and super admin users
-      ...((isAdmin || isSuperAdmin) ? [{
+      // Show settings for admin settings managers
+      ...(canManageSettings ? [{
         title: 'SETTINGS',
         items: [
           { icon: Settings, label: 'Admin Settings', to: '/dashboard/settings', dataTutorial: 'settings' },

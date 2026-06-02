@@ -43,7 +43,7 @@ interface AppSettingsData {
 
 export function AppSettings() {
   const navigate = useNavigate();
-  const { isAdmin, isSuperAdmin, loading: roleLoading } = useUserRole();
+  const { isAdmin, isSuperAdmin, isJGManagement, loading: roleLoading } = useUserRole();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -75,12 +75,12 @@ export function AppSettings() {
     fetchMaintenanceConfig();
   }, []);
 
-  // Redirect users who are neither admin nor super admin
+  // Redirect users who cannot manage application settings
   useEffect(() => {
-    if (!roleLoading && !isAdmin && !isSuperAdmin) {
+    if (!roleLoading && !isAdmin && !isSuperAdmin && !isJGManagement) {
       navigate('/dashboard');
     }
-  }, [isAdmin, isSuperAdmin, roleLoading, navigate]);
+  }, [isAdmin, isSuperAdmin, isJGManagement, roleLoading, navigate]);
 
 
   const fetchUserSettings = async () => {
@@ -241,7 +241,7 @@ export function AppSettings() {
   }
 
   // Show access denied for non-admin users
-  if (!isAdmin && !isSuperAdmin) {
+  if (!isAdmin && !isSuperAdmin && !isJGManagement) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">

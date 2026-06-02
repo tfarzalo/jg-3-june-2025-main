@@ -268,6 +268,15 @@ export function JobDetails() {
   const [subcontractors, setSubcontractors] = useState<{id: string, full_name: string}[]>([]);
   const [selectedSubcontractor, setSelectedSubcontractor] = useState<string | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [editingScheduledDate, setEditingScheduledDate] = useState(false);
+  const [scheduledDateDraft, setScheduledDateDraft] = useState('');
+  const [savingScheduledDate, setSavingScheduledDate] = useState(false);
+
+  useEffect(() => {
+    if (!job?.scheduled_date) return;
+    setScheduledDateDraft(job.scheduled_date.split('T')[0]);
+    setEditingScheduledDate(false);
+  }, [job?.scheduled_date]);
   const [assigning, setAssigning] = useState(false);
   const [emailContent, setEmailContent] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
@@ -1041,6 +1050,35 @@ export function JobDetails() {
     }
   };
 
+  const handleSaveScheduledDate = async () => {
+    if (!jobId || !scheduledDateDraft) return;
+
+    const currentDate = job?.scheduled_date?.split('T')[0] || '';
+    if (scheduledDateDraft === currentDate) {
+      setEditingScheduledDate(false);
+      return;
+    }
+
+    setSavingScheduledDate(true);
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .update({ scheduled_date: `${scheduledDateDraft}T00:00:00` })
+        .eq('id', jobId);
+
+      if (error) throw error;
+
+      await refetchJob();
+      setEditingScheduledDate(false);
+      toast.success('Scheduled date updated');
+    } catch (err) {
+      console.error('Error updating scheduled date:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to update scheduled date');
+    } finally {
+      setSavingScheduledDate(false);
+    }
+  };
+
   const formatWorkOrderNumber = (num: number) => {
     return `WO-${String(num).padStart(6, '0')}`;
   };
@@ -1379,7 +1417,8 @@ export function JobDetails() {
           const c = cat.trim().toLowerCase();
           if (c === 'before' || c === 'before_images') return 'before_images';
           if (c === 'after'  || c === 'after_images')  return 'after_images';
-          if (c === 'sprinkler' || c === 'sprinkler_images') return 'sprinkler_images';
+          if (c === 'sprinkler' || c === 'sprinkler_images' || c === 'sprinkler_with_cover' || c === 'sprinkler_with_cover_images') return 'sprinkler_with_cover_images';
+          if (c === 'sprinkler_without_cover' || c === 'sprinkler_without_cover_images') return 'sprinkler_without_cover_images';
           if (c === 'other'  || c === 'other_files')   return 'other_files';
           if (c === 'job_files') return 'job_files';
           if (c === 'property_files') return 'property_files';
@@ -1391,7 +1430,8 @@ export function JobDetails() {
         const PHOTO_SECTIONS: { key: string; label: string }[] = [
           { key: 'before_images',    label: 'Before Images'    },
           { key: 'after_images',     label: 'After Images'     },
-          { key: 'sprinkler_images', label: 'Sprinkler Images' },
+          { key: 'sprinkler_with_cover_images', label: 'Sprinkler Images with Cover' },
+          { key: 'sprinkler_without_cover_images', label: 'Sprinkler Images without Cover' },
         ];
 
         // Group rows into sections
@@ -2744,9 +2784,53 @@ export function JobDetails() {
                     Scheduled Date
                   </h3>
                   <div className="pl-5">
-                    <span className="text-gray-900 dark:text-white font-medium">
-                      {formatDate(job?.scheduled_date)}
-                    </span>
+                    {editingScheduledDate ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="date"
+                          value={scheduledDateDraft}
+                          onChange={(event) => setScheduledDateDraft(event.target.value)}
+                          onClick={(event) => event.currentTarget.showPicker?.()}
+                          className="h-9 rounded-md border border-gray-300 dark:border-[#2D3B4E] bg-white dark:bg-[#0F172A] px-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSaveScheduledDate}
+                          disabled={savingScheduledDate}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                          title="Save scheduled date"
+                          aria-label="Save scheduled date"
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setScheduledDateDraft(job?.scheduled_date?.split('T')[0] || '');
+                            setEditingScheduledDate(false);
+                          }}
+                          disabled={savingScheduledDate}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 dark:border-[#2D3B4E] dark:text-gray-400 dark:hover:bg-[#2D3B4E] dark:hover:text-gray-200"
+                          title="Cancel scheduled date edit"
+                          aria-label="Cancel scheduled date edit"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center gap-2 text-gray-900 dark:text-white font-medium">
+                        {formatDate(job?.scheduled_date)}
+                        <button
+                          type="button"
+                          onClick={() => setEditingScheduledDate(true)}
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-[#2D3B4E] dark:hover:text-blue-400"
+                          title="Edit scheduled date"
+                          aria-label="Edit scheduled date"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                      </span>
+                    )}
                   </div>
                 </div>
                 
@@ -3524,12 +3608,22 @@ export function JobDetails() {
                   </div>
                   {/* Sprinkler Images */}
                   {hasWorkOrder && job.work_order?.has_sprinklers && job.work_order?.id && (
-                    <div className="mt-6">
-                      <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">Sprinkler Images</h4>
-                      <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                        {jobIdForFiles && (
-                          <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="sprinkler" />
-                        )}
+                    <div className="mt-6 space-y-4">
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">Sprinkler Images with Cover</h4>
+                        <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                          {jobIdForFiles && (
+                            <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="sprinkler_with_cover" />
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">Sprinkler Images without Cover</h4>
+                        <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                          {jobIdForFiles && (
+                            <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="sprinkler_without_cover" />
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}

@@ -86,8 +86,8 @@ export function useUserRole(): UseUserRoleResult {
     user,
     ...state,
     isSuperAdmin: state.role === 'is_super_admin',
-    // Super admin inherits all admin capabilities everywhere in the app
-    isAdmin: state.role === 'admin' || state.role === 'is_super_admin',
+    // Super admin and assistant manager inherit admin capabilities everywhere in the app
+    isAdmin: state.role === 'admin' || state.role === 'assistant_manager' || state.role === 'is_super_admin',
     isJGManagement: state.role === 'jg_management',
     isSubcontractor: state.role === 'subcontractor'
   };

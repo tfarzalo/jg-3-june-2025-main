@@ -283,31 +283,31 @@ export function SubcontractorAdminView({ userId, userName, userEmail }: Subcontr
         <aside className="xl:col-span-1 space-y-4">
           <section className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg overflow-hidden bg-white dark:bg-[#1E293B]">
             <div className="px-4 py-3 bg-gray-50 dark:bg-[#0F172A]">
-              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Preferred Subcontractor 1</h4>
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Preferred Subcontractor A</h4>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{slotOneProperties.length} propert{slotOneProperties.length === 1 ? 'y' : 'ies'}</p>
             </div>
-            {renderPropertyList(slotOneProperties, 'No properties list this subcontractor in slot 1.')}
+            {renderPropertyList(slotOneProperties, 'No properties list this subcontractor in slot A.')}
           </section>
           <section className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg overflow-hidden bg-white dark:bg-[#1E293B]">
             <div className="px-4 py-3 bg-gray-50 dark:bg-[#0F172A]">
-              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Preferred Subcontractor 2</h4>
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Preferred Subcontractor B</h4>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{slotTwoProperties.length} propert{slotTwoProperties.length === 1 ? 'y' : 'ies'}</p>
             </div>
-            {renderPropertyList(slotTwoProperties, 'No properties list this subcontractor in slot 2.')}
+            {renderPropertyList(slotTwoProperties, 'No properties list this subcontractor in slot B.')}
           </section>
           <section className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg overflow-hidden bg-white dark:bg-[#1E293B]">
             <div className="px-4 py-3 bg-gray-50 dark:bg-[#0F172A]">
-              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Preferred Subcontractor 3</h4>
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Preferred Subcontractor C</h4>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{slotThreeProperties.length} propert{slotThreeProperties.length === 1 ? 'y' : 'ies'}</p>
             </div>
-            {renderPropertyList(slotThreeProperties, 'No properties list this subcontractor in slot 3.')}
+            {renderPropertyList(slotThreeProperties, 'No properties list this subcontractor in slot C.')}
           </section>
           <section className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg overflow-hidden bg-white dark:bg-[#1E293B]">
             <div className="px-4 py-3 bg-gray-50 dark:bg-[#0F172A]">
-              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Preferred Subcontractor 4</h4>
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Preferred Subcontractor D</h4>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{slotFourProperties.length} propert{slotFourProperties.length === 1 ? 'y' : 'ies'}</p>
             </div>
-            {renderPropertyList(slotFourProperties, 'No properties list this subcontractor in slot 4.')}
+            {renderPropertyList(slotFourProperties, 'No properties list this subcontractor in slot D.')}
           </section>
         </aside>
 

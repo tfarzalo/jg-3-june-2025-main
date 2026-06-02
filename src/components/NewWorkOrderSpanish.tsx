@@ -509,20 +509,35 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                       <option value="yes">Sí</option>
                     </select>
                   </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Imágenes de Aspersores {isSubcontractor && <span className="text-red-500">*</span>}
-                    </label>
-                    <ImageUpload
-                      jobId={job.id}
-                      workOrderId={existingWorkOrder?.id || ''}
-                      folder="sprinkler"
-                      onUploadComplete={handleUploadComplete}
-                      onError={handleUploadError}
-                      required={isSubcontractor}
-                    />
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Imágenes de Aspersores con Cubierta {isSubcontractor && <span className="text-red-500">*</span>}
+                      </label>
+                      <ImageUpload
+                        jobId={job.id}
+                        workOrderId={existingWorkOrder?.id || ''}
+                        folder="sprinkler_with_cover"
+                        onUploadComplete={handleUploadComplete}
+                        onError={handleUploadError}
+                        required={isSubcontractor}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Imágenes de Aspersores sin Cubierta {isSubcontractor && <span className="text-red-500">*</span>}
+                      </label>
+                      <ImageUpload
+                        jobId={job.id}
+                        workOrderId={existingWorkOrder?.id || ''}
+                        folder="sprinkler_without_cover"
+                        onUploadComplete={handleUploadComplete}
+                        onError={handleUploadError}
+                        required={isSubcontractor}
+                      />
+                    </div>
                     {isSubcontractor && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
                         Las imágenes de aspersores son requeridas cuando la unidad tiene aspersores.
                       </p>
                     )}

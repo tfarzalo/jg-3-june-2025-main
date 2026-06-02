@@ -46,7 +46,8 @@ interface TopbarProps {
 function Topbar({ showOnlyProfile = false }: TopbarProps) {
   const { theme, toggleTheme } = useTheme();
   const { session, signOut } = useAuth();
-  const { role, isAdmin, isSuperAdmin } = useUserRole();
+  const { role, isAdmin, isSuperAdmin, isJGManagement } = useUserRole();
+  const canManageSettings = isAdmin || isSuperAdmin || isJGManagement;
   const navigate = useNavigate();
   const { isOpen: hughOpen, toggleHugh } = useHugh();
   const hughRef = useRef<HTMLDivElement>(null);
@@ -626,7 +627,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                         <User className="h-4 w-4 inline-block mr-2" />
                         Your Profile
                       </Link>
-                      {isAdmin && (
+                      {canManageSettings && (
                         <Link
                           to="/dashboard/settings"
                           className="block px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D3B4E] transition-colors touch-manipulation"

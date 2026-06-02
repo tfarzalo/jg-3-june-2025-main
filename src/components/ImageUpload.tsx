@@ -11,7 +11,7 @@ import { optimizeImage } from '../lib/utils/imageOptimization';
 interface ImageUploadProps {
   jobId: string;
   workOrderId?: string;
-  folder: 'before' | 'after' | 'sprinkler' | 'other';
+  folder: 'before' | 'after' | 'sprinkler' | 'sprinkler_with_cover' | 'sprinkler_without_cover' | 'other';
   onUploadComplete?: (filePath: string) => void;
   onError?: (error: string) => void;
   readOnly?: boolean;

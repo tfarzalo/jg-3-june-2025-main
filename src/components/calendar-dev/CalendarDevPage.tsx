@@ -49,6 +49,7 @@ import {
   Filter,
   Check,
   ExternalLink,
+  Edit,
   Building2,
   RefreshCw,
   PanelRightClose,
@@ -109,6 +110,40 @@ interface RBCEvent {
 
 type ViewMode = 'month' | 'week' | 'day' | 'agenda';
 
+const DEFAULT_SELECTED_PHASES = ['Job Request', 'Work Order', 'Pending Work Order', 'Events'];
+const FILTER_STORAGE_KEY = 'calendar-dev-filter-preferences';
+
+interface PersistedFilterPreferences {
+  selectedPhases?: string[];
+  filterSubId?: string;
+}
+
+function readFilterPreferences(): PersistedFilterPreferences {
+  if (typeof window === 'undefined') return {};
+
+  try {
+    const raw = window.localStorage.getItem(FILTER_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as PersistedFilterPreferences;
+    return {
+      selectedPhases: Array.isArray(parsed.selectedPhases) ? parsed.selectedPhases.filter((phase) => typeof phase === 'string') : undefined,
+      filterSubId: typeof parsed.filterSubId === 'string' ? parsed.filterSubId : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function writeFilterPreferences(preferences: PersistedFilterPreferences) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(preferences));
+  } catch {
+    // Ignore storage failures; filters still work for the current session.
+  }
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────────
 function dateToStr(d: Date): string { return format(d, 'yyyy-MM-dd'); }
 function strToDate(s: string): Date { return new Date(`${s}T00:00:00`); }
@@ -158,10 +193,20 @@ interface JobDetailModalProps {
   subcontractors: SubcontractorProfile[];
   onClose: () => void;
   onSaved: (updatedJob: CalJob) => void;
+  onRescheduled: (job: CalJob, targetDateStr: string) => Promise<void>;
 }
-function JobDetailModal({ job, subcontractors, onClose, onSaved }: JobDetailModalProps) {
+function JobDetailModal({ job, subcontractors, onClose, onSaved, onRescheduled }: JobDetailModalProps) {
   const [selectedSubId, setSelectedSubId] = useState(job.assignedTo || '');
+  const [editingDate, setEditingDate] = useState(false);
+  const [scheduledDateDraft, setScheduledDateDraft] = useState(job.scheduledDateRaw);
   const [saving, setSaving] = useState(false);
+  const [savingDate, setSavingDate] = useState(false);
+
+  useEffect(() => {
+    setSelectedSubId(job.assignedTo || '');
+    setScheduledDateDraft(job.scheduledDateRaw);
+    setEditingDate(false);
+  }, [job]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -224,6 +269,22 @@ function JobDetailModal({ job, subcontractors, onClose, onSaved }: JobDetailModa
       toast.error('Failed to save assignment');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveScheduledDate = async () => {
+    if (!scheduledDateDraft || scheduledDateDraft === job.scheduledDateRaw) {
+      setEditingDate(false);
+      setScheduledDateDraft(job.scheduledDateRaw);
+      return;
+    }
+
+    setSavingDate(true);
+    try {
+      await onRescheduled(job, scheduledDateDraft);
+      setEditingDate(false);
+    } finally {
+      setSavingDate(false);
     }
   };
 
@@ -382,10 +443,47 @@ JG Painting Pros Inc.`;
           <div className="grid grid-cols-2 gap-3">
             <div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Scheduled</p>
-              <p className="font-medium text-gray-900 dark:text-white flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5 text-gray-400" />
-                {format(strToDate(job.scheduledDateRaw), 'MMM d, yyyy')}
-              </p>
+              {editingDate ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="date"
+                    value={scheduledDateDraft}
+                    onChange={(event) => setScheduledDateDraft(event.target.value)}
+                    onClick={(event) => event.currentTarget.showPicker?.()}
+                    className="h-8 min-w-0 rounded-md border border-gray-300 dark:border-[#2D3B4E] bg-white dark:bg-[#0F172A] px-2 text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveScheduledDate}
+                    disabled={savingDate}
+                    className="h-8 px-2 rounded-md bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setEditingDate(false); setScheduledDateDraft(job.scheduledDateRaw); }}
+                    disabled={savingDate}
+                    className="h-8 px-2 rounded-md border border-gray-300 dark:border-[#2D3B4E] text-xs text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#2D3B4E] disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <p className="font-medium text-gray-900 dark:text-white flex items-center gap-1">
+                  <Clock className="h-3.5 w-3.5 text-gray-400" />
+                  {format(strToDate(job.scheduledDateRaw), 'MMM d, yyyy')}
+                  <button
+                    type="button"
+                    onClick={() => setEditingDate(true)}
+                    className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-[#2D3B4E] dark:hover:text-blue-400"
+                    title="Edit scheduled date"
+                    aria-label="Edit scheduled date"
+                  >
+                    <Edit className="h-3.5 w-3.5" />
+                  </button>
+                </p>
+              )}
             </div>
             <div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-0.5">Phase</p>
@@ -679,20 +777,21 @@ function DayCell({
 export function CalendarDevPage() {
   const { role } = useUserRole?.() || { role: 'user' };
   const canCreateEvents = ['admin', 'jg_management', 'is_super_admin'].includes(role);
+  const filterPreferences = useMemo(() => readFilterPreferences(), []);
 
   const [jobs, setJobs] = useState<CalJob[]>([]);
   const [allJobs, setAllJobs] = useState<CalJob[]>([]); // for totals (not phase-filtered)
   const [loading, setLoading] = useState(true);
   const [calEvents, setCalEvents] = useState<CalendarEvent[]>([]);
   const [phases, setPhases] = useState<JobPhase[]>([]);
-  const [selectedPhases, setSelectedPhases] = useState<string[]>(['Job Request', 'Work Order', 'Pending Work Order', 'Events']);
+  const [selectedPhases, setSelectedPhases] = useState<string[]>(filterPreferences.selectedPhases ?? DEFAULT_SELECTED_PHASES);
   const [showPhaseFilter, setShowPhaseFilter] = useState(false);
 
   const [currentDate, setCurrentDate] = useState(getEasternNow);
   const [selectedDate, setSelectedDate] = useState(getEasternNow); // For Today's Agenda sidebar
   const [view, setView] = useState<ViewMode>('month');
   const [subcontractors, setSubcontractors] = useState<SubcontractorProfile[]>([]);
-  const [filterSubId, setFilterSubId] = useState<string>('all');
+  const [filterSubId, setFilterSubId] = useState<string>(filterPreferences.filterSubId ?? 'all');
   const [draggingJob, setDraggingJob] = useState<CalJob | null>(null);
   const [showAgendaSidebar, setShowAgendaSidebar] = useState(true); // Toggle for Today's Agenda
 
@@ -705,6 +804,10 @@ export function CalendarDevPage() {
   // ── Phase filter helpers ───────────────────────────────────────────────────────
   const togglePhase = (label: string) =>
     setSelectedPhases((prev) => prev.includes(label) ? prev.filter((p) => p !== label) : [...prev, label]);
+
+  useEffect(() => {
+    writeFilterPreferences({ selectedPhases, filterSubId });
+  }, [selectedPhases, filterSubId]);
 
   // ── Fetch phases ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -908,6 +1011,28 @@ export function CalendarDevPage() {
       toast.error('Failed to reschedule — reverted.');
     }
   }, [draggingJob]);
+
+  const rescheduleJob = useCallback(async (job: CalJob, targetDateStr: string) => {
+    if (job.scheduledDateRaw === targetDateStr) return;
+
+    const originalDate = job.scheduledDateRaw;
+    const update = (d: string) => {
+      setJobs((prev) => prev.map((j) => j.id === job.id ? { ...j, scheduledDateRaw: d } : j));
+      setAllJobs((prev) => prev.map((j) => j.id === job.id ? { ...j, scheduledDateRaw: d } : j));
+      setSelectedJob((current) => current?.id === job.id ? { ...current, scheduledDateRaw: d } : current);
+    };
+
+    update(targetDateStr);
+    try {
+      const { error } = await supabase.from('jobs').update({ scheduled_date: `${targetDateStr}T00:00:00` }).eq('id', job.id);
+      if (error) throw error;
+      toast.success(`WO-${String(job.workOrderNum).padStart(6, '0')} → ${format(strToDate(targetDateStr), 'MMM d, yyyy')}`);
+    } catch {
+      update(originalDate);
+      toast.error('Failed to reschedule — reverted.');
+      throw new Error('Failed to reschedule');
+    }
+  }, []);
 
   // ── RBC DnD (week/day) - only allow dragging jobs, not events ─────────────────
   const handleRBCEventDrop = useCallback(async ({ event, start }: { event: RBCEvent; start: Date | string }) => {
@@ -1325,6 +1450,7 @@ export function CalendarDevPage() {
           subcontractors={subcontractors}
           onClose={() => setSelectedJob(null)}
           onSaved={handleJobSaved}
+          onRescheduled={rescheduleJob}
         />
       )}
 
