@@ -312,7 +312,7 @@ export function AppSettings() {
                 <Users className={`flex-shrink-0 -ml-1 mr-3 h-6 w-6 ${
                   activeTab === 'lead-forms' ? 'text-blue-700 dark:text-blue-200' : 'text-gray-400 group-hover:text-gray-500'
                 }`} />
-                <span className="truncate">Lead Forms</span>
+                <span className="truncate">Form Builder</span>
               </button>
 
               <button

@@ -47,11 +47,13 @@ import { supabase } from '../utils/supabase';
 import { formatDate, formatDisplayDate, formatTime } from '../lib/dateUtils';
 import { formatAddress, formatCurrency } from '../lib/utils/formatUtils';
 import { getPreviewUrl } from '../utils/storagePreviews';
+import { buildStoragePath, sanitizeFilename } from '../utils/storagePaths';
 import { getAdditionalBillingLines } from '../lib/billing/additional';
 import {
   DEFAULT_CANCELLATION_TRIP_CHARGE,
   findCancellationTripChargeRate,
 } from '../lib/billing/cancellationTripCharge';
+import { optimizeImage } from '../lib/utils/imageOptimization';
 import { useJobDetails } from '../hooks/useJobDetails';
 import { useJobPhaseChanges } from '../hooks/useJobPhaseChanges';
 import { usePhases } from '../hooks/usePhases';
@@ -226,6 +228,58 @@ interface JobNote {
   created_by_name: string;
 }
 
+type QualityControlScoreKey =
+  | 'surface_prep'
+  | 'coverage_finish'
+  | 'cut_lines_edges'
+  | 'cleanliness'
+  | 'doors_trim_cabinets'
+  | 'touchups'
+  | 'documentation';
+
+type QualityControlSubmission = {
+  id: string;
+  job_id: string;
+  form_data: {
+    painter_name?: string | null;
+    painter_first_name?: string;
+    painter_last_name?: string;
+    subcontractor_id?: string | null;
+    subcontractor_name?: string | null;
+    date_painted?: string;
+    date_walked?: string;
+    comments?: string;
+    quality_score?: {
+      categories?: Partial<Record<QualityControlScoreKey, number>>;
+      total?: number;
+    };
+  };
+  score_total: number;
+  media_files: Array<{
+    name: string;
+    path: string;
+    bucket: string;
+    public_url?: string;
+    type?: string;
+    size?: number;
+  }>;
+  created_at: string;
+};
+
+const QUALITY_CONTROL_SCORE_CATEGORIES: Array<{
+  key: QualityControlScoreKey;
+  label: string;
+  max: number;
+}> = [
+  { key: 'surface_prep', label: 'Surface prep and repairs', max: 20 },
+  { key: 'coverage_finish', label: 'Coverage and finish consistency', max: 20 },
+  { key: 'cut_lines_edges', label: 'Cut lines, edges, and detail work', max: 15 },
+  { key: 'cleanliness', label: 'Cleanliness, overspray, and site condition', max: 15 },
+  { key: 'doors_trim_cabinets', label: 'Doors, trim, cabinets, and specialty areas', max: 10 },
+  { key: 'touchups', label: 'Touch-ups needed / completion quality', max: 10 },
+  { key: 'documentation', label: 'Documentation and photo completeness', max: 10 },
+];
+
 async function sendEmail(data: EmailData) {
   console.log('Sending email:', data);
   return Promise.resolve();
@@ -237,7 +291,7 @@ export function JobDetails() {
   const { job, loading: jobLoading, error: jobError, refetch: refetchJob } = useJobDetails(jobId);
   const { phaseChanges, loading: phaseChangesLoading, error: phaseChangesError, refetch: refetchPhaseChanges } = useJobPhaseChanges(jobId);
   const { phases, loading: phasesLoading } = usePhases();
-  const { isAdmin, isJGManagement, isSubcontractor } = useUserRole();
+  const { isAdmin, isJGManagement, isSubcontractor, isSuperAdmin } = useUserRole();
   
   // Get job phase color (same approach as all jobs pages)
   const getJobPhaseColor = () => {
@@ -350,6 +404,20 @@ export function JobDetails() {
   const [jobNotesLoading, setJobNotesLoading] = useState(false);
   const [jobNotesSaving, setJobNotesSaving] = useState(false);
   const [jobNotesError, setJobNotesError] = useState<string | null>(null);
+  const [showQualityControlModal, setShowQualityControlModal] = useState(false);
+  const [qualityControlExpanded, setQualityControlExpanded] = useState(false);
+  const [qualityControlLoading, setQualityControlLoading] = useState(false);
+  const [qualityControlSubmitting, setQualityControlSubmitting] = useState(false);
+  const [qualityControlSubmissions, setQualityControlSubmissions] = useState<QualityControlSubmission[]>([]);
+  const [qualityControlFiles, setQualityControlFiles] = useState<File[]>([]);
+  const [qualityControlForm, setQualityControlForm] = useState({
+    date_walked: '',
+    comments: '',
+    scores: QUALITY_CONTROL_SCORE_CATEGORIES.reduce((acc, category) => {
+      acc[category.key] = 0;
+      return acc;
+    }, {} as Record<QualityControlScoreKey, number>),
+  });
   const [reopeningHistoricalJob, setReopeningHistoricalJob] = useState(false);
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
   const [newJobNote, setNewJobNote] = useState({
@@ -513,6 +581,227 @@ export function JobDetails() {
       channel.unsubscribe();
     };
   }, [fetchJobNotes, isAdmin, jobId]);
+
+  const qualityControlTotal = useMemo(() => (
+    QUALITY_CONTROL_SCORE_CATEGORIES.reduce(
+      (sum, category) => sum + Number(qualityControlForm.scores[category.key] || 0),
+      0
+    )
+  ), [qualityControlForm.scores]);
+
+  const assignedSubcontractorName = useMemo(() => {
+    const assignedId = job?.assigned_to;
+    const found = assignedId
+      ? subcontractors.find((subcontractor) => subcontractor.id === assignedId)
+      : null;
+
+    return found?.full_name || job?.assigned_to_name || null;
+  }, [job?.assigned_to, job?.assigned_to_name, subcontractors]);
+
+  const assignedPainterNameParts = useMemo(() => {
+    const name = (assignedSubcontractorName || '').trim();
+    if (!name) {
+      return { firstName: null, lastName: null };
+    }
+
+    const parts = name.split(/\s+/);
+    return {
+      firstName: parts[0] || null,
+      lastName: parts.length > 1 ? parts.slice(1).join(' ') : null,
+    };
+  }, [assignedSubcontractorName]);
+
+  const fetchQualityControlSubmissions = useCallback(async () => {
+    if (!jobId || !isSuperAdmin) {
+      setQualityControlSubmissions([]);
+      setQualityControlLoading(false);
+      return;
+    }
+
+    try {
+      setQualityControlLoading(true);
+      const { data, error } = await supabase
+        .from('job_quality_control_submissions')
+        .select('id, job_id, form_data, score_total, media_files, created_at')
+        .eq('job_id', jobId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setQualityControlSubmissions((data || []) as QualityControlSubmission[]);
+    } catch (error) {
+      console.error('Error fetching quality control submissions:', error);
+      setQualityControlSubmissions([]);
+    } finally {
+      setQualityControlLoading(false);
+    }
+  }, [jobId, isSuperAdmin]);
+
+  useEffect(() => {
+    fetchQualityControlSubmissions();
+  }, [fetchQualityControlSubmissions]);
+
+  const resetQualityControlForm = () => {
+    setQualityControlForm({
+      date_walked: '',
+      comments: '',
+      scores: QUALITY_CONTROL_SCORE_CATEGORIES.reduce((acc, category) => {
+        acc[category.key] = 0;
+        return acc;
+      }, {} as Record<QualityControlScoreKey, number>),
+    });
+    setQualityControlFiles([]);
+  };
+
+  const uploadQualityControlFiles = async (userId: string) => {
+    if (!job || !jobId || !job.property?.id || qualityControlFiles.length === 0) {
+      return [];
+    }
+
+    const { data: folderId, error: folderError } = await supabase.rpc('get_upload_folder', {
+      p_property_id: job.property.id,
+      p_job_id: jobId,
+      p_folder_type: 'job_files',
+    });
+
+    if (folderError || !folderId) {
+      throw new Error('Unable to resolve Quality Control upload folder');
+    }
+
+    const uploadedFiles: QualityControlSubmission['media_files'] = [];
+    const woNum = Number(job.work_order_num || 0);
+    const woLabel = Number.isFinite(woNum) && woNum > 0
+      ? `wo-${String(woNum).padStart(6, '0')}`
+      : `job-${jobId.slice(0, 8)}`;
+
+    for (let index = 0; index < qualityControlFiles.length; index += 1) {
+      const originalFile = qualityControlFiles[index];
+      const optimized = await optimizeImage(originalFile);
+      const ext = optimized.suggestedExt || originalFile.name.split('.').pop() || 'jpg';
+      const fileName = sanitizeFilename(`${woLabel}_quality_control_${index + 1}.${ext}`);
+      const storagePath = buildStoragePath({
+        propertyId: job.property.id,
+        workOrderId,
+        jobIdFallback: jobId,
+        category: 'job-files/quality-control',
+        filename: fileName,
+      });
+      const uploadFile = new File([optimized.blob], fileName, { type: optimized.mime });
+
+      const { error: storageError } = await supabase.storage
+        .from('files')
+        .upload(storagePath, uploadFile, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: optimized.mime,
+        });
+
+      if (storageError) throw storageError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from('files')
+        .getPublicUrl(storagePath);
+
+      const { error: fileRecordError } = await supabase
+        .from('files')
+        .insert({
+          name: fileName,
+          path: storagePath,
+          size: optimized.optimizedSize,
+          original_size: optimized.originalSize,
+          optimized_size: optimized.optimizedSize,
+          type: optimized.mime,
+          uploaded_by: userId,
+          property_id: job.property.id,
+          job_id: jobId,
+          folder_id: folderId,
+          category: 'job_files',
+          work_order_id: workOrderId || null,
+          storage_path: storagePath,
+          original_filename: originalFile.name,
+          bucket: 'files',
+        });
+
+      if (fileRecordError) {
+        await supabase.storage.from('files').remove([storagePath]);
+        throw fileRecordError;
+      }
+
+      uploadedFiles.push({
+        name: fileName,
+        path: storagePath,
+        bucket: 'files',
+        public_url: publicUrlData.publicUrl,
+        type: optimized.mime,
+        size: optimized.optimizedSize,
+      });
+    }
+
+    return uploadedFiles;
+  };
+
+  const handleSubmitQualityControl = async () => {
+    if (!job || !jobId || !isSuperAdmin) return;
+    if (!qualityControlForm.painter_first_name.trim() || !qualityControlForm.painter_last_name.trim()) {
+      toast.error('Painter first and last name are required');
+      return;
+    }
+
+    try {
+      setQualityControlSubmitting(true);
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!userData.user) throw new Error('User not found');
+
+      const { data: qcForm } = await supabase
+        .from('lead_forms')
+        .select('id')
+        .eq('name', 'JG Painting Pros Quality Control')
+        .maybeSingle();
+
+      const media = await uploadQualityControlFiles(userData.user.id);
+      const formData = {
+        painter_first_name: qualityControlForm.painter_first_name.trim(),
+        painter_last_name: qualityControlForm.painter_last_name.trim(),
+        date_painted: job.scheduled_date?.split('T')[0] || null,
+        date_walked: qualityControlForm.date_walked || null,
+        property_id: job.property?.id || null,
+        property_name: job.property?.name || null,
+        unit_number: job.unit_number || null,
+        unit_size_id: job.unit_size?.id || null,
+        unit_size_label: job.unit_size?.label || null,
+        work_order_num: job.work_order_num || null,
+        comments: qualityControlForm.comments.trim(),
+        quality_score: {
+          categories: qualityControlForm.scores,
+          total: qualityControlTotal,
+        },
+      };
+
+      const { error: insertError } = await supabase
+        .from('job_quality_control_submissions')
+        .insert({
+          job_id: jobId,
+          form_id: qcForm?.id || null,
+          submitted_by: userData.user.id,
+          form_data: formData,
+          score_total: qualityControlTotal,
+          media_files: media,
+        });
+
+      if (insertError) throw insertError;
+
+      toast.success('Quality Control submitted');
+      setShowQualityControlModal(false);
+      setQualityControlExpanded(true);
+      resetQualityControlForm();
+      await fetchQualityControlSubmissions();
+    } catch (error) {
+      console.error('Error submitting Quality Control:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to submit Quality Control');
+    } finally {
+      setQualityControlSubmitting(false);
+    }
+  };
 
   // Fetch approval token decision status for Extra Charges
   const fetchApprovalDecision = useCallback(async () => {
@@ -2692,6 +2981,15 @@ export function JobDetails() {
             </div>
           </div>
           <div className="flex space-x-3">
+            {isSuperAdmin && isCompleted && (
+              <button
+                onClick={() => setShowQualityControlModal(true)}
+                className="inline-flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <ClipboardCheck className="h-4 w-4 mr-2" />
+                Quality Control
+              </button>
+            )}
             {(isAdmin || isJGManagement) && isHistoricalSnapshotJob && (
               <button
                 onClick={() => setShowReopenConfirm(true)}
@@ -4466,6 +4764,194 @@ export function JobDetails() {
         )}
 
 
+        {showQualityControlModal && isSuperAdmin && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-3xl w-full shadow-xl max-h-[90vh] overflow-y-auto">
+              <div className="flex items-start justify-between gap-4 mb-5">
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Quality Control</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    {formatWorkOrderNumber(job?.work_order_num ?? 0)} • {propertyName} • Unit {job?.unit_number || '—'} • {job?.unit_size?.label || '—'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowQualityControlModal(false)}
+                  className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Painter First Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={qualityControlForm.painter_first_name}
+                      onChange={(e) => setQualityControlForm(prev => ({
+                        ...prev,
+                        painter_first_name: e.target.value,
+                      }))}
+                      className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                      placeholder="First"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Painter Last Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={qualityControlForm.painter_last_name}
+                      onChange={(e) => setQualityControlForm(prev => ({
+                        ...prev,
+                        painter_last_name: e.target.value,
+                      }))}
+                      className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                      placeholder="Last"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Date Painted
+                    </label>
+                    <input
+                      type="date"
+                      value={job?.scheduled_date?.split('T')[0] || ''}
+                      disabled
+                      className="w-full rounded-md bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Date Walked
+                    </label>
+                    <input
+                      type="date"
+                      value={qualityControlForm.date_walked}
+                      onChange={(e) => setQualityControlForm(prev => ({
+                        ...prev,
+                        date_walked: e.target.value,
+                      }))}
+                      onClick={(e) => e.currentTarget.showPicker?.()}
+                      className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Comments
+                  </label>
+                  <textarea
+                    value={qualityControlForm.comments}
+                    onChange={(e) => setQualityControlForm(prev => ({
+                      ...prev,
+                      comments: e.target.value,
+                    }))}
+                    rows={4}
+                    className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                    placeholder="Enter QC comments"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Quality Control Images
+                  </label>
+                  <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 px-4 py-8 text-center hover:border-emerald-500 transition-colors">
+                    <FileImage className="h-8 w-8 text-gray-400 mb-2" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Upload QC media</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">Add up to 10 images</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      className="sr-only"
+                      onChange={(e) => setQualityControlFiles(Array.from(e.target.files || []).slice(0, 10))}
+                    />
+                  </label>
+                  {qualityControlFiles.length > 0 && (
+                    <div className="mt-3 rounded-lg bg-gray-50 dark:bg-[#0F172A] p-3 text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                      {qualityControlFiles.map((file, index) => (
+                        <div key={`${file.name}-${index}`} className="flex items-center justify-between gap-3">
+                          <span className="truncate">{file.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => setQualityControlFiles(prev => prev.filter((_, fileIndex) => fileIndex !== index))}
+                            className="text-red-600 hover:text-red-700 dark:text-red-400"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white">QC Matrix</h4>
+                    <div className="rounded-lg bg-emerald-100 dark:bg-emerald-900/30 px-3 py-1 text-sm font-semibold text-emerald-800 dark:text-emerald-200">
+                      {qualityControlTotal} / 100
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {QUALITY_CONTROL_SCORE_CATEGORIES.map((category) => (
+                      <div key={category.key} className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-2 sm:items-center rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                        <div>
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">{category.label}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Max {category.max} points</div>
+                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={category.max}
+                          value={qualityControlForm.scores[category.key]}
+                          onChange={(e) => {
+                            const nextValue = Math.min(category.max, Math.max(0, Number(e.target.value) || 0));
+                            setQualityControlForm(prev => ({
+                              ...prev,
+                              scores: {
+                                ...prev.scores,
+                                [category.key]: nextValue,
+                              },
+                            }));
+                          }}
+                          className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowQualityControlModal(false)}
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitQualityControl}
+                  disabled={qualityControlSubmitting}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {qualityControlSubmitting ? 'Submitting...' : 'Submit Quality Control'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+
         {/* PDF Preview Modal */}
         {showPdfPreview && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[150]">
@@ -4511,6 +4997,94 @@ export function JobDetails() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {isSuperAdmin && qualityControlSubmissions.length > 0 && (
+          <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg mb-6 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setQualityControlExpanded(prev => !prev)}
+              className="w-full bg-gradient-to-r from-emerald-700 to-emerald-800 dark:from-emerald-800 dark:to-emerald-900 px-6 py-4 flex items-center justify-between text-left"
+            >
+              <h2 className="text-xl font-semibold text-white flex items-center">
+                <ClipboardCheck className="h-5 w-5 mr-2" />
+                Quality Control
+              </h2>
+              <div className="flex items-center gap-3 text-white">
+                <span className="text-sm font-semibold">
+                  Latest Score: {Number(qualityControlSubmissions[0].score_total || 0)} / 100
+                </span>
+                {qualityControlExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+              </div>
+            </button>
+            {qualityControlExpanded && (
+              <div className="p-6 space-y-5">
+                {qualityControlSubmissions.map((submission) => {
+                  const scoreCategories = submission.form_data?.quality_score?.categories || {};
+                  const media = submission.media_files || [];
+                  return (
+                    <div key={submission.id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#0F172A] p-4">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                            QC Matrix
+                          </h3>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                            Submitted {formatDate(submission.created_at)}
+                          </p>
+                          <div className="mt-3 text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                            <div>
+                              Painter: {[
+                                submission.form_data?.painter_first_name,
+                                submission.form_data?.painter_last_name,
+                              ].filter(Boolean).join(' ') || '—'}
+                            </div>
+                            <div>Date Walked: {submission.form_data?.date_walked || '—'}</div>
+                            {submission.form_data?.comments && (
+                              <div className="pt-2 whitespace-pre-wrap">{submission.form_data.comments}</div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="rounded-lg bg-emerald-600 px-5 py-4 text-white text-center min-w-[150px]">
+                          <div className="text-3xl font-bold">{Number(submission.score_total || 0)}</div>
+                          <div className="text-sm font-medium">out of 100</div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-5">
+                        {QUALITY_CONTROL_SCORE_CATEGORIES.map((category) => (
+                          <div key={category.key} className="flex items-center justify-between rounded-md bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm">
+                            <span className="text-gray-700 dark:text-gray-300">{category.label}</span>
+                            <span className="font-semibold text-gray-900 dark:text-white">
+                              {Number(scoreCategories[category.key] || 0)} / {category.max}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      {media.length > 0 && (
+                        <div className="mt-5">
+                          <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Quality Control Media</h4>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {media.map((file, index) => (
+                              <a
+                                key={`${file.path}-${index}`}
+                                href={file.public_url || '#'}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1E293B] p-3 text-sm text-gray-700 dark:text-gray-300 hover:border-emerald-500 transition-colors"
+                              >
+                                <FileImage className="h-5 w-5 mb-2 text-emerald-600 dark:text-emerald-400" />
+                                <div className="truncate">{file.name}</div>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

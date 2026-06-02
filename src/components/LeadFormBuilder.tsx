@@ -21,7 +21,11 @@ import {
   X,
   Edit,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Building2,
+  Upload,
+  Calculator,
+  Heading
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
@@ -62,6 +66,11 @@ const FIELD_TYPES = [
   { value: 'number', label: 'Number', icon: Hash, description: 'Numeric input' },
   { value: 'date', label: 'Date', icon: Calendar, description: 'Date picker' },
   { value: 'url', label: 'URL', icon: Link, description: 'Website URL input' },
+  { value: 'property_select', label: 'Property Dropdown', icon: Building2, description: 'Uses active properties' },
+  { value: 'unit_size_select', label: 'Unit Size Dropdown', icon: List, description: 'Uses configured unit sizes' },
+  { value: 'media_upload', label: 'Media Upload', icon: Upload, description: 'Multiple image/media upload control' },
+  { value: 'score_matrix', label: 'Scoring Matrix', icon: Calculator, description: 'Weighted quality score out of 100' },
+  { value: 'section_heading', label: 'Section Heading', icon: Heading, description: 'Visual section divider' },
 ];
 
 export function LeadFormBuilder() {
@@ -556,6 +565,59 @@ window.addEventListener('message', function(event) {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
           />
         );
+      case 'property_select':
+        return (
+          <select
+            id={fieldId}
+            required={field.is_required}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+          >
+            <option value="">Select a property</option>
+            <option>Property list loads on the public form</option>
+          </select>
+        );
+      case 'unit_size_select':
+        return (
+          <select
+            id={fieldId}
+            required={field.is_required}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+          >
+            <option value="">Select a unit size</option>
+            <option>Unit size list loads on the public form</option>
+          </select>
+        );
+      case 'media_upload':
+        return (
+          <div className="rounded-lg border-2 border-dashed border-gray-300 p-4 text-center text-sm text-gray-600">
+            <Upload className="h-5 w-5 mx-auto mb-2 text-gray-400" />
+            Upload media files
+          </div>
+        );
+      case 'score_matrix': {
+        const categories = Array.isArray(field.validation_rules?.categories)
+          ? field.validation_rules.categories
+          : [];
+        return (
+          <div className="space-y-2">
+            {categories.map((item: any, index: number) => (
+              <div key={index} className="flex items-center justify-between rounded border border-gray-200 p-2 text-sm">
+                <span>{item.label}</span>
+                <span className="font-semibold">{item.max} pts</span>
+              </div>
+            ))}
+            <div className="rounded bg-purple-50 p-3 text-sm font-semibold text-purple-700">
+              Total score out of 100
+            </div>
+          </div>
+        );
+      }
+      case 'section_heading':
+        return (
+          <div className="border-t border-gray-200 pt-4">
+            <h3 className="text-lg font-semibold text-gray-900">{field.field_label}</h3>
+          </div>
+        );
       default:
         return <div>Unsupported field type</div>;
     }
@@ -575,10 +637,10 @@ window.addEventListener('message', function(event) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Lead Form Builder
+            Form Builder
           </h2>
           <p className="text-gray-600 dark:text-gray-400 mt-1">
-            Create and manage lead capture forms
+            Create and manage custom forms
           </p>
         </div>
         <div className="flex items-center space-x-3">
