@@ -30,6 +30,7 @@ describe('job snapshot freeze behavior', () => {
     });
 
     expect(isFrozenHistoricalSnapshot('Completed', 'snapshot')).toBe(true);
+    expect(isFrozenHistoricalSnapshot('Cancelled', 'snapshot')).toBe(true);
     expect(result.lines).toEqual(frozenLines);
     expect(result.warnings).toEqual([]);
     expect(mockSupabase.from).not.toHaveBeenCalled();

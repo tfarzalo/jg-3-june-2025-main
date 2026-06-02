@@ -207,6 +207,9 @@ interface Job {
   invoice_paid_date?: string;
   repair_amount?: number;
   repair_sub_pay?: number;
+  cancellation_trip_charge_added?: boolean;
+  cancellation_trip_charge_bill_amount?: number;
+  cancellation_trip_charge_sub_pay_amount?: number;
 }
 
 interface JobNote {
@@ -255,8 +258,14 @@ export function JobDetails() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCancelJobConfirm, setShowCancelJobConfirm] = useState(false);
   const [showCancelReasonStep, setShowCancelReasonStep] = useState(false);
+  const [showCancelTripChargeStep, setShowCancelTripChargeStep] = useState(false);
   const [selectedCancelReason, setSelectedCancelReason] = useState('');
   const [otherCancelReason, setOtherCancelReason] = useState('');
+  const [pendingCancelChangeReason, setPendingCancelChangeReason] = useState('');
+  const [tripChargeBillInput, setTripChargeBillInput] = useState('50.00');
+  const [tripChargeSubPayInput, setTripChargeSubPayInput] = useState('25.00');
+  const [tripChargeDefaultsLoading, setTripChargeDefaultsLoading] = useState(false);
+  const [tripChargeDefaultSource, setTripChargeDefaultSource] = useState<'property' | 'default'>('default');
   const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
   const [changeReason, setChangeReason] = useState('');
   const [changingPhase, setChangingPhase] = useState(false);
@@ -293,15 +302,22 @@ export function JobDetails() {
   const resetCancelJobFlow = () => {
     setShowCancelJobConfirm(false);
     setShowCancelReasonStep(false);
+    setShowCancelTripChargeStep(false);
     setSelectedCancelReason('');
     setOtherCancelReason('');
+    setPendingCancelChangeReason('');
+    setTripChargeBillInput('50.00');
+    setTripChargeSubPayInput('25.00');
+    setTripChargeDefaultSource('default');
   };
 
   const startCancelJobFlow = () => {
     setShowCancelJobConfirm(true);
     setShowCancelReasonStep(false);
+    setShowCancelTripChargeStep(false);
     setSelectedCancelReason('');
     setOtherCancelReason('');
+    setPendingCancelChangeReason('');
   };
   const [notificationType, setNotificationType] = useState<'sprinkler_paint' | 'drywall_repairs' | 'extra_charges' | null>(null);
   const [additionalBillingLines, setAdditionalBillingLines] = useState<Array<{
@@ -687,7 +703,12 @@ export function JobDetails() {
       const supplementalAmount = supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0);
       
       // Calculate total billing amount (same as "Total to Invoice" calculation)
-      const totalBillingAmount = standardBillAmount + extraChargesBillAmount + supplementalAmount + (job.repair_amount ?? 0);
+      const cancellationTripChargeAmount = job.cancellation_trip_charge_added
+        ? (job.cancellation_trip_charge_bill_amount ?? 0)
+        : 0;
+      const totalBillingAmount = phaseLabel === 'Cancelled'
+        ? cancellationTripChargeAmount
+        : standardBillAmount + extraChargesBillAmount + supplementalAmount + (job.repair_amount ?? 0);
 
 
       try {
@@ -704,7 +725,7 @@ export function JobDetails() {
     };
 
     calculateAndUpdateTotalBilling();
-  }, [job, jobId, supplementalBillingLines, isHistoricalSnapshotJob]);
+  }, [job, jobId, supplementalBillingLines, isHistoricalSnapshotJob, phaseLabel]);
 
   // Fetch additional billing lines for ceilings and accent walls
   useEffect(() => {
@@ -1615,8 +1636,87 @@ export function JobDetails() {
     }
   };
 
-  const handleCancelJobFromDecline = async () => {
-    if (!job) return;
+  const loadCancellationTripChargeDefaults = async () => {
+    if (!job?.property?.id) {
+      setTripChargeDefaultSource('default');
+      setTripChargeBillInput('50.00');
+      setTripChargeSubPayInput('25.00');
+      return;
+    }
+
+    setTripChargeDefaultsLoading(true);
+    try {
+      const { data: categories, error: categoryError } = await supabase
+        .from('billing_categories')
+        .select('id, name')
+        .eq('property_id', job.property.id)
+        .ilike('name', 'Cancellation Trip Charge')
+        .limit(1);
+
+      if (categoryError) throw categoryError;
+
+      const categoryId = categories?.[0]?.id;
+      if (!categoryId) {
+        setTripChargeDefaultSource('default');
+        setTripChargeBillInput('50.00');
+        setTripChargeSubPayInput('25.00');
+        return;
+      }
+
+      let detailsQuery = supabase
+        .from('billing_details')
+        .select('bill_amount, sub_pay_amount')
+        .eq('property_id', job.property.id)
+        .eq('category_id', categoryId)
+        .limit(1);
+
+      if (job.unit_size?.id) {
+        detailsQuery = detailsQuery.eq('unit_size_id', job.unit_size.id);
+      }
+
+      const { data: details, error: detailsError } = await detailsQuery;
+      if (detailsError) throw detailsError;
+
+      const detail = details?.[0];
+      if (!detail) {
+        setTripChargeDefaultSource('default');
+        setTripChargeBillInput('50.00');
+        setTripChargeSubPayInput('25.00');
+        return;
+      }
+
+      setTripChargeDefaultSource('property');
+      setTripChargeBillInput(String(Number(detail.bill_amount ?? 50).toFixed(2)));
+      setTripChargeSubPayInput(String(Number(detail.sub_pay_amount ?? 25).toFixed(2)));
+    } catch (error) {
+      console.error('Error loading cancellation trip charge defaults:', error);
+      setTripChargeDefaultSource('default');
+      setTripChargeBillInput('50.00');
+      setTripChargeSubPayInput('25.00');
+      toast.error('Using default cancellation trip charge amounts');
+    } finally {
+      setTripChargeDefaultsLoading(false);
+    }
+  };
+
+  const prepareCancellationTripChargeStep = async (changeReason: string) => {
+    setPendingCancelChangeReason(changeReason);
+    setShowCancelReasonStep(false);
+    setShowCancelTripChargeStep(true);
+    await loadCancellationTripChargeDefaults();
+  };
+
+  const executeCancelJob = async (includeTripCharge: boolean) => {
+    if (!job || !pendingCancelChangeReason) return;
+
+    const parsedBill = parseFloat(tripChargeBillInput);
+    const parsedSubPay = parseFloat(tripChargeSubPayInput);
+    const tripChargeBillAmount = includeTripCharge && !Number.isNaN(parsedBill)
+      ? Math.max(0, parsedBill)
+      : 0;
+    const tripChargeSubPayAmount = includeTripCharge && !Number.isNaN(parsedSubPay)
+      ? Math.max(0, parsedSubPay)
+      : 0;
 
     setCancellingJob(true);
 
@@ -1635,7 +1735,12 @@ export function JobDetails() {
 
       const { error: updateError } = await supabase
         .from('jobs')
-        .update({ current_phase_id: cancelledPhase.id })
+        .update({
+          current_phase_id: cancelledPhase.id,
+          cancellation_trip_charge_added: includeTripCharge,
+          cancellation_trip_charge_bill_amount: tripChargeBillAmount,
+          cancellation_trip_charge_sub_pay_amount: tripChargeSubPayAmount,
+        })
         .eq('id', job.id);
 
       if (updateError) throw updateError;
@@ -1647,22 +1752,31 @@ export function JobDetails() {
           changed_by: userData.user.id,
           from_phase_id: job?.job_phase?.id,
           to_phase_id: cancelledPhase.id,
-          change_reason: 'Job cancelled after extra charges were declined'
+          change_reason: includeTripCharge
+            ? `${pendingCancelChangeReason}; Cancellation Trip Charge added (${formatCurrency(tripChargeBillAmount)} bill / ${formatCurrency(tripChargeSubPayAmount)} sub pay)`
+            : pendingCancelChangeReason
         });
 
       if (phaseChangeError) throw phaseChangeError;
 
       await refetchJob(true);
       await refetchPhaseChanges();
-      setShowCancelJobConfirm(false);
-      toast.success('Job moved to Cancelled phase');
+      resetCancelJobFlow();
+      toast.success(includeTripCharge ? 'Job cancelled with trip charge' : 'Job moved to Cancelled phase');
       setReactivatedFromDecline(false);
     } catch (error) {
-      console.error('Error cancelling job from decline banner:', error);
+      console.error('Error cancelling job:', error);
       toast.error('Failed to cancel job');
     } finally {
       setCancellingJob(false);
     }
+  };
+
+  const handleCancelJobFromDecline = async () => {
+    if (!job) return;
+
+    setShowCancelJobConfirm(true);
+    await prepareCancellationTripChargeStep('Job cancelled after extra charges were declined');
   };
 
   const handleCancelJob = async () => {
@@ -1678,51 +1792,7 @@ export function JobDetails() {
       return;
     }
 
-    setCancellingJob(true);
-
-    try {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!userData.user) throw new Error('User not found');
-
-      const { data: cancelledPhase, error: phaseError } = await supabase
-        .from('job_phases')
-        .select('id')
-        .eq('job_phase_label', 'Cancelled')
-        .single();
-
-      if (phaseError) throw phaseError;
-
-      const { error: updateError } = await supabase
-        .from('jobs')
-        .update({ current_phase_id: cancelledPhase.id })
-        .eq('id', job.id);
-
-      if (updateError) throw updateError;
-
-      const { error: phaseChangeError } = await supabase
-        .from('job_phase_changes')
-        .insert({
-          job_id: job.id,
-          changed_by: userData.user.id,
-          from_phase_id: job?.job_phase?.id,
-          to_phase_id: cancelledPhase.id,
-          change_reason: `Job cancelled by admin: ${cancellationReason}`
-        });
-
-      if (phaseChangeError) throw phaseChangeError;
-
-      await refetchJob(true);
-      await refetchPhaseChanges();
-      resetCancelJobFlow();
-      toast.success('Job moved to Cancelled phase');
-      setReactivatedFromDecline(false);
-    } catch (error) {
-      console.error('Error cancelling job:', error);
-      toast.error('Failed to cancel job');
-    } finally {
-      setCancellingJob(false);
-    }
+    await prepareCancellationTripChargeStep(`Job cancelled by admin: ${cancellationReason}`);
   };
 
   const cancelReasonRequiresOtherInput =
@@ -1785,6 +1855,7 @@ export function JobDetails() {
   const generateInvoicePDF = async () => {
     try {
       if (!job) return;
+      const isCancellationTripChargeInvoice = phaseLabel === 'Cancelled' && Boolean(job.cancellation_trip_charge_added);
       const doc = new jsPDF();
       let y = 15;
       const margin = 15;
@@ -1813,7 +1884,7 @@ export function JobDetails() {
 
       // --- INVOICE HEADER ---
       doc.setFontSize(18);
-      doc.text('INVOICE', margin, y);
+      doc.text(isCancellationTripChargeInvoice ? 'CANCELLATION INVOICE' : 'INVOICE', margin, y);
       y += 12;
 
       // Invoice details in compact format
@@ -1871,32 +1942,54 @@ export function JobDetails() {
       let totalSubPay = 0;
       let totalProfit = 0;
 
-      // Base Billing line item
-      const billingDescription = `${job?.work_order?.job_category || 'Standard Paint'} - ${job?.unit_size?.label ?? '—'}`;
-      doc.text(billingDescription, margin, y);
-      
-      const baseAmount = job.billing_details?.bill_amount ?? 0;
-      const baseSub = job.billing_details?.sub_pay_amount ?? 0;
-      const baseProfitVal = baseAmount - baseSub;
-      
-      if (showFullBreakdown) {
-        doc.text('1', margin + 80, y);
-        doc.text(`${formatCurrency(baseAmount)}`, margin + 100, y);
-        doc.text(`${formatCurrency(baseSub)}`, margin + 125, y);
-        doc.text(`${formatCurrency(baseProfitVal)}`, margin + 150, y);
+      if (isCancellationTripChargeInvoice) {
+        const tripBill = job.cancellation_trip_charge_bill_amount ?? 0;
+        const tripSubPay = job.cancellation_trip_charge_sub_pay_amount ?? 0;
+        const tripProfit = tripBill - tripSubPay;
+
+        doc.text('Cancellation Trip Charge', margin, y);
+        if (showFullBreakdown) {
+          doc.text('1', margin + 80, y);
+          doc.text(`${formatCurrency(tripBill)}`, margin + 100, y);
+          doc.text(`${formatCurrency(tripSubPay)}`, margin + 125, y);
+          doc.text(`${formatCurrency(tripProfit)}`, margin + 150, y);
+        } else {
+          doc.text('1', margin + 100, y);
+          doc.text(`${formatCurrency(tripBill)}`, margin + 120, y);
+        }
+
+        totalAmount += tripBill;
+        totalSubPay += tripSubPay;
+        totalProfit += tripProfit;
+        y += 5;
       } else {
-        doc.text('1', margin + 100, y);
-        doc.text(`${formatCurrency(baseAmount)}`, margin + 120, y);
+        // Base Billing line item
+        const billingDescription = `${job?.work_order?.job_category || 'Standard Paint'} - ${job?.unit_size?.label ?? '—'}`;
+        doc.text(billingDescription, margin, y);
+        
+        const baseAmount = job.billing_details?.bill_amount ?? 0;
+        const baseSub = job.billing_details?.sub_pay_amount ?? 0;
+        const baseProfitVal = baseAmount - baseSub;
+        
+        if (showFullBreakdown) {
+          doc.text('1', margin + 80, y);
+          doc.text(`${formatCurrency(baseAmount)}`, margin + 100, y);
+          doc.text(`${formatCurrency(baseSub)}`, margin + 125, y);
+          doc.text(`${formatCurrency(baseProfitVal)}`, margin + 150, y);
+        } else {
+          doc.text('1', margin + 100, y);
+          doc.text(`${formatCurrency(baseAmount)}`, margin + 120, y);
+        }
+        
+        totalAmount += baseAmount;
+        totalSubPay += baseSub;
+        totalProfit += baseProfitVal;
+        
+        y += 5;
       }
-      
-      totalAmount += baseAmount;
-      totalSubPay += baseSub;
-      totalProfit += baseProfitVal;
-      
-      y += 5;
 
       // Supplemental Billing Lines + Extra Charges (Unified)
-      const unifiedExtraItems = [
+      const unifiedExtraItems = isCancellationTripChargeInvoice ? [] : [
         // Map supplemental billing lines (ceilings/accent walls)
         ...(supplementalBillingLines || []).map(line => ({
           description: line.label,
@@ -2400,8 +2493,19 @@ export function JobDetails() {
     // Include admin-set repair amounts
     base.bill += job?.repair_amount ?? 0;
     base.sub += job?.repair_sub_pay ?? 0;
+    if (job?.cancellation_trip_charge_added) {
+      base.bill += job.cancellation_trip_charge_bill_amount ?? 0;
+      base.sub += job.cancellation_trip_charge_sub_pay_amount ?? 0;
+    }
     return base;
-  }, [unifiedExtraLines, job?.repair_amount, job?.repair_sub_pay]);
+  }, [
+    unifiedExtraLines,
+    job?.repair_amount,
+    job?.repair_sub_pay,
+    job?.cancellation_trip_charge_added,
+    job?.cancellation_trip_charge_bill_amount,
+    job?.cancellation_trip_charge_sub_pay_amount
+  ]);
 
   const hasExtraChargesForApproval = Boolean(
     job?.work_order?.has_extra_charges ||
@@ -4152,7 +4256,77 @@ export function JobDetails() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Cancel Job</h3>
-              {!showCancelReasonStep ? (
+              {showCancelTripChargeStep ? (
+                <>
+                  <p className="text-gray-700 dark:text-gray-300 mb-4">
+                    Should a Cancellation Trip Charge be added to this job?
+                  </p>
+                  <div className="rounded-md border border-gray-200 dark:border-[#334155] p-4 mb-6">
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">Trip Charge</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {tripChargeDefaultsLoading
+                            ? 'Loading property billing item...'
+                            : tripChargeDefaultSource === 'property'
+                              ? 'Loaded from property billing items.'
+                              : 'Using default amounts.'}
+                        </p>
+                      </div>
+                      <DollarSign className="h-5 w-5 text-gray-400" />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <label className="block">
+                        <span className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Bill to Customer</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={tripChargeBillInput}
+                          onChange={(e) => setTripChargeBillInput(e.target.value)}
+                          className="w-full rounded-md border border-gray-300 dark:border-[#475569] bg-white dark:bg-[#0F172A] px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Subcontractor Pay</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={tripChargeSubPayInput}
+                          onChange={(e) => setTripChargeSubPayInput(e.target.value)}
+                          className="w-full rounded-md border border-gray-300 dark:border-[#475569] bg-white dark:bg-[#0F172A] px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex justify-end space-x-3">
+                    <button
+                      type="button"
+                      onClick={() => executeCancelJob(false)}
+                      disabled={cancellingJob || tripChargeDefaultsLoading}
+                      className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
+                    >
+                      No Trip Charge
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => executeCancelJob(true)}
+                      disabled={cancellingJob || tripChargeDefaultsLoading}
+                      className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                    >
+                      {cancellingJob ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                          Cancelling...
+                        </>
+                      ) : (
+                        'Yes, Add Charge'
+                      )}
+                    </button>
+                  </div>
+                </>
+              ) : !showCancelReasonStep ? (
                 <>
                   <p className="text-gray-700 dark:text-gray-300 mb-6">
                     Are you sure you want to cancel this job? It will move to the Cancelled phase. To continue work later, you'll need to use "Re-Activate Job" in the banner to return it to Pending Work Order.
@@ -4393,7 +4567,7 @@ export function JobDetails() {
                     <Download className="h-4 w-4 mr-2" />
                     Download PDF
                   </button>
-                  {(isInvoicing || isCompleted) && (
+                  {(isInvoicing || isCompleted || (isCancelled && job?.cancellation_trip_charge_added)) && (
                     <button
                       onClick={generateInvoicePDF}
                       className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-all shadow-md hover:shadow-lg"

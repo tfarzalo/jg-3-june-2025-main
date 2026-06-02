@@ -233,6 +233,10 @@ export interface Job {
   invoice_sent_date?: string;
   invoice_paid_date?: string;
   repair_amount?: number;
+  repair_sub_pay?: number;
+  cancellation_trip_charge_added?: boolean;
+  cancellation_trip_charge_bill_amount?: number;
+  cancellation_trip_charge_sub_pay_amount?: number;
   historical_data_mode?: 'live' | 'snapshot';
   active_snapshot_id?: string | null;
   snapshot_frozen_at?: string | null;
@@ -339,6 +343,9 @@ export function useJobDetails(jobId: string | undefined) {
             active_snapshot_id,
             snapshot_frozen_at,
             snapshot_last_phase_label,
+            cancellation_trip_charge_added,
+            cancellation_trip_charge_bill_amount,
+            cancellation_trip_charge_sub_pay_amount,
             property:properties (
               id,
               property_name,
@@ -439,6 +446,9 @@ export function useJobDetails(jobId: string | undefined) {
             active_snapshot_id: jd.active_snapshot_id ?? null,
             snapshot_frozen_at: jd.snapshot_frozen_at ?? null,
             snapshot_phase_label: jd.snapshot_last_phase_label ?? null,
+            cancellation_trip_charge_added: Boolean(jd.cancellation_trip_charge_added),
+            cancellation_trip_charge_bill_amount: jd.cancellation_trip_charge_bill_amount != null ? Number(jd.cancellation_trip_charge_bill_amount) : undefined,
+            cancellation_trip_charge_sub_pay_amount: jd.cancellation_trip_charge_sub_pay_amount != null ? Number(jd.cancellation_trip_charge_sub_pay_amount) : undefined,
           };
           setRawJob(normalizedShape as any);
           setError(null);

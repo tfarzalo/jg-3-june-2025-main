@@ -75,8 +75,14 @@ export function JobEditForm() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showCancelReasonStep, setShowCancelReasonStep] = useState(false);
+  const [showCancelTripChargeStep, setShowCancelTripChargeStep] = useState(false);
   const [selectedCancelReason, setSelectedCancelReason] = useState('');
   const [otherCancelReason, setOtherCancelReason] = useState('');
+  const [pendingCancelChangeReason, setPendingCancelChangeReason] = useState('');
+  const [tripChargeBillInput, setTripChargeBillInput] = useState('50.00');
+  const [tripChargeSubPayInput, setTripChargeSubPayInput] = useState('25.00');
+  const [tripChargeDefaultsLoading, setTripChargeDefaultsLoading] = useState(false);
+  const [tripChargeDefaultSource, setTripChargeDefaultSource] = useState<'property' | 'default'>('default');
   const [cancelling, setCancelling] = useState(false);
   const [properties, setProperties] = useState<Property[]>([]);
   const [unitSizes, setUnitSizes] = useState<UnitSize[]>([]);
@@ -103,15 +109,22 @@ export function JobEditForm() {
   const resetCancelJobFlow = () => {
     setShowCancelConfirm(false);
     setShowCancelReasonStep(false);
+    setShowCancelTripChargeStep(false);
     setSelectedCancelReason('');
     setOtherCancelReason('');
+    setPendingCancelChangeReason('');
+    setTripChargeBillInput('50.00');
+    setTripChargeSubPayInput('25.00');
+    setTripChargeDefaultSource('default');
   };
 
   const startCancelJobFlow = () => {
     setShowCancelConfirm(true);
     setShowCancelReasonStep(false);
+    setShowCancelTripChargeStep(false);
     setSelectedCancelReason('');
     setOtherCancelReason('');
+    setPendingCancelChangeReason('');
   };
 
   useEffect(() => {
@@ -685,20 +698,88 @@ export function JobEditForm() {
     }
   };
 
-  // Handle job cancellation
-  const handleCancelJob = async () => {
-    if (!jobId) return;
-
-    const cancellationReason = resolveAdminJobCancellationReason(
-      selectedCancelReason,
-      otherCancelReason
-    );
-
-    if (!cancellationReason) {
-      setError('Select a cancellation reason');
+  const loadCancellationTripChargeDefaults = async () => {
+    if (!job?.property_id) {
+      setTripChargeDefaultSource('default');
+      setTripChargeBillInput('50.00');
+      setTripChargeSubPayInput('25.00');
       return;
     }
-    
+
+    setTripChargeDefaultsLoading(true);
+    try {
+      const { data: categories, error: categoryError } = await supabase
+        .from('billing_categories')
+        .select('id, name')
+        .eq('property_id', job.property_id)
+        .ilike('name', 'Cancellation Trip Charge')
+        .limit(1);
+
+      if (categoryError) throw categoryError;
+
+      const categoryId = categories?.[0]?.id;
+      if (!categoryId) {
+        setTripChargeDefaultSource('default');
+        setTripChargeBillInput('50.00');
+        setTripChargeSubPayInput('25.00');
+        return;
+      }
+
+      let detailsQuery = supabase
+        .from('billing_details')
+        .select('bill_amount, sub_pay_amount')
+        .eq('property_id', job.property_id)
+        .eq('category_id', categoryId)
+        .limit(1);
+
+      if (job.unit_size_id) {
+        detailsQuery = detailsQuery.eq('unit_size_id', job.unit_size_id);
+      }
+
+      const { data: details, error: detailsError } = await detailsQuery;
+      if (detailsError) throw detailsError;
+
+      const detail = details?.[0];
+      if (!detail) {
+        setTripChargeDefaultSource('default');
+        setTripChargeBillInput('50.00');
+        setTripChargeSubPayInput('25.00');
+        return;
+      }
+
+      setTripChargeDefaultSource('property');
+      setTripChargeBillInput(String(Number(detail.bill_amount ?? 50).toFixed(2)));
+      setTripChargeSubPayInput(String(Number(detail.sub_pay_amount ?? 25).toFixed(2)));
+    } catch (error) {
+      console.error('Error loading cancellation trip charge defaults:', error);
+      setTripChargeDefaultSource('default');
+      setTripChargeBillInput('50.00');
+      setTripChargeSubPayInput('25.00');
+      setError('Using default cancellation trip charge amounts');
+    } finally {
+      setTripChargeDefaultsLoading(false);
+    }
+  };
+
+  const prepareCancellationTripChargeStep = async (changeReason: string) => {
+    setPendingCancelChangeReason(changeReason);
+    setShowCancelReasonStep(false);
+    setShowCancelTripChargeStep(true);
+    await loadCancellationTripChargeDefaults();
+  };
+
+  const executeCancelJob = async (includeTripCharge: boolean) => {
+    if (!jobId || !pendingCancelChangeReason) return;
+
+    const parsedBill = parseFloat(tripChargeBillInput);
+    const parsedSubPay = parseFloat(tripChargeSubPayInput);
+    const tripChargeBillAmount = includeTripCharge && !Number.isNaN(parsedBill)
+      ? Math.max(0, parsedBill)
+      : 0;
+    const tripChargeSubPayAmount = includeTripCharge && !Number.isNaN(parsedSubPay)
+      ? Math.max(0, parsedSubPay)
+      : 0;
+
     setCancelling(true);
     setError(null);
     
@@ -721,7 +802,10 @@ export function JobEditForm() {
       const { error: updateError } = await supabase
         .from('jobs')
         .update({ 
-          current_phase_id: cancelledPhase.id
+          current_phase_id: cancelledPhase.id,
+          cancellation_trip_charge_added: includeTripCharge,
+          cancellation_trip_charge_bill_amount: tripChargeBillAmount,
+          cancellation_trip_charge_sub_pay_amount: tripChargeSubPayAmount
         })
         .eq('id', jobId);
         
@@ -735,7 +819,9 @@ export function JobEditForm() {
           changed_by: userData.user.id,
           from_phase_id: job?.job_phase?.id,
           to_phase_id: cancelledPhase.id,
-          change_reason: `Job cancelled from Job Request edit page: ${cancellationReason}`
+          change_reason: includeTripCharge
+            ? `${pendingCancelChangeReason}; Cancellation Trip Charge added ($${tripChargeBillAmount.toFixed(2)} bill / $${tripChargeSubPayAmount.toFixed(2)} sub pay)`
+            : pendingCancelChangeReason
         });
 
       if (phaseChangeError) throw phaseChangeError;
@@ -751,6 +837,23 @@ export function JobEditForm() {
     } finally {
       setCancelling(false);
     }
+  };
+
+  // Handle job cancellation
+  const handleCancelJob = async () => {
+    if (!jobId) return;
+
+    const cancellationReason = resolveAdminJobCancellationReason(
+      selectedCancelReason,
+      otherCancelReason
+    );
+
+    if (!cancellationReason) {
+      setError('Select a cancellation reason');
+      return;
+    }
+
+    await prepareCancellationTripChargeStep(`Job cancelled from Job Request edit page: ${cancellationReason}`);
   };
 
   const cancelReasonRequiresOtherInput =
@@ -1096,7 +1199,65 @@ export function JobEditForm() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Cancel Job</h3>
-              {!showCancelReasonStep ? (
+              {showCancelTripChargeStep ? (
+                <>
+                  <p className="text-gray-700 dark:text-gray-300 mb-4">
+                    Should a Cancellation Trip Charge be added to this job?
+                  </p>
+                  <div className="rounded-md border border-gray-200 dark:border-[#334155] p-4 mb-6">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">Trip Charge</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                      {tripChargeDefaultsLoading
+                        ? 'Loading property billing item...'
+                        : tripChargeDefaultSource === 'property'
+                          ? 'Loaded from property billing items.'
+                          : 'Using default amounts.'}
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <label className="block">
+                        <span className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Bill to Customer</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={tripChargeBillInput}
+                          onChange={(e) => setTripChargeBillInput(e.target.value)}
+                          className="w-full rounded-md border border-gray-300 dark:border-[#475569] bg-white dark:bg-[#0F172A] px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Subcontractor Pay</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={tripChargeSubPayInput}
+                          onChange={(e) => setTripChargeSubPayInput(e.target.value)}
+                          className="w-full rounded-md border border-gray-300 dark:border-[#475569] bg-white dark:bg-[#0F172A] px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex justify-end space-x-3">
+                    <button
+                      type="button"
+                      onClick={() => executeCancelJob(false)}
+                      disabled={cancelling || tripChargeDefaultsLoading}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-400 bg-white dark:bg-[#2D3B4E] rounded-lg hover:bg-gray-50 dark:hover:bg-[#374151] transition-colors disabled:opacity-50"
+                    >
+                      No Trip Charge
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => executeCancelJob(true)}
+                      disabled={cancelling || tripChargeDefaultsLoading}
+                      className="px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50"
+                    >
+                      {cancelling ? 'Cancelling...' : 'Yes, Add Charge'}
+                    </button>
+                  </div>
+                </>
+              ) : !showCancelReasonStep ? (
                 <>
                   <p className="text-gray-700 dark:text-gray-300 mb-6">
                     Are you sure you want to cancel this job? This will move the job to the Cancelled phase and cannot be undone.
