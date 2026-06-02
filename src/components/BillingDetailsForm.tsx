@@ -1178,11 +1178,11 @@ export function BillingDetailsForm() {
                     </div>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-4 overflow-hidden">
                     {categoryLineItems[propertyBillingCategoryId]?.map(lineItem => (
                       <div 
                         key={lineItem.id} 
-                        className={`flex items-center space-x-4 p-3 rounded-lg border-2 transition-colors ${
+                        className={`grid grid-cols-[auto_minmax(0,1fr)] xl:grid-cols-[auto_minmax(18rem,1fr)_minmax(9rem,12rem)_minmax(9rem,12rem)_minmax(7rem,9rem)_auto] items-end gap-3 p-3 rounded-lg border-2 transition-colors ${
                           draggedLineItemId === lineItem.id 
                             ? 'opacity-50 bg-blue-50 dark:bg-blue-900/20' 
                             : dragOverLineItemId === lineItem.id 
@@ -1199,11 +1199,11 @@ export function BillingDetailsForm() {
                         <div className="cursor-move text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                           <GripVertical className="h-4 w-4" />
                         </div>
-                        <div className="flex items-center gap-2 flex-1">
+                        <div className="min-w-0">
                           <select
                             value={lineItem.unitSizeId}
                             onChange={(e) => handleLineItemChange(propertyBillingCategoryId, lineItem.id, 'unitSizeId', e.target.value)}
-                            className="h-11 px-4 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1"
+                            className="h-11 w-full min-w-0 px-4 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                           >
                             <option value="">Select Unit Size</option>
                             {unitSizes.map(size => (
@@ -1214,53 +1214,53 @@ export function BillingDetailsForm() {
                           </select>
                         </div>
 
-                        <div className="flex flex-col space-y-1">
+                        <div className="col-start-2 xl:col-start-auto flex flex-col space-y-1 min-w-0">
                           <label className="text-xs text-gray-500 dark:text-gray-400">
                             {pbc.name === 'Extra Charges' ? 'Billed Amount' : 'Bill Amount'}
                           </label>
-                          <div className="flex items-center space-x-2">
-                            <DollarSign className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                          <div className="flex items-center gap-2 min-w-0">
+                            <DollarSign className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" />
                             <input
                               type="number"
                               value={lineItem.billAmount}
                               onChange={(e) => handleLineItemChange(propertyBillingCategoryId, lineItem.id, 'billAmount', e.target.value)}
                               placeholder={"Bill Amount"}
-                              className="w-32 h-11 px-4 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="h-11 w-full min-w-0 px-4 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                           </div>
                         </div>
 
-                        <div className="flex flex-col space-y-1">
+                        <div className="col-start-2 xl:col-start-auto flex flex-col space-y-1 min-w-0">
                           <label className="text-xs text-gray-500 dark:text-gray-400">
                             {pbc.name === 'Extra Charges' ? 'Sub Pay Amount' : 'Sub Pay'}
                           </label>
-                          <div className="flex items-center space-x-2">
-                            <DollarSign className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+                          <div className="flex items-center gap-2 min-w-0">
+                            <DollarSign className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" />
                             <input
                               type="number"
                               value={lineItem.subPayAmount}
                               onChange={(e) => handleLineItemChange(propertyBillingCategoryId, lineItem.id, 'subPayAmount', e.target.value)}
                               placeholder={"Sub Pay"}
-                              className="w-32 h-11 px-4 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="h-11 w-full min-w-0 px-4 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                           </div>
                         </div>
 
-                        <div className="flex items-center">
+                        <div className="col-start-2 xl:col-start-auto flex items-center min-w-0">
                           <input
                             type="checkbox"
                             checked={lineItem.isHourly}
                             onChange={(e) => handleLineItemChange(propertyBillingCategoryId, lineItem.id, 'isHourly', e.target.checked)}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                           />
-                          <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                          <label className="ml-2 text-sm leading-tight text-gray-700 dark:text-gray-300">
                             Hourly Rate
                           </label>
                         </div>
 
                         <button
                           onClick={() => handleRemoveLineItem(propertyBillingCategoryId, lineItem.id)}
-                          className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                          className="col-start-2 justify-self-start xl:col-start-auto xl:justify-self-center text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                         >
                           <X className="h-4 w-4" />
                         </button>

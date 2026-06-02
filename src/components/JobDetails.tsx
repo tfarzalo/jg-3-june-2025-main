@@ -48,6 +48,10 @@ import { formatDate, formatDisplayDate, formatTime } from '../lib/dateUtils';
 import { formatAddress, formatCurrency } from '../lib/utils/formatUtils';
 import { getPreviewUrl } from '../utils/storagePreviews';
 import { getAdditionalBillingLines } from '../lib/billing/additional';
+import {
+  DEFAULT_CANCELLATION_TRIP_CHARGE,
+  findCancellationTripChargeRate,
+} from '../lib/billing/cancellationTripCharge';
 import { useJobDetails } from '../hooks/useJobDetails';
 import { useJobPhaseChanges } from '../hooks/useJobPhaseChanges';
 import { usePhases } from '../hooks/usePhases';
@@ -1639,60 +1643,33 @@ export function JobDetails() {
   const loadCancellationTripChargeDefaults = async () => {
     if (!job?.property?.id) {
       setTripChargeDefaultSource('default');
-      setTripChargeBillInput('50.00');
-      setTripChargeSubPayInput('25.00');
+      setTripChargeBillInput(DEFAULT_CANCELLATION_TRIP_CHARGE.billAmount.toFixed(2));
+      setTripChargeSubPayInput(DEFAULT_CANCELLATION_TRIP_CHARGE.subPayAmount.toFixed(2));
       return;
     }
 
     setTripChargeDefaultsLoading(true);
     try {
-      const { data: categories, error: categoryError } = await supabase
-        .from('billing_categories')
-        .select('id, name')
-        .eq('property_id', job.property.id)
-        .ilike('name', 'Cancellation Trip Charge')
-        .limit(1);
+      const rate = await findCancellationTripChargeRate(supabase, {
+        propertyId: job.property.id,
+        unitSizeId: job.unit_size?.id,
+      });
 
-      if (categoryError) throw categoryError;
-
-      const categoryId = categories?.[0]?.id;
-      if (!categoryId) {
+      if (!rate) {
         setTripChargeDefaultSource('default');
-        setTripChargeBillInput('50.00');
-        setTripChargeSubPayInput('25.00');
-        return;
-      }
-
-      let detailsQuery = supabase
-        .from('billing_details')
-        .select('bill_amount, sub_pay_amount')
-        .eq('property_id', job.property.id)
-        .eq('category_id', categoryId)
-        .limit(1);
-
-      if (job.unit_size?.id) {
-        detailsQuery = detailsQuery.eq('unit_size_id', job.unit_size.id);
-      }
-
-      const { data: details, error: detailsError } = await detailsQuery;
-      if (detailsError) throw detailsError;
-
-      const detail = details?.[0];
-      if (!detail) {
-        setTripChargeDefaultSource('default');
-        setTripChargeBillInput('50.00');
-        setTripChargeSubPayInput('25.00');
+        setTripChargeBillInput(DEFAULT_CANCELLATION_TRIP_CHARGE.billAmount.toFixed(2));
+        setTripChargeSubPayInput(DEFAULT_CANCELLATION_TRIP_CHARGE.subPayAmount.toFixed(2));
         return;
       }
 
       setTripChargeDefaultSource('property');
-      setTripChargeBillInput(String(Number(detail.bill_amount ?? 50).toFixed(2)));
-      setTripChargeSubPayInput(String(Number(detail.sub_pay_amount ?? 25).toFixed(2)));
+      setTripChargeBillInput(rate.billAmount.toFixed(2));
+      setTripChargeSubPayInput(rate.subPayAmount.toFixed(2));
     } catch (error) {
       console.error('Error loading cancellation trip charge defaults:', error);
       setTripChargeDefaultSource('default');
-      setTripChargeBillInput('50.00');
-      setTripChargeSubPayInput('25.00');
+      setTripChargeBillInput(DEFAULT_CANCELLATION_TRIP_CHARGE.billAmount.toFixed(2));
+      setTripChargeSubPayInput(DEFAULT_CANCELLATION_TRIP_CHARGE.subPayAmount.toFixed(2));
       toast.error('Using default cancellation trip charge amounts');
     } finally {
       setTripChargeDefaultsLoading(false);
@@ -2735,15 +2712,6 @@ export function JobDetails() {
                 {reactivatingJob ? 'Re-Activating...' : 'Re-Activate Job'}
               </button>
             )}
-            {isCancelled && job?.cancellation_trip_charge_added && (
-              <button
-                onClick={generateInvoicePDF}
-                className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Download Invoice
-              </button>
-            )}
             {canChangePhase && !isPendingWorkOrder && !isCancelled && !(isHistoricalSnapshotJob && !isCompleted) && (
               <>
                 {!isJobRequest && (
@@ -2799,16 +2767,27 @@ export function JobDetails() {
 
         {isCancelled && cancellationReasonForBanner && (
           <div className="mb-6 rounded-xl border border-red-200 dark:border-red-700/40 bg-red-50 dark:bg-red-900/20 px-6 py-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-red-900 dark:text-red-100">
-                  Cancelled
-                </p>
-                <p className="text-sm text-red-800 dark:text-red-200 mt-1">
-                  Reason for cancellation: {cancellationReasonForBanner}
-                </p>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-red-900 dark:text-red-100">
+                    Cancelled
+                  </p>
+                  <p className="text-sm text-red-800 dark:text-red-200 mt-1">
+                    Reason for cancellation: {cancellationReasonForBanner}
+                  </p>
+                </div>
               </div>
+              {job?.cancellation_trip_charge_added && (
+                <button
+                  onClick={generateInvoicePDF}
+                  className="inline-flex shrink-0 items-center justify-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Invoice
+                </button>
+              )}
             </div>
           </div>
         )}

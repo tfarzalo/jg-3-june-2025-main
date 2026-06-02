@@ -12,6 +12,10 @@ import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
 import { buildStoragePath } from '../utils/storagePaths';
 import { FILE_CATEGORY_PATHS } from '../utils/fileCategories';
 import {
+  DEFAULT_CANCELLATION_TRIP_CHARGE,
+  findCancellationTripChargeRate,
+} from '../lib/billing/cancellationTripCharge';
+import {
   ADMIN_JOB_CANCELLATION_OTHER_REASON,
   ADMIN_JOB_CANCELLATION_REASONS,
   resolveAdminJobCancellationReason,
@@ -701,60 +705,33 @@ export function JobEditForm() {
   const loadCancellationTripChargeDefaults = async () => {
     if (!job?.property_id) {
       setTripChargeDefaultSource('default');
-      setTripChargeBillInput('50.00');
-      setTripChargeSubPayInput('25.00');
+      setTripChargeBillInput(DEFAULT_CANCELLATION_TRIP_CHARGE.billAmount.toFixed(2));
+      setTripChargeSubPayInput(DEFAULT_CANCELLATION_TRIP_CHARGE.subPayAmount.toFixed(2));
       return;
     }
 
     setTripChargeDefaultsLoading(true);
     try {
-      const { data: categories, error: categoryError } = await supabase
-        .from('billing_categories')
-        .select('id, name')
-        .eq('property_id', job.property_id)
-        .ilike('name', 'Cancellation Trip Charge')
-        .limit(1);
+      const rate = await findCancellationTripChargeRate(supabase, {
+        propertyId: job.property_id,
+        unitSizeId: job.unit_size_id,
+      });
 
-      if (categoryError) throw categoryError;
-
-      const categoryId = categories?.[0]?.id;
-      if (!categoryId) {
+      if (!rate) {
         setTripChargeDefaultSource('default');
-        setTripChargeBillInput('50.00');
-        setTripChargeSubPayInput('25.00');
-        return;
-      }
-
-      let detailsQuery = supabase
-        .from('billing_details')
-        .select('bill_amount, sub_pay_amount')
-        .eq('property_id', job.property_id)
-        .eq('category_id', categoryId)
-        .limit(1);
-
-      if (job.unit_size_id) {
-        detailsQuery = detailsQuery.eq('unit_size_id', job.unit_size_id);
-      }
-
-      const { data: details, error: detailsError } = await detailsQuery;
-      if (detailsError) throw detailsError;
-
-      const detail = details?.[0];
-      if (!detail) {
-        setTripChargeDefaultSource('default');
-        setTripChargeBillInput('50.00');
-        setTripChargeSubPayInput('25.00');
+        setTripChargeBillInput(DEFAULT_CANCELLATION_TRIP_CHARGE.billAmount.toFixed(2));
+        setTripChargeSubPayInput(DEFAULT_CANCELLATION_TRIP_CHARGE.subPayAmount.toFixed(2));
         return;
       }
 
       setTripChargeDefaultSource('property');
-      setTripChargeBillInput(String(Number(detail.bill_amount ?? 50).toFixed(2)));
-      setTripChargeSubPayInput(String(Number(detail.sub_pay_amount ?? 25).toFixed(2)));
+      setTripChargeBillInput(rate.billAmount.toFixed(2));
+      setTripChargeSubPayInput(rate.subPayAmount.toFixed(2));
     } catch (error) {
       console.error('Error loading cancellation trip charge defaults:', error);
       setTripChargeDefaultSource('default');
-      setTripChargeBillInput('50.00');
-      setTripChargeSubPayInput('25.00');
+      setTripChargeBillInput(DEFAULT_CANCELLATION_TRIP_CHARGE.billAmount.toFixed(2));
+      setTripChargeSubPayInput(DEFAULT_CANCELLATION_TRIP_CHARGE.subPayAmount.toFixed(2));
       setError('Using default cancellation trip charge amounts');
     } finally {
       setTripChargeDefaultsLoading(false);
