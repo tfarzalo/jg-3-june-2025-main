@@ -30,6 +30,8 @@ interface PropertyRow {
   state: string | null;
   preferred_subcontractor_a_id: string | null;
   preferred_subcontractor_b_id: string | null;
+  preferred_subcontractor_c_id: string | null;
+  preferred_subcontractor_d_id: string | null;
 }
 
 type RawJobRow = Omit<JobRow, 'property' | 'job_phase' | 'unit_size' | 'job_type'> & {
@@ -87,9 +89,11 @@ export function SubcontractorAdminView({ userId, userName, userEmail }: Subcontr
               city,
               state,
               preferred_subcontractor_a_id,
-              preferred_subcontractor_b_id
+              preferred_subcontractor_b_id,
+              preferred_subcontractor_c_id,
+              preferred_subcontractor_d_id
             `)
-            .or(`preferred_subcontractor_a_id.eq.${userId},preferred_subcontractor_b_id.eq.${userId}`)
+            .or(`preferred_subcontractor_a_id.eq.${userId},preferred_subcontractor_b_id.eq.${userId},preferred_subcontractor_c_id.eq.${userId},preferred_subcontractor_d_id.eq.${userId}`)
             .order('property_name', { ascending: true }),
         ]);
 
@@ -133,6 +137,8 @@ export function SubcontractorAdminView({ userId, userName, userEmail }: Subcontr
   const historicalJobs = filteredJobs.filter(job => terminalPhases.has(job.job_phase?.job_phase_label || ''));
   const slotOneProperties = properties.filter(property => property.preferred_subcontractor_a_id === userId);
   const slotTwoProperties = properties.filter(property => property.preferred_subcontractor_b_id === userId);
+  const slotThreeProperties = properties.filter(property => property.preferred_subcontractor_c_id === userId);
+  const slotFourProperties = properties.filter(property => property.preferred_subcontractor_d_id === userId);
 
   const renderJobList = (items: JobRow[], emptyText: string) => (
     <div className="divide-y divide-gray-200 dark:divide-[#2D3B4E]">
@@ -288,6 +294,20 @@ export function SubcontractorAdminView({ userId, userName, userEmail }: Subcontr
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{slotTwoProperties.length} propert{slotTwoProperties.length === 1 ? 'y' : 'ies'}</p>
             </div>
             {renderPropertyList(slotTwoProperties, 'No properties list this subcontractor in slot 2.')}
+          </section>
+          <section className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg overflow-hidden bg-white dark:bg-[#1E293B]">
+            <div className="px-4 py-3 bg-gray-50 dark:bg-[#0F172A]">
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Preferred Subcontractor 3</h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{slotThreeProperties.length} propert{slotThreeProperties.length === 1 ? 'y' : 'ies'}</p>
+            </div>
+            {renderPropertyList(slotThreeProperties, 'No properties list this subcontractor in slot 3.')}
+          </section>
+          <section className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg overflow-hidden bg-white dark:bg-[#1E293B]">
+            <div className="px-4 py-3 bg-gray-50 dark:bg-[#0F172A]">
+              <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Preferred Subcontractor 4</h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{slotFourProperties.length} propert{slotFourProperties.length === 1 ? 'y' : 'ies'}</p>
+            </div>
+            {renderPropertyList(slotFourProperties, 'No properties list this subcontractor in slot 4.')}
           </section>
         </aside>
 

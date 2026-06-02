@@ -162,6 +162,15 @@ serve(async (req) => {
           preferred_subcontractor_c_id: null,
         },
       },
+      {
+        matchColumn: "preferred_subcontractor_d_id",
+        update: {
+          preferred_subcontractor_d_name_snapshot: historicalName,
+          preferred_subcontractor_d_email_snapshot: historicalEmail,
+          preferred_subcontractor_d_deleted_at: deletedAt,
+          preferred_subcontractor_d_id: null,
+        },
+      },
     ];
 
     for (const slotUpdate of preferredSlotUpdates) {

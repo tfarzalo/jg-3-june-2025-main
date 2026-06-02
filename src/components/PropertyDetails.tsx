@@ -84,6 +84,7 @@ interface Property {
   preferred_subcontractor_a_id?: string | null;
   preferred_subcontractor_b_id?: string | null;
   preferred_subcontractor_c_id?: string | null;
+  preferred_subcontractor_d_id?: string | null;
   preferred_subcontractor_a_name_snapshot?: string | null;
   preferred_subcontractor_a_email_snapshot?: string | null;
   preferred_subcontractor_a_deleted_at?: string | null;
@@ -93,6 +94,9 @@ interface Property {
   preferred_subcontractor_c_name_snapshot?: string | null;
   preferred_subcontractor_c_email_snapshot?: string | null;
   preferred_subcontractor_c_deleted_at?: string | null;
+  preferred_subcontractor_d_name_snapshot?: string | null;
+  preferred_subcontractor_d_email_snapshot?: string | null;
+  preferred_subcontractor_d_deleted_at?: string | null;
   ap_name: string;
   ap_email: string;
   ap_phone: string;
@@ -267,6 +271,7 @@ export function PropertyDetails() {
   const [preferredSubA, setPreferredSubA] = useState<string | null>(null);
   const [preferredSubB, setPreferredSubB] = useState<string | null>(null);
   const [preferredSubC, setPreferredSubC] = useState<string | null>(null);
+  const [preferredSubD, setPreferredSubD] = useState<string | null>(null);
   const [exclusionNote, setExclusionNote] = useState<string>('');
   const [exclusionNoteDraft, setExclusionNoteDraft] = useState<string>('');
   const [editingExclusionNote, setEditingExclusionNote] = useState(false);
@@ -523,7 +528,7 @@ export function PropertyDetails() {
     }
   };
 
-  const savePreferredSubcontractor = async (slot: 'a' | 'b' | 'c', userId: string | null) => {
+  const savePreferredSubcontractor = async (slot: 'a' | 'b' | 'c' | 'd', userId: string | null) => {
     if (!propertyId) return;
     const col = `preferred_subcontractor_${slot}_id`;
     try {
@@ -532,13 +537,14 @@ export function PropertyDetails() {
       if (slot === 'a') setPreferredSubA(userId);
       if (slot === 'b') setPreferredSubB(userId);
       if (slot === 'c') setPreferredSubC(userId);
+      if (slot === 'd') setPreferredSubD(userId);
       toast.success('Preferred subcontractor updated');
     } catch {
       toast.error('Failed to update preferred subcontractor');
     }
   };
 
-  const getPreferredSubcontractorSnapshot = (slot: 'a' | 'b' | 'c') => {
+  const getPreferredSubcontractorSnapshot = (slot: 'a' | 'b' | 'c' | 'd') => {
     if (!property) return { name: null as string | null, email: null as string | null, deletedAt: null as string | null };
     if (slot === 'a') {
       return {
@@ -554,10 +560,17 @@ export function PropertyDetails() {
         deletedAt: property.preferred_subcontractor_b_deleted_at || null,
       };
     }
+    if (slot === 'c') {
+      return {
+        name: property.preferred_subcontractor_c_name_snapshot || null,
+        email: property.preferred_subcontractor_c_email_snapshot || null,
+        deletedAt: property.preferred_subcontractor_c_deleted_at || null,
+      };
+    }
     return {
-      name: property.preferred_subcontractor_c_name_snapshot || null,
-      email: property.preferred_subcontractor_c_email_snapshot || null,
-      deletedAt: property.preferred_subcontractor_c_deleted_at || null,
+      name: property.preferred_subcontractor_d_name_snapshot || null,
+      email: property.preferred_subcontractor_d_email_snapshot || null,
+      deletedAt: property.preferred_subcontractor_d_deleted_at || null,
     };
   };
 
@@ -668,6 +681,7 @@ export function PropertyDetails() {
         setPreferredSubA(propertyData.preferred_subcontractor_a_id || null);
         setPreferredSubB(propertyData.preferred_subcontractor_b_id || null);
         setPreferredSubC(propertyData.preferred_subcontractor_c_id || null);
+        setPreferredSubD(propertyData.preferred_subcontractor_d_id || null);
         const note = propertyData.subcontractor_exclusion_note || '';
         setExclusionNote(note);
         setExclusionNoteDraft(note);
@@ -1591,14 +1605,14 @@ export function PropertyDetails() {
               Preferred Subcontractors
             </h3>
             {!isSubcontractor && (
-              <span className="text-indigo-200 text-xs">Select up to 3 preferred subcontractors for this property</span>
+              <span className="text-indigo-200 text-xs">Select up to 4 preferred subcontractors for this property</span>
             )}
           </div>
           <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {(['a', 'b', 'c'] as const).map((slot, idx) => {
-                const label = ['A — Primary', 'B — Secondary', 'C — Tertiary'][idx];
-                const value = [preferredSubA, preferredSubB, preferredSubC][idx];
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+              {(['a', 'b', 'c', 'd'] as const).map((slot, idx) => {
+                const label = ['A — Primary', 'B — Secondary', 'C — Tertiary', 'D — Fourth'][idx];
+                const value = [preferredSubA, preferredSubB, preferredSubC, preferredSubD][idx];
                 const selectedUser = subcontractorUsers.find(u => u.id === value);
                 const snapshot = getPreferredSubcontractorSnapshot(slot);
                 const displayName = selectedUser?.full_name || snapshot.name;
@@ -1607,7 +1621,7 @@ export function PropertyDetails() {
                   <div key={slot} className="flex flex-col gap-2">
                     <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
                       <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-xs font-bold">
-                        {['A', 'B', 'C'][idx]}
+                        {['A', 'B', 'C', 'D'][idx]}
                       </span>
                       {label}
                     </p>
@@ -2216,7 +2230,7 @@ export function PropertyDetails() {
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold text-white flex items-center">
                 <FileText className="h-5 w-5 mr-2" />
-                Notes and Important Updates
+                In-House Notes
               </h3>
               <button
                 onClick={() => setShowUpdateForm(true)}
@@ -2379,13 +2393,13 @@ export function PropertyDetails() {
           )}
         </div>
 
-        {/* General Property Notes Section */}
+        {/* Painter Notes Section */}
         <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
           <div className="bg-gradient-to-r from-slate-700 to-slate-800 dark:from-slate-800 dark:to-slate-900 px-6 py-4">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold text-white flex items-center">
                 <Clipboard className="h-5 w-5 mr-2" />
-                General Property Notes
+                Painter Notes
               </h3>
               {isAdmin && (
                 <button
@@ -2403,9 +2417,9 @@ export function PropertyDetails() {
             {generalNotes.length === 0 ? (
               <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                 <Clipboard className="h-12 w-12 mx-auto mb-3 text-gray-400" />
-                <p className="font-medium">No general property notes recorded</p>
+                <p className="font-medium">No painter notes recorded</p>
                 <p className="text-sm">
-                  {isAdmin ? 'Click "Add Note" to get started' : 'No general notes are currently available for this property'}
+                  {isAdmin ? 'Click "Add Note" to get started' : 'No painter notes are currently available for this property'}
                 </p>
               </div>
             ) : (

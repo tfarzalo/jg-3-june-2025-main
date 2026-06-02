@@ -69,6 +69,7 @@ export function PropertyEditForm() {
   const [preferredSubA, setPreferredSubA] = useState<string>('');
   const [preferredSubB, setPreferredSubB] = useState<string>('');
   const [preferredSubC, setPreferredSubC] = useState<string>('');
+  const [preferredSubD, setPreferredSubD] = useState<string>('');
   const [subExclusionNote, setSubExclusionNote] = useState<string>('');
   
   const [formData, setFormData] = useState({
@@ -485,6 +486,7 @@ export function PropertyEditForm() {
       setPreferredSubA(data.preferred_subcontractor_a_id || '');
       setPreferredSubB(data.preferred_subcontractor_b_id || '');
       setPreferredSubC(data.preferred_subcontractor_c_id || '');
+      setPreferredSubD(data.preferred_subcontractor_d_id || '');
       setSubExclusionNote(data.subcontractor_exclusion_note || '');
 
     } catch (err) {
@@ -599,6 +601,7 @@ export function PropertyEditForm() {
         preferred_subcontractor_a_id: preferredSubA || null,
         preferred_subcontractor_b_id: preferredSubB || null,
         preferred_subcontractor_c_id: preferredSubC || null,
+        preferred_subcontractor_d_id: preferredSubD || null,
         subcontractor_exclusion_note: subExclusionNote.trim() || null,
       };
 
@@ -1207,14 +1210,15 @@ export function PropertyEditForm() {
               Preferred Subcontractors
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-              Assign up to 3 preferred subcontractor users for this property, ranked A (primary), B, and C.
+              Assign up to 4 preferred subcontractor users for this property, ranked A (primary), B, C, and D.
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
               {(
                 [
                   { slot: 'a', label: 'A — Primary', value: preferredSubA, set: setPreferredSubA },
                   { slot: 'b', label: 'B — Secondary', value: preferredSubB, set: setPreferredSubB },
                   { slot: 'c', label: 'C — Tertiary', value: preferredSubC, set: setPreferredSubC },
+                  { slot: 'd', label: 'D — Fourth', value: preferredSubD, set: setPreferredSubD },
                 ] as { slot: string; label: string; value: string; set: (v: string) => void }[]
               ).map(({ slot, label, value, set }) => (
                 <div key={slot}>

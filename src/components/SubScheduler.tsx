@@ -98,9 +98,9 @@ export default function SubScheduler() {
   const [sendingNotifications, setSendingNotifications] = useState(false);
 
   // Preferred subcontractor IDs keyed by property ID
-  // { [propertyId]: { a: string|null, b: string|null, c: string|null } }
+  // { [propertyId]: { a: string|null, b: string|null, c: string|null, d: string|null } }
   const [preferredSubsByProperty, setPreferredSubsByProperty] = useState<
-    Record<string, { a: string | null; b: string | null; c: string | null }>
+    Record<string, { a: string | null; b: string | null; c: string | null; d: string | null }>
   >({});
 
   // Non-preferred assignment warning modal
@@ -131,16 +131,17 @@ export default function SubScheduler() {
 
     supabase
       .from('properties')
-      .select('id, preferred_subcontractor_a_id, preferred_subcontractor_b_id, preferred_subcontractor_c_id')
+      .select('id, preferred_subcontractor_a_id, preferred_subcontractor_b_id, preferred_subcontractor_c_id, preferred_subcontractor_d_id')
       .in('id', propertyIds)
       .then(({ data }) => {
         if (!data) return;
-        const map: Record<string, { a: string | null; b: string | null; c: string | null }> = {};
+        const map: Record<string, { a: string | null; b: string | null; c: string | null; d: string | null }> = {};
         data.forEach(row => {
           map[row.id] = {
             a: row.preferred_subcontractor_a_id ?? null,
             b: row.preferred_subcontractor_b_id ?? null,
             c: row.preferred_subcontractor_c_id ?? null,
+            d: row.preferred_subcontractor_d_id ?? null,
           };
         });
         setPreferredSubsByProperty(map);
@@ -313,7 +314,7 @@ export default function SubScheduler() {
 
     // Only warn if the property has at least one preferred sub set
     const preferredIds = prefs
-      ? [prefs.a, prefs.b, prefs.c].filter(Boolean) as string[]
+      ? [prefs.a, prefs.b, prefs.c, prefs.d].filter(Boolean) as string[]
       : [];
 
     const isNonPreferred =
@@ -1155,11 +1156,11 @@ JG Painting Pros Inc.`;
         const propertyId = pendingDrop.job.property?.id;
         const prefs = propertyId ? preferredSubsByProperty[propertyId] : undefined;
         const prefNames = prefs
-          ? ([prefs.a, prefs.b, prefs.c] as (string | null)[])
+          ? ([prefs.a, prefs.b, prefs.c, prefs.d] as (string | null)[])
               .map((id, idx) => {
                 if (!id) return null;
                 const found = subcontractors.find(s => s.id === id);
-                return found ? `${['A', 'B', 'C'][idx]} — ${found.full_name}` : null;
+                return found ? `${['A', 'B', 'C', 'D'][idx]} — ${found.full_name}` : null;
               })
               .filter(Boolean)
           : [];
