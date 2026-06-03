@@ -13,7 +13,8 @@ import {
   Trash2,
   X,
   Mailbox,
-  CheckCircle
+  CheckCircle,
+  ClipboardCheck
 } from 'lucide-react';
 import { parseISO, format, subMonths } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
@@ -469,6 +470,56 @@ export function JobListingPage({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [qualityControlJobIds, setQualityControlJobIds] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    const jobIds = Array.from(new Set(jobs.map(job => job.id).filter(Boolean)));
+
+    if (jobIds.length === 0) {
+      setQualityControlJobIds(new Set());
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchQualityControlJobIds = async () => {
+      try {
+        const foundJobIds = new Set<string>();
+        const batchSize = 500;
+
+        for (let index = 0; index < jobIds.length; index += batchSize) {
+          const batch = jobIds.slice(index, index + batchSize);
+          const { data, error } = await supabase
+            .from('job_quality_control_submissions')
+            .select('job_id')
+            .in('job_id', batch);
+
+          if (error) throw error;
+
+          (data || []).forEach((row: { job_id?: string | null }) => {
+            if (row.job_id) {
+              foundJobIds.add(row.job_id);
+            }
+          });
+        }
+
+        if (!cancelled) {
+          setQualityControlJobIds(foundJobIds);
+        }
+      } catch (error) {
+        console.error('Error fetching Quality Control job indicators:', error);
+        if (!cancelled) {
+          setQualityControlJobIds(new Set());
+        }
+      }
+    };
+
+    fetchQualityControlJobIds();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [jobs]);
 
   const propertyOptions = Array.from(
     new Set(
@@ -2062,6 +2113,15 @@ export function JobListingPage({
                           phaseLabel={job.job_phase.job_phase_label}
                           dataMode={job.historical_data_mode}
                         />
+                        {qualityControlJobIds.has(job.id) && (
+                          <span
+                            title="Quality Control submitted"
+                            aria-label="Quality Control submitted"
+                            className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm"
+                          >
+                            <ClipboardCheck className="h-3 w-3" />
+                          </span>
+                        )}
                       </div>
                     )}
                   </td>

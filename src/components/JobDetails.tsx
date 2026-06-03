@@ -264,7 +264,19 @@ type QualityControlSubmission = {
     size?: number;
   }>;
   created_at: string;
+  updated_at?: string;
 };
+
+type QualityControlMediaFile = QualityControlSubmission['media_files'][number];
+
+function normalizeQualityControlScores(
+  scores?: Partial<Record<QualityControlScoreKey, number>>
+) {
+  return {
+    ...createEmptyQualityControlScores(),
+    ...(scores || {}),
+  };
+}
 
 async function sendEmail(data: EmailData) {
   console.log('Sending email:', data);
@@ -403,6 +415,8 @@ export function JobDetails() {
   const [qualityControlSubmitting, setQualityControlSubmitting] = useState(false);
   const [qualityControlSubmissions, setQualityControlSubmissions] = useState<QualityControlSubmission[]>([]);
   const [qualityControlFiles, setQualityControlFiles] = useState<File[]>([]);
+  const [editingQualityControlId, setEditingQualityControlId] = useState<string | null>(null);
+  const [editingQualityControlMedia, setEditingQualityControlMedia] = useState<QualityControlMediaFile[]>([]);
   const [qualityControlForm, setQualityControlForm] = useState({
     painter_first_name: '',
     painter_last_name: '',
@@ -681,14 +695,14 @@ export function JobDetails() {
   }, [assignedSubcontractorName]);
 
   useEffect(() => {
-    if (!showQualityControlModal || !assignedSubcontractorName) return;
+    if (!showQualityControlModal || editingQualityControlId || !assignedSubcontractorName) return;
 
     setQualityControlForm(prev => ({
       ...prev,
       painter_first_name: assignedPainterNameParts.firstName || prev.painter_first_name,
       painter_last_name: assignedPainterNameParts.lastName || prev.painter_last_name,
     }));
-  }, [assignedPainterNameParts.firstName, assignedPainterNameParts.lastName, assignedSubcontractorName, showQualityControlModal]);
+  }, [assignedPainterNameParts.firstName, assignedPainterNameParts.lastName, assignedSubcontractorName, editingQualityControlId, showQualityControlModal]);
 
   const fetchQualityControlSubmissions = useCallback(async () => {
     if (!jobId || !canUseQualityControl) {
@@ -701,7 +715,7 @@ export function JobDetails() {
       setQualityControlLoading(true);
       const { data, error } = await supabase
         .from('job_quality_control_submissions')
-        .select('id, job_id, form_data, score_total, media_files, created_at')
+        .select('id, job_id, form_data, score_total, media_files, created_at, updated_at')
         .eq('job_id', jobId)
         .order('created_at', { ascending: false });
 
@@ -720,6 +734,8 @@ export function JobDetails() {
   }, [fetchQualityControlSubmissions]);
 
   const resetQualityControlForm = () => {
+    setEditingQualityControlId(null);
+    setEditingQualityControlMedia([]);
     setQualityControlForm({
       painter_first_name: assignedPainterNameParts.firstName || '',
       painter_last_name: assignedPainterNameParts.lastName || '',
@@ -728,6 +744,21 @@ export function JobDetails() {
       scores: createEmptyQualityControlScores(),
     });
     setQualityControlFiles([]);
+  };
+
+  const openQualityControlModal = () => {
+    if (qualityControlSubmissions.length > 0) {
+      handleEditQualityControlSubmission(qualityControlSubmissions[0]);
+      return;
+    }
+
+    resetQualityControlForm();
+    setShowQualityControlModal(true);
+  };
+
+  const closeQualityControlModal = () => {
+    setShowQualityControlModal(false);
+    resetQualityControlForm();
   };
 
   const uploadQualityControlFiles = async (userId: string) => {
@@ -840,7 +871,10 @@ export function JobDetails() {
         .eq('name', 'JG Painting Pros Quality Control')
         .maybeSingle();
 
-      const media = await uploadQualityControlFiles(userData.user.id);
+      const uploadedMedia = await uploadQualityControlFiles(userData.user.id);
+      const media = editingQualityControlId
+        ? [...editingQualityControlMedia, ...uploadedMedia]
+        : uploadedMedia;
       const formData = {
         painter_first_name: painterFirstName || null,
         painter_last_name: painterLastName || null,
@@ -862,20 +896,31 @@ export function JobDetails() {
         },
       };
 
-      const { error: insertError } = await supabase
-        .from('job_quality_control_submissions')
-        .insert({
-          job_id: jobId,
-          form_id: qcForm?.id || null,
-          submitted_by: userData.user.id,
-          form_data: formData,
-          score_total: qualityControlTotal,
-          media_files: media,
-        });
+      const { error: submitError } = editingQualityControlId
+        ? await supabase
+            .from('job_quality_control_submissions')
+            .update({
+              form_id: qcForm?.id || null,
+              form_data: formData,
+              score_total: qualityControlTotal,
+              media_files: media,
+            })
+            .eq('id', editingQualityControlId)
+            .eq('job_id', jobId)
+        : await supabase
+            .from('job_quality_control_submissions')
+            .insert({
+              job_id: jobId,
+              form_id: qcForm?.id || null,
+              submitted_by: userData.user.id,
+              form_data: formData,
+              score_total: qualityControlTotal,
+              media_files: media,
+            });
 
-      if (insertError) throw insertError;
+      if (submitError) throw submitError;
 
-      toast.success('Quality Control submitted');
+      toast.success(editingQualityControlId ? 'Quality Control updated' : 'Quality Control submitted');
       setShowQualityControlModal(false);
       setQualityControlExpanded(true);
       resetQualityControlForm();
@@ -885,6 +930,44 @@ export function JobDetails() {
       toast.error(error instanceof Error ? error.message : 'Failed to submit Quality Control');
     } finally {
       setQualityControlSubmitting(false);
+    }
+  };
+
+  function handleEditQualityControlSubmission(submission: QualityControlSubmission) {
+    const formData = submission.form_data || {};
+
+    setEditingQualityControlId(submission.id);
+    setEditingQualityControlMedia(submission.media_files || []);
+    setQualityControlFiles([]);
+    setQualityControlForm({
+      painter_first_name: formData.painter_first_name || '',
+      painter_last_name: formData.painter_last_name || '',
+      date_walked: formData.date_walked || '',
+      comments: formData.comments || '',
+      scores: normalizeQualityControlScores(formData.quality_score?.categories),
+    });
+    setShowQualityControlModal(true);
+  }
+
+  const handleDeleteQualityControlSubmission = async (submission: QualityControlSubmission) => {
+    if (!canUseQualityControl) return;
+    const confirmed = window.confirm('Delete this Quality Control entry? This cannot be undone.');
+    if (!confirmed) return;
+
+    try {
+      const { error } = await supabase
+        .from('job_quality_control_submissions')
+        .delete()
+        .eq('id', submission.id)
+        .eq('job_id', jobId);
+
+      if (error) throw error;
+
+      toast.success('Quality Control entry deleted');
+      await fetchQualityControlSubmissions();
+    } catch (error) {
+      console.error('Error deleting Quality Control entry:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete Quality Control entry');
     }
   };
 
@@ -3144,11 +3227,11 @@ export function JobDetails() {
           <div className="flex space-x-3">
             {canUseQualityControl && isCompleted && (
               <button
-                onClick={() => setShowQualityControlModal(true)}
+                onClick={openQualityControlModal}
                 className="inline-flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
               >
                 <ClipboardCheck className="h-4 w-4 mr-2" />
-                Quality Control
+                {qualityControlSubmissions.length > 0 ? 'Edit QC Entry' : 'Quality Control'}
               </button>
             )}
             {(isAdmin || isJGManagement) && isHistoricalSnapshotJob && (
@@ -5093,14 +5176,16 @@ export function JobDetails() {
             <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-3xl w-full shadow-xl max-h-[90vh] overflow-y-auto">
               <div className="flex items-start justify-between gap-4 mb-5">
                 <div>
-                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Quality Control</h3>
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+                    {editingQualityControlId ? 'Edit Quality Control' : 'Quality Control'}
+                  </h3>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                     {formatWorkOrderNumber(job?.work_order_num ?? 0)} • {propertyName} • Unit {job?.unit_number || '—'} • {job?.unit_size?.label || '—'}
                   </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowQualityControlModal(false)}
+                  onClick={closeQualityControlModal}
                   className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
                 >
                   <X className="h-5 w-5" />
@@ -5232,6 +5317,35 @@ export function JobDetails() {
                       ))}
                     </div>
                   )}
+                  {editingQualityControlMedia.length > 0 && (
+                    <div className="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#0F172A] p-3">
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        Existing QC media
+                      </div>
+                      <div className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
+                        {editingQualityControlMedia.map((file, index) => (
+                          <div key={`${file.path}-${index}`} className="flex items-center justify-between gap-3">
+                            <a
+                              href={file.public_url || '#'}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="min-w-0 truncate hover:text-emerald-700 dark:hover:text-emerald-300"
+                            >
+                              {file.name}
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => setEditingQualityControlMedia(prev => prev.filter((_, fileIndex) => fileIndex !== index))}
+                              className="text-red-600 hover:text-red-700 dark:text-red-400"
+                              aria-label={`Remove ${file.name}`}
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -5305,7 +5419,7 @@ export function JobDetails() {
               <div className="mt-6 flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowQualityControlModal(false)}
+                  onClick={closeQualityControlModal}
                   className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
                 >
                   Cancel
@@ -5316,7 +5430,9 @@ export function JobDetails() {
                   disabled={qualityControlSubmitting}
                   className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {qualityControlSubmitting ? 'Submitting...' : 'Submit Quality Control'}
+                  {qualityControlSubmitting
+                    ? editingQualityControlId ? 'Updating...' : 'Submitting...'
+                    : editingQualityControlId ? 'Update Quality Control' : 'Submit Quality Control'}
                 </button>
               </div>
             </div>
@@ -5421,6 +5537,24 @@ export function JobDetails() {
                         <div className="rounded-lg bg-emerald-600 px-5 py-4 text-white text-center min-w-[150px]">
                           <div className="text-3xl font-bold">{Number(submission.score_total || 0)}</div>
                           <div className="text-sm font-medium">out of {QUALITY_CONTROL_SCORE_TOTAL}</div>
+                          <div className="mt-3 flex items-center justify-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleEditQualityControlSubmission(submission)}
+                              className="inline-flex items-center rounded-md bg-white/15 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-white/25"
+                            >
+                              <Edit className="mr-1 h-3.5 w-3.5" />
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteQualityControlSubmission(submission)}
+                              className="inline-flex items-center rounded-md bg-white/15 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-white/25"
+                            >
+                              <Trash2 className="mr-1 h-3.5 w-3.5" />
+                              Delete
+                            </button>
+                          </div>
                         </div>
                       </div>
                       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-5">
