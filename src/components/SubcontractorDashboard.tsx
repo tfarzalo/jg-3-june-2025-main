@@ -14,7 +14,8 @@ import {
   Globe,
   Camera,
   X,
-  CheckCircle
+  CheckCircle,
+  Ban
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
@@ -26,6 +27,10 @@ import { Lightbox } from './Lightbox';
 import { SubcontractorDashboardActions } from './SubcontractorDashboardActions';
 import { AssignmentCountdownTimer } from './AssignmentCountdownTimer';
 import ImageUpload from './ImageUpload';
+import {
+  DEFAULT_CANCELLATION_TRIP_CHARGE,
+  findCancellationTripChargeRate,
+} from '../lib/billing/cancellationTripCharge';
 
 
 
@@ -41,6 +46,7 @@ interface Job {
   declined_reason_code?: string | null;
   declined_reason_text?: string | null;
   unit_size?: {
+    id?: string;
     unit_size_label: string;
   } | null;
   property: {
@@ -62,6 +68,9 @@ interface Job {
     id: string;
     submission_date?: string | null;
   } | null;
+  cancellation_trip_charge_added?: boolean | null;
+  cancellation_trip_charge_bill_amount?: number | null;
+  cancellation_trip_charge_sub_pay_amount?: number | null;
   painter_notes?: JobPainterNote[];
   /** True when the job has a work order submitted on the same calendar day (used to show After Photos button) */
   hasWorkOrderSubmittedToday?: boolean;
@@ -163,6 +172,21 @@ export function SubcontractorDashboard() {
     workOrderNum: number;
     propertyName: string;
   }>({ isOpen: false, jobId: '', workOrderId: '', workOrderNum: 0, propertyName: '' });
+  const [cancelJobModal, setCancelJobModal] = useState<{
+    isOpen: boolean;
+    job: Job | null;
+    billAmount: number;
+    subPayAmount: number;
+    loading: boolean;
+    submitting: boolean;
+  }>({
+    isOpen: false,
+    job: null,
+    billAmount: DEFAULT_CANCELLATION_TRIP_CHARGE.billAmount,
+    subPayAmount: DEFAULT_CANCELLATION_TRIP_CHARGE.subPayAmount,
+    loading: false,
+    submitting: false
+  });
   const [userProfile, setUserProfile] = useState<any>(null);
   const { role } = useUserRole();
   const location = useLocation();
@@ -189,6 +213,16 @@ export function SubcontractorDashboard() {
       info: "Info",
       addWorkOrder: "Add Work Order",
       addWO: "Add WO",
+      cancelJob: "Cancel Job",
+      cancelJobTitle: "Cancel Job",
+      cancelJobPrompt: "Are you sure you want to cancel this job?",
+      cancelTripChargeIntro: "Once confirmed, this job will be moved to Cancelled and the customer will be charged the Cancellation Trip Charge.",
+      cancellationTripCharge: "Cancellation Trip Charge",
+      customerCharge: "Customer Charge",
+      keepJobActive: "Keep Job Active",
+      confirmCancelJob: "Confirm Cancellation",
+      cancellingJob: "Cancelling...",
+      loadingTripCharge: "Loading trip charge...",
       loadingProperty: "Loading property details...",
       positionJob: "Position / Job",
       paintLocation: "Paint Location",
@@ -242,6 +276,16 @@ export function SubcontractorDashboard() {
       info: "Info",
       addWorkOrder: "Crear Orden de Trabajo",
       addWO: "Crear OT",
+      cancelJob: "Cancelar Trabajo",
+      cancelJobTitle: "Cancelar Trabajo",
+      cancelJobPrompt: "¿Está seguro de que desea cancelar este trabajo?",
+      cancelTripChargeIntro: "Una vez confirmado, este trabajo pasará a Cancelado y se cobrará al cliente el Cargo de Viaje por Cancelación.",
+      cancellationTripCharge: "Cargo de Viaje por Cancelación",
+      customerCharge: "Cargo al Cliente",
+      keepJobActive: "Mantener Trabajo Activo",
+      confirmCancelJob: "Confirmar Cancelación",
+      cancellingJob: "Cancelando...",
+      loadingTripCharge: "Cargando cargo...",
       loadingProperty: "Cargando detalles de la propiedad...",
       positionJob: "Posición / Trabajo",
       paintLocation: "Ubicación de Pintura",
@@ -679,6 +723,7 @@ export function SubcontractorDashboard() {
           declined_reason_code,
           declined_reason_text,
           unit_size:unit_sizes (
+            id,
             unit_size_label
           ),
           property:properties (
@@ -699,7 +744,10 @@ export function SubcontractorDashboard() {
           work_order:work_orders (
             id,
             submission_date
-          )
+          ),
+          cancellation_trip_charge_added,
+          cancellation_trip_charge_bill_amount,
+          cancellation_trip_charge_sub_pay_amount
         `)
         .eq('assigned_to', userId)
         .in('current_phase_id', activePhaseIds)
@@ -1083,6 +1131,78 @@ export function SubcontractorDashboard() {
     toggleJobExpansion(job.id);
   };
 
+  const closeCancelJobModal = () => {
+    setCancelJobModal({
+      isOpen: false,
+      job: null,
+      billAmount: DEFAULT_CANCELLATION_TRIP_CHARGE.billAmount,
+      subPayAmount: DEFAULT_CANCELLATION_TRIP_CHARGE.subPayAmount,
+      loading: false,
+      submitting: false
+    });
+  };
+
+  const openCancelJobModal = async (job: Job) => {
+    setCancelJobModal({
+      isOpen: true,
+      job,
+      billAmount: DEFAULT_CANCELLATION_TRIP_CHARGE.billAmount,
+      subPayAmount: DEFAULT_CANCELLATION_TRIP_CHARGE.subPayAmount,
+      loading: true,
+      submitting: false
+    });
+
+    try {
+      if (!job.property?.id) return;
+
+      const rate = await findCancellationTripChargeRate(supabase, {
+        propertyId: job.property.id,
+        unitSizeId: job.unit_size?.id || null
+      });
+
+      setCancelJobModal(prev => ({
+        ...prev,
+        billAmount: rate?.billAmount ?? DEFAULT_CANCELLATION_TRIP_CHARGE.billAmount,
+        subPayAmount: rate?.subPayAmount ?? DEFAULT_CANCELLATION_TRIP_CHARGE.subPayAmount,
+        loading: false
+      }));
+    } catch (error) {
+      console.error('Error loading subcontractor cancellation trip charge:', error);
+      setCancelJobModal(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  const confirmCancelJobWithTripCharge = async () => {
+    const job = cancelJobModal.job;
+    if (!job) return;
+
+    setCancelJobModal(prev => ({ ...prev, submitting: true }));
+    setError(null);
+
+    try {
+      const { data: cancelledResult, error: cancelError } = await supabase.rpc(
+        'cancel_assigned_job_with_trip_charge',
+        {
+          p_job_id: job.id,
+          p_bill_amount: cancelJobModal.billAmount,
+          p_sub_pay_amount: cancelJobModal.subPayAmount
+        }
+      );
+
+      if (cancelError) throw cancelError;
+      if (!cancelledResult || cancelledResult.length === 0) {
+        throw new Error('Failed to move job to Cancelled phase');
+      }
+
+      closeCancelJobModal();
+      await refreshJobsForSelectedDate();
+    } catch (error) {
+      console.error('Error cancelling job from subcontractor dashboard:', error);
+      setError(error instanceof Error ? error.message : 'Failed to cancel job');
+      setCancelJobModal(prev => ({ ...prev, submitting: false }));
+    }
+  };
+
   const openUnitMapModal = (imageUrl: string, propertyName: string) => {
     setUnitMapModalOpen({
       isOpen: true,
@@ -1222,52 +1342,75 @@ export function SubcontractorDashboard() {
                   style={{ borderLeftColor: job.job_phase?.color_dark_mode || '#6B7280' }}
                 >
                   <div className="flex flex-col space-y-3">
-                    {/* Work Order Number and Property Name - Mobile optimized */}
-                    <div className="flex flex-col space-y-2">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white truncate">
-                          {formatWorkOrderNumber(job.work_order_num)}
-                        </h3>
-                        <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mt-1 truncate">
-                          {job.property?.property_name || text.unknownProperty}
-                        </p>
-                      </div>
-                      <span 
-                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium self-start"
-                        style={{ 
-                          backgroundColor: job.job_phase?.color_dark_mode || '#6B7280',
-                          color: 'white'
-                        }}
-                      >
-                        {translateJobPhase(job.job_phase?.job_phase_label || text.unknownPhase)}
-                      </span>
-                    </div>
-
-                    {/* Property Address and Unit Number - Mobile optimized */}
-                    <div className="space-y-2">
-                      <div className="flex items-start space-x-2">
-                        <MapPin className="h-4 w-4 text-gray-500 dark:text-gray-400 mt-0.5 flex-shrink-0" />
-                        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 leading-tight">
-                          {job.property ? formatAddress(job.property) : text.noAddress}
-                        </p>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm font-bold text-gray-900 dark:text-white bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded-md">
-                          {text.unit} #{job.unit_number}
-                        </span>
-                        {job.unit_size?.unit_size_label && (
-                          <span className="text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-md">
-                            {translateUnitSize(job.unit_size.unit_size_label)}
+                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.95fr)] gap-4 lg:gap-6">
+                      <div className="space-y-3 min-w-0">
+                        {/* Work Order Number and Property Name - Mobile optimized */}
+                        <div className="flex flex-col space-y-2">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white truncate">
+                              {formatWorkOrderNumber(job.work_order_num)}
+                            </h3>
+                            <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mt-1 truncate">
+                              {job.property?.property_name || text.unknownProperty}
+                            </p>
+                          </div>
+                          <span
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium self-start"
+                            style={{
+                              backgroundColor: job.job_phase?.color_dark_mode || '#6B7280',
+                              color: 'white'
+                            }}
+                          >
+                            {translateJobPhase(job.job_phase?.job_phase_label || text.unknownPhase)}
                           </span>
-                        )}
-                      </div>
-                    </div>
+                        </div>
 
-                    {/* Job Type */}
-                    <div className="flex items-center">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">
-                        {job.job_type?.job_type_label || text.unknownType}
-                      </span>
+                        {/* Property Address and Unit Number - Mobile optimized */}
+                        <div className="space-y-2">
+                          <div className="flex items-start space-x-2">
+                            <MapPin className="h-4 w-4 text-gray-500 dark:text-gray-400 mt-0.5 flex-shrink-0" />
+                            <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 leading-tight">
+                              {job.property ? formatAddress(job.property) : text.noAddress}
+                            </p>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-sm font-bold text-gray-900 dark:text-white bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded-md">
+                              {text.unit} #{job.unit_number}
+                            </span>
+                            {job.unit_size?.unit_size_label && (
+                              <span className="text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-md">
+                                {translateUnitSize(job.unit_size.unit_size_label)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Job Type */}
+                        <div className="flex items-center">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">
+                            {job.job_type?.job_type_label || text.unknownType}
+                          </span>
+                        </div>
+                      </div>
+
+                      {job.painter_notes?.length ? (
+                        <div className="border border-emerald-200 dark:border-emerald-800/50 rounded-lg p-3 bg-emerald-50 dark:bg-emerald-900/10 lg:self-start">
+                          <h4 className="text-sm font-semibold text-emerald-900 dark:text-emerald-100 mb-2 flex items-center">
+                            <FileText className="h-4 w-4 mr-2 text-emerald-600 dark:text-emerald-300" />
+                            {text.jobPainterNotes}
+                          </h4>
+                          <div className="space-y-2">
+                            {job.painter_notes.slice(0, 2).map((note) => (
+                              <div key={note.id} className="text-sm text-gray-800 dark:text-gray-100">
+                                <span className="font-semibold">{note.topic}: </span>
+                                <span className="whitespace-pre-wrap">{note.note_content}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="hidden lg:block" />
+                      )}
                     </div>
 
                     {/* Assignment Countdown Timer - Show for pending assignments */}
@@ -1345,14 +1488,24 @@ export function SubcontractorDashboard() {
                           {text.addAfterPhotos}
                         </button>
                       ) : (
-                        <Link
-                          to={`/dashboard/jobs/${job.id}/new-work-order${isPreview ? `?userId=${previewUserId}` : ''}`}
-                          className="inline-flex items-center justify-center px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg transition-colors"
-                        >
-                          <FileEdit className="h-4 w-4 mr-1 sm:mr-2" />
-                          <span className="hidden sm:inline">{text.addWorkOrder}</span>
-                          <span className="sm:hidden">{text.addWO}</span>
-                        </Link>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <Link
+                            to={`/dashboard/jobs/${job.id}/new-work-order${isPreview ? `?userId=${previewUserId}` : ''}`}
+                            className="inline-flex items-center justify-center px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg transition-colors"
+                          >
+                            <FileEdit className="h-4 w-4 mr-1 sm:mr-2" />
+                            <span className="hidden sm:inline">{text.addWorkOrder}</span>
+                            <span className="sm:hidden">{text.addWO}</span>
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => openCancelJobModal(job)}
+                            className="inline-flex items-center justify-center px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
+                          >
+                            <Ban className="h-4 w-4 mr-1 sm:mr-2" />
+                            {text.cancelJob}
+                          </button>
+                        </div>
                       )}
                     </div>
 
@@ -1711,6 +1864,71 @@ export function SubcontractorDashboard() {
           imageUrl={unitMapModalOpen.imageUrl}
           imageAlt={`${unitMapModalOpen.propertyName} Unit Map`}
         />
+      )}
+
+      {/* Cancel Job Confirmation Modal */}
+      {cancelJobModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  {text.cancelJobTitle}
+                </h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  {cancelJobModal.job ? formatWorkOrderNumber(cancelJobModal.job.work_order_num) : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeCancelJobModal}
+                disabled={cancelJobModal.submitting}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="text-gray-800 dark:text-gray-200 mb-3">
+              {text.cancelJobPrompt}
+            </p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-5">
+              {text.cancelTripChargeIntro}
+            </p>
+
+            <div className="rounded-lg border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-900/10 p-4 mb-6">
+              <p className="text-sm font-semibold text-red-900 dark:text-red-100">
+                {text.cancellationTripCharge}
+              </p>
+              <div className="mt-3 flex items-center justify-between">
+                <span className="text-sm text-gray-700 dark:text-gray-300">{text.customerCharge}</span>
+                <span className="text-lg font-bold text-red-700 dark:text-red-200">
+                  {cancelJobModal.loading ? text.loadingTripCharge : formatCurrency(cancelJobModal.billAmount)}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeCancelJobModal}
+                disabled={cancelJobModal.submitting}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-[#2D3B4E] rounded-lg hover:bg-gray-200 dark:hover:bg-[#374151] transition-colors disabled:opacity-50"
+              >
+                {text.keepJobActive}
+              </button>
+              <button
+                type="button"
+                onClick={confirmCancelJobWithTripCharge}
+                disabled={cancelJobModal.loading || cancelJobModal.submitting}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {cancelJobModal.submitting ? text.cancellingJob : text.confirmCancelJob}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* After Photos Upload Modal */}

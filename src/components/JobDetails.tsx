@@ -2876,6 +2876,20 @@ export function JobDetails() {
       });
     }
 
+    if (job?.cancellation_trip_charge_added) {
+      const billAmount = Number(job.cancellation_trip_charge_bill_amount ?? 0) || 0;
+      const subAmount = Number(job.cancellation_trip_charge_sub_pay_amount ?? 0) || 0;
+      lines.push({
+        id: 'cancellation-trip-charge',
+        label: 'Cancellation Trip Charge',
+        quantity: 1,
+        unit: 'charge',
+        rate: billAmount,
+        billAmount,
+        subAmount
+      });
+    }
+
     return lines;
   }, [
     extraChargeLineItems,
@@ -2883,6 +2897,9 @@ export function JobDetails() {
     extraChargesFromItems,
     extraHourlyRate,
     extraHours,
+    job?.cancellation_trip_charge_added,
+    job?.cancellation_trip_charge_bill_amount,
+    job?.cancellation_trip_charge_sub_pay_amount,
     legacyExtraChargesAmount,
     legacyExtraChargesSubPay,
     supplementalBillingLines
@@ -2900,18 +2917,11 @@ export function JobDetails() {
     // Include admin-set repair amounts
     base.bill += job?.repair_amount ?? 0;
     base.sub += job?.repair_sub_pay ?? 0;
-    if (job?.cancellation_trip_charge_added) {
-      base.bill += job.cancellation_trip_charge_bill_amount ?? 0;
-      base.sub += job.cancellation_trip_charge_sub_pay_amount ?? 0;
-    }
     return base;
   }, [
     unifiedExtraLines,
     job?.repair_amount,
-    job?.repair_sub_pay,
-    job?.cancellation_trip_charge_added,
-    job?.cancellation_trip_charge_bill_amount,
-    job?.cancellation_trip_charge_sub_pay_amount
+    job?.repair_sub_pay
   ]);
 
   const hasExtraChargesForApproval = Boolean(
@@ -2981,6 +2991,8 @@ export function JobDetails() {
   const canDeleteJob = isAdmin && phaseLabel === 'Job Request';
   const canAssignSubcontractor = isAdmin || isJGManagement;
   const hasWorkOrder = !!job.work_order;
+  const hasCancellationTripCharge = isCancelled && Boolean(job.cancellation_trip_charge_added);
+  const hasBillingBreakdown = hasWorkOrder || hasCancellationTripCharge;
   const isJobRequest = phaseLabel === 'Job Request';
   const isPendingWorkOrder = phaseLabel === 'Pending Work Order';
   const isInvoicing = phaseLabel === 'Invoicing';
@@ -2990,6 +3002,14 @@ export function JobDetails() {
   const profitAmount = (job.billing_details?.bill_amount !== null && job.billing_details?.sub_pay_amount !== null && job.billing_details?.bill_amount !== undefined && job.billing_details?.sub_pay_amount !== undefined)
     ? job.billing_details.bill_amount - job.billing_details.sub_pay_amount
     : null;
+  const displayBaseBillAmount = hasCancellationTripCharge ? 0 : (job.billing_details?.bill_amount ?? 0);
+  const displayBaseSubPayAmount = hasCancellationTripCharge ? 0 : (job.billing_details?.sub_pay_amount ?? 0);
+  const displayExtraBillAmount = hasCancellationTripCharge
+    ? (job.cancellation_trip_charge_bill_amount ?? 0)
+    : extraChargesAmount;
+  const displayExtraSubPayAmount = hasCancellationTripCharge
+    ? (job.cancellation_trip_charge_sub_pay_amount ?? 0)
+    : extraChargesSubPay;
   
 
   // Filter out 'Pending Work Order', 'Cancelled', and 'Archived' from the phases array used for navigation
@@ -4483,8 +4503,8 @@ export function JobDetails() {
 
         )}
 
-        {/* Billing Breakdown - Show only for Admins and JG Management after work order submission */}
-        {(isAdmin || isJGManagement) && !isJobRequest && hasWorkOrder && (
+        {/* Billing Breakdown - Show for submitted work orders and cancelled jobs with trip charges */}
+        {(isAdmin || isJGManagement) && !isJobRequest && hasBillingBreakdown && (
           <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg mb-6 overflow-hidden">
             {/* Header Section */}
             <div className="bg-gradient-to-r from-green-600 to-green-700 dark:from-green-700 dark:to-green-800 px-6 py-4">
@@ -4526,7 +4546,7 @@ export function JobDetails() {
                   <div>
                     <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Job Category</span>
                     <p className="text-base font-semibold text-gray-900 dark:text-white mt-1">
-                      {job.work_order?.job_category || 'N/A'}
+                      {hasCancellationTripCharge ? 'Cancellation Trip Charge' : job.work_order?.job_category || 'N/A'}
                     </p>
                   </div>
                   <div>
@@ -4541,20 +4561,35 @@ export function JobDetails() {
             {FLAGS.BILLING_V2 ? (
               <BillingBreakdownV2 
                 billing={{
-                  billing_details: job.billing_details,
+                  billing_details: hasCancellationTripCharge
+                    ? { bill_amount: 0, sub_pay_amount: 0, profit_amount: 0, section_name: 'Base Billing' }
+                    : job.billing_details,
                   hourly_billing_details: job.hourly_billing_details,
-                  extra_charges_details: derivedExtraCharges,
-                  extra_charges_line_items: extraChargeLineItems,
-                  additional_services: supplementalBillingLines.map(line => ({
-                    code: line.key,
-                    label: line.label,
-                    unit_label: line.unitLabel,
-                    quantity: line.qty,
-                    billing_detail_id: line.key,
-                    bill_amount: line.amountBill,
-                    sub_pay_amount: line.amountSub,
-                    profit_amount: line.amountBill - line.amountSub
-                  })),
+                  extra_charges_details: hasCancellationTripCharge ? null : derivedExtraCharges,
+                  extra_charges_line_items: hasCancellationTripCharge ? [] : extraChargeLineItems,
+                  additional_services: hasCancellationTripCharge
+                    ? unifiedExtraLines
+                        .filter(line => line.id === 'cancellation-trip-charge')
+                        .map(line => ({
+                          code: line.id,
+                          label: line.label,
+                          unit_label: line.unit,
+                          quantity: line.quantity,
+                          billing_detail_id: line.id,
+                          bill_amount: line.billAmount,
+                          sub_pay_amount: line.subAmount,
+                          profit_amount: line.billAmount - line.subAmount
+                        }))
+                    : supplementalBillingLines.map(line => ({
+                        code: line.key,
+                        label: line.label,
+                        unit_label: line.unitLabel,
+                        quantity: line.qty,
+                        billing_detail_id: line.key,
+                        bill_amount: line.amountBill,
+                        sub_pay_amount: line.amountSub,
+                        profit_amount: line.amountBill - line.amountSub
+                      })),
                   repair_amount: job.repair_amount ?? 0,
                   repair_cost: job.work_order?.repair_cost ?? 0,
                   repair_sub_pay: job.repair_sub_pay ?? 0,
@@ -4581,8 +4616,8 @@ export function JobDetails() {
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Bill Amount</span>
                     <p className="text-lg font-semibold text-green-600 dark:text-green-400 mt-1">
                       {formatCurrency(
-                        (job.billing_details?.bill_amount ?? 0) + extraChargesAmount + 
-                        supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0) +
+                        displayBaseBillAmount + displayExtraBillAmount +
+                        (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)) +
                         (job.repair_amount ?? 0)
                       )}
                     </p>
@@ -4593,8 +4628,8 @@ export function JobDetails() {
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Subcontractor Pay</span>
                     <p className="text-lg font-semibold text-blue-600 dark:text-blue-400 mt-1">
                       {formatCurrency(
-                        (job.billing_details?.sub_pay_amount ?? 0) + extraChargesSubPay + 
-                        supplementalBillingLines.reduce((sum, line) => sum + line.amountSub, 0)
+                        displayBaseSubPayAmount + displayExtraSubPayAmount +
+                        (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + line.amountSub, 0))
                       )}
                     </p>
                   </div>
@@ -4604,9 +4639,9 @@ export function JobDetails() {
                     <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Profit</span>
                     <p className={`text-lg font-semibold ${profitAmount !== null ? (profitAmount >= 0 ? 'text-purple-600 dark:text-purple-400' : 'text-red-600 dark:text-red-400') : 'text-gray-900 dark:text-white'} mt-1`}>
                       {formatCurrency(
-                        ((job.billing_details?.bill_amount ?? 0) - (job.billing_details?.sub_pay_amount ?? 0)) + 
-                        (extraChargesAmount - extraChargesSubPay) +
-                        supplementalBillingLines.reduce((sum, line) => sum + (line.amountBill - line.amountSub), 0) +
+                        (displayBaseBillAmount - displayBaseSubPayAmount) +
+                        (displayExtraBillAmount - displayExtraSubPayAmount) +
+                        (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + (line.amountBill - line.amountSub), 0)) +
                         (job.repair_amount ?? 0)
                       )}
                     </p>
@@ -4614,7 +4649,7 @@ export function JobDetails() {
                 </div>
 
                 {/* Extra Charges Section */}
-                {hasWorkOrder && hasExtraChargesForApproval && unifiedExtraLines.length > 0 && (
+                {hasBillingBreakdown && (hasExtraChargesForApproval || hasCancellationTripCharge) && unifiedExtraLines.length > 0 && (
                   <div className="mt-8">
                     <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Extra Charges Breakdown</h3>
                     <div className="space-y-3">
@@ -4673,22 +4708,22 @@ export function JobDetails() {
                   <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Total to Invoice</h3>
                   <span className="text-xl font-bold text-green-600 dark:text-green-400">
                     {formatCurrency(
-                      (job.billing_details?.bill_amount ?? 0) + extraChargesAmount + 
-                      supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0) +
+                      displayBaseBillAmount + displayExtraBillAmount +
+                      (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)) +
                       (job.repair_amount ?? 0)
                     )}
                   </span>
                 </div>
 
                 {/* Additional Total Rows */}
-                {job.billing_details && (
+                {(job.billing_details || hasCancellationTripCharge) && (
                   <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
                     <div className="flex justify-between items-center">
                       <span className="text-base font-medium text-gray-700 dark:text-gray-300">Total Billing</span>
                       <span className="text-base font-semibold text-gray-900 dark:text-white">
                         {formatCurrency(
-                          (job.billing_details?.bill_amount ?? 0) + extraChargesAmount + 
-                          supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0) +
+                          displayBaseBillAmount + displayExtraBillAmount +
+                          (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)) +
                           (job.repair_amount ?? 0)
                         )}
                       </span>
@@ -4697,8 +4732,8 @@ export function JobDetails() {
                       <span className="text-base font-medium text-gray-700 dark:text-gray-300">Total Subcontractor Pay</span>
                       <span className="text-base font-semibold text-gray-900 dark:text-white">
                         {formatCurrency(
-                          (job.billing_details?.sub_pay_amount ?? 0) + (job.extra_charges_details?.sub_pay_amount ?? 0) +
-                          supplementalBillingLines.reduce((sum, line) => sum + line.amountSub, 0)
+                          displayBaseSubPayAmount + displayExtraSubPayAmount +
+                          (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + line.amountSub, 0))
                         )}
                       </span>
                     </div>
@@ -4706,20 +4741,20 @@ export function JobDetails() {
                       <span className="text-base font-medium text-gray-700 dark:text-gray-300">Total Profit</span>
                       <span className={`text-base font-semibold ${profitAmount !== null ? (profitAmount >= 0 ? 'text-purple-600 dark:text-purple-400' : 'text-red-600 dark:text-red-400') : 'text-gray-900 dark:text-white'}`}>
                         {formatCurrency(
-                          ((job.billing_details?.bill_amount ?? 0) - (job.billing_details?.sub_pay_amount ?? 0)) + 
-                          ((job.extra_charges_details?.bill_amount ?? 0) - (job.extra_charges_details?.sub_pay_amount ?? 0)) +
-                          supplementalBillingLines.reduce((sum, line) => sum + (line.amountBill - line.amountSub), 0) +
+                          (displayBaseBillAmount - displayBaseSubPayAmount) +
+                          (displayExtraBillAmount - displayExtraSubPayAmount) +
+                          (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + (line.amountBill - line.amountSub), 0)) +
                           (job.repair_amount ?? 0)
                         )}
                       </span>
                     </div>
                     
                     {/* Calculation Breakdown */}
-                    {extraChargesAmount > 0 && (
+                    {(displayExtraBillAmount > 0 || displayExtraSubPayAmount > 0) && (
                       <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400">
                         <div className="space-y-1">
-                          <div>Base: {formatCurrency(job.billing_details?.bill_amount || 0)} - {formatCurrency(job.billing_details?.sub_pay_amount || 0)} = {formatCurrency((job.billing_details?.bill_amount || 0) - (job.billing_details?.sub_pay_amount || 0))}</div>
-                          <div>Extra: {formatCurrency(job.extra_charges_details?.bill_amount || 0)} - {formatCurrency(job.extra_charges_details?.sub_pay_amount || 0)} = {formatCurrency((job.extra_charges_details?.bill_amount || 0) - (job.extra_charges_details?.sub_pay_amount || 0))}</div>
+                          <div>Base: {formatCurrency(displayBaseBillAmount)} - {formatCurrency(displayBaseSubPayAmount)} = {formatCurrency(displayBaseBillAmount - displayBaseSubPayAmount)}</div>
+                          <div>Extra: {formatCurrency(displayExtraBillAmount)} - {formatCurrency(displayExtraSubPayAmount)} = {formatCurrency(displayExtraBillAmount - displayExtraSubPayAmount)}</div>
                         </div>
                       </div>
                     )}

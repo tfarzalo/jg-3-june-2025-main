@@ -66,6 +66,9 @@ export interface Job {
   invoice_paid?: boolean;
   invoice_sent_date?: string;
   invoice_paid_date?: string;
+  cancellation_trip_charge_added?: boolean | null;
+  cancellation_trip_charge_bill_amount?: number | null;
+  cancellation_trip_charge_sub_pay_amount?: number | null;
   billing_details?: {
     bill_amount?: number | null;
     sub_pay_amount?: number | null;
@@ -112,6 +115,9 @@ interface ExportConfig {
   filters: {
     propertyName: string;
     subcontractor: string;
+  };
+  options: {
+    includeCancellationTripCharges: boolean;
   };
   columns: {
     // Job Information
@@ -228,7 +234,10 @@ const JOB_EXPORT_SELECT = `
   ),
   assigned_to_profile:assigned_to (
     full_name
-  )
+  ),
+  cancellation_trip_charge_added,
+  cancellation_trip_charge_bill_amount,
+  cancellation_trip_charge_sub_pay_amount
 `;
 
 export function formatAddress(property: Job['property']) {
@@ -257,6 +266,10 @@ export function formatDate(dateString: string) {
   }
 }
 
+function formatCurrency(amount: number) {
+  return `$${amount.toFixed(2)}`;
+}
+
 function getJobScheduledDateOnly(scheduledDate?: string | null) {
   if (!scheduledDate) return '';
   return scheduledDate.split('T')[0] || '';
@@ -275,6 +288,9 @@ function getDefaultExportConfig(): ExportConfig {
     filters: {
       propertyName: 'all',
       subcontractor: 'all'
+    },
+    options: {
+      includeCancellationTripCharges: false
     },
     columns: {
       // Job Information
@@ -334,6 +350,45 @@ function getDefaultExportConfig(): ExportConfig {
   };
 }
 
+function normalizeExportJobs(jobsData: any[] | null | undefined): Job[] {
+  return (jobsData || []).map(job => ({
+    id: job.id,
+    work_order_num: job.work_order_num,
+    unit_number: job.unit_number,
+    scheduled_date: job.scheduled_date,
+    created_at: job.created_at,
+    updated_at: job.updated_at,
+    description: job.description,
+    total_billing_amount: job.total_billing_amount,
+    invoice_sent: job.invoice_sent,
+    invoice_paid: job.invoice_paid,
+    invoice_sent_date: job.invoice_sent_date,
+    invoice_paid_date: job.invoice_paid_date,
+    cancellation_trip_charge_added: job.cancellation_trip_charge_added,
+    cancellation_trip_charge_bill_amount: job.cancellation_trip_charge_bill_amount,
+    cancellation_trip_charge_sub_pay_amount: job.cancellation_trip_charge_sub_pay_amount,
+    property: Array.isArray(job.property) ? job.property[0] : job.property,
+    unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
+    job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
+    purchase_order: job.purchase_order,
+    job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase,
+    assigned_to_profile: Array.isArray(job.assigned_to_profile) ? job.assigned_to_profile[0] : job.assigned_to_profile
+  }));
+}
+
+function isCancellationTripChargeJob(job: Job) {
+  return Boolean(job.cancellation_trip_charge_added);
+}
+
+function getCancellationTripChargeAmounts(job: Job) {
+  const billAmount = Number(job.cancellation_trip_charge_bill_amount ?? 0);
+  const subPayAmount = Number(job.cancellation_trip_charge_sub_pay_amount ?? 0);
+  return {
+    billAmount: Number.isFinite(billAmount) ? billAmount : 0,
+    subPayAmount: Number.isFinite(subPayAmount) ? subPayAmount : 0
+  };
+}
+
 export function JobListingPage({ 
   title, 
   jobs, 
@@ -374,6 +429,10 @@ export function JobListingPage({
           filters: {
             ...defaults.filters,
             ...(parsed?.filters || {})
+          },
+          options: {
+            ...defaults.options,
+            ...(parsed?.options || {})
           },
           columns: {
             ...defaults.columns,
@@ -632,31 +691,54 @@ export function JobListingPage({
     });
   };
 
+  const includeCancellationTripChargeJobs = async (allJobsForExport: Job[]) => {
+    if (!exportConfig.options.includeCancellationTripCharges) {
+      return allJobsForExport;
+    }
+
+    const alreadyHasCancelledPhase =
+      Array.isArray(phaseLabel)
+        ? phaseLabel.includes('Cancelled')
+        : phaseLabel === 'Cancelled';
+
+    if (alreadyHasCancelledPhase) {
+      return allJobsForExport;
+    }
+
+    const { data: cancelledPhase, error: cancelledPhaseError } = await supabase
+      .from('job_phases')
+      .select('id')
+      .eq('job_phase_label', 'Cancelled')
+      .single();
+
+    if (cancelledPhaseError || !cancelledPhase) {
+      console.error('Error fetching Cancelled phase for export:', cancelledPhaseError);
+      toast.error('Could not include cancellation trip charge jobs');
+      return allJobsForExport;
+    }
+
+    const { data: cancelledJobsData, error: cancelledJobsError } = await supabase
+      .from('jobs')
+      .select(JOB_EXPORT_SELECT)
+      .eq('current_phase_id', cancelledPhase.id)
+      .eq('cancellation_trip_charge_added', true)
+      .order('created_at', { ascending: false })
+      .limit(10000);
+
+    if (cancelledJobsError) {
+      console.error('Error fetching cancellation trip charge jobs for export:', cancelledJobsError);
+      toast.error('Could not include cancellation trip charge jobs');
+      return allJobsForExport;
+    }
+
+    const existingIds = new Set(allJobsForExport.map(job => job.id));
+    const cancellationJobs = normalizeExportJobs(cancelledJobsData).filter(job => !existingIds.has(job.id));
+    return [...allJobsForExport, ...cancellationJobs];
+  };
+
   const exportToCSV = async () => {
     try {
       let allJobsForExport: Job[] = [];
-
-      const transformJobsData = (jobsData: any[] | null | undefined): Job[] =>
-        (jobsData || []).map(job => ({
-          id: job.id,
-          work_order_num: job.work_order_num,
-          unit_number: job.unit_number,
-          scheduled_date: job.scheduled_date,
-          created_at: job.created_at,
-          updated_at: job.updated_at,
-          description: job.description,
-          total_billing_amount: job.total_billing_amount,
-          invoice_sent: job.invoice_sent,
-          invoice_paid: job.invoice_paid,
-          invoice_sent_date: job.invoice_sent_date,
-          invoice_paid_date: job.invoice_paid_date,
-          property: Array.isArray(job.property) ? job.property[0] : job.property,
-          unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
-          job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
-          purchase_order: job.purchase_order,
-          job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase,
-          assigned_to_profile: Array.isArray(job.assigned_to_profile) ? job.assigned_to_profile[0] : job.assigned_to_profile
-        }));
 
       if (phaseLabel) {
         console.log(`Fetching all jobs for phase(s): ${Array.isArray(phaseLabel) ? phaseLabel.join(', ') : phaseLabel}`);
@@ -703,7 +785,7 @@ export function JobListingPage({
         }
 
         // Transform to Job interface
-        allJobsForExport = transformJobsData(jobsData);
+        allJobsForExport = normalizeExportJobs(jobsData);
         console.log(`Fetched ${allJobsForExport.length} total jobs from database for export`);
       } else {
         // Use jobs from props if no phaseLabel provided
@@ -711,6 +793,7 @@ export function JobListingPage({
         console.log(`Using ${allJobsForExport.length} jobs from page props for export`);
       }
 
+      allJobsForExport = await includeCancellationTripChargeJobs(allJobsForExport);
       const filteredJobs = applyExportFilters(allJobsForExport);
 
       console.log(`Exporting ${filteredJobs.length} jobs out of ${allJobsForExport.length} total jobs after export filtering`);
@@ -802,6 +885,8 @@ export function JobListingPage({
         : (Array.isArray(workOrder?.extra_charges_line_items) ? workOrder.extra_charges_line_items : []);
       const hasExtraChargeItems = extraChargeLineItems.length > 0;
       const extraChargeTotals = hasExtraChargeItems ? calculateExtraChargesTotals(extraChargeLineItems) : { bill: null, sub: null, hours: null };
+      const isCancellationTripCharge = isCancellationTripChargeJob(job);
+      const cancellationTripCharge = getCancellationTripChargeAmounts(job);
       
       // Job Information
       if (exportConfig.columns.workOrder) row['Work Order #'] = formatWorkOrderNumber(job.work_order_num);
@@ -837,10 +922,12 @@ export function JobListingPage({
       if (exportConfig.columns.hasAccentWall) row['Has Accent Wall'] = workOrder?.has_accent_wall === true ? 'Yes' : workOrder?.has_accent_wall === false ? 'No' : 'N/A';
       if (exportConfig.columns.accentWallType) row['Accent Wall Type'] = workOrder?.accent_wall_type || 'N/A';
       if (exportConfig.columns.accentWallCount) row['Accent Wall Count'] = workOrder?.accent_wall_count ? String(workOrder.accent_wall_count) : 'N/A';
-      if (exportConfig.columns.hasExtraCharges) row['Has Extra Charges'] = workOrder?.has_extra_charges === true ? 'Yes' : workOrder?.has_extra_charges === false ? 'No' : 'N/A';
+      if (exportConfig.columns.hasExtraCharges) row['Has Extra Charges'] = isCancellationTripCharge ? 'Yes' : workOrder?.has_extra_charges === true ? 'Yes' : workOrder?.has_extra_charges === false ? 'No' : 'N/A';
       if (exportConfig.columns.extraChargesDescription) {
         const descText = workOrder?.extra_charges_description || '';
-        if (hasExtraChargeItems && descText) {
+        if (isCancellationTripCharge) {
+          row['Extra Charges Description'] = 'Cancellation Trip Charge';
+        } else if (hasExtraChargeItems && descText) {
           row['Extra Charges Description'] = descText;
         } else if (hasExtraChargeItems) {
           // Build a readable summary from line items when no freeform description exists
@@ -852,7 +939,9 @@ export function JobListingPage({
         }
       }
       if (exportConfig.columns.extraChargesLineItems) {
-        row['Extra Charges Line Items'] = formatExtraChargeLineItems(extraChargeLineItems);
+        row['Extra Charges Line Items'] = isCancellationTripCharge
+          ? `Cancellation Trip Charge: ${formatCurrency(cancellationTripCharge.billAmount)} bill / ${formatCurrency(cancellationTripCharge.subPayAmount)} sub pay`
+          : formatExtraChargeLineItems(extraChargeLineItems);
       }
       if (exportConfig.columns.extraHours) {
         const hoursValue = hasExtraChargeItems ? extraChargeTotals.hours : workOrder?.extra_hours;
@@ -868,8 +957,8 @@ export function JobListingPage({
       
       // Billing Breakdown - Use data from jobDetails (get_job_details RPC)
       // Base Billing
-      const baseBillAmount = jobDetails?.billing_details?.bill_amount ?? null;
-      const baseSubPayAmount = jobDetails?.billing_details?.sub_pay_amount ?? null;
+      const baseBillAmount = isCancellationTripCharge ? null : (jobDetails?.billing_details?.bill_amount ?? null);
+      const baseSubPayAmount = isCancellationTripCharge ? null : (jobDetails?.billing_details?.sub_pay_amount ?? null);
       const baseProfit = (baseBillAmount !== null && baseSubPayAmount !== null) ? baseBillAmount - baseSubPayAmount : null;
       
       if (exportConfig.columns.baseBillToCustomer) row['Base Bill to Customer'] = baseBillAmount !== null ? `$${baseBillAmount.toFixed(2)}` : 'N/A';
@@ -877,10 +966,14 @@ export function JobListingPage({
       if (exportConfig.columns.baseProfit) row['Base Profit'] = baseProfit !== null ? `$${baseProfit.toFixed(2)}` : 'N/A';
       
       // Extra Charges
-      const extraChargesBillAmount = hasExtraChargeItems
+      const extraChargesBillAmount = isCancellationTripCharge
+        ? cancellationTripCharge.billAmount
+        : hasExtraChargeItems
         ? extraChargeTotals.bill
         : (jobDetails?.extra_charges_details?.bill_amount ?? null);
-      const extraChargesSubPayAmount = hasExtraChargeItems
+      const extraChargesSubPayAmount = isCancellationTripCharge
+        ? cancellationTripCharge.subPayAmount
+        : hasExtraChargeItems
         ? extraChargeTotals.sub
         : (jobDetails?.extra_charges_details?.sub_pay_amount ?? null);
       const extraChargesProfit = (extraChargesBillAmount !== null && extraChargesSubPayAmount !== null) 
@@ -931,27 +1024,6 @@ export function JobListingPage({
       
       let allJobsForExport: Job[] = [];
 
-      const transformJobsData = (jobsData: any[] | null | undefined): Job[] =>
-        (jobsData || []).map(job => ({
-          id: job.id,
-          work_order_num: job.work_order_num,
-          unit_number: job.unit_number,
-          scheduled_date: job.scheduled_date,
-          created_at: job.created_at,
-          updated_at: job.updated_at,
-          description: job.description,
-          total_billing_amount: job.total_billing_amount,
-          invoice_sent: job.invoice_sent,
-          invoice_paid: job.invoice_paid,
-          invoice_sent_date: job.invoice_sent_date,
-          invoice_paid_date: job.invoice_paid_date,
-          property: Array.isArray(job.property) ? job.property[0] : job.property,
-          unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
-          job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
-          job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase,
-          assigned_to_profile: Array.isArray(job.assigned_to_profile) ? job.assigned_to_profile[0] : job.assigned_to_profile
-        }));
-
       // Fetch all jobs if phaseLabel is provided, otherwise use jobs from props
       if (phaseLabel) {
         const { data: phaseData, error: phaseError } = await supabase
@@ -978,11 +1050,12 @@ export function JobListingPage({
           return;
         }
 
-        allJobsForExport = transformJobsData(jobsData);
+        allJobsForExport = normalizeExportJobs(jobsData);
       } else {
         allJobsForExport = jobs;
       }
       
+      allJobsForExport = await includeCancellationTripChargeJobs(allJobsForExport);
       const filteredJobs = applyExportFilters(allJobsForExport);
 
       if (filteredJobs.length === 0) {
@@ -1123,16 +1196,22 @@ export function JobListingPage({
           : (Array.isArray(workOrder?.extra_charges_line_items) ? workOrder.extra_charges_line_items : []);
         const hasExtraChargeItems = extraChargeLineItems.length > 0;
         const extraChargeTotals = hasExtraChargeItems ? calculateExtraChargesTotals(extraChargeLineItems) : { bill: null, sub: null, hours: null };
+        const isCancellationTripCharge = isCancellationTripChargeJob(job);
+        const cancellationTripCharge = getCancellationTripChargeAmounts(job);
         
         // Calculate billing values
-        const baseBillAmount = jobDetails?.billing_details?.bill_amount ?? null;
-        const baseSubPayAmount = jobDetails?.billing_details?.sub_pay_amount ?? null;
+        const baseBillAmount = isCancellationTripCharge ? null : (jobDetails?.billing_details?.bill_amount ?? null);
+        const baseSubPayAmount = isCancellationTripCharge ? null : (jobDetails?.billing_details?.sub_pay_amount ?? null);
         const baseProfit = (baseBillAmount !== null && baseSubPayAmount !== null) ? baseBillAmount - baseSubPayAmount : null;
         
-        const extraChargesBillAmount = hasExtraChargeItems
+        const extraChargesBillAmount = isCancellationTripCharge
+          ? cancellationTripCharge.billAmount
+          : hasExtraChargeItems
           ? extraChargeTotals.bill
           : (jobDetails?.extra_charges_details?.bill_amount ?? null);
-        const extraChargesSubPayAmount = hasExtraChargeItems
+        const extraChargesSubPayAmount = isCancellationTripCharge
+          ? cancellationTripCharge.subPayAmount
+          : hasExtraChargeItems
           ? extraChargeTotals.sub
           : (jobDetails?.extra_charges_details?.sub_pay_amount ?? null);
         const extraChargesProfit = (extraChargesBillAmount !== null && extraChargesSubPayAmount !== null) 
@@ -1175,9 +1254,10 @@ export function JobListingPage({
           hasAccentWall: workOrder?.has_accent_wall === true ? 'Yes' : workOrder?.has_accent_wall === false ? 'No' : 'N/A',
           accentWallType: workOrder?.accent_wall_type || 'N/A',
           accentWallCount: workOrder?.accent_wall_count ? String(workOrder.accent_wall_count) : 'N/A',
-          hasExtraCharges: workOrder?.has_extra_charges === true ? 'Yes' : workOrder?.has_extra_charges === false ? 'No' : 'N/A',
+          hasExtraCharges: isCancellationTripCharge ? 'Yes' : workOrder?.has_extra_charges === true ? 'Yes' : workOrder?.has_extra_charges === false ? 'No' : 'N/A',
           extraChargesDescription: (() => {
             const descText = workOrder?.extra_charges_description || '';
+            if (isCancellationTripCharge) return 'Cancellation Trip Charge';
             if (hasExtraChargeItems && descText) return descText;
             if (hasExtraChargeItems) {
               return extraChargeLineItems
@@ -1186,7 +1266,9 @@ export function JobListingPage({
             }
             return descText || 'N/A';
           })(),
-          extraChargesLineItems: formatExtraChargeLineItems(extraChargeLineItems),
+          extraChargesLineItems: isCancellationTripCharge
+            ? `Cancellation Trip Charge: ${formatCurrency(cancellationTripCharge.billAmount)} bill / ${formatCurrency(cancellationTripCharge.subPayAmount)} sub pay`
+            : formatExtraChargeLineItems(extraChargeLineItems),
           extraHours: ((hasExtraChargeItems ? extraChargeTotals.hours : workOrder?.extra_hours) ?? null) !== null
             ? String(hasExtraChargeItems ? extraChargeTotals.hours : workOrder?.extra_hours)
             : 'N/A',
@@ -2248,6 +2330,27 @@ export function JobListingPage({
                     </select>
                   </div>
                 </div>
+              </div>
+
+              <div className="bg-gray-50 dark:bg-[#0F172A] rounded-lg p-4">
+                <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Include Additional Jobs</h4>
+                <label className="flex items-start space-x-3">
+                  <input
+                    type="checkbox"
+                    checked={exportConfig.options.includeCancellationTripCharges}
+                    onChange={(e) => setExportConfig(prev => ({
+                      ...prev,
+                      options: {
+                        ...prev.options,
+                        includeCancellationTripCharges: e.target.checked
+                      }
+                    }))}
+                    className="mt-0.5 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                    Include Cancelled jobs with Cancellation Trip Charge
+                  </span>
+                </label>
               </div>
 
 	              {/* Column Selection with Accordions */}

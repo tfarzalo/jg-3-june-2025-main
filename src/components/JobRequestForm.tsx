@@ -80,6 +80,7 @@ export function JobRequestForm() {
     purchase_order: '',
     is_occupied: false,
     description: '',
+    painter_notes: '',
     scheduled_date: getCurrentDateInEastern(),
   });
 
@@ -460,6 +461,20 @@ export function JobRequestForm() {
       }
       if (!data) throw new Error('Failed to create job');
 
+      const painterNotes = formData.painter_notes.trim();
+      if (painterNotes) {
+        const { error: painterNotesError } = await supabase
+          .from('job_painter_notes')
+          .insert({
+            job_id: data.id,
+            topic: 'Notes for Painter',
+            note_content: painterNotes,
+            created_by: user.id
+          });
+
+        if (painterNotesError) throw painterNotesError;
+      }
+
       // Upload files if any were selected
       if (selectedFiles.length > 0) {
         await uploadFilesToJob(data.id, data.property.name, data.work_order_num);
@@ -772,7 +787,7 @@ export function JobRequestForm() {
 
               <div>
                 <label htmlFor="description" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Job Request Notes / Additional Info
+                  Job Description
                 </label>
                 <textarea
                   id="description"
@@ -782,6 +797,21 @@ export function JobRequestForm() {
                   onChange={handleChange}
                   className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter job request notes and additional information..."
+                />
+              </div>
+
+              <div>
+                <label htmlFor="painter_notes" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                  Notes for Painter
+                </label>
+                <textarea
+                  id="painter_notes"
+                  name="painter_notes"
+                  rows={4}
+                  value={formData.painter_notes}
+                  onChange={handleChange}
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter notes that should be visible to the assigned painter..."
                 />
               </div>
             </div>

@@ -88,6 +88,9 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
           invoice_paid,
           invoice_sent_date,
           invoice_paid_date,
+          cancellation_trip_charge_added,
+          cancellation_trip_charge_bill_amount,
+          cancellation_trip_charge_sub_pay_amount,
           historical_data_mode,
           active_snapshot_id,
           snapshot_frozen_at,
@@ -219,6 +222,7 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
           const phaseLabel = Array.isArray(job.job_phase) ? job.job_phase[0]?.job_phase_label : job.job_phase?.job_phase_label;
           const jobCategory = Array.isArray(job.job_type) ? job.job_type[0]?.job_type_label : job.job_type?.job_type_label;
           let totalBillingAmount = job.total_billing_amount;
+          const cancellationTripChargeAdded = Boolean(job.cancellation_trip_charge_added);
 
           if ((!totalBillingAmount || totalBillingAmount === 0) && phaseLabel === 'Job Request') {
             const propertyObj = Array.isArray(job.property) ? job.property[0] : job.property;
@@ -231,9 +235,13 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
 
           // For other phases or missing amounts, try live RPC billing total
           if (!totalBillingAmount || totalBillingAmount === 0) {
-            const rpcTotal = await computeBillingTotalFromRpc(job.id);
-            if (rpcTotal !== null) {
-              totalBillingAmount = rpcTotal;
+            if (cancellationTripChargeAdded) {
+              totalBillingAmount = Number(job.cancellation_trip_charge_bill_amount ?? 0) || null;
+            } else {
+              const rpcTotal = await computeBillingTotalFromRpc(job.id);
+              if (rpcTotal !== null) {
+                totalBillingAmount = rpcTotal;
+              }
             }
           }
 
@@ -252,6 +260,9 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
             invoice_paid: job.invoice_paid,
             invoice_sent_date: job.invoice_sent_date,
             invoice_paid_date: job.invoice_paid_date,
+            cancellation_trip_charge_added: job.cancellation_trip_charge_added,
+            cancellation_trip_charge_bill_amount: job.cancellation_trip_charge_bill_amount,
+            cancellation_trip_charge_sub_pay_amount: job.cancellation_trip_charge_sub_pay_amount,
             purchase_order: job.purchase_order,
             property: Array.isArray(job.property) ? job.property[0] : job.property,
             unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
@@ -319,6 +330,9 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
               invoice_paid,
               invoice_sent_date,
               invoice_paid_date,
+              cancellation_trip_charge_added,
+              cancellation_trip_charge_bill_amount,
+              cancellation_trip_charge_sub_pay_amount,
               historical_data_mode,
               active_snapshot_id,
               snapshot_frozen_at,
@@ -353,6 +367,7 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
             let totalBillingAmount = newJob.total_billing_amount;
             const phaseLabel = Array.isArray(newJob.job_phase) ? newJob.job_phase[0]?.job_phase_label : newJob.job_phase?.job_phase_label;
             const jobCategory = Array.isArray(newJob.job_type) ? newJob.job_type[0]?.job_type_label : newJob.job_type?.job_type_label;
+            const cancellationTripChargeAdded = Boolean(newJob.cancellation_trip_charge_added);
 
             if ((!totalBillingAmount || totalBillingAmount === 0) && phaseLabel === 'Job Request') {
               const billing = await findBillingDetail(supabase, {
@@ -365,8 +380,11 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
 
             // Fallback: live RPC billing total for other phases
             if (!totalBillingAmount || totalBillingAmount === 0) {
-              const { data: jd } = await supabase.rpc('get_job_details', { p_job_id: newJob.id });
-              if (jd) {
+              if (cancellationTripChargeAdded) {
+                totalBillingAmount = Number(newJob.cancellation_trip_charge_bill_amount ?? 0) || null;
+              } else {
+                const { data: jd } = await supabase.rpc('get_job_details', { p_job_id: newJob.id });
+                if (jd) {
                 const base = Number(jd?.billing_details?.bill_amount ?? jd?.billing_details?.base_price ?? 0) || 0;
                 const extraLabor = Number(jd?.extra_charges_details?.bill_amount ?? jd?.extra_charges_details?.total_extra_charges ?? 0) || 0;
                 const lineItems = jd?.work_order?.extra_charges_line_items ?? [];
@@ -394,6 +412,7 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
                   : 0;
                 const computed = base + extraLabor + lineItemsTotal + Math.max(frozenLinesTotal, additionalTotal);
                 if (computed > 0) totalBillingAmount = computed;
+                }
               }
             }
 
@@ -411,6 +430,9 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
               invoice_paid: newJob.invoice_paid,
               invoice_sent_date: newJob.invoice_sent_date,
               invoice_paid_date: newJob.invoice_paid_date,
+              cancellation_trip_charge_added: newJob.cancellation_trip_charge_added,
+              cancellation_trip_charge_bill_amount: newJob.cancellation_trip_charge_bill_amount,
+              cancellation_trip_charge_sub_pay_amount: newJob.cancellation_trip_charge_sub_pay_amount,
               property: Array.isArray(newJob.property) ? newJob.property[0] : newJob.property,
               unit_size: Array.isArray(newJob.unit_size) ? newJob.unit_size[0] : newJob.unit_size,
               job_type: Array.isArray(newJob.job_type) ? newJob.job_type[0] : newJob.job_type,
