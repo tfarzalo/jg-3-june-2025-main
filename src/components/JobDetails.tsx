@@ -3191,8 +3191,8 @@ export function JobDetails() {
                           title="Save scheduled date"
                           aria-label="Save scheduled date"
                         >
-                          <CheckCircle className="h-4 w-4" />
-                        </button>
+                      {isRepairLocked && (
+                        <div className="px-4 py-3 bg-zinc-50 dark:bg-zinc-900/30 border-b border-zinc-200 dark:border-zinc-700/60">
                         <button
                           type="button"
                           onClick={() => {
