@@ -295,6 +295,7 @@ export function JobDetails() {
   const workOrderNum = job?.work_order_num ?? '—';
   const workOrderId = job?.work_order?.id ?? null;
   const jobIdForFiles = job?.id ?? null;
+  const canUseQualityControl = isAdmin || isJGManagement || isSuperAdmin;
 
 
   
@@ -605,7 +606,7 @@ export function JobDetails() {
   }, [assignedPainterNameParts.firstName, assignedPainterNameParts.lastName, assignedSubcontractorName, showQualityControlModal]);
 
   const fetchQualityControlSubmissions = useCallback(async () => {
-    if (!jobId || !isSuperAdmin) {
+    if (!jobId || !canUseQualityControl) {
       setQualityControlSubmissions([]);
       setQualityControlLoading(false);
       return;
@@ -627,7 +628,7 @@ export function JobDetails() {
     } finally {
       setQualityControlLoading(false);
     }
-  }, [jobId, isSuperAdmin]);
+  }, [jobId, canUseQualityControl]);
 
   useEffect(() => {
     fetchQualityControlSubmissions();
@@ -732,7 +733,7 @@ export function JobDetails() {
   };
 
   const handleSubmitQualityControl = async () => {
-    if (!job || !jobId || !isSuperAdmin) return;
+    if (!job || !jobId || !canUseQualityControl) return;
     const painterFirstName = assignedPainterNameParts.firstName || qualityControlForm.painter_first_name.trim();
     const painterLastName = assignedPainterNameParts.lastName || qualityControlForm.painter_last_name.trim();
     const painterFullName = [painterFirstName, painterLastName].filter(Boolean).join(' ') || assignedSubcontractorName || null;
@@ -2980,7 +2981,7 @@ export function JobDetails() {
             </div>
           </div>
           <div className="flex space-x-3">
-            {isSuperAdmin && isCompleted && (
+            {canUseQualityControl && isCompleted && (
               <button
                 onClick={() => setShowQualityControlModal(true)}
                 className="inline-flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
@@ -4763,7 +4764,7 @@ export function JobDetails() {
         )}
 
 
-        {showQualityControlModal && isSuperAdmin && (
+        {showQualityControlModal && canUseQualityControl && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-3xl w-full shadow-xl max-h-[90vh] overflow-y-auto">
               <div className="flex items-start justify-between gap-4 mb-5">
@@ -5047,7 +5048,7 @@ export function JobDetails() {
           </div>
         )}
 
-        {isSuperAdmin && qualityControlSubmissions.length > 0 && (
+        {canUseQualityControl && qualityControlSubmissions.length > 0 && (
           <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg mb-6 overflow-hidden">
             <button
               type="button"
