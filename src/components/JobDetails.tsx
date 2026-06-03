@@ -296,6 +296,7 @@ export function JobDetails() {
   const workOrderId = job?.work_order?.id ?? null;
   const jobIdForFiles = job?.id ?? null;
   const canUseQualityControl = isAdmin || isJGManagement || isSuperAdmin;
+  const canManagePainterNotes = isAdmin || isJGManagement;
 
 
   
@@ -391,6 +392,11 @@ export function JobDetails() {
   const [jobNotesLoading, setJobNotesLoading] = useState(false);
   const [jobNotesSaving, setJobNotesSaving] = useState(false);
   const [jobNotesError, setJobNotesError] = useState<string | null>(null);
+  const [showPainterNotes, setShowPainterNotes] = useState(false);
+  const [painterNotes, setPainterNotes] = useState<JobNote[]>([]);
+  const [painterNotesLoading, setPainterNotesLoading] = useState(false);
+  const [painterNotesSaving, setPainterNotesSaving] = useState(false);
+  const [painterNotesError, setPainterNotesError] = useState<string | null>(null);
   const [showQualityControlModal, setShowQualityControlModal] = useState(false);
   const [qualityControlExpanded, setQualityControlExpanded] = useState(false);
   const [qualityControlLoading, setQualityControlLoading] = useState(false);
@@ -407,6 +413,10 @@ export function JobDetails() {
   const [reopeningHistoricalJob, setReopeningHistoricalJob] = useState(false);
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
   const [newJobNote, setNewJobNote] = useState({
+    topic: '',
+    note_content: '',
+  });
+  const [newPainterNote, setNewPainterNote] = useState({
     topic: '',
     note_content: '',
   });
@@ -567,6 +577,81 @@ export function JobDetails() {
       channel.unsubscribe();
     };
   }, [fetchJobNotes, isAdmin, jobId]);
+
+  const fetchPainterNotes = useCallback(async () => {
+    if (!jobId || !canManagePainterNotes) {
+      setPainterNotes([]);
+      setPainterNotesError(null);
+      setPainterNotesLoading(false);
+      return;
+    }
+
+    try {
+      setPainterNotesLoading(true);
+      setPainterNotesError(null);
+
+      const { data, error } = await supabase
+        .from('job_painter_notes')
+        .select(`
+          id,
+          topic,
+          note_content,
+          created_by,
+          created_at,
+          updated_at,
+          created_by_profile:profiles!job_painter_notes_created_by_fkey(full_name)
+        `)
+        .eq('job_id', jobId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const formattedNotes = (data ?? []).map((item: any) => ({
+        id: item.id,
+        topic: item.topic,
+        note_content: item.note_content,
+        created_by: item.created_by,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        created_by_name: item.created_by_profile?.full_name || 'Unknown',
+      }));
+
+      setPainterNotes(formattedNotes);
+    } catch (err) {
+      console.error('Error fetching painter notes:', err);
+      setPainterNotesError(err instanceof Error ? err.message : 'Failed to load painter notes');
+    } finally {
+      setPainterNotesLoading(false);
+    }
+  }, [canManagePainterNotes, jobId]);
+
+  useEffect(() => {
+    fetchPainterNotes();
+  }, [fetchPainterNotes]);
+
+  useEffect(() => {
+    if (!jobId || !canManagePainterNotes) return;
+
+    const channel = supabase
+      .channel(`job-${jobId}-painter-notes`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'job_painter_notes',
+          filter: `job_id=eq.${jobId}`,
+        },
+        () => {
+          fetchPainterNotes();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [canManagePainterNotes, fetchPainterNotes, jobId]);
 
   const qualityControlTotal = useMemo(
     () => calculateQualityControlTotal(qualityControlForm.scores),
@@ -1331,6 +1416,62 @@ export function JobDetails() {
     } catch (err) {
       console.error('Error deleting job note:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to delete job note');
+    }
+  };
+
+  const handleAddPainterNote = async () => {
+    if (!jobId || !canManagePainterNotes) return;
+
+    if (!newPainterNote.topic.trim() || !newPainterNote.note_content.trim()) {
+      toast.error('Topic and note content are required');
+      return;
+    }
+
+    try {
+      setPainterNotesSaving(true);
+
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!userData.user) throw new Error('User not found');
+
+      const { error } = await supabase
+        .from('job_painter_notes')
+        .insert({
+          job_id: jobId,
+          topic: newPainterNote.topic.trim(),
+          note_content: newPainterNote.note_content.trim(),
+          created_by: userData.user.id,
+        });
+
+      if (error) throw error;
+
+      setNewPainterNote({ topic: '', note_content: '' });
+      await fetchPainterNotes();
+      toast.success('Painter note added');
+    } catch (err) {
+      console.error('Error adding painter note:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to add painter note');
+    } finally {
+      setPainterNotesSaving(false);
+    }
+  };
+
+  const handleDeletePainterNote = async (noteId: string) => {
+    if (!canManagePainterNotes) return;
+
+    try {
+      const { error } = await supabase
+        .from('job_painter_notes')
+        .delete()
+        .eq('id', noteId);
+
+      if (error) throw error;
+
+      await fetchPainterNotes();
+      toast.success('Painter note deleted');
+    } catch (err) {
+      console.error('Error deleting painter note:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to delete painter note');
     }
   };
 
@@ -3725,6 +3866,154 @@ export function JobDetails() {
                               }}
                               className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg text-red-600 dark:text-red-400 transition-colors"
                               aria-label="Delete job note"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {canManagePainterNotes && (
+          <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg mb-6 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowPainterNotes((current) => !current)}
+              className="w-full bg-gradient-to-r from-emerald-700 to-emerald-800 dark:from-emerald-800 dark:to-emerald-900 px-6 py-4 flex items-center justify-between text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div>
+                  <h2 className="text-xl font-semibold text-white flex items-center">
+                    <FileText className="h-5 w-5 mr-2" />
+                    Notes for Painter
+                  </h2>
+                  <p className="text-sm text-emerald-100/90 mt-1">
+                    Job notes visible to the assigned subcontractor on their dashboard.
+                  </p>
+                </div>
+                <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-semibold text-white">
+                  {painterNotes.length} {painterNotes.length === 1 ? 'Note' : 'Notes'}
+                </span>
+              </div>
+              <span className="inline-flex items-center text-sm font-medium text-white/90">
+                {showPainterNotes ? (
+                  <>
+                    <ChevronUp className="h-4 w-4 mr-1" />
+                    Collapse
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4 mr-1" />
+                    Expand
+                  </>
+                )}
+              </span>
+            </button>
+
+            {showPainterNotes && (
+              <div className="p-6 space-y-6">
+                <div className="bg-gray-50 dark:bg-[#0F172A] rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                    Add Note for Painter
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Note Topic
+                      </label>
+                      <input
+                        type="text"
+                        value={newPainterNote.topic}
+                        onChange={(e) => setNewPainterNote((current) => ({ ...current, topic: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        placeholder="Enter note topic"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Note
+                      </label>
+                      <textarea
+                        value={newPainterNote.note_content}
+                        onChange={(e) => setNewPainterNote((current) => ({ ...current, note_content: e.target.value }))}
+                        rows={4}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                        placeholder="Add a note that the assigned painter should see..."
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={handleAddPainterNote}
+                      disabled={painterNotesSaving || !newPainterNote.topic.trim() || !newPainterNote.note_content.trim()}
+                      className="inline-flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      {painterNotesSaving ? 'Adding...' : 'Add Note'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-[#1E293B] rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                    Notes History
+                  </h3>
+
+                  {painterNotesLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-emerald-600"></div>
+                    </div>
+                  ) : painterNotesError ? (
+                    <div className="text-sm text-red-600 dark:text-red-400">
+                      {painterNotesError}
+                    </div>
+                  ) : painterNotes.length === 0 ? (
+                    <div className="text-center py-10 text-gray-500 dark:text-gray-400">
+                      <FileText className="h-10 w-10 mx-auto mb-3 text-gray-400" />
+                      <p className="font-medium">No painter notes yet</p>
+                      <p className="text-sm mt-1">Expand this section to add the first note for the assigned painter.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {painterNotes.map((note) => (
+                        <div
+                          key={note.id}
+                          className="border-l-4 border-emerald-300 dark:border-emerald-700 bg-gray-50 dark:bg-[#0F172A] rounded-r-xl p-4"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:text-emerald-200">
+                                  {note.topic}
+                                </span>
+                              </div>
+                              <p className="text-gray-900 dark:text-white whitespace-pre-wrap mt-3">
+                                {note.note_content}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-2 mt-3 text-sm text-gray-500 dark:text-gray-400">
+                                <span>Added by {note.created_by_name}</span>
+                                <span>•</span>
+                                <span>{formatDate(note.created_at)}</span>
+                                <span>•</span>
+                                <span>{formatTime(note.created_at)}</span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm('Delete this painter note?')) {
+                                  handleDeletePainterNote(note.id);
+                                }
+                              }}
+                              className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg text-red-600 dark:text-red-400 transition-colors"
+                              aria-label="Delete painter note"
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>

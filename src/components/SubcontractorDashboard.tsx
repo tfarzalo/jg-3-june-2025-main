@@ -62,6 +62,7 @@ interface Job {
     id: string;
     submission_date?: string | null;
   } | null;
+  painter_notes?: JobPainterNote[];
   /** True when the job has a work order submitted on the same calendar day (used to show After Photos button) */
   hasWorkOrderSubmittedToday?: boolean;
 }
@@ -87,6 +88,14 @@ interface PropertyDetails {
 }
 
 interface PropertyGeneralNote {
+  id: string;
+  topic: string;
+  note_content: string;
+  created_at: string;
+  creator_name: string;
+}
+
+interface JobPainterNote {
   id: string;
   topic: string;
   note_content: string;
@@ -207,7 +216,10 @@ export function SubcontractorDashboard() {
       propertyInfoTab: "Property Info",
       notesTab: "Notes",
       painterNotes: "Painter Notes",
+      jobPainterNotes: "Notes for This Job",
+      propertyPainterNotes: "Property Painter Notes",
       noPainterNotes: "No painter notes",
+      noJobPainterNotesMessage: "No job-specific notes are currently available.",
       noGeneralPropertyNotesMessage: "No painter notes are currently available for this property.",
       addAfterPhotos: "Add After Photos",
       addAfterPhotosShort: "After Photos",
@@ -257,7 +269,10 @@ export function SubcontractorDashboard() {
       propertyInfoTab: "Información de la Propiedad",
       notesTab: "Notas",
       painterNotes: "Notas del Pintor",
+      jobPainterNotes: "Notas Para Este Trabajo",
+      propertyPainterNotes: "Notas de la Propiedad",
       noPainterNotes: "No hay notas del pintor",
+      noJobPainterNotesMessage: "No hay notas específicas disponibles actualmente para este trabajo.",
       noGeneralPropertyNotesMessage: "No hay notas del pintor disponibles actualmente para esta propiedad.",
       addAfterPhotos: "Agregar Fotos Finales",
       addAfterPhotosShort: "Fotos Finales",
@@ -699,6 +714,47 @@ export function SubcontractorDashboard() {
       
             console.log('fetchJobsForDate: Raw jobs data received:', jobsData);
 
+      const jobIds = (jobsData || []).map(job => job.id);
+      let painterNotesByJobId: Record<string, JobPainterNote[]> = {};
+
+      if (jobIds.length > 0) {
+        try {
+          const { data: painterNotesData, error: painterNotesError } = await supabase
+            .from('job_painter_notes')
+            .select(`
+              id,
+              job_id,
+              topic,
+              note_content,
+              created_at,
+              creator:profiles!job_painter_notes_created_by_fkey(full_name)
+            `)
+            .in('job_id', jobIds)
+            .order('created_at', { ascending: false });
+
+          if (painterNotesError) {
+            console.error('Error fetching job painter notes:', painterNotesError);
+          } else {
+            painterNotesByJobId = (painterNotesData || []).reduce((acc: Record<string, JobPainterNote[]>, note: any) => {
+              const creator = Array.isArray(note.creator) ? note.creator[0] : note.creator;
+              const formattedNote: JobPainterNote = {
+                id: note.id,
+                topic: note.topic,
+                note_content: note.note_content,
+                created_at: note.created_at,
+                creator_name: creator?.full_name || 'Unknown',
+              };
+
+              acc[note.job_id] = acc[note.job_id] || [];
+              acc[note.job_id].push(formattedNote);
+              return acc;
+            }, {});
+          }
+        } catch (painterNotesErr) {
+          console.error('Error fetching job painter notes:', painterNotesErr);
+        }
+      }
+
       // Map the data to match the Job interface and flatten nested arrays
       const mappedJobs: Job[] = (jobsData || []).map(job => {
         const wo = Array.isArray(job.work_order) ? job.work_order[0] : job.work_order;
@@ -711,6 +767,7 @@ export function SubcontractorDashboard() {
           job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
           work_order: wo,
           unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
+          painter_notes: painterNotesByJobId[job.id] || [],
           hasWorkOrderSubmittedToday,
         };
       });
@@ -1344,11 +1401,44 @@ export function SubcontractorDashboard() {
 
                                 {activePropertyTab === 'notes' ? (
                                   <div className="space-y-4">
+                                    {job.painter_notes?.length ? (
+                                      <div className="border border-emerald-200 dark:border-emerald-800/50 rounded-lg p-4 bg-emerald-50 dark:bg-emerald-900/10">
+                                        <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                                          <FileText className="h-5 w-5 mr-2 text-emerald-600 dark:text-emerald-300" />
+                                          {text.jobPainterNotes}
+                                        </h4>
+                                        <div className="space-y-4">
+                                          {job.painter_notes.map((note) => (
+                                            <div
+                                              key={note.id}
+                                              className="border-l-4 border-emerald-300 dark:border-emerald-700 bg-white dark:bg-[#1E293B] rounded-r-xl p-4"
+                                            >
+                                              <div className="flex flex-wrap items-center gap-2">
+                                                <span className="inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:text-emerald-200">
+                                                  {note.topic}
+                                                </span>
+                                              </div>
+                                              <p className="text-gray-900 dark:text-white whitespace-pre-wrap mt-3 text-sm">
+                                                {note.note_content}
+                                              </p>
+                                              <div className="flex flex-wrap items-center gap-2 mt-3 text-xs text-gray-500 dark:text-gray-400">
+                                                <span>{format(new Date(note.created_at), 'MMM d, yyyy')}</span>
+                                                <span>•</span>
+                                                <span>{format(new Date(note.created_at), 'h:mm a')}</span>
+                                                <span>•</span>
+                                                <span>{note.creator_name}</span>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : null}
+
                                     {cachedPropertyDetails?.property_general_notes?.length ? (
                                       <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
                                         <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
                                           <FileText className="h-5 w-5 mr-2 text-slate-600 dark:text-slate-300" />
-                                          {text.painterNotes}
+                                          {text.propertyPainterNotes}
                                         </h4>
                                         <div className="space-y-4">
                                           {cachedPropertyDetails.property_general_notes.map((note) => (
@@ -1377,11 +1467,11 @@ export function SubcontractorDashboard() {
                                       </div>
                                     ) : null}
 
-                                    {!cachedPropertyDetails?.property_general_notes?.length && (
+                                    {!job.painter_notes?.length && !cachedPropertyDetails?.property_general_notes?.length && (
                                       <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                                         <FileText className="h-10 w-10 mx-auto mb-3 text-gray-400" />
                                         <p className="font-medium">{text.noPainterNotes}</p>
-                                        <p className="text-sm mt-1">{text.noGeneralPropertyNotesMessage}</p>
+                                        <p className="text-sm mt-1">{text.noJobPainterNotesMessage}</p>
                                       </div>
                                     )}
                                   </div>
