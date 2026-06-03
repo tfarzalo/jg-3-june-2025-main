@@ -79,6 +79,15 @@ import {
   resolveAdminJobCancellationReason,
 } from '../lib/jobs/cancellationReasons';
 import { isFrozenHistoricalSnapshot } from '../lib/jobs/historicalDataMode';
+import {
+  QUALITY_CONTROL_LIKERT_VALUES,
+  QUALITY_CONTROL_SCORE_SECTIONS,
+  QUALITY_CONTROL_SCORE_TOTAL,
+  calculateQualityControlTotal,
+  createEmptyQualityControlScores,
+  getQualityControlSectionTotal,
+  type QualityControlScoreKey,
+} from '../lib/qualityControl';
 
 type Property = {
   id: string;
@@ -228,15 +237,6 @@ interface JobNote {
   created_by_name: string;
 }
 
-type QualityControlScoreKey =
-  | 'surface_prep'
-  | 'coverage_finish'
-  | 'cut_lines_edges'
-  | 'cleanliness'
-  | 'doors_trim_cabinets'
-  | 'touchups'
-  | 'documentation';
-
 type QualityControlSubmission = {
   id: string;
   job_id: string;
@@ -265,20 +265,6 @@ type QualityControlSubmission = {
   }>;
   created_at: string;
 };
-
-const QUALITY_CONTROL_SCORE_CATEGORIES: Array<{
-  key: QualityControlScoreKey;
-  label: string;
-  max: number;
-}> = [
-  { key: 'surface_prep', label: 'Surface prep and repairs', max: 20 },
-  { key: 'coverage_finish', label: 'Coverage and finish consistency', max: 20 },
-  { key: 'cut_lines_edges', label: 'Cut lines, edges, and detail work', max: 15 },
-  { key: 'cleanliness', label: 'Cleanliness, overspray, and site condition', max: 15 },
-  { key: 'doors_trim_cabinets', label: 'Doors, trim, cabinets, and specialty areas', max: 10 },
-  { key: 'touchups', label: 'Touch-ups needed / completion quality', max: 10 },
-  { key: 'documentation', label: 'Documentation and photo completeness', max: 10 },
-];
 
 async function sendEmail(data: EmailData) {
   console.log('Sending email:', data);
@@ -411,12 +397,11 @@ export function JobDetails() {
   const [qualityControlSubmissions, setQualityControlSubmissions] = useState<QualityControlSubmission[]>([]);
   const [qualityControlFiles, setQualityControlFiles] = useState<File[]>([]);
   const [qualityControlForm, setQualityControlForm] = useState({
+    painter_first_name: '',
+    painter_last_name: '',
     date_walked: '',
     comments: '',
-    scores: QUALITY_CONTROL_SCORE_CATEGORIES.reduce((acc, category) => {
-      acc[category.key] = 0;
-      return acc;
-    }, {} as Record<QualityControlScoreKey, number>),
+    scores: createEmptyQualityControlScores(),
   });
   const [reopeningHistoricalJob, setReopeningHistoricalJob] = useState(false);
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
@@ -582,12 +567,10 @@ export function JobDetails() {
     };
   }, [fetchJobNotes, isAdmin, jobId]);
 
-  const qualityControlTotal = useMemo(() => (
-    QUALITY_CONTROL_SCORE_CATEGORIES.reduce(
-      (sum, category) => sum + Number(qualityControlForm.scores[category.key] || 0),
-      0
-    )
-  ), [qualityControlForm.scores]);
+  const qualityControlTotal = useMemo(
+    () => calculateQualityControlTotal(qualityControlForm.scores),
+    [qualityControlForm.scores]
+  );
 
   const assignedSubcontractorName = useMemo(() => {
     const assignedId = job?.assigned_to;
@@ -610,6 +593,16 @@ export function JobDetails() {
       lastName: parts.length > 1 ? parts.slice(1).join(' ') : null,
     };
   }, [assignedSubcontractorName]);
+
+  useEffect(() => {
+    if (!showQualityControlModal || !assignedSubcontractorName) return;
+
+    setQualityControlForm(prev => ({
+      ...prev,
+      painter_first_name: assignedPainterNameParts.firstName || prev.painter_first_name,
+      painter_last_name: assignedPainterNameParts.lastName || prev.painter_last_name,
+    }));
+  }, [assignedPainterNameParts.firstName, assignedPainterNameParts.lastName, assignedSubcontractorName, showQualityControlModal]);
 
   const fetchQualityControlSubmissions = useCallback(async () => {
     if (!jobId || !isSuperAdmin) {
@@ -642,12 +635,11 @@ export function JobDetails() {
 
   const resetQualityControlForm = () => {
     setQualityControlForm({
+      painter_first_name: assignedPainterNameParts.firstName || '',
+      painter_last_name: assignedPainterNameParts.lastName || '',
       date_walked: '',
       comments: '',
-      scores: QUALITY_CONTROL_SCORE_CATEGORIES.reduce((acc, category) => {
-        acc[category.key] = 0;
-        return acc;
-      }, {} as Record<QualityControlScoreKey, number>),
+      scores: createEmptyQualityControlScores(),
     });
     setQualityControlFiles([]);
   };
@@ -741,8 +733,12 @@ export function JobDetails() {
 
   const handleSubmitQualityControl = async () => {
     if (!job || !jobId || !isSuperAdmin) return;
-    if (!qualityControlForm.painter_first_name.trim() || !qualityControlForm.painter_last_name.trim()) {
-      toast.error('Painter first and last name are required');
+    const painterFirstName = assignedPainterNameParts.firstName || qualityControlForm.painter_first_name.trim();
+    const painterLastName = assignedPainterNameParts.lastName || qualityControlForm.painter_last_name.trim();
+    const painterFullName = [painterFirstName, painterLastName].filter(Boolean).join(' ') || assignedSubcontractorName || null;
+
+    if (!painterFullName) {
+      toast.error('Assigned subcontractor is required for Quality Control');
       return;
     }
 
@@ -760,8 +756,11 @@ export function JobDetails() {
 
       const media = await uploadQualityControlFiles(userData.user.id);
       const formData = {
-        painter_first_name: qualityControlForm.painter_first_name.trim(),
-        painter_last_name: qualityControlForm.painter_last_name.trim(),
+        painter_first_name: painterFirstName || null,
+        painter_last_name: painterLastName || null,
+        painter_name: painterFullName,
+        subcontractor_id: job.assigned_to || null,
+        subcontractor_name: assignedSubcontractorName || painterFullName,
         date_painted: job.scheduled_date?.split('T')[0] || null,
         date_walked: qualityControlForm.date_walked || null,
         property_id: job.property?.id || null,
@@ -4785,36 +4784,53 @@ export function JobDetails() {
 
               <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
+                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Painter First Name *
+                      Assigned Subcontractor
                     </label>
                     <input
                       type="text"
-                      value={qualityControlForm.painter_first_name}
-                      onChange={(e) => setQualityControlForm(prev => ({
-                        ...prev,
-                        painter_first_name: e.target.value,
-                      }))}
-                      className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
-                      placeholder="First"
+                      value={assignedSubcontractorName || ''}
+                      disabled={Boolean(assignedSubcontractorName)}
+                      readOnly={Boolean(assignedSubcontractorName)}
+                      className="w-full rounded-md bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300"
+                      placeholder="No subcontractor assigned"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Painter Last Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={qualityControlForm.painter_last_name}
-                      onChange={(e) => setQualityControlForm(prev => ({
-                        ...prev,
-                        painter_last_name: e.target.value,
-                      }))}
-                      className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
-                      placeholder="Last"
-                    />
-                  </div>
+                  {!assignedSubcontractorName && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Painter First Name *
+                        </label>
+                        <input
+                          type="text"
+                          value={qualityControlForm.painter_first_name}
+                          onChange={(e) => setQualityControlForm(prev => ({
+                            ...prev,
+                            painter_first_name: e.target.value,
+                          }))}
+                          className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                          placeholder="First"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Painter Last Name *
+                        </label>
+                        <input
+                          type="text"
+                          value={qualityControlForm.painter_last_name}
+                          onChange={(e) => setQualityControlForm(prev => ({
+                            ...prev,
+                            painter_last_name: e.target.value,
+                          }))}
+                          className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                          placeholder="Last"
+                        />
+                      </div>
+                    </>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Date Painted
@@ -4897,35 +4913,66 @@ export function JobDetails() {
                   <div className="flex items-center justify-between mb-3">
                     <h4 className="text-lg font-semibold text-gray-900 dark:text-white">QC Matrix</h4>
                     <div className="rounded-lg bg-emerald-100 dark:bg-emerald-900/30 px-3 py-1 text-sm font-semibold text-emerald-800 dark:text-emerald-200">
-                      {qualityControlTotal} / 100
+                      {qualityControlTotal} / {QUALITY_CONTROL_SCORE_TOTAL}
                     </div>
                   </div>
-                  <div className="space-y-3">
-                    {QUALITY_CONTROL_SCORE_CATEGORIES.map((category) => (
-                      <div key={category.key} className="grid grid-cols-1 sm:grid-cols-[1fr_120px] gap-2 sm:items-center rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">{category.label}</div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">Max {category.max} points</div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    {QUALITY_CONTROL_SCORE_SECTIONS.map((section, index) => {
+                      const sectionTotal = getQualityControlSectionTotal(qualityControlForm.scores, section);
+                      return (
+                        <div key={section.key} className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-[#0F172A]">
+                          <div className="flex items-center justify-between gap-3 bg-gray-100 dark:bg-gray-800 px-4 py-3">
+                            <div className="text-sm font-bold text-gray-900 dark:text-white uppercase">
+                              {index + 1}) {section.label}
+                            </div>
+                            <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                              {sectionTotal} / {section.max}
+                            </div>
+                          </div>
+                          <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                            {section.items.map((item) => (
+                              <div key={item.key} className="p-3">
+                                <div className="mb-2 flex items-center justify-between gap-3">
+                                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{item.label}</span>
+                                  <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{Number(qualityControlForm.scores[item.key] || 0)} / {item.max}</span>
+                                </div>
+                                <div className="grid grid-cols-6 gap-1">
+                                  {QUALITY_CONTROL_LIKERT_VALUES.map((value) => {
+                                    const selected = Number(qualityControlForm.scores[item.key] || 0) === value;
+                                    return (
+                                      <button
+                                        key={value}
+                                        type="button"
+                                        onClick={() => setQualityControlForm(prev => ({
+                                          ...prev,
+                                          scores: {
+                                            ...prev.scores,
+                                            [item.key]: value,
+                                          },
+                                        }))}
+                                        className={`h-9 rounded-md border text-sm font-semibold transition-colors ${
+                                          selected
+                                            ? 'border-emerald-600 bg-emerald-600 text-white'
+                                            : 'border-gray-300 bg-gray-50 text-gray-700 hover:border-emerald-500 hover:text-emerald-700 dark:border-gray-600 dark:bg-[#1E293B] dark:text-gray-200 dark:hover:border-emerald-500 dark:hover:text-emerald-300'
+                                        }`}
+                                        aria-label={`${item.label}: ${value} of ${item.max}`}
+                                      >
+                                        {value}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                        <input
-                          type="number"
-                          min={0}
-                          max={category.max}
-                          value={qualityControlForm.scores[category.key]}
-                          onChange={(e) => {
-                            const nextValue = Math.min(category.max, Math.max(0, Number(e.target.value) || 0));
-                            setQualityControlForm(prev => ({
-                              ...prev,
-                              scores: {
-                                ...prev.scores,
-                                [category.key]: nextValue,
-                              },
-                            }));
-                          }}
-                          className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
-                        />
+                      );
+                    })}
+                    <div className="xl:col-span-2 flex justify-center">
+                      <div className="rounded-lg border-2 border-gray-900 dark:border-gray-100 px-5 py-3 text-lg font-bold text-gray-900 dark:text-white">
+                        Overall Total Score: {qualityControlTotal} / {QUALITY_CONTROL_SCORE_TOTAL}
                       </div>
-                    ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -5035,7 +5082,7 @@ export function JobDetails() {
                           </p>
                           <div className="mt-3 text-sm text-gray-700 dark:text-gray-300 space-y-1">
                             <div>
-                              Painter: {[
+                              Subcontractor: {submission.form_data?.subcontractor_name || [
                                 submission.form_data?.painter_first_name,
                                 submission.form_data?.painter_last_name,
                               ].filter(Boolean).join(' ') || '—'}
@@ -5048,16 +5095,28 @@ export function JobDetails() {
                         </div>
                         <div className="rounded-lg bg-emerald-600 px-5 py-4 text-white text-center min-w-[150px]">
                           <div className="text-3xl font-bold">{Number(submission.score_total || 0)}</div>
-                          <div className="text-sm font-medium">out of 100</div>
+                          <div className="text-sm font-medium">out of {QUALITY_CONTROL_SCORE_TOTAL}</div>
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-5">
-                        {QUALITY_CONTROL_SCORE_CATEGORIES.map((category) => (
-                          <div key={category.key} className="flex items-center justify-between rounded-md bg-white dark:bg-[#1E293B] border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm">
-                            <span className="text-gray-700 dark:text-gray-300">{category.label}</span>
-                            <span className="font-semibold text-gray-900 dark:text-white">
-                              {Number(scoreCategories[category.key] || 0)} / {category.max}
-                            </span>
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-5">
+                        {QUALITY_CONTROL_SCORE_SECTIONS.map((section, index) => (
+                          <div key={section.key} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1E293B] overflow-hidden">
+                            <div className="flex items-center justify-between gap-3 bg-gray-100 dark:bg-gray-800 px-3 py-2">
+                              <span className="text-sm font-bold text-gray-900 dark:text-white uppercase">{index + 1}) {section.label}</span>
+                              <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                                {getQualityControlSectionTotal(scoreCategories, section)} / {section.max}
+                              </span>
+                            </div>
+                            <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                              {section.items.map((item) => (
+                                <div key={item.key} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                                  <span className="text-gray-700 dark:text-gray-300">{item.label}</span>
+                                  <span className="font-semibold text-gray-900 dark:text-white">
+                                    {Number(scoreCategories[item.key] || 0)} / {item.max}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         ))}
                       </div>

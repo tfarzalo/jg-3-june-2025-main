@@ -32,6 +32,7 @@ import { MaintenancePage } from './MaintenancePage';
 import { SmsNotificationSettings } from './SmsNotificationSettings';
 import { SmsNotificationLogs } from './SmsNotificationLogs';
 import { WhatsNewManager } from './admin/WhatsNewManager';
+import { QualityControlLeaderboard } from './admin/QualityControlLeaderboard';
 
 interface AppSettingsData {
   id: string;
@@ -47,7 +48,7 @@ export function AppSettings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const [activeTab, setActiveTab] = useState<'overview' | 'email-templates' | 'lead-forms' | 'daily-agenda' | 'users' | 'sub-assignment-alerts' | 'sms-notifications' | 'sms-logs' | 'bulk-schedule' | 'job-categories' | 'unit-sizes' | 'maintenance' | 'whats-new'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'email-templates' | 'lead-forms' | 'qc-leaderboard' | 'daily-agenda' | 'users' | 'sub-assignment-alerts' | 'sms-notifications' | 'sms-logs' | 'bulk-schedule' | 'job-categories' | 'unit-sizes' | 'maintenance' | 'whats-new'>('overview');
   const [subAssignmentRecipients, setSubAssignmentRecipients] = useState<string[]>([]);
   const [adminOptions, setAdminOptions] = useState<AppSettingsData[]>([]);
 
@@ -316,6 +317,20 @@ export function AppSettings() {
               </button>
 
               <button
+                onClick={() => setActiveTab('qc-leaderboard')}
+                className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'qc-leaderboard'
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-200'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
+                }`}
+              >
+                <ClipboardList className={`flex-shrink-0 -ml-1 mr-3 h-6 w-6 ${
+                  activeTab === 'qc-leaderboard' ? 'text-emerald-700 dark:text-emerald-200' : 'text-gray-400 group-hover:text-gray-500'
+                }`} />
+                <span className="truncate">QC Leaderboard</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab('daily-agenda')}
                 className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'daily-agenda'
@@ -497,6 +512,11 @@ export function AppSettings() {
             {/* Lead Forms Tab */}
             {activeTab === 'lead-forms' && (
               <LeadFormBuilder />
+            )}
+
+            {/* QC Leaderboard Tab */}
+            {activeTab === 'qc-leaderboard' && (
+              <QualityControlLeaderboard />
             )}
 
             {/* Daily Agenda Tab */}
