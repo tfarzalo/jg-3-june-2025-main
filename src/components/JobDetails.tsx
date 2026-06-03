@@ -66,6 +66,7 @@ import { ExtraChargeLineItem } from '../types/extraCharges';
 import ImageUpload from './ImageUpload';
 import { PropertyMap } from './PropertyMap';
 import { ImageGallery } from './ImageGallery';
+import { Lightbox } from './Lightbox';
 import NotificationEmailModal from './NotificationEmailModal';
 import { EnhancedPropertyNotificationModal } from './EnhancedPropertyNotificationModal';
 import { WorkOrderLink } from './shared/WorkOrderLink';
@@ -278,6 +279,18 @@ function normalizeQualityControlScores(
   };
 }
 
+function getQualityControlMediaUrl(file: QualityControlMediaFile) {
+  if (file.public_url) {
+    return file.public_url;
+  }
+
+  if (file.bucket && file.path) {
+    return supabase.storage.from(file.bucket).getPublicUrl(file.path).data.publicUrl;
+  }
+
+  return '';
+}
+
 async function sendEmail(data: EmailData) {
   console.log('Sending email:', data);
   return Promise.resolve();
@@ -415,6 +428,11 @@ export function JobDetails() {
   const [qualityControlSubmitting, setQualityControlSubmitting] = useState(false);
   const [qualityControlSubmissions, setQualityControlSubmissions] = useState<QualityControlSubmission[]>([]);
   const [qualityControlFiles, setQualityControlFiles] = useState<File[]>([]);
+  const [qualityControlDragActive, setQualityControlDragActive] = useState(false);
+  const [qualityControlFilePreviews, setQualityControlFilePreviews] = useState<Array<{ url: string; name: string }>>([]);
+  const [qualityControlLightboxImages, setQualityControlLightboxImages] = useState<Array<{ url: string; alt?: string; label?: string }>>([]);
+  const [qualityControlLightboxIndex, setQualityControlLightboxIndex] = useState(0);
+  const [qualityControlLightboxOpen, setQualityControlLightboxOpen] = useState(false);
   const [editingQualityControlId, setEditingQualityControlId] = useState<string | null>(null);
   const [editingQualityControlMedia, setEditingQualityControlMedia] = useState<QualityControlMediaFile[]>([]);
   const [qualityControlForm, setQualityControlForm] = useState({
@@ -732,6 +750,47 @@ export function JobDetails() {
   useEffect(() => {
     fetchQualityControlSubmissions();
   }, [fetchQualityControlSubmissions]);
+
+  useEffect(() => {
+    const previews = qualityControlFiles.map(file => ({
+      url: URL.createObjectURL(file),
+      name: file.name,
+    }));
+
+    setQualityControlFilePreviews(previews);
+
+    return () => {
+      previews.forEach(preview => URL.revokeObjectURL(preview.url));
+    };
+  }, [qualityControlFiles]);
+
+  const addQualityControlFiles = (files: File[] | FileList) => {
+    const selectedFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+
+    if (selectedFiles.length === 0) {
+      toast.error('Please add image files for Quality Control media');
+      return;
+    }
+
+    setQualityControlFiles(prev => [...prev, ...selectedFiles].slice(0, 10));
+  };
+
+  const openQualityControlLightbox = (
+    images: Array<{ url: string; alt?: string; label?: string }>,
+    index: number
+  ) => {
+    if (images.length === 0) return;
+    setQualityControlLightboxImages(images);
+    setQualityControlLightboxIndex(index);
+    setQualityControlLightboxOpen(true);
+  };
+
+  const handleQualityControlMediaDrop = (event: React.DragEvent<HTMLLabelElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setQualityControlDragActive(false);
+    addQualityControlFiles(event.dataTransfer.files);
+  };
 
   const resetQualityControlForm = () => {
     setEditingQualityControlId(null);
@@ -3222,6 +3281,15 @@ export function JobDetails() {
                 phaseLabel={phaseLabel}
                 dataMode={job?.historical_data_mode}
               />
+              {qualityControlSubmissions.length > 0 && (
+                <span
+                  title="Quality Control submitted"
+                  aria-label="Quality Control submitted"
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm"
+                >
+                  <ClipboardCheck className="h-3 w-3" />
+                </span>
+              )}
             </div>
           </div>
           <div className="flex space-x-3">
@@ -5289,32 +5357,83 @@ export function JobDetails() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Quality Control Images
                   </label>
-                  <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 px-4 py-8 text-center hover:border-emerald-500 transition-colors">
+                  <label
+                    className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors ${
+                      qualityControlDragActive
+                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                        : 'border-gray-300 hover:border-emerald-500 dark:border-gray-600'
+                    }`}
+                    onDragEnter={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setQualityControlDragActive(true);
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setQualityControlDragActive(true);
+                    }}
+                    onDragLeave={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setQualityControlDragActive(false);
+                    }}
+                    onDrop={handleQualityControlMediaDrop}
+                  >
                     <FileImage className="h-8 w-8 text-gray-400 mb-2" />
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Upload QC media</span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">Add up to 10 images</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">Click or drag and drop up to 10 images</span>
                     <input
                       type="file"
                       multiple
                       accept="image/*"
                       className="sr-only"
-                      onChange={(e) => setQualityControlFiles(Array.from(e.target.files || []).slice(0, 10))}
+                      onChange={(e) => {
+                        addQualityControlFiles(e.target.files || []);
+                        e.target.value = '';
+                      }}
                     />
                   </label>
                   {qualityControlFiles.length > 0 && (
-                    <div className="mt-3 rounded-lg bg-gray-50 dark:bg-[#0F172A] p-3 text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                      {qualityControlFiles.map((file, index) => (
-                        <div key={`${file.name}-${index}`} className="flex items-center justify-between gap-3">
-                          <span className="truncate">{file.name}</span>
+                    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+                      {qualityControlFiles.map((file, index) => {
+                        const preview = qualityControlFilePreviews[index];
+                        return (
+                        <div key={`${file.name}-${index}`} className="group relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-[#0F172A]">
+                          <button
+                            type="button"
+                            onClick={() => openQualityControlLightbox(
+                              qualityControlFilePreviews.map(item => ({ url: item.url, alt: item.name })),
+                              index
+                            )}
+                            className="h-full w-full"
+                          >
+                            {preview?.url ? (
+                              <img
+                                src={preview.url}
+                                alt={file.name}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center">
+                                <FileImage className="h-6 w-6 text-gray-400" />
+                              </div>
+                            )}
+                          </button>
                           <button
                             type="button"
                             onClick={() => setQualityControlFiles(prev => prev.filter((_, fileIndex) => fileIndex !== index))}
-                            className="text-red-600 hover:text-red-700 dark:text-red-400"
+                            className="absolute right-2 top-2 rounded-full bg-red-600 p-1 text-white opacity-0 shadow-sm transition-opacity hover:bg-red-700 group-hover:opacity-100"
+                            aria-label={`Remove ${file.name}`}
                           >
                             <X className="h-4 w-4" />
                           </button>
+                          <div className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-2 py-1 text-xs text-white">
+                            {file.name}
+                          </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                   {editingQualityControlMedia.length > 0 && (
@@ -5322,27 +5441,45 @@ export function JobDetails() {
                       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                         Existing QC media
                       </div>
-                      <div className="space-y-1 text-sm text-gray-700 dark:text-gray-300">
-                        {editingQualityControlMedia.map((file, index) => (
-                          <div key={`${file.path}-${index}`} className="flex items-center justify-between gap-3">
-                            <a
-                              href={file.public_url || '#'}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="min-w-0 truncate hover:text-emerald-700 dark:hover:text-emerald-300"
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+                        {editingQualityControlMedia.map((file, index) => {
+                          const mediaUrl = getQualityControlMediaUrl(file);
+                          const lightboxImages = editingQualityControlMedia
+                            .map(item => ({ url: getQualityControlMediaUrl(item), alt: item.name }))
+                            .filter(item => Boolean(item.url));
+                          return (
+                          <div key={`${file.path}-${index}`} className="group relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-[#1E293B]">
+                            <button
+                              type="button"
+                              onClick={() => openQualityControlLightbox(lightboxImages, index)}
+                              className="h-full w-full"
                             >
-                              {file.name}
-                            </a>
+                              {mediaUrl ? (
+                                <img
+                                  src={mediaUrl}
+                                  alt={file.name}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center">
+                                  <FileImage className="h-6 w-6 text-gray-400" />
+                                </div>
+                              )}
+                            </button>
                             <button
                               type="button"
                               onClick={() => setEditingQualityControlMedia(prev => prev.filter((_, fileIndex) => fileIndex !== index))}
-                              className="text-red-600 hover:text-red-700 dark:text-red-400"
+                              className="absolute right-2 top-2 rounded-full bg-red-600 p-1 text-white opacity-0 shadow-sm transition-opacity hover:bg-red-700 group-hover:opacity-100"
                               aria-label={`Remove ${file.name}`}
                             >
                               <X className="h-4 w-4" />
                             </button>
+                            <div className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-2 py-1 text-xs text-white">
+                              {file.name}
+                            </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -5438,6 +5575,14 @@ export function JobDetails() {
             </div>
           </div>
         )}
+
+        <Lightbox
+          isOpen={qualityControlLightboxOpen}
+          onClose={() => setQualityControlLightboxOpen(false)}
+          title="Quality Control Media"
+          images={qualityControlLightboxImages}
+          initialIndex={qualityControlLightboxIndex}
+        />
 
 
         {/* PDF Preview Modal */}
@@ -5583,18 +5728,35 @@ export function JobDetails() {
                         <div className="mt-5">
                           <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Quality Control Media</h4>
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            {media.map((file, index) => (
-                              <a
+                            {media.map((file, index) => {
+                              const mediaUrl = getQualityControlMediaUrl(file);
+                              const lightboxImages = media
+                                .map(item => ({ url: getQualityControlMediaUrl(item), alt: item.name }))
+                                .filter(item => Boolean(item.url));
+                              return (
+                              <button
                                 key={`${file.path}-${index}`}
-                                href={file.public_url || '#'}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1E293B] p-3 text-sm text-gray-700 dark:text-gray-300 hover:border-emerald-500 transition-colors"
+                                type="button"
+                                onClick={() => openQualityControlLightbox(lightboxImages, index)}
+                                className="group relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-white text-left transition-colors hover:border-emerald-500 dark:border-gray-700 dark:bg-[#1E293B]"
                               >
-                                <FileImage className="h-5 w-5 mb-2 text-emerald-600 dark:text-emerald-400" />
-                                <div className="truncate">{file.name}</div>
-                              </a>
-                            ))}
+                                {mediaUrl ? (
+                                  <img
+                                    src={mediaUrl}
+                                    alt={file.name}
+                                    className="h-full w-full object-cover transition-opacity group-hover:opacity-90"
+                                  />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center">
+                                    <FileImage className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                                  </div>
+                                )}
+                                <div className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-2 py-1 text-xs text-white">
+                                  {file.name}
+                                </div>
+                              </button>
+                              );
+                            })}
                           </div>
                         </div>
                       )}

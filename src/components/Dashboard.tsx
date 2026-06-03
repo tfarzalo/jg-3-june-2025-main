@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { RouteGuard, SubcontractorRouteGuard, AdminRouteGuard, StrictAdminRouteGuard } from './RouteGuard';
 
 // Lazy load components - using correct pattern for each export type
@@ -31,7 +31,6 @@ const PropertyGroupArchives = lazy(() => import('./PropertyGroupArchives').then(
 const PropertyArchives = lazy(() => import('./PropertyArchives').then(module => ({ default: module.PropertyArchives })));
 const FileManager = lazy(() => import('./FileManager').then(module => ({ default: module.FileManager })));
 const FileUpload = lazy(() => import('./FileUpload').then(module => ({ default: module.FileUpload })));
-const Calendar = lazy(() => import('./Calendar').then(module => ({ default: module.Calendar })));
 const Activity = lazy(() => import('./Activity').then(module => ({ default: module.Activity })));
 const Users = lazy(() => import('./Users').then(module => ({ default: module.Users })));
 const SubcontractorAdminPage = lazy(() => import('./users/SubcontractorAdminPage').then(module => ({ default: module.SubcontractorAdminPage })));
@@ -47,8 +46,7 @@ const ContactDetail = lazy(() => import('./ContactDetail').then(module => ({ def
 const Employees = lazy(() => import('./Employees').then(module => ({ default: module.Employees })));
 const EmployeeProfile = lazy(() => import('./EmployeeProfile').then(module => ({ default: module.EmployeeProfile })));
 const EmployeeFormPreviewPage = lazy(() => import('./EmployeeFormPreviewPage').then(module => ({ default: module.EmployeeFormPreviewPage })));
-// DEV calendar — remove this import when swapping to live
-const CalendarDevPage = lazy(() => import('./calendar-dev/CalendarDevPage'));
+const Calendar = lazy(() => import('./calendar-dev/CalendarDevPage'));
 
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center h-full">
@@ -140,11 +138,8 @@ export function Dashboard() {
               <Calendar />
             </RouteGuard>
           } />
-          {/* DEV calendar — change path to "calendar" (and remove Route above) when going live */}
           <Route path="calendar-dev" element={
-            <RouteGuard>
-              <CalendarDevPage />
-            </RouteGuard>
+            <Navigate to="/dashboard/calendar" replace />
           } />
           <Route path="activity" element={
             <RouteGuard>

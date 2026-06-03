@@ -44,7 +44,7 @@ export function getHistoricalDataIndicator(
     return {
       code: 'S',
       label: 'Snapshot',
-      bgClass: 'bg-emerald-600',
+      bgClass: 'bg-sky-400',
       title: 'Snapshot data: this completed, invoicing, cancelled, or archived job is frozen as a historical record.',
     };
   }

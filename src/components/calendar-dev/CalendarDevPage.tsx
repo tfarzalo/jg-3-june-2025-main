@@ -1,5 +1,5 @@
 /**
- * CalendarDevPage.tsx — DEV ONLY (not the live /calendar page)
+ * CalendarDevPage.tsx
  *
  * Includes ALL features from the existing Calendar.tsx plus new ones:
  *   Existing: phase filter, calendar events (create/view/edit/delete), recurring events,
@@ -7,11 +7,6 @@
  *   New:      drag-and-drop rescheduling (HTML5, smooth), scrollable +N expand cells,
  *             week/day/agenda views (react-big-calendar), filter by subcontractor,
  *             job click modal with "Go to Job / Go to Property" buttons
- *
- * TO GO LIVE:
- *  1. Change Route path="calendar-dev" → "calendar" in Dashboard.tsx
- *  2. Remove the old Calendar Route + lazy import above it
- *  3. Delete the amber dev-banner <div> (one block, clearly commented below)
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -111,7 +106,7 @@ interface RBCEvent {
 type ViewMode = 'month' | 'week' | 'day' | 'agenda';
 
 const DEFAULT_SELECTED_PHASES = ['Job Request', 'Work Order', 'Pending Work Order', 'Events'];
-const FILTER_STORAGE_KEY = 'calendar-dev-filter-preferences';
+const FILTER_STORAGE_KEY = 'calendar-filter-preferences';
 
 interface PersistedFilterPreferences {
   selectedPhases?: string[];
@@ -1107,19 +1102,12 @@ export function CalendarDevPage() {
 
   return (
     <div className="p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
-      {/* ── DEV BANNER — remove this entire block when going live ── */}
-      <div className="mb-4 px-4 py-3 bg-amber-100 dark:bg-amber-900/40 border border-amber-400 dark:border-amber-600 rounded-lg">
-        <span className="text-amber-800 dark:text-amber-200 font-semibold text-sm">
-          🚧 Dev Preview — This calendar is under development and not yet live. The existing /calendar page is unchanged.
-        </span>
-      </div>
-
       {/* ── Header ────────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
         <div className="flex items-center gap-3">
           <CalendarIcon className="h-7 w-7 text-gray-400 dark:text-gray-500 flex-shrink-0" />
           <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
-            Calendar <span className="ml-1 text-xs font-normal text-amber-600 dark:text-amber-400">Dev</span>
+            Calendar
           </h1>
           <div className="flex items-center gap-1 ml-2">
             <button onClick={() => setCurrentDate((d) => view === 'month' ? subMonths(d, 1) : addDays(d, view === 'week' ? -7 : -1))}
@@ -1420,7 +1408,7 @@ export function CalendarDevPage() {
           )}
         </div>
       ) : (
-        <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow p-3 border border-gray-200 dark:border-[#2D3B4E] calendar-dev-wrapper">
+        <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow p-3 border border-gray-200 dark:border-[#2D3B4E] calendar-wrapper">
           <DnDCalendar
             localizer={localizer}
             events={rbcEvents}
