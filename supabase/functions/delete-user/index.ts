@@ -57,24 +57,40 @@ serve(async (req) => {
     }
 
     // Check if the current user has admin privileges
+    // First try to read role from the profiles table, but be resilient if the profile row is missing
+    let currentUserRole: string | null = null;
     const { data: currentUserProfile, error: currentProfileError } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
-      .single();
-      
+      .maybeSingle();
+
     if (currentProfileError) {
-      throw new Error("Error fetching user profile: " + currentProfileError.message);
+      // Non-fatal: warn and attempt fallbacks below
+      console.warn("Warning fetching current user's profile:", currentProfileError.message);
+    } else if (currentUserProfile && (currentUserProfile as any).role) {
+      currentUserRole = (currentUserProfile as any).role;
     }
-    
+
+    // Fallbacks: some deployments store role in auth user metadata / app_metadata
+    if (!currentUserRole && user && (user.user_metadata as any)?.role) {
+      currentUserRole = (user.user_metadata as any).role;
+    }
+    if (!currentUserRole && user && (user.app_metadata as any)?.role) {
+      currentUserRole = (user.app_metadata as any).role;
+    }
+
     // Admin, management, assistant managers, and super admins can delete users
     const allowedRoles = ["admin", "jg_management", "assistant_manager", "is_super_admin"];
-    if (!allowedRoles.includes(currentUserProfile.role)) {
+
+    if (!currentUserRole || !allowedRoles.includes(currentUserRole)) {
+      console.warn("Delete-user denied: requester role not allowed", { requesterId: user.id, requesterRole: currentUserRole });
       return new Response(
         JSON.stringify({ 
           code: "not_admin",
           message: "User not allowed to delete users",
-          success: false, 
+          success: false,
+          requesterRole: currentUserRole || null,
         }),
         { 
           headers: { 
