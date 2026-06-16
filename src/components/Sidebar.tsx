@@ -4,15 +4,12 @@ import {
   LayoutGrid, 
   ClipboardList, 
   FileText, 
-  Star, 
   DollarSign, 
   CheckCircle, 
   XCircle,
   Building2,
   Settings,
   LogOut,
-  ChevronDown,
-  ChevronRight,
   Users,
   FolderOpen,
   Calendar as CalendarIcon,
@@ -20,20 +17,15 @@ import {
   Clock,
   ChevronsLeft,
   ChevronsRight,
-  ArrowRight,
-  UserCog,
   CalendarDays,
-  Archive,
   MessageCircle,
   HelpCircle,
   Briefcase
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
-import { useTheme } from './ui/ThemeProvider';
 import { useUserRole } from '../contexts/UserRoleContext';
 import { toast } from 'sonner';
 import { useEffect } from 'react';
-import { useAuth } from '../contexts/AuthProvider';
 import { useUnreadMessages } from '../contexts/UnreadMessagesProvider';
 import { useMaintenanceMode } from '../contexts/MaintenanceModeContext';
 
@@ -115,12 +107,10 @@ interface NavGroup {
 
 export function Sidebar() {
   const navigate = useNavigate();
-  const { theme } = useTheme();
   const { isAdmin, isSuperAdmin, isJGManagement, isSubcontractor } = useUserRole();
   const canManageSettings = isAdmin || isSuperAdmin || isJGManagement;
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  const { user } = useAuth();
   const { unreadCount } = useUnreadMessages();
   const { isMaintenanceMode } = useMaintenanceMode();
 
@@ -272,6 +262,7 @@ export function Sidebar() {
         title: 'ACTIVITY',
         items: [
           { icon: Activity, label: 'Activity Log', to: '/dashboard/activity', dataTutorial: 'activity' },
+          { icon: FileText, label: 'Reports', to: '/dashboard/reports' },
         ]
       },
       // Show settings for admin settings managers
@@ -468,7 +459,7 @@ export function Sidebar() {
         )}
         {!isCollapsed && (
           <div className="mt-4 text-xs text-gray-500 dark:text-gray-600">
-            Copyright 2025 JG Portal V2.0
+            Copyright 2026 JG Portal V2.4
           </div>
         )}
       </div>

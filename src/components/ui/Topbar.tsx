@@ -15,7 +15,8 @@ import {
   ArrowRight,
   Activity as ActivityIcon,
   Clock,
-  Palette
+  Palette,
+  FileText
 } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 import { supabase, setupAvatarRefreshListener } from '../../utils/supabase';
@@ -354,6 +355,13 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
               >
                 <Plus className="h-4 w-4 mr-2" />
                 New Property
+              </button>
+              <button 
+                onClick={() => navigate('/dashboard/reports')}
+                className="bg-[#9B111E] hover:bg-[#7f0e17] text-white px-4 py-2 rounded-lg flex items-center transition-colors"
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                Reports
               </button>
             </div>
           )}
@@ -734,6 +742,17 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                 >
                   <Plus className="h-5 w-5 mr-3 flex-shrink-0" />
                   <span className="truncate">New Property</span>
+                </button>
+
+                <button 
+                  onClick={() => {
+                    navigate('/dashboard/reports');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center px-4 py-3 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors touch-manipulation min-h-[44px]"
+                >
+                  <FileText className="h-5 w-5 mr-3 flex-shrink-0" />
+                  <span className="truncate">Reports</span>
                 </button>
               </div>
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Search, 
   X, 
@@ -19,16 +19,14 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/utils/supabase';
-import { format, parseISO, subDays, isAfter } from 'date-fns';
+import { format, parseISO, subDays } from 'date-fns';
 import { debounce } from '../lib/utils/debounce';
-import { WorkOrderLink } from './shared/WorkOrderLink';
-import { PropertyLink } from './shared/PropertyLink';
 
 interface SearchResult {
   id: string;
-  type: 'job' | 'property' | 'file' | 'user' | 'work_order' | 'job_request' | 'activity' | 'property_group';
-  title: string | React.ReactNode;
-  subtitle: string | React.ReactNode;
+  type: 'page' | 'job' | 'property' | 'file' | 'user' | 'work_order' | 'job_request' | 'activity' | 'property_group';
+  title: string;
+  subtitle: string;
   description?: string;
   date?: string;
   tags?: string[];
@@ -78,6 +76,7 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
   const searchInputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const isMountedRef = useRef(true);
+  const searchRequestRef = useRef(0);
 
   // Focus search input when overlay opens
   useEffect(() => {
@@ -129,14 +128,9 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
     };
   }, []);
 
-  // Format work order number for search and display
-  const formatWorkOrderNumber = (num: number): string => {
-    return `WO-${String(num).padStart(6, '0')}`;
-  };
-
   // Debounced search function
-  const debouncedSearch = useCallback(
-    debounce(async (term: string, searchFilters: SearchFilters) => {
+  const debouncedSearch = useMemo(
+    () => debounce(async (term: string, searchFilters: SearchFilters) => {
       if (!term.trim() || !isMountedRef.current) {
         setResults([]);
         setLoading(false);
@@ -145,8 +139,19 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
 
       setLoading(true);
       const searchResults: SearchResult[] = [];
+      const searchRequestId = ++searchRequestRef.current;
 
       try {
+        const normalizedTerm = term.trim();
+        const safeTerm = escapePostgrestSearchTerm(normalizedTerm);
+        const exactDate = parseSearchDate(normalizedTerm);
+        const pageResults = searchPages(normalizedTerm);
+        searchResults.push(...pageResults);
+        publishSearchResults(searchRequestId, searchRequestRef.current, isMountedRef.current, searchResults, setResults);
+        if (isMountedRef.current && searchRequestId === searchRequestRef.current) {
+          setLoading(false);
+        }
+
         // Get date filter
         const getDateFilter = () => {
           switch (searchFilters.dateRange) {
@@ -171,7 +176,7 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
         
         // Check for patterns like "WO-123456", "WO123456", "123456"
         const woRegex = /^(?:WO[-\s]?)?(\d+)$/i;
-        const woMatch = term.match(woRegex);
+        const woMatch = normalizedTerm.match(woRegex);
         
         if (woMatch && woMatch[1]) {
           workOrderSearch = true;
@@ -187,10 +192,16 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               work_order_num,
               unit_number,
               description,
+              purchase_order,
               scheduled_date,
               created_at,
               property:properties (
+                id,
                 property_name
+              ),
+              assigned_to_profile:assigned_to (
+                id,
+                full_name
               ),
               job_phase:current_phase_id (
                 job_phase_label,
@@ -199,14 +210,17 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               job_type:job_types (
                 job_type_label
               )
-            `);
+            `)
+            .limit(25);
             
           // If searching for a work order number specifically
           if (workOrderSearch && workOrderNumber) {
             query = query.eq('work_order_num', workOrderNumber);
+          } else if (exactDate) {
+            query = query.gte('scheduled_date', `${exactDate}T00:00:00`).lte('scheduled_date', `${exactDate}T23:59:59`);
           } else {
             // Otherwise do a regular search
-            query = query.or(`unit_number.ilike.%${term}%,description.ilike.%${term}%,work_order_num::text.ilike.%${term}%`);
+            query = query.or(`unit_number.ilike.%${safeTerm}%,description.ilike.%${safeTerm}%,purchase_order.ilike.%${safeTerm}%`);
           }
 
           if (dateFilter) {
@@ -219,30 +233,27 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             console.error('Error searching jobs:', error);
           } else if (jobs) {
             jobs.forEach(job => {
+              const property = normalizeRelation(job.property);
+              const assignedTo = normalizeRelation(job.assigned_to_profile);
+              const jobPhase = normalizeRelation(job.job_phase);
+              const jobType = normalizeRelation(job.job_type);
               searchResults.push({
                 id: job.id,
                 type: 'job',
-                title: (
-                  <span>
-                    <WorkOrderLink 
-                      jobId={job.id}
-                      workOrderNum={job.work_order_num}
-                    /> - Unit {job.unit_number}
-                  </span>
-                ),
-                subtitle: job.property ? (
-                  <PropertyLink 
-                    propertyId={job.property.id}
-                    propertyName={job.property.property_name}
-                  />
-                ) : 'Unknown Property',
+                title: `${formatWorkOrderNumber(job.work_order_num)} - Unit ${job.unit_number || 'N/A'}`,
+                subtitle: property?.property_name || 'Unknown Property',
                 description: job.description || '',
-                date: format(parseISO(job.created_at), 'MMM d, yyyy'),
-                tags: [job.job_phase?.job_phase_label || 'Unknown Phase', job.job_type?.job_type_label || 'Unknown Type'],
+                date: formatDateLabel(job.created_at),
+                tags: [
+                  jobPhase?.job_phase_label || 'Unknown Phase',
+                  jobType?.job_type_label || 'Unknown Type',
+                  assignedTo?.full_name ? `Sub: ${assignedTo.full_name}` : 'Unassigned'
+                ],
                 url: `/dashboard/jobs/${job.id}`,
                 icon: <FileText className="h-5 w-5 text-blue-500" />
               });
             });
+            publishSearchResults(searchRequestId, searchRequestRef.current, isMountedRef.current, searchResults, setResults);
           }
         }
 
@@ -262,7 +273,8 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
                 company_name
               )
             `)
-            .or(`property_name.ilike.%${term}%,address.ilike.%${term}%,city.ilike.%${term}%`);
+            .or(`property_name.ilike.%${safeTerm}%,address.ilike.%${safeTerm}%,city.ilike.%${safeTerm}%,state.ilike.%${safeTerm}%,zip.ilike.%${safeTerm}%`);
+          query = query.limit(25);
 
           if (dateFilter) {
             query = query.gte('created_at', dateFilter);
@@ -274,23 +286,20 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             console.error('Error searching properties:', error);
           } else if (properties) {
             properties.forEach(property => {
+              const propertyManagementGroup = normalizeRelation(property.property_management_group);
               const address = [property.address, property.city, property.state, property.zip].filter(Boolean).join(', ');
               searchResults.push({
                 id: property.id,
                 type: 'property',
-                title: (
-                  <PropertyLink 
-                    propertyId={property.id}
-                    propertyName={property.property_name}
-                  />
-                ),
+                title: property.property_name || 'Unnamed Property',
                 subtitle: address,
-                description: property.property_management_group?.company_name || 'No Management Group',
-                date: property.created_at ? format(parseISO(property.created_at), 'MMM d, yyyy') : '',
+                description: propertyManagementGroup?.company_name || 'No Management Group',
+                date: formatDateLabel(property.created_at),
                 url: `/dashboard/properties/${property.id}`,
                 icon: <Building2 className="h-5 w-5 text-green-500" />
               });
             });
+            publishSearchResults(searchRequestId, searchRequestRef.current, isMountedRef.current, searchResults, setResults);
           }
         }
 
@@ -316,7 +325,8 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               )
             `)
             .not('type', 'eq', 'folder/directory')
-            .ilike('name', `%${term}%`);
+            .ilike('name', `%${safeTerm}%`)
+            .limit(25);
 
           if (dateFilter) {
             query = query.gte('created_at', dateFilter);
@@ -328,25 +338,13 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             console.error('Error searching files:', error);
           } else if (files) {
             files.forEach(file => {
-              let subtitle: React.ReactNode = 'General File';
-              if (file.property) {
-                subtitle = (
-                  <span>
-                    Property: <PropertyLink 
-                      propertyId={file.property.id}
-                      propertyName={file.property.property_name}
-                    />
-                  </span>
-                );
-              } else if (file.job) {
-                subtitle = (
-                  <span>
-                    Job: <WorkOrderLink 
-                      jobId={file.job.id}
-                      workOrderNum={file.job.work_order_num}
-                    /> - Unit {file.job.unit_number}
-                  </span>
-                );
+              const property = normalizeRelation(file.property);
+              const job = normalizeRelation(file.job);
+              let subtitle = 'General File';
+              if (property) {
+                subtitle = `Property: ${property.property_name || 'Unknown Property'}`;
+              } else if (job) {
+                subtitle = `Job: ${formatWorkOrderNumber(job.work_order_num)} - Unit ${job.unit_number || 'N/A'}`;
               }
 
               searchResults.push({
@@ -355,11 +353,12 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
                 title: file.name,
                 subtitle: subtitle,
                 description: `${(file.size / 1024).toFixed(2)} KB - ${file.type}`,
-                date: format(parseISO(file.created_at), 'MMM d, yyyy'),
+                date: formatDateLabel(file.created_at),
                 url: `/dashboard/files`,
                 icon: <FileText className="h-5 w-5 text-yellow-500" />
               });
             });
+            publishSearchResults(searchRequestId, searchRequestRef.current, isMountedRef.current, searchResults, setResults);
           }
         }
 
@@ -374,7 +373,8 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               role,
               created_at
             `)
-            .or(`email.ilike.%${term}%,full_name.ilike.%${term}%`);
+            .or(`email.ilike.%${safeTerm}%,full_name.ilike.%${safeTerm}%`)
+            .limit(25);
 
           if (dateFilter) {
             query = query.gte('created_at', dateFilter);
@@ -392,36 +392,98 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
                 title: user.full_name || 'Unnamed User',
                 subtitle: user.email,
                 description: `Role: ${user.role}`,
-                date: format(parseISO(user.created_at), 'MMM d, yyyy'),
+                date: formatDateLabel(user.created_at),
                 tags: [user.role],
                 url: `/dashboard/users`,
                 icon: <User className="h-5 w-5 text-purple-500" />
               });
             });
+
+            const matchingSubcontractors = users.filter(user => user.role === 'subcontractor');
+            if (matchingSubcontractors.length > 0 && searchFilters.types.jobs) {
+              const { data: assignedJobs, error: assignedJobsError } = await supabase
+                .from('jobs')
+                .select(`
+                  id,
+                  work_order_num,
+                  unit_number,
+                  description,
+                  scheduled_date,
+                  created_at,
+                  property:properties (
+                    id,
+                    property_name
+                  ),
+                  assigned_to_profile:assigned_to (
+                    id,
+                    full_name
+                  ),
+                  job_phase:current_phase_id (
+                    job_phase_label,
+                    color_dark_mode
+                  ),
+                  job_type:job_types (
+                    job_type_label
+                  )
+                `)
+                .in('assigned_to', matchingSubcontractors.map(user => user.id))
+                .limit(25);
+
+              if (assignedJobsError) {
+                console.error('Error searching jobs by subcontractor:', assignedJobsError);
+              } else {
+                (assignedJobs || []).forEach(job => {
+                  const property = normalizeRelation(job.property);
+                  const assignedTo = normalizeRelation(job.assigned_to_profile);
+                  const jobPhase = normalizeRelation(job.job_phase);
+                  const jobType = normalizeRelation(job.job_type);
+                  searchResults.push({
+                    id: `sub-job-${job.id}`,
+                    type: 'job',
+                    title: `${formatWorkOrderNumber(job.work_order_num)} - Unit ${job.unit_number || 'N/A'}`,
+                    subtitle: property?.property_name || 'Unknown Property',
+                    description: `Assigned to ${assignedTo?.full_name || normalizedTerm}`,
+                    date: formatDateLabel(job.created_at),
+                    tags: [jobPhase?.job_phase_label || 'Unknown Phase', jobType?.job_type_label || 'Unknown Type'],
+                    url: `/dashboard/jobs/${job.id}`,
+                    icon: <FileText className="h-5 w-5 text-blue-500" />
+                  });
+                });
+              }
+            }
+            publishSearchResults(searchRequestId, searchRequestRef.current, isMountedRef.current, searchResults, setResults);
           }
         }
 
         // Search work orders if enabled
         if (searchFilters.types.work_orders) {
           let query = supabase
-            .from('work_orders')
+            .from('jobs')
             .select(`
               id,
-              work_order_number,
+              work_order_num,
+              unit_number,
               description,
-              status,
+              scheduled_date,
               created_at,
-              job:jobs (
+              property:properties (
                 id,
-                work_order_num,
-                unit_number,
-                property:properties (
-                  id,
-                  property_name
-                )
+                property_name
+              ),
+              job_phase:current_phase_id (
+                job_phase_label,
+                color_dark_mode
               )
             `)
-            .or(`work_order_number.ilike.%${term}%,description.ilike.%${term}%`);
+            .limit(25);
+
+          if (workOrderSearch && workOrderNumber) {
+            query = query.eq('work_order_num', workOrderNumber);
+          } else if (exactDate) {
+            query = query.gte('scheduled_date', `${exactDate}T00:00:00`).lte('scheduled_date', `${exactDate}T23:59:59`);
+          } else {
+            query = query.or(`unit_number.ilike.%${safeTerm}%,description.ilike.%${safeTerm}%`);
+          }
 
           if (dateFilter) {
             query = query.gte('created_at', dateFilter);
@@ -433,45 +495,54 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             console.error('Error searching work orders:', error);
           } else if (workOrders) {
             workOrders.forEach(wo => {
+              const property = normalizeRelation(wo.property);
+              const jobPhase = normalizeRelation(wo.job_phase);
               searchResults.push({
                 id: wo.id,
                 type: 'work_order',
-                title: `Work Order ${wo.work_order_number}`,
-                subtitle: wo.job ? (
-                  <span>
-                    Job: <WorkOrderLink 
-                      jobId={wo.job.id}
-                      workOrderNum={wo.job.work_order_num}
-                    /> - Unit {wo.job.unit_number}
-                  </span>
-                ) : 'No associated job',
+                title: formatWorkOrderNumber(wo.work_order_num),
+                subtitle: property?.property_name || 'Unknown Property',
                 description: wo.description || '',
-                date: format(parseISO(wo.created_at), 'MMM d, yyyy'),
-                tags: [wo.status],
-                url: wo.job ? `/dashboard/jobs/${wo.job.id}` : '/dashboard/jobs/work-orders',
+                date: formatDateLabel(wo.created_at),
+                tags: [jobPhase?.job_phase_label || 'Work Order'],
+                url: `/dashboard/jobs/${wo.id}`,
                 icon: <FileText className="h-5 w-5 text-orange-500" />,
-                priority: wo.status === 'urgent' ? 'high' : 'medium'
+                priority: 'medium'
               });
             });
+            publishSearchResults(searchRequestId, searchRequestRef.current, isMountedRef.current, searchResults, setResults);
           }
         }
 
         // Search job requests if enabled
         if (searchFilters.types.job_requests) {
           let query = supabase
-            .from('job_requests')
+            .from('jobs')
             .select(`
               id,
-              request_number,
+              work_order_num,
+              unit_number,
               description,
-              status,
+              scheduled_date,
               created_at,
               property:properties (
                 id,
                 property_name
+              ),
+              job_phase:current_phase_id (
+                job_phase_label,
+                color_dark_mode
               )
             `)
-            .or(`request_number.ilike.%${term}%,description.ilike.%${term}%`);
+            .limit(25);
+
+          if (workOrderSearch && workOrderNumber) {
+            query = query.eq('work_order_num', workOrderNumber);
+          } else if (exactDate) {
+            query = query.gte('scheduled_date', `${exactDate}T00:00:00`).lte('scheduled_date', `${exactDate}T23:59:59`);
+          } else {
+            query = query.or(`unit_number.ilike.%${safeTerm}%,description.ilike.%${safeTerm}%`);
+          }
 
           if (dateFilter) {
             query = query.gte('created_at', dateFilter);
@@ -482,32 +553,31 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
           if (error) {
             console.error('Error searching job requests:', error);
           } else if (jobRequests) {
-            jobRequests.forEach(request => {
+            jobRequests
+              .filter(request => normalizeRelation(request.job_phase)?.job_phase_label === 'Job Request')
+              .forEach(request => {
+              const property = normalizeRelation(request.property);
               searchResults.push({
                 id: request.id,
                 type: 'job_request',
-                title: `Job Request ${request.request_number}`,
-                subtitle: request.property ? (
-                  <PropertyLink 
-                    propertyId={request.property.id}
-                    propertyName={request.property.property_name}
-                  />
-                ) : 'No property',
+                title: `Job Request ${formatWorkOrderNumber(request.work_order_num)}`,
+                subtitle: property?.property_name || 'No property',
                 description: request.description || '',
-                date: format(parseISO(request.created_at), 'MMM d, yyyy'),
-                tags: [request.status],
-                url: '/dashboard/jobs/requests',
+                date: formatDateLabel(request.created_at),
+                tags: ['Job Request'],
+                url: `/dashboard/jobs/${request.id}`,
                 icon: <FileText className="h-5 w-5 text-indigo-500" />,
-                priority: request.status === 'urgent' ? 'high' : 'medium'
+                priority: 'medium'
               });
             });
+            publishSearchResults(searchRequestId, searchRequestRef.current, isMountedRef.current, searchResults, setResults);
           }
         }
 
         // Search activity logs if enabled
         if (searchFilters.types.activity) {
           let query = supabase
-            .from('activity_logs')
+            .from('activity_log')
             .select(`
               id,
               action,
@@ -518,7 +588,8 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
                 full_name
               )
             `)
-            .or(`action.ilike.%${term}%,description.ilike.%${term}%`);
+            .or(`action.ilike.%${safeTerm}%,description.ilike.%${safeTerm}%`)
+            .limit(25);
 
           if (dateFilter) {
             query = query.gte('created_at', dateFilter);
@@ -530,18 +601,20 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             console.error('Error searching activity logs:', error);
           } else if (activities) {
             activities.forEach(activity => {
+              const user = normalizeRelation(activity.user);
               searchResults.push({
                 id: activity.id,
                 type: 'activity',
                 title: activity.action,
-                subtitle: activity.user ? `By ${activity.user.full_name}` : 'System',
+                subtitle: user ? `By ${user.full_name}` : 'System',
                 description: activity.description || '',
-                date: format(parseISO(activity.created_at), 'MMM d, yyyy'),
+                date: formatDateLabel(activity.created_at),
                 url: '/dashboard/activity',
                 icon: <Clock className="h-5 w-5 text-gray-500" />,
                 priority: 'low'
               });
             });
+            publishSearchResults(searchRequestId, searchRequestRef.current, isMountedRef.current, searchResults, setResults);
           }
         }
 
@@ -556,7 +629,8 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               contact_email,
               created_at
             `)
-            .or(`company_name.ilike.%${term}%,contact_name.ilike.%${term}%,contact_email.ilike.%${term}%`);
+            .or(`company_name.ilike.%${safeTerm}%,contact_name.ilike.%${safeTerm}%,contact_email.ilike.%${safeTerm}%`)
+            .limit(25);
 
           if (dateFilter) {
             query = query.gte('created_at', dateFilter);
@@ -574,21 +648,22 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
                 title: group.company_name,
                 subtitle: group.contact_name ? `Contact: ${group.contact_name}` : 'No contact',
                 description: group.contact_email || '',
-                date: format(parseISO(group.created_at), 'MMM d, yyyy'),
+                date: formatDateLabel(group.created_at),
                 url: '/dashboard/property-groups',
                 icon: <Building2 className="h-5 w-5 text-teal-500" />
               });
             });
+            publishSearchResults(searchRequestId, searchRequestRef.current, isMountedRef.current, searchResults, setResults);
           }
         }
 
-        if (isMountedRef.current) {
+        if (isMountedRef.current && searchRequestId === searchRequestRef.current) {
           setResults(searchResults);
         }
       } catch (error) {
         console.error('Search error:', error);
       } finally {
-        if (isMountedRef.current) {
+        if (isMountedRef.current && searchRequestId === searchRequestRef.current) {
           setLoading(false);
         }
       }
@@ -896,13 +971,14 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               </div>
               
               {/* Group results by type */}
-              {['job', 'property', 'file', 'user', 'work_order', 'job_request', 'activity', 'property_group'].map(type => {
+              {['page', 'job', 'property', 'file', 'user', 'work_order', 'job_request', 'activity', 'property_group'].map(type => {
                 const typeResults = results.filter(result => result.type === type);
                 if (typeResults.length === 0) return null;
                 
                 return (
                   <div key={type} className="mb-6">
                     <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-3 flex items-center">
+                      {type === 'page' && <Layers className="h-5 w-5 mr-2 text-gray-500" />}
                       {type === 'job' && <FileText className="h-5 w-5 mr-2 text-blue-500" />}
                       {type === 'property' && <Building2 className="h-5 w-5 mr-2 text-green-500" />}
                       {type === 'file' && <FileText className="h-5 w-5 mr-2 text-yellow-500" />}
@@ -911,7 +987,8 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
                       {type === 'job_request' && <FileText className="h-5 w-5 mr-2 text-indigo-500" />}
                       {type === 'activity' && <Clock className="h-5 w-5 mr-2 text-gray-500" />}
                       {type === 'property_group' && <Building2 className="h-5 w-5 mr-2 text-teal-500" />}
-                      {type === 'work_order' ? 'Work Orders' : 
+                      {type === 'page' ? 'Pages' :
+                       type === 'work_order' ? 'Work Orders' : 
                        type === 'job_request' ? 'Job Requests' :
                        type === 'property_group' ? 'Property Groups' :
                        type === 'activity' ? 'Activity Logs' :
@@ -1027,4 +1104,115 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
       </div>
     </div>
   );
+}
+
+function escapePostgrestSearchTerm(value: string) {
+  return value
+    .replace(/[%_]/g, '')
+    .replace(/['"]/g, '')
+    .replace(/[,()]/g, ' ')
+    .trim();
+}
+
+function parseSearchDate(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return null;
+
+  const directIso = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (directIso) return normalized;
+
+  const slashDate = normalized.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (slashDate) {
+    const month = slashDate[1].padStart(2, '0');
+    const day = slashDate[2].padStart(2, '0');
+    const year = slashDate[3].length === 2 ? `20${slashDate[3]}` : slashDate[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function normalizeRelation<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) {
+    return value[0] || null;
+  }
+
+  return value || null;
+}
+
+function publishSearchResults(
+  searchRequestId: number,
+  currentSearchRequestId: number,
+  isMounted: boolean,
+  results: SearchResult[],
+  setResults: React.Dispatch<React.SetStateAction<SearchResult[]>>
+) {
+  if (isMounted && searchRequestId === currentSearchRequestId) {
+    setResults([...results]);
+  }
+}
+
+function formatDateLabel(value?: string | null) {
+  if (!value) return '';
+
+  try {
+    return format(parseISO(value), 'MMM d, yyyy');
+  } catch {
+    return '';
+  }
+}
+
+function formatWorkOrderNumber(value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === '') return 'WO-N/A';
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue)) {
+    return `WO-${String(numericValue).padStart(6, '0')}`;
+  }
+
+  return String(value).startsWith('WO-') ? String(value) : `WO-${value}`;
+}
+
+function searchPages(term: string): SearchResult[] {
+  const normalized = term.toLowerCase();
+  const pages: Array<{ id: string; title: string; subtitle: string; url: string; keywords: string[] }> = [
+    { id: 'dashboard', title: 'Dashboard', subtitle: 'Main dashboard', url: '/dashboard', keywords: ['dashboard', 'home'] },
+    { id: 'jobs', title: 'All Jobs', subtitle: 'Job list and work order lookup', url: '/dashboard/jobs', keywords: ['jobs', 'job', 'work order', 'wo'] },
+    { id: 'job-requests', title: 'Job Requests', subtitle: 'Requested jobs', url: '/dashboard/jobs/requests', keywords: ['job request', 'requests', 'new job'] },
+    { id: 'work-orders', title: 'Work Orders', subtitle: 'Active work orders', url: '/dashboard/jobs/work-orders', keywords: ['work orders', 'work order', 'wo'] },
+    { id: 'pending-work-orders', title: 'Pending Work Orders', subtitle: 'Pending work orders', url: '/dashboard/jobs/pending-work-orders', keywords: ['pending', 'pending work orders'] },
+    { id: 'completed', title: 'Completed Jobs', subtitle: 'Completed job list', url: '/dashboard/jobs/completed', keywords: ['completed', 'done'] },
+    { id: 'invoicing', title: 'Invoicing', subtitle: 'Jobs ready for invoicing', url: '/dashboard/jobs/invoicing', keywords: ['invoice', 'invoicing', 'billing'] },
+    { id: 'cancelled', title: 'Cancelled Jobs', subtitle: 'Cancelled job list', url: '/dashboard/jobs/cancelled', keywords: ['cancelled', 'canceled'] },
+    { id: 'properties', title: 'Properties', subtitle: 'Property directory', url: '/dashboard/properties', keywords: ['properties', 'property'] },
+    { id: 'property-groups', title: 'Property Management Groups', subtitle: 'Property management companies', url: '/dashboard/property-groups', keywords: ['property groups', 'management groups', 'property management'] },
+    { id: 'files', title: 'File Manager', subtitle: 'Files and folders', url: '/dashboard/files', keywords: ['files', 'file manager', 'documents'] },
+    { id: 'users', title: 'Users', subtitle: 'User and subcontractor management', url: '/dashboard/users', keywords: ['users', 'subcontractors', 'subs', 'sub'] },
+    { id: 'calendar', title: 'Calendar', subtitle: 'Job calendar', url: '/dashboard/calendar', keywords: ['calendar', 'schedule', 'date'] },
+    { id: 'sub-scheduler', title: 'Sub Scheduler', subtitle: 'Subcontractor schedule', url: '/dashboard/sub-scheduler', keywords: ['sub scheduler', 'scheduler', 'schedule', 'subcontractor schedule'] },
+    { id: 'activity', title: 'Activity Log', subtitle: 'System activity', url: '/dashboard/activity', keywords: ['activity', 'log', 'history'] },
+    { id: 'reports', title: 'Reports', subtitle: 'Reports and report history', url: '/dashboard/reports', keywords: ['reports', 'reporting', 'report history'] },
+    { id: 'contacts', title: 'Contacts', subtitle: 'Contacts and leads', url: '/dashboard/contacts', keywords: ['contacts', 'leads'] },
+    { id: 'employees', title: 'Employees', subtitle: 'Employee profiles', url: '/dashboard/employees', keywords: ['employees', 'employee'] },
+    { id: 'support', title: 'Support', subtitle: 'Support tickets', url: '/dashboard/support', keywords: ['support', 'tickets', 'help'] },
+    { id: 'settings', title: 'Admin Settings', subtitle: 'Application settings', url: '/dashboard/settings', keywords: ['settings', 'admin settings'] },
+  ];
+
+  return pages
+    .filter(page => page.title.toLowerCase().includes(normalized) || page.keywords.some(keyword => keyword.includes(normalized) || normalized.includes(keyword)))
+    .slice(0, 8)
+    .map(page => ({
+      id: page.id,
+      type: 'page',
+      title: page.title,
+      subtitle: page.subtitle,
+      url: page.url,
+      icon: <Layers className="h-5 w-5 text-gray-500" />,
+      priority: 'high',
+    }));
 }

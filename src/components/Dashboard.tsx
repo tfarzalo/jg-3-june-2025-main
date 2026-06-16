@@ -47,6 +47,8 @@ const Employees = lazy(() => import('./Employees').then(module => ({ default: mo
 const EmployeeProfile = lazy(() => import('./EmployeeProfile').then(module => ({ default: module.EmployeeProfile })));
 const EmployeeFormPreviewPage = lazy(() => import('./EmployeeFormPreviewPage').then(module => ({ default: module.EmployeeFormPreviewPage })));
 const Calendar = lazy(() => import('./calendar-dev/CalendarDevPage'));
+const ReportsPage = lazy(() => import('../pages/ReportsPage').then(module => ({ default: module.default })));
+
 
 const LoadingSpinner = () => (
   <div className="flex items-center justify-center h-full">
@@ -209,6 +211,11 @@ export function Dashboard() {
           <Route path="support" element={
             <RouteGuard>
               <SupportTickets />
+            </RouteGuard>
+          } />
+          <Route path="reports" element={
+            <RouteGuard>
+              <ReportsPage />
             </RouteGuard>
           } />
           <Route path="changelog" element={
