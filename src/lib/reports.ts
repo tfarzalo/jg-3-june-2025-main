@@ -159,14 +159,6 @@ export const DEFAULT_REPORT_COLUMNS = [
 
 const DAILY_WORK_ORDER_REPORT_COLUMNS = DEFAULT_REPORT_COLUMNS.filter(column => column !== 'created_at');
 
-export const PRESET_REPORT_TEMPLATES: ReportTemplate[] = [
-  { id: 'preset-daily', name: 'Daily Work Order Report', columns: DAILY_WORK_ORDER_REPORT_COLUMNS, preset: true },
-  { id: 'preset-job-requests', name: 'Job Requests', columns: ['work_order_num', 'created_at', 'property', 'unit_number', 'unit_size', 'job_type', 'phase', 'description'], filters: { phase: 'Job Request' }, preset: true },
-  { id: 'preset-work-orders', name: 'Work Orders', columns: DEFAULT_REPORT_COLUMNS, filters: { phase: 'Work Order' }, preset: true },
-  { id: 'preset-pending', name: 'Pending Work Orders', columns: DEFAULT_REPORT_COLUMNS, filters: { phase: 'Pending Work Order' }, preset: true },
-  { id: 'preset-completed', name: 'Completed Jobs', columns: ['work_order_num', 'scheduled_date', 'property', 'unit_number', 'unit_size', 'job_type', 'total_billing_amount', 'sub_pay', 'invoice_sent', 'invoice_paid'], filters: { phase: 'Completed' }, preset: true },
-];
-
 export async function fetchReportTemplates(): Promise<ReportTemplate[]> {
   const { data, error } = await supabase
     .from('report_templates')

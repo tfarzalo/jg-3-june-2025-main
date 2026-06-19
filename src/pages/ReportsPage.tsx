@@ -10,7 +10,6 @@ import {
   fetchReportTemplates,
   generateReport,
   openReportInNewWindow,
-  PRESET_REPORT_TEMPLATES,
   saveReportTemplate,
   deleteReportTemplate,
   deleteReportRun,
@@ -30,10 +29,7 @@ export default function ReportsPage() {
   const [reportResult, setReportResult] = useState<GeneratedReport | null>(null);
   const [reportRuns, setReportRuns] = useState<ReportRun[]>([]);
 
-  const allTemplates = useMemo(
-    () => [...PRESET_REPORT_TEMPLATES, ...savedTemplates],
-    [savedTemplates]
-  );
+  const allTemplates = useMemo(() => [...savedTemplates], [savedTemplates]);
 
   useEffect(() => {
     void loadTemplates();
@@ -139,15 +135,6 @@ export default function ReportsPage() {
           </button>
         </div>
       </div>
-
-      <section className="mb-8">
-        <h2 className="text-lg font-medium mb-4">Preset Reports</h2>
-        <TemplatesList
-          templates={PRESET_REPORT_TEMPLATES}
-          onRun={handleRunTemplate}
-          onEdit={setEditing}
-        />
-      </section>
 
       <section>
         <h2 className="text-lg font-medium mb-4">Your Templates</h2>
