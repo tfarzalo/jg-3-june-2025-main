@@ -167,16 +167,19 @@ export async function fetchReportTemplates(): Promise<ReportTemplate[]> {
 
   if (error) throw new Error(error.message);
 
-  return (data || []).map(row => ({
-    id: row.id,
-    name: row.name,
-    columns: normalizeColumns(row.columns),
-    filters: row.filters || {},
-    sort: row.sort || {},
-    user_id: row.user_id,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  }));
+  // Exclude preset templates stored in the DB so the UI only shows user-created templates
+  const rows = (data || []).filter((row: any) => !row.preset);
+
+  return rows.map(row => ({
+     id: row.id,
+     name: row.name,
+     columns: normalizeColumns(row.columns),
+     filters: row.filters || {},
+     sort: row.sort || {},
+     user_id: row.user_id,
+     created_at: row.created_at,
+     updated_at: row.updated_at,
+   }));
 }
 
 export async function saveReportTemplate(template: Pick<ReportTemplate, 'id' | 'name' | 'columns'> & { preset?: boolean }) {

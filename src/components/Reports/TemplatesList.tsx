@@ -14,14 +14,11 @@ export default function TemplatesList({ templates, onRun, onEdit, onDelete }: {
           <div>
             <div className="font-medium">{t.name}</div>
             {t.columns && <div className="text-xs text-gray-500 mt-1">{t.columns.length} columns</div>}
-            {t.preset && <div className="text-xs text-gray-500 mt-1">Preset</div>}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => onRun && onRun(t)} className="text-sm text-blue-600">Run</button>
             <button onClick={() => onEdit && onEdit(t)} className="text-sm text-gray-700">Edit</button>
-            {!t.preset && (
-              <button onClick={() => onDelete && onDelete(t.id)} className="text-sm text-red-600">Delete</button>
-            )}
+            <button onClick={() => onDelete && onDelete(t.id)} className="text-sm text-red-600">Delete</button>
           </div>
         </div>
       ))}
