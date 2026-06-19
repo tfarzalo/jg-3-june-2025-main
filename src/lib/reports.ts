@@ -86,6 +86,37 @@ export const REPORT_COLUMNS: ReportColumn[] = [
   { key: 'description', label: 'Description', value: job => job.description },
   { key: 'total_billing_amount', label: 'Total Billing', value: job => billingTotalForReport(job) },
   { key: 'sub_pay', label: 'Sub Pay', value: job => job.sub_pay_total },
+  { key: 'total_profit', label: 'Total Profit', value: job => {
+      try {
+        const bill = Number(billingTotalForReport(job) || 0);
+        const sub = Number(job.sub_pay_total ?? 0);
+        const profit = bill - sub;
+        return Number.isFinite(profit) ? Number(profit.toFixed(2)) : '';
+      } catch (e) {
+        return '';
+      }
+    } },
+  { key: 'profit_margin', label: 'Profit Margin', value: job => {
+      try {
+        const bill = Number(billingTotalForReport(job) || 0);
+        const sub = Number(job.sub_pay_total ?? 0);
+        if (!bill || !isFinite(bill)) return '';
+        const margin = ((bill - sub) / bill) * 100;
+        return Number.isFinite(margin) ? Number(margin.toFixed(2)) : '';
+      } catch (e) {
+        return '';
+      }
+    } },
+  { key: 'approval', label: 'Approval (Completed)', value: job => {
+      const phaseLabel = textFrom(job.job_phase, 'job_phase_label') || String(job['phase'] || job['status'] || '');
+      const isCompleted = String(phaseLabel).toLowerCase().includes('completed') || String(job['status'] || '').toLowerCase() === 'completed' || Boolean(job['completed_at'] || job['completed_on']);
+      if (isCompleted) return 'Yes';
+      // If cancelled but has extra charges or cancellation trip charge, mark as approved
+      const isCancelled = String(phaseLabel).toLowerCase().includes('cancel');
+      const hasExtra = Number(job.sub_pay_total || job.report_total_billing_amount || 0) > 0 || Boolean((job as any).has_extra_charges) || Boolean((job as any).cancellation_trip_charge_added);
+      if (isCancelled && hasExtra) return 'Yes';
+      return 'No';
+    } },
   { key: 'invoice_sent', label: 'Invoice Sent', value: job => yesNo(job.invoice_sent) },
   { key: 'invoice_paid', label: 'Invoice Paid', value: job => yesNo(job.invoice_paid) },
   { key: 'work_order_submitted', label: 'Work Order Submitted', value: job => formatDate(textFrom(firstWorkOrder(job), 'submission_date')) },
@@ -161,11 +192,14 @@ export async function saveReportTemplate(template: Pick<ReportTemplate, 'id' | '
   if (authError) throw authError;
   if (!authData.user) throw new Error('You must be signed in to save report templates.');
 
-  const payload = {
+  // Allow optional filters to be saved (e.g., phases selection)
+  const payload: Record<string, unknown> = {
     user_id: authData.user.id,
     name: template.name,
     columns: template.columns,
   };
+  // Attach filters if provided
+  if ((template as any).filters) payload.filters = (template as any).filters;
 
   if (template.id && !template.id.startsWith('tmp-') && !template.preset) {
     const { error } = await supabase
@@ -185,6 +219,15 @@ export async function saveReportTemplate(template: Pick<ReportTemplate, 'id' | '
 export async function deleteReportTemplate(id: string) {
   const { error } = await supabase
     .from('report_templates')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteReportRun(id: string) {
+  const { error } = await supabase
+    .from('report_runs')
     .delete()
     .eq('id', id);
 
@@ -228,70 +271,110 @@ export async function generateReport(params: {
   const from = `${params.from}T00:00:00`;
   const to = `${params.to}T23:59:59`;
 
+  // Server-side phase filtering: if template.filters.phases is provided, resolve labels to phase ids
+  const phasesParam = params.template.filters?.phases as unknown;
+  let phaseIds: string[] | null = null;
+  if (Array.isArray(phasesParam)) {
+    // If ALL, leave phaseIds null to include all
+    if (phasesParam.includes('ALL')) {
+      phaseIds = null;
+    } else if (phasesParam.includes('ALL_EXCEPT_ARCHIVED')) {
+      // load all phase ids except Archived
+      try {
+        const { data: allPhases } = await supabase.from('job_phases').select('id, job_phase_label');
+        if (Array.isArray(allPhases)) {
+          phaseIds = allPhases.filter(p => String(p.job_phase_label).toLowerCase() !== 'archived').map(p => String(p.id));
+        }
+      } catch (e) {
+        console.warn('Could not resolve phases for ALL_EXCEPT_ARCHIVED', e);
+      }
+    } else if (phasesParam.length > 0) {
+      try {
+        const { data: matched } = await supabase.from('job_phases').select('id').in('job_phase_label', phasesParam as string[]);
+        if (Array.isArray(matched)) phaseIds = matched.map(m => String(m.id));
+      } catch (e) {
+        console.warn('Could not resolve requested phase labels to ids', e);
+      }
+    }
+  }
+
   const query = supabase
     .from('jobs')
     .select(`
-      id,
-      work_order_num,
-      unit_number,
-      description,
-      scheduled_date,
-      created_at,
-      updated_at,
-      purchase_order,
-      total_billing_amount,
-      active_snapshot_id,
-      historical_data_mode,
-      cancellation_trip_charge_added,
-      cancellation_trip_charge_bill_amount,
-      cancellation_trip_charge_sub_pay_amount,
-      invoice_sent,
-      invoice_paid,
-      property:properties(property_name),
-      unit_size:unit_sizes(unit_size_label),
-      job_phase:current_phase_id(job_phase_label),
-      job_type:job_types(job_type_label),
-      job_category:job_categories(name),
-      assigned_to_profile:assigned_to(full_name),
-      work_orders(
-        id,
-        unit_size,
-        is_occupied,
-        is_full_paint,
-        has_sprinklers,
-        sprinklers_painted,
-        painted_ceilings,
-        ceiling_rooms_count,
-        painted_patio,
-        painted_garage,
-        painted_cabinets,
-        painted_crown_molding,
-        painted_front_door,
-        has_accent_wall,
-        accent_wall_type,
-        accent_wall_count,
-        has_extra_charges,
-        extra_charges_description,
-        extra_hours,
-        additional_comments,
-        is_active,
-        submission_date,
-        created_at
-      )
-    `)
+     id,
+     work_order_num,
+     unit_number,
+     description,
+     scheduled_date,
+     created_at,
+     updated_at,
+     purchase_order,
+     total_billing_amount,
+     active_snapshot_id,
+     historical_data_mode,
+     cancellation_trip_charge_added,
+     cancellation_trip_charge_bill_amount,
+     cancellation_trip_charge_sub_pay_amount,
+     invoice_sent,
+     invoice_paid,
+     property:properties(property_name),
+     unit_size:unit_sizes(unit_size_label),
+     job_phase:current_phase_id(job_phase_label),
+     job_type:job_types(job_type_label),
+     job_category:job_categories(name),
+     assigned_to_profile:assigned_to(full_name),
+     work_orders(
+       id,
+       unit_size,
+       is_occupied,
+       is_full_paint,
+       has_sprinklers,
+       sprinklers_painted,
+       painted_ceilings,
+       ceiling_rooms_count,
+       painted_patio,
+       painted_garage,
+       painted_cabinets,
+       painted_crown_molding,
+       painted_front_door,
+       has_accent_wall,
+       accent_wall_type,
+       accent_wall_count,
+       has_extra_charges,
+       extra_charges_description,
+       extra_hours,
+       additional_comments,
+       is_active,
+       submission_date,
+       created_at
+     )
+   `)
     .gte('scheduled_date', from)
     .lte('scheduled_date', to)
     .order('scheduled_date', { ascending: true });
 
+  // Apply phase id filter if resolved. Use current_phase_id column.
+  if (Array.isArray(phaseIds)) {
+    if (phaseIds.length === 0) {
+      // no matching phases => return empty result early
+      return {
+        templateName: params.template.name,
+        from: params.from,
+        to: params.to,
+        filename: `${slugify(params.template.name)}_${params.from}_${params.to}.csv`,
+        headers: selectedColumns.map(c => c.label),
+        rows: [],
+        csv: toCsv([], selectedColumns.map(c => c.label)),
+      };
+    }
+    query.in('current_phase_id', phaseIds);
+  }
+
   const { data, error } = await query;
   if (error) throw new Error(error.message);
 
-  const phase = params.template.filters?.phase;
-  let jobs = ((data || []) as ReportJob[]).filter(job => (
-    typeof phase === 'string' && phase
-      ? textFrom(job.job_phase, 'job_phase_label') === phase
-      : true
-  ));
+  // Jobs returned from Supabase (possibly already filtered by phaseIds above)
+  let jobs = (data || []) as ReportJob[];
 
   const needsBillingTotals = selectedColumns.some(column => column.key === 'total_billing_amount' || column.key === 'sub_pay');
   if (needsBillingTotals || needsSubPay) {
@@ -306,8 +389,30 @@ export async function generateReport(params: {
     return row;
   });
 
+  // Prepare CSV rows: format currency and percent columns for CSV output only
+  const csvRows = rows.map(r => {
+    const out: Record<string, unknown> = {};
+    const currencyHeaders = ['Total Billing', 'Sub Pay', 'Total Profit'];
+    const percentHeaders = ['Profit Margin'];
+    for (const header of Object.keys(r)) {
+      const val = r[header];
+      if (val === null || val === undefined || val === '') {
+        out[header] = '';
+      } else if (currencyHeaders.includes(header)) {
+        out[header] = formatCurrency(val);
+      } else if (percentHeaders.includes(header)) {
+        // if numeric, append % with two decimals; otherwise string
+        const n = Number(val);
+        out[header] = Number.isFinite(n) ? `${n.toFixed(2)}%` : String(val);
+      } else {
+        out[header] = val;
+      }
+    }
+    return out;
+  });
+
   const headers = selectedColumns.map(column => column.label);
-  const csv = toCsv(rows, headers);
+  const csv = toCsv(csvRows, headers);
   const filename = `${slugify(params.template.name)}_${params.from}_${params.to}.csv`;
   const report = {
     templateName: params.template.name,
@@ -344,11 +449,33 @@ export function openReportInNewWindow(report: GeneratedReport) {
     throw new Error('The report window was blocked by the browser.');
   }
 
+  const currencyHeaders = new Set(['Total Billing', 'Sub Pay', 'Total Profit']);
+  const percentHeaders = new Set(['Profit Margin']);
+
   const tableHead = report.headers
     .map(header => `<th>${escapeHtml(header)}</th>`)
     .join('');
   const tableRows = report.rows
-    .map(row => `<tr>${report.headers.map(header => `<td>${escapeHtml(row[header])}</td>`).join('')}</tr>`)
+    .map(row => {
+      const cells = report.headers.map(header => {
+        const raw = row[header];
+        let display = raw;
+        if (raw === null || raw === undefined || raw === '') {
+          display = '';
+        } else if (currencyHeaders.has(header)) {
+          // If it's already a formatted string, keep it; otherwise format
+          const num = Number(raw);
+          display = isFinite(num) ? formatCurrency(num) : String(raw);
+        } else if (percentHeaders.has(header)) {
+          const num = Number(raw);
+          display = isFinite(num) ? `${num.toFixed(2)}%` : String(raw);
+        } else {
+          display = String(raw);
+        }
+        return `<td>${escapeHtml(display)}</td>`;
+      }).join('');
+      return `<tr>${cells}</tr>`;
+    })
     .join('');
 
   win.document.write(`<!doctype html>
@@ -629,33 +756,13 @@ function formatWorkOrderNumber(value?: number | string | null) {
   return Number.isFinite(numeric) ? `WO-${String(numeric).padStart(6, '0')}` : String(value);
 }
 
-function toCsv(rows: Record<string, unknown>[], headers: string[]) {
-  const lines = [
-    headers.map(escapeCsvValue).join(','),
-    ...rows.map(row => headers.map(header => escapeCsvValue(row[header])).join(',')),
-  ];
-  return `${lines.join('\n')}\n`;
+function formatCurrency(value: unknown) {
+  const num = Number(value);
+  if (!isFinite(num)) return '';
+  return `$${num.toFixed(2)}`;
 }
 
-function escapeCsvValue(value: unknown) {
-  if (value === null || value === undefined) return '';
-  const str = String(value);
-  if (/[",\n\r]/.test(str)) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
-
-function escapeHtml(value: unknown) {
-  if (value === null || value === undefined) return '';
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
+// Helper utilities (restored)
 function objectFrom(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -675,6 +782,41 @@ function numberFrom(...values: unknown[]) {
   return 0;
 }
 
+function escapeCsvValue(value: unknown) {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  if (/[",\n\r]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function toCsv(rows: Record<string, unknown>[], headers: string[]) {
+  const lines = [headers.map(escapeCsvValue).join(',')];
+  for (const row of rows) {
+    const line = headers.map(h => escapeCsvValue(row[h])).join(',');
+    lines.push(line);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+function escapeHtml(value: unknown) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'report';
+}
+
 function downloadTextFile(content: string, filename: string, type: string) {
   const blob = new Blob([content], { type });
   const url = window.URL.createObjectURL(blob);
@@ -687,9 +829,4 @@ function downloadTextFile(content: string, filename: string, type: string) {
   window.URL.revokeObjectURL(url);
 }
 
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'report';
-}
+// End of helpers

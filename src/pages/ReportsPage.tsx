@@ -13,6 +13,7 @@ import {
   PRESET_REPORT_TEMPLATES,
   saveReportTemplate,
   deleteReportTemplate,
+  deleteReportRun,
   type GeneratedReport,
   type ReportRun,
   type ReportTemplate,
@@ -217,6 +218,25 @@ export default function ReportsPage() {
                               className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
                             >
                               Download
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (!confirm('Delete this saved report from history?')) return;
+                                try {
+                                  await deleteReportRun(run.id);
+                                  toast.success('Report deleted');
+                                  await loadRuns();
+                                } catch (err) {
+                                  console.error('Failed to delete report run', err);
+                                  toast.error(err instanceof Error ? err.message : 'Failed to delete report');
+                                }
+                              }}
+                              className="text-sm text-red-600 hover:text-red-700"
+                              title="Delete report"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3m-7 0h8" />
+                              </svg>
                             </button>
                           </div>
                         ) : (

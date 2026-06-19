@@ -103,6 +103,7 @@ export default function RunReportModal({ onClose, template, templates, onRun }: 
           <div className="text-sm text-gray-600 mb-1">To</div>
           <input type="date" value={to} onChange={e => setTo(e.target.value)} className="w-full p-2 border rounded" />
         </label>
+
         <div className="flex justify-end space-x-2">
           <button onClick={onClose} className="px-4 py-2 rounded">Cancel</button>
           <button onClick={run} disabled={loading} className="px-4 py-2 rounded bg-blue-600 text-white">{loading ? 'Running...' : 'Run'}</button>
