@@ -70,6 +70,18 @@ type ReportJob = {
   job_category?: RelatedRecord;
   assigned_to_profile?: RelatedRecord;
   work_orders?: RelatedRecord[];
+  // calculated/attached by enrichJobsWithBillingTotals
+  extra_charges_total?: number | string | null;
+  extra_charges_list?: string | null;
+  base_billing_total?: number | string | null;
+  // expanded fields for reporting
+  base_pay_to_sub?: number | string | null;
+  base_profit?: number | string | null;
+  base_profit_margin?: number | string | null;
+  extra_sub_total?: number | string | null;
+  extra_profit?: number | string | null;
+  extra_profit_margin?: number | string | null;
+  extra_items?: string | null; // itemized extra charges as joined string
 };
 
 export const REPORT_COLUMNS: ReportColumn[] = [
@@ -83,9 +95,26 @@ export const REPORT_COLUMNS: ReportColumn[] = [
   { key: 'phase', label: 'Phase', value: job => textFrom(job.job_phase, 'job_phase_label') },
   { key: 'assigned_to', label: 'Assigned To', value: job => textFrom(job.assigned_to_profile, 'full_name') },
   { key: 'purchase_order', label: 'PO #', value: job => job.purchase_order },
-  { key: 'description', label: 'Description', value: job => job.description },
-  { key: 'total_billing_amount', label: 'Total Billing', value: job => billingTotalForReport(job) },
+  { key: 'description', label: 'Description', value: job => {
+      const base = job.description || '';
+      if (job.extra_charges_list) {
+        return `${base}${base ? '\n\n' : ''}Extra Charges: ${job.extra_charges_list}`;
+      }
+      return base;
+    } },
+  // Base billing breakdown
+  { key: 'base_billing', label: 'Base Bill to Customer', value: job => job.base_billing_total },
+  { key: 'base_pay_to_sub', label: 'Base Pay to Subcontractor', value: job => job.base_pay_to_sub },
+  { key: 'base_profit', label: 'Base Profit', value: job => job.base_profit },
+  { key: 'base_profit_margin', label: 'Base Profit Margin', value: job => job.base_profit_margin },
+  { key: 'total_billing_amount', label: 'Total Bill to Customer', value: job => billingTotalForReport(job) },
   { key: 'sub_pay', label: 'Sub Pay', value: job => job.sub_pay_total },
+  // Extra charges breakdown
+  { key: 'extra_items', label: 'Extra Charge Items', value: job => job.extra_items },
+  { key: 'extra_charges_total', label: 'Extra Charges Billing', value: job => job.extra_charges_total },
+  { key: 'extra_sub_total', label: 'Extra Pay to Subcontractor', value: job => job.extra_sub_total },
+  { key: 'extra_profit', label: 'Extra Profit', value: job => job.extra_profit },
+  { key: 'extra_profit_margin', label: 'Extra Profit Margin', value: job => job.extra_profit_margin },
   { key: 'total_profit', label: 'Total Profit', value: job => {
       try {
         const bill = Number(billingTotalForReport(job) || 0);
@@ -152,6 +181,8 @@ export const DEFAULT_REPORT_COLUMNS = [
   'job_category',
   'phase',
   'assigned_to',
+  'base_billing',
+  'extra_charges_total',
   'total_billing_amount',
   'sub_pay',
   'created_at',
@@ -387,7 +418,7 @@ export async function generateReport(params: {
   // Prepare CSV rows: format currency and percent columns for CSV output only
   const csvRows = rows.map(r => {
     const out: Record<string, unknown> = {};
-    const currencyHeaders = ['Total Billing', 'Sub Pay', 'Total Profit'];
+    const currencyHeaders = ['Base Billing', 'Extra Charges Billing', 'Total Bill to Customer'];
     const percentHeaders = ['Profit Margin'];
     for (const header of Object.keys(r)) {
       const val = r[header];
@@ -444,8 +475,18 @@ export function openReportInNewWindow(report: GeneratedReport) {
     throw new Error('The report window was blocked by the browser.');
   }
 
-  const currencyHeaders = new Set(['Total Billing', 'Sub Pay', 'Total Profit']);
-  const percentHeaders = new Set(['Profit Margin']);
+  const currencyHeaders = new Set([
+    'Base Bill to Customer',
+    'Base Pay to Subcontractor',
+    'Base Profit',
+    'Extra Charges Billing',
+    'Extra Pay to Subcontractor',
+    'Extra Profit',
+    'Total Bill to Customer',
+    'Sub Pay',
+    'Total Profit'
+  ]);
+  const percentHeaders = new Set(['Profit Margin', 'Base Profit Margin', 'Extra Profit Margin']);
 
   const tableHead = report.headers
     .map(header => `<th>${escapeHtml(header)}</th>`)
@@ -531,72 +572,163 @@ async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob
   const snapshotTotals = await fetchSnapshotTotals(jobs);
 
   return Promise.all(jobs.map(async job => {
+    // Always attempt to fetch detailed billing via RPC for the most accurate breakdown.
+    try {
+      const { data, error } = await supabase.rpc('get_job_details', { p_job_id: job.id });
+      if (!error && data) {
+        const totals = calculateBillingTotals(data, job);
+        return {
+          ...job,
+          report_total_billing_amount: totals.bill,
+          sub_pay_total: totals.sub,
+          extra_charges_total: totals.extra ?? 0,
+          extra_charges_list: totals.extraList ?? '',
+          base_billing_total: totals.base ?? 0,
+          base_pay_to_sub: totals.baseSub ?? 0,
+          base_profit: Number(((totals.base ?? 0) - (totals.baseSub ?? 0)).toFixed(2)),
+          base_profit_margin: totals.base ? Number(((((totals.base ?? 0) - (totals.baseSub ?? 0)) / (totals.base ?? 1)) * 100).toFixed(2)) : 0,
+          extra_sub_total: totals.extraSub ?? 0,
+          extra_profit: Number(((totals.extra ?? 0) - (totals.extraSub ?? 0)).toFixed(2)),
+          extra_profit_margin: totals.extra ? Number((((totals.extra ?? 0) - (totals.extraSub ?? 0)) / (totals.extra ?? 1) * 100).toFixed(2)) : 0,
+          extra_items: (totals.extraItems || []).map(i => `${i.description}${i.qty ? ' x'+i.qty : ''} | $${Number(i.bill).toFixed(2)} | $${Number(i.sub).toFixed(2)} | $${Number(i.profit).toFixed(2)}`).join(';; '),
+        };
+      }
+    } catch (e) {
+      console.warn(`get_job_details RPC failed for job ${job.id}, will fall back to snapshot totals if available`, e);
+    }
+
+    // If RPC failed or returned no data, fall back to snapshot totals when available
     const snapshot = job.active_snapshot_id ? snapshotTotals.get(job.active_snapshot_id) : undefined;
     if (snapshot) {
+      // If the job is in a Cancelled phase, treat the snapshot bill as 'extras' (ignore base)
+      const phaseLabel = String(textFrom(job.job_phase, 'job_phase_label') || '').toLowerCase();
+      const isPhaseCancelled = phaseLabel.includes('cancel');
+
+      if (isPhaseCancelled) {
+        return {
+          ...job,
+          report_total_billing_amount: snapshot.bill,
+          sub_pay_total: snapshot.sub,
+          extra_charges_total: snapshot.bill,
+          extra_charges_list: 'Snapshot (Cancelled)',
+          base_billing_total: 0,
+          base_pay_to_sub: 0,
+          base_profit: 0,
+          base_profit_margin: 0,
+          extra_sub_total: snapshot.sub,
+          extra_profit: Number((snapshot.bill - snapshot.sub).toFixed(2)),
+          extra_profit_margin: snapshot.bill ? Number((((snapshot.bill - snapshot.sub) / snapshot.bill) * 100).toFixed(2)) : 0,
+          extra_items: '',
+        };
+      }
+
       return {
         ...job,
         report_total_billing_amount: snapshot.bill,
         sub_pay_total: snapshot.sub,
+        extra_charges_total: 0,
+        extra_charges_list: '',
+        base_billing_total: snapshot.bill,
+        base_pay_to_sub: snapshot.sub,
+        base_profit: Number((snapshot.bill - snapshot.sub).toFixed(2)),
+        base_profit_margin: snapshot.bill ? Number((((snapshot.bill - snapshot.sub) / snapshot.bill) * 100).toFixed(2)) : 0,
+        extra_sub_total: 0,
+        extra_profit: 0,
+        extra_profit_margin: 0,
+        extra_items: '',
       };
     }
 
-    const { data, error } = await supabase.rpc('get_job_details', { p_job_id: job.id });
-    if (error) {
-      console.warn(`Unable to calculate report billing totals for job ${job.id}:`, error);
-      return {
-        ...job,
-        report_total_billing_amount: billingTotalForReport(job),
-        sub_pay_total: '',
-      };
-    }
-
-    const totals = calculateBillingTotals(data, job);
+    // Last resort: unable to fetch details or snapshot, fall back to best-effort numbers from job
     return {
       ...job,
-      report_total_billing_amount: totals.bill,
-      sub_pay_total: totals.sub,
+      report_total_billing_amount: billingTotalForReport(job),
+      sub_pay_total: '',
+      extra_charges_total: 0,
+      extra_charges_list: '',
+      base_billing_total: 0,
+      base_pay_to_sub: 0,
+      base_profit: 0,
+      base_profit_margin: 0,
+      extra_sub_total: 0,
+      extra_profit: 0,
+      extra_profit_margin: 0,
+      extra_items: '',
     };
   }));
 }
 
 async function fetchSnapshotTotals(jobs: ReportJob[]) {
   const snapshotIds = Array.from(new Set(jobs.map(job => job.active_snapshot_id).filter((id): id is string => Boolean(id))));
-  const totals = new Map<string, BillingTotals>();
+  const totals = new Map<string, { bill: number; sub: number }>();
   if (snapshotIds.length === 0) return totals;
 
-  const { data, error } = await supabase
-    .from('job_snapshots')
-    .select('id, total_bill, total_sub_pay')
-    .in('id', snapshotIds);
+  try {
+    const { data, error } = await supabase
+      .from('job_snapshots')
+      .select('id, total_bill, total_sub_pay')
+      .in('id', snapshotIds);
 
-  if (error) {
-    console.warn('Unable to load report snapshot billing totals:', error);
-    return totals;
-  }
+    if (error) {
+      console.warn('Unable to load report snapshot billing totals:', error);
+      return totals;
+    }
 
-  (data || []).forEach(snapshot => {
-    totals.set(snapshot.id, {
-      bill: numberFrom(snapshot.total_bill),
-      sub: numberFrom(snapshot.total_sub_pay),
+    (data || []).forEach((snapshot: any) => {
+      totals.set(snapshot.id, {
+        bill: numberFrom(snapshot.total_bill),
+        sub: numberFrom(snapshot.total_sub_pay),
+      });
     });
-  });
+  } catch (e) {
+    console.warn('Error fetching snapshot totals for reports:', e);
+  }
 
   return totals;
 }
 
-function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals {
+export function downloadTextFile(content: string, filename: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = window.URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+// End of helpers
+
+function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals & { extra?: number; extraList?: string; base?: number; baseSub?: number; extraSub?: number; extraItems?: {description:string,unit?:string,qty?:number,bill:number,sub:number,profit:number}[] } {
   const jobDetails = details as Record<string, unknown> | null;
   if (!jobDetails) {
+    const b = numberFrom(job.total_billing_amount);
     return {
-      bill: numberFrom(job.total_billing_amount),
+      bill: b,
       sub: 0,
+      extra: 0,
+      extraList: '',
+      base: 0,
+      baseSub: 0,
+      extraSub: 0,
+      extraItems: [],
     };
   }
 
   if (isCancellationTripChargeJob(job, jobDetails)) {
+    const cBill = numberFrom(job.cancellation_trip_charge_bill_amount, jobDetails.cancellation_trip_charge_bill_amount);
+    const cSub = numberFrom(job.cancellation_trip_charge_sub_pay_amount, jobDetails.cancellation_trip_charge_sub_pay_amount);
     return {
-      bill: numberFrom(job.cancellation_trip_charge_bill_amount, jobDetails.cancellation_trip_charge_bill_amount),
-      sub: numberFrom(job.cancellation_trip_charge_sub_pay_amount, jobDetails.cancellation_trip_charge_sub_pay_amount),
+      bill: cBill,
+      sub: cSub,
+      extra: cBill || 0,
+      extraList: 'Cancellation Trip Charge',
+      base: 0,
+      baseSub: 0,
+      extraSub: cSub || 0,
+      extraItems: [{ description: 'Cancellation Trip Charge', bill: Number((cBill || 0).toFixed(2)), sub: Number((cSub || 0).toFixed(2)), profit: Number(((cBill || 0) - (cSub || 0)).toFixed(2)) }],
     };
   }
 
@@ -607,32 +739,52 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
   const baseBill = numberFrom(base?.bill_amount, base?.base_price);
   const baseSub = numberFrom(base?.sub_pay_amount);
 
-  let nonBaseBill = 0;
-  let nonBaseSub = 0;
+  // non-base components that we'll attribute as 'extra'
+  let nonBaseBill: number = 0;
+  let nonBaseSub: number = 0;
+
+  const extraItems: {description:string,unit?:string,qty?:number,bill:number,sub:number,profit:number}[] = [];
 
   const extraLineItems = arrayFrom(workOrder?.extra_charges_line_items);
   if (extraLineItems.length > 0) {
-    const lineTotals = extraLineItems.reduce((sum, item) => {
+    const lineTotals = extraLineItems.reduce(function(sum: {bill:number; sub:number}, item: any) {
       const quantity = numberFrom(item.quantity);
       const billRate = numberFrom(item.billRate);
       const subRate = numberFrom(item.subRate);
-      sum.bill += numberFrom(item.calculatedBillAmount, quantity * billRate);
-      sum.sub += numberFrom(item.calculatedSubAmount, quantity * subRate);
-      return sum;
-    }, { bill: 0, sub: 0 });
-    nonBaseBill += lineTotals.bill;
-    nonBaseSub += lineTotals.sub;
+      const billAmount = numberFrom(item.calculatedBillAmount, quantity * billRate);
+      const subAmount = numberFrom(item.calculatedSubAmount, quantity * subRate);
+      return { bill: (sum.bill || 0) + billAmount, sub: (sum.sub || 0) + subAmount };
+    }, { bill: 0, sub: 0 } as { bill: number; sub: number });
+
+    // Coerce to Number to satisfy TypeScript narrowing (reduce items may be unknown)
+    nonBaseBill += Number(lineTotals.bill);
+    nonBaseSub += Number(lineTotals.sub);
+
+    extraLineItems.forEach((item: any) => {
+      const qty = numberFrom(item.quantity);
+      const desc = String(item.description ?? item.name ?? item.item ?? '');
+      const unit = String(item.unit ?? item.unit_type ?? '');
+      const amt = numberFrom(item.calculatedBillAmount, qty * numberFrom(item.billRate));
+      const subAmt = numberFrom(item.calculatedSubAmount, qty * numberFrom(item.subRate));
+      const profit = Number((amt - subAmt).toFixed(2));
+      extraItems.push({ description: desc, unit: unit || undefined, qty: qty || undefined, bill: Number(amt.toFixed(2)), sub: Number(subAmt.toFixed(2)), profit });
+    });
   } else {
-    nonBaseBill += numberFrom(extra?.bill_amount);
-    nonBaseSub += numberFrom(extra?.sub_pay_amount);
+    const eBill = numberFrom(extra?.bill_amount);
+    const eSub = numberFrom(extra?.sub_pay_amount);
+    nonBaseBill += eBill;
+    nonBaseSub += eSub;
+    if (extra && (extra?.bill_amount || extra?.sub_pay_amount)) {
+      extraItems.push({ description: String(extra?.description ?? 'Extra Charges'), bill: Number(eBill.toFixed(2)), sub: Number(eSub.toFixed(2)), profit: Number((eBill - eSub).toFixed(2)) });
+    }
   }
 
   const frozenLines = arrayFrom(workOrder?.frozen_billing_lines);
   const additionalServices = arrayFrom(workOrder?.additional_services);
-  const frozenBill = frozenLines.reduce((sum, line) => sum + numberFrom(line.amountBill, line.bill_amount), 0);
-  const frozenSubPay = frozenLines.reduce((sum, line) => sum + numberFrom(line.amountSub, line.sub_pay_amount), 0);
-  const additionalBill = additionalServices.reduce((sum, service) => sum + numberFrom(service.amountBill, service.bill_amount), 0);
-  const additionalSubPay = additionalServices.reduce((sum, service) => sum + numberFrom(service.amountSub, service.sub_pay_amount), 0);
+  const frozenBill = frozenLines.reduce<number>((sum, line) => sum + numberFrom(line.amountBill, line.bill_amount), 0);
+  const frozenSubPay = frozenLines.reduce<number>((sum, line) => sum + numberFrom(line.amountSub, line.sub_pay_amount), 0);
+  const additionalBill = additionalServices.reduce<number>((sum, service) => sum + numberFrom(service.amountBill, service.bill_amount), 0);
+  const additionalSubPay = additionalServices.reduce<number>((sum, service) => sum + numberFrom(service.amountSub, service.sub_pay_amount), 0);
   if (frozenBill >= additionalBill) {
     nonBaseBill += frozenBill;
     nonBaseSub += frozenSubPay;
@@ -642,21 +794,57 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
   }
 
   if (jobDetails.cancellation_trip_charge_added) {
-    nonBaseBill += numberFrom(jobDetails.cancellation_trip_charge_bill_amount);
-    nonBaseSub += numberFrom(jobDetails.cancellation_trip_charge_sub_pay_amount);
+    const cBill = numberFrom(jobDetails.cancellation_trip_charge_bill_amount);
+    const cSub = numberFrom(jobDetails.cancellation_trip_charge_sub_pay_amount);
+    nonBaseBill += cBill;
+    nonBaseSub += cSub;
+    extraItems.push({ description: 'Cancellation Trip Charge', bill: Number(cBill.toFixed(2)), sub: Number(cSub.toFixed(2)), profit: Number((cBill - cSub).toFixed(2)) });
   }
 
   nonBaseBill += numberFrom(jobDetails.repair_amount);
   nonBaseSub += numberFrom(jobDetails.repair_sub_pay);
 
-  const includeBase = storedBill > 0 && baseBill > 0 && storedBill >= baseBill;
+  // If the job is in a Cancelled phase, we should ignore the base billing portion entirely
+  const phaseLabel = String(jobDetails.phase_label ?? jobDetails.job_phase_label ?? textFrom(job.job_phase, 'job_phase_label') ?? '').toLowerCase();
+  const isPhaseCancelled = phaseLabel.includes('cancel');
+
+  const includeBase = !isPhaseCancelled && storedBill > 0 && baseBill > 0 && storedBill >= baseBill;
   const calculatedBill = (includeBase ? baseBill : 0) + nonBaseBill;
-  const bill = storedBill > 0 ? storedBill : nonBaseBill;
+  // If job is cancelled, ignore stored base billing and treat total as the non-base components (extras/cancellation)
+  const bill = storedBill > 0 && !isPhaseCancelled ? storedBill : nonBaseBill;
   const sub = bill > 0 ? (includeBase ? baseSub : 0) + nonBaseSub : 0;
+
+  // Determine base portion:
+  let basePortion = 0;
+  if (isPhaseCancelled) {
+    basePortion = 0;
+  } else if (baseBill > 0) {
+    basePortion = baseBill;
+  } else if (storedBill > 0) {
+    basePortion = Math.max(0, storedBill - nonBaseBill);
+  } else {
+    basePortion = 0;
+  }
+
+  const extraPortion = Number((bill - basePortion || 0).toFixed(2));
+  const extraSubTotal = Number((nonBaseSub || 0).toFixed(2));
+  const baseSubTotal = Number(((includeBase ? baseSub : 0)).toFixed(2));
+
+  const baseProfit = Number((basePortion - baseSubTotal).toFixed(2));
+  const baseMargin = basePortion ? Number(((baseProfit / basePortion) * 100).toFixed(2)) : 0;
+
+  const extraProfit = Number((extraPortion - extraSubTotal).toFixed(2));
+  const extraMargin = extraPortion ? Number(((extraProfit / extraPortion) * 100).toFixed(2)) : 0;
 
   return {
     bill: Number((bill || calculatedBill || 0).toFixed(2)),
     sub: Number(sub.toFixed(2)),
+    extra: extraPortion,
+    extraList: extraItems.map(i => `${i.description}${i.qty ? ' x'+i.qty : ''} (${i.bill.toFixed(2)})`).join('; '),
+    base: Number(basePortion.toFixed(2)),
+    baseSub: baseSubTotal,
+    extraSub: extraSubTotal,
+    extraItems,
   };
 }
 
@@ -811,17 +999,3 @@ function slugify(value: string) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'report';
 }
-
-function downloadTextFile(content: string, filename: string, type: string) {
-  const blob = new Blob([content], { type });
-  const url = window.URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.URL.revokeObjectURL(url);
-}
-
-// End of helpers
