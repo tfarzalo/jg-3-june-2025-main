@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import { RouteGuard, SubcontractorRouteGuard, AdminRouteGuard, StrictAdminRouteGuard } from './RouteGuard';
 
 // Lazy load components - using correct pattern for each export type
@@ -10,6 +10,7 @@ const JobRequests = lazy(() => import('./JobRequests').then(module => ({ default
 const PendingWorkOrders = lazy(() => import('./PendingWorkOrders').then(module => ({ default: module.PendingWorkOrders })));
   const Invoicing = lazy(() => import('./Invoicing').then(module => ({ default: module.Invoicing })));
 const Completed = lazy(() => import('./Completed').then(module => ({ default: module.Completed })));
+const QualityControl = lazy(() => import('./QualityControl').then(module => ({ default: module.QualityControl })));
 const CancelledJobs = lazy(() => import('./CancelledJobs').then(module => ({ default: module.CancelledJobs })));
 const Archives = lazy(() => import('./Archives').then(module => ({ default: module.Archives })));
 const JobDetails = lazy(() => import('./JobDetails').then(module => ({ default: module.JobDetails })));
@@ -46,7 +47,7 @@ const ContactDetail = lazy(() => import('./ContactDetail').then(module => ({ def
 const Employees = lazy(() => import('./Employees').then(module => ({ default: module.Employees })));
 const EmployeeProfile = lazy(() => import('./EmployeeProfile').then(module => ({ default: module.EmployeeProfile })));
 const EmployeeFormPreviewPage = lazy(() => import('./EmployeeFormPreviewPage').then(module => ({ default: module.EmployeeFormPreviewPage })));
-const Calendar = lazy(() => import('./calendar-dev/CalendarDevPage'));
+const Calendar = lazy(() => import('./calendar-dev-3/DevCalendar3Page'));
 const ReportsPage = lazy(() => import('../pages/ReportsPage').then(module => ({ default: module.default })));
 
 
@@ -80,6 +81,7 @@ export function Dashboard() {
                 <Route path="pending-work-orders" element={<PendingWorkOrders />} />
                 <Route path="invoicing" element={<Invoicing />} />
                 <Route path="completed" element={<Completed />} />
+                <Route path="quality-control" element={<QualityControl />} />
                 <Route path="cancelled" element={<CancelledJobs />} />
                 <Route path="archives" element={<Archives />} />
                 <Route path=":jobId" element={<JobDetails />} />
@@ -139,9 +141,6 @@ export function Dashboard() {
             <RouteGuard>
               <Calendar />
             </RouteGuard>
-          } />
-          <Route path="calendar-dev" element={
-            <Navigate to="/dashboard/calendar" replace />
           } />
           <Route path="activity" element={
             <RouteGuard>

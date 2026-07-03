@@ -8,8 +8,7 @@ import {
   Filter,
   Check,
   X,
-  User,
-  Sparkles
+  User
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { 
@@ -858,13 +857,6 @@ export function Calendar() {
         </div>
         {/* [CAL_EVENTS] create button, only for admins/mgmt */}
         <div className="flex items-center space-x-2">
-          <Link
-            to="/dashboard/calendar-dev"
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 rounded-lg transition-all shadow-sm hover:shadow-md"
-          >
-            <Sparkles className="h-4 w-4" />
-            View New Calendar
-          </Link>
           <EventModal canCreate={canCreateEvents} onCreated={(evt) => setEvents(prev => [evt, ...prev])} />
           <SubscribeCalendarsModal />
         </div>

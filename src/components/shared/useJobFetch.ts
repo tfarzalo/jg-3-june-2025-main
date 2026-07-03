@@ -61,11 +61,13 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
         phaseLabel === 'Work Order' || 
         phaseLabel === 'Pending Work Order' ||
         phaseLabel === 'Grading' || 
+        phaseLabel === 'Quality Control' ||
         phaseLabel === 'Invoicing' ||
         (Array.isArray(phaseLabel) && (
           phaseLabel.includes('Work Order') || 
           phaseLabel.includes('Pending Work Order') ||
           phaseLabel.includes('Grading') || 
+          phaseLabel.includes('Quality Control') ||
           phaseLabel.includes('Invoicing')
         ))
       ) {

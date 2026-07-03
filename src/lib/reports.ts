@@ -1,4 +1,10 @@
 import { supabase } from '../utils/supabase';
+import {
+  QUALITY_CONTROL_SCORE_ITEMS,
+  QUALITY_CONTROL_SCORE_SECTIONS,
+  QUALITY_CONTROL_SCORE_TOTAL,
+  getQualityControlSectionTotal,
+} from './qualityControl';
 
 export type ReportTemplate = {
   id: string;
@@ -21,6 +27,20 @@ export type ReportColumn = {
 type RelatedRecord = Record<string, unknown> | null;
 type ReportRow = Record<string, string | number | boolean | null | undefined>;
 type BillingTotals = { bill: number; sub: number };
+type QualityControlSubmissionRecord = {
+  id: string;
+  job_id: string;
+  form_data: Record<string, unknown> | null;
+  score_total: number | string | null;
+  media_files: unknown;
+  created_at: string | null;
+  updated_at: string | null;
+};
+type SubcontractorQualityControlAggregate = {
+  submissions: number;
+  totalScore: number;
+  averageScore: number;
+};
 
 export type GeneratedReport = {
   templateName: string;
@@ -53,6 +73,7 @@ type ReportJob = {
   created_at?: string | null;
   updated_at?: string | null;
   purchase_order?: string | null;
+  assigned_to?: string | null;
   total_billing_amount?: number | string | null;
   report_total_billing_amount?: number | string | null;
   sub_pay_total?: number | string | null;
@@ -82,7 +103,33 @@ type ReportJob = {
   extra_profit?: number | string | null;
   extra_profit_margin?: number | string | null;
   extra_items?: string | null; // itemized extra charges as joined string
+  quality_control_submissions?: QualityControlSubmissionRecord[];
+  quality_control_latest?: QualityControlSubmissionRecord | null;
+  quality_control_submission_count?: number;
+  quality_control_media_count?: number;
+  quality_control_subcontractor_total_submissions?: number;
+  quality_control_subcontractor_total_score?: number;
+  quality_control_subcontractor_average_score?: number;
+  quality_control_subcontractor_average_percent?: number;
 };
+
+const QUALITY_CONTROL_ITEM_REPORT_COLUMNS: ReportColumn[] = QUALITY_CONTROL_SCORE_ITEMS.map(item => ({
+  key: `qc_score_${item.key}`,
+  label: `QC - ${item.label}`,
+  value: job => {
+    const scores = latestQualityControlScores(job);
+    return scores ? numberFrom(scores[item.key]) : '';
+  },
+}));
+
+const QUALITY_CONTROL_SECTION_REPORT_COLUMNS: ReportColumn[] = QUALITY_CONTROL_SCORE_SECTIONS.map(section => ({
+  key: `qc_section_${section.key}`,
+  label: `QC Section - ${section.label}`,
+  value: job => {
+    const scores = latestQualityControlScores(job);
+    return scores ? getQualityControlSectionTotal(scores, section) : '';
+  },
+}));
 
 export const REPORT_COLUMNS: ReportColumn[] = [
   { key: 'work_order_num', label: 'Work Order #', value: job => formatWorkOrderNumber(job.work_order_num) },
@@ -148,6 +195,26 @@ export const REPORT_COLUMNS: ReportColumn[] = [
     } },
   { key: 'invoice_sent', label: 'Invoice Sent', value: job => yesNo(job.invoice_sent) },
   { key: 'invoice_paid', label: 'Invoice Paid', value: job => yesNo(job.invoice_paid) },
+  { key: 'qc_submitted', label: 'QC Submitted', value: job => yesNo(Boolean(job.quality_control_latest)) },
+  { key: 'qc_submitted_date', label: 'QC Submitted Date', value: job => formatDate(job.quality_control_latest?.created_at) },
+  { key: 'qc_updated_date', label: 'QC Updated Date', value: job => formatDate(job.quality_control_latest?.updated_at) },
+  { key: 'qc_submission_count', label: 'QC Submission Count', value: job => job.quality_control_submission_count ?? 0 },
+  { key: 'qc_score_total', label: 'QC Score Total', value: job => job.quality_control_latest ? numberFrom(job.quality_control_latest.score_total) : '' },
+  { key: 'qc_score_percent', label: 'QC Score %', value: job => {
+      if (!job.quality_control_latest) return '';
+      return QUALITY_CONTROL_SCORE_TOTAL ? Number(((numberFrom(job.quality_control_latest.score_total) / QUALITY_CONTROL_SCORE_TOTAL) * 100).toFixed(2)) : '';
+    } },
+  { key: 'qc_painter_name', label: 'QC Painter/Subcontractor', value: job => textFrom(latestQualityControlFormData(job), 'subcontractor_name', 'painter_name') || [textFrom(latestQualityControlFormData(job), 'painter_first_name'), textFrom(latestQualityControlFormData(job), 'painter_last_name')].filter(Boolean).join(' ') },
+  { key: 'qc_date_painted', label: 'QC Date Painted', value: job => formatDate(textFrom(latestQualityControlFormData(job), 'date_painted')) },
+  { key: 'qc_date_walked', label: 'QC Date Walked', value: job => formatDate(textFrom(latestQualityControlFormData(job), 'date_walked')) },
+  { key: 'qc_comments', label: 'QC Comments', value: job => textFrom(latestQualityControlFormData(job), 'comments') },
+  { key: 'qc_media_count', label: 'QC Media Count', value: job => job.quality_control_media_count ?? 0 },
+  { key: 'qc_subcontractor_submission_total', label: 'Subcontractor QC Submission Total', value: job => job.quality_control_subcontractor_total_submissions ?? '' },
+  { key: 'qc_subcontractor_score_total', label: 'Subcontractor QC Score Total', value: job => job.quality_control_subcontractor_total_score ?? '' },
+  { key: 'qc_subcontractor_score_average', label: 'Subcontractor QC Score Average', value: job => job.quality_control_subcontractor_average_score ?? '' },
+  { key: 'qc_subcontractor_score_average_percent', label: 'Subcontractor QC Score Average %', value: job => job.quality_control_subcontractor_average_percent ?? '' },
+  ...QUALITY_CONTROL_SECTION_REPORT_COLUMNS,
+  ...QUALITY_CONTROL_ITEM_REPORT_COLUMNS,
   { key: 'work_order_submitted', label: 'Work Order Submitted', value: job => formatDate(textFrom(firstWorkOrder(job), 'submission_date')) },
   { key: 'occupied', label: 'Occupied', value: job => yesNo(valueFrom(firstWorkOrder(job), 'is_occupied')) },
   { key: 'full_paint', label: 'Full Paint', value: job => yesNo(valueFrom(firstWorkOrder(job), 'is_full_paint')) },
@@ -294,6 +361,7 @@ export async function generateReport(params: {
 }): Promise<GeneratedReport> {
   const selectedColumns = resolveColumns(params.template.columns);
   const needsSubPay = selectedColumns.some(column => column.key === 'sub_pay');
+  const needsQualityControl = selectedColumns.some(column => column.key.startsWith('qc_'));
   const from = `${params.from}T00:00:00`;
   const to = `${params.to}T23:59:59`;
 
@@ -335,6 +403,7 @@ export async function generateReport(params: {
      created_at,
      updated_at,
      purchase_order,
+     assigned_to,
      total_billing_amount,
      active_snapshot_id,
      historical_data_mode,
@@ -407,6 +476,10 @@ export async function generateReport(params: {
     jobs = await enrichJobsWithBillingTotals(jobs);
   }
 
+  if (needsQualityControl) {
+    jobs = await enrichJobsWithQualityControl(jobs);
+  }
+
   const rows = jobs.map(job => {
     const row: ReportRow = {};
     selectedColumns.forEach(column => {
@@ -418,15 +491,26 @@ export async function generateReport(params: {
   // Prepare CSV rows: format currency and percent columns for CSV output only
   const csvRows = rows.map(r => {
     const out: Record<string, unknown> = {};
-    const currencyHeaders = ['Base Billing', 'Extra Charges Billing', 'Total Bill to Customer'];
-    const percentHeaders = ['Profit Margin'];
+    // Use the same header labels as the preview window formatting so CSV matches displayed report
+    const currencyHeaders = new Set([
+      'Base Bill to Customer',
+      'Base Pay to Subcontractor',
+      'Base Profit',
+      'Extra Charges Billing',
+      'Extra Pay to Subcontractor',
+      'Extra Profit',
+      'Total Bill to Customer',
+      'Sub Pay',
+      'Total Profit'
+    ]);
+    const percentHeaders = new Set(['Profit Margin', 'Base Profit Margin', 'Extra Profit Margin', 'QC Score %', 'Subcontractor QC Score Average %']);
     for (const header of Object.keys(r)) {
       const val = r[header];
       if (val === null || val === undefined || val === '') {
         out[header] = '';
-      } else if (currencyHeaders.includes(header)) {
+      } else if (currencyHeaders.has(header)) {
         out[header] = formatCurrency(val);
-      } else if (percentHeaders.includes(header)) {
+      } else if (percentHeaders.has(header)) {
         // if numeric, append % with two decimals; otherwise string
         const n = Number(val);
         out[header] = Number.isFinite(n) ? `${n.toFixed(2)}%` : String(val);
@@ -486,7 +570,7 @@ export function openReportInNewWindow(report: GeneratedReport) {
     'Sub Pay',
     'Total Profit'
   ]);
-  const percentHeaders = new Set(['Profit Margin', 'Base Profit Margin', 'Extra Profit Margin']);
+  const percentHeaders = new Set(['Profit Margin', 'Base Profit Margin', 'Extra Profit Margin', 'QC Score %', 'Subcontractor QC Score Average %']);
 
   const tableHead = report.headers
     .map(header => `<th>${escapeHtml(header)}</th>`)
@@ -656,6 +740,63 @@ async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob
       extra_items: '',
     };
   }));
+}
+
+async function enrichJobsWithQualityControl(jobs: ReportJob[]): Promise<ReportJob[]> {
+  const jobIds = jobs.map(job => job.id).filter(Boolean);
+  if (jobIds.length === 0) return jobs;
+
+  const { data, error } = await supabase
+    .from('job_quality_control_submissions')
+    .select('id, job_id, form_data, score_total, media_files, created_at, updated_at')
+    .in('job_id', jobIds)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to load Quality Control report data: ${error.message}`);
+  }
+
+  const submissionsByJobId = new Map<string, QualityControlSubmissionRecord[]>();
+  const subcontractorAggregates = new Map<string, SubcontractorQualityControlAggregate>();
+
+  ((data || []) as QualityControlSubmissionRecord[]).forEach((submission) => {
+    const submissions = submissionsByJobId.get(submission.job_id) || [];
+    submissions.push(submission);
+    submissionsByJobId.set(submission.job_id, submissions);
+
+    const key = qualityControlSubcontractorKey(submission);
+    if (!key) return;
+
+    const aggregate = subcontractorAggregates.get(key) || {
+      submissions: 0,
+      totalScore: 0,
+      averageScore: 0,
+    };
+    aggregate.submissions += 1;
+    aggregate.totalScore += numberFrom(submission.score_total);
+    aggregate.averageScore = aggregate.submissions ? aggregate.totalScore / aggregate.submissions : 0;
+    subcontractorAggregates.set(key, aggregate);
+  });
+
+  return jobs.map(job => {
+    const submissions = submissionsByJobId.get(job.id) || [];
+    const latest = submissions[0] || null;
+    const aggregate = latest ? subcontractorAggregates.get(qualityControlSubcontractorKey(latest) || '') : undefined;
+
+    return {
+      ...job,
+      quality_control_submissions: submissions,
+      quality_control_latest: latest,
+      quality_control_submission_count: submissions.length,
+      quality_control_media_count: latest ? qualityControlMediaCount(latest.media_files) : 0,
+      quality_control_subcontractor_total_submissions: aggregate?.submissions,
+      quality_control_subcontractor_total_score: aggregate ? Number(aggregate.totalScore.toFixed(2)) : undefined,
+      quality_control_subcontractor_average_score: aggregate ? Number(aggregate.averageScore.toFixed(2)) : undefined,
+      quality_control_subcontractor_average_percent: aggregate && QUALITY_CONTROL_SCORE_TOTAL
+        ? Number(((aggregate.averageScore / QUALITY_CONTROL_SCORE_TOTAL) * 100).toFixed(2))
+        : undefined,
+    };
+  });
 }
 
 async function fetchSnapshotTotals(jobs: ReportJob[]) {
@@ -864,6 +1005,31 @@ function isCancellationTripChargeJob(job: ReportJob, details?: Record<string, un
 
   const phaseLabel = textFrom(job.job_phase, 'job_phase_label') || String(details?.phase_label || details?.job_phase_label || '');
   return !phaseLabel || phaseLabel === 'Cancelled';
+}
+
+function latestQualityControlFormData(job: ReportJob) {
+  return objectFrom(job.quality_control_latest?.form_data);
+}
+
+function latestQualityControlScores(job: ReportJob) {
+  const formData = latestQualityControlFormData(job);
+  const qualityScore = objectFrom(formData?.quality_score);
+  return objectFrom(qualityScore?.categories);
+}
+
+function qualityControlSubcontractorKey(submission: QualityControlSubmissionRecord) {
+  const formData = objectFrom(submission.form_data);
+  const id = textFrom(formData, 'subcontractor_id');
+  if (id) return `id:${id}`;
+
+  const explicitName = textFrom(formData, 'subcontractor_name', 'painter_name');
+  const fullName = [textFrom(formData, 'painter_first_name'), textFrom(formData, 'painter_last_name')].filter(Boolean).join(' ');
+  const name = explicitName || fullName;
+  return name ? `name:${name.toLowerCase()}` : '';
+}
+
+function qualityControlMediaCount(value: unknown) {
+  return Array.isArray(value) ? value.length : 0;
 }
 
 function generatedReportFromParams(params: Record<string, unknown> | null): GeneratedReport | undefined {

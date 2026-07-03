@@ -3139,6 +3139,7 @@ export function JobDetails() {
   const isPendingWorkOrder = phaseLabel === 'Pending Work Order';
   const isInvoicing = phaseLabel === 'Invoicing';
   const isCompleted = phaseLabel === 'Completed';
+  const isQualityControl = phaseLabel === 'Quality Control';
 
   // Calculate profit if billing details are available
   const profitAmount = (job.billing_details?.bill_amount !== null && job.billing_details?.sub_pay_amount !== null && job.billing_details?.bill_amount !== undefined && job.billing_details?.sub_pay_amount !== undefined)
@@ -3171,14 +3172,16 @@ export function JobDetails() {
   const handlePhaseChangeTo = async (phase) => {
     if (!phase || !job) return;
 
-    // A frozen job may only advance from Completed → Invoicing while keeping its snapshot.
-    // Any other direction or target on a frozen job requires a reopen first.
-    const isFrozenAdvanceToInvoicing =
+    // A frozen job may only advance through the terminal review/billing flow
+    // while keeping its snapshot. Any other frozen phase move requires reopen.
+    const isFrozenPreservedPhaseAdvance =
       isHistoricalSnapshotJob &&
-      isCompleted &&
-      phase.job_phase_label === 'Invoicing';
+      (
+        (isCompleted && ['Quality Control', 'Invoicing'].includes(phase.job_phase_label)) ||
+        (isQualityControl && phase.job_phase_label === 'Invoicing')
+      );
 
-    if (isHistoricalSnapshotJob && !isFrozenAdvanceToInvoicing) {
+    if (isHistoricalSnapshotJob && !isFrozenPreservedPhaseAdvance) {
       toast.error('Reopen the frozen job before changing phases.');
       return;
     }
@@ -3188,10 +3191,10 @@ export function JobDetails() {
       if (userError) throw userError;
       if (!userData.user) throw new Error('User not found');
       
-      // Update job phase — for a frozen advance to Invoicing, keep historical_data_mode = 'snapshot'
+      // Update job phase. For a permitted frozen advance, keep historical_data_mode = 'snapshot'.
       const updatePayload: Record<string, unknown> = { current_phase_id: phase.id };
-      if (isFrozenAdvanceToInvoicing) {
-        // Preserve the frozen snapshot state through to Invoicing
+      if (isFrozenPreservedPhaseAdvance) {
+        // Preserve the frozen snapshot state through Quality Control and Invoicing.
         updatePayload.historical_data_mode = 'snapshot';
       }
 
@@ -3293,7 +3296,7 @@ export function JobDetails() {
             </div>
           </div>
           <div className="flex space-x-3">
-            {canUseQualityControl && isCompleted && (
+            {canUseQualityControl && (isCompleted || isQualityControl) && (
               <button
                 onClick={openQualityControlModal}
                 className="inline-flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors"
@@ -3322,7 +3325,7 @@ export function JobDetails() {
                 {reactivatingJob ? 'Re-Activating...' : 'Re-Activate Job'}
               </button>
             )}
-            {canChangePhase && !isPendingWorkOrder && !isCancelled && !(isHistoricalSnapshotJob && !isCompleted) && (
+            {canChangePhase && !isPendingWorkOrder && !isCancelled && !(isHistoricalSnapshotJob && !(isCompleted || isQualityControl)) && (
               <>
                 {!isJobRequest && (
                   <button

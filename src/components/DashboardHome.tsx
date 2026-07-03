@@ -530,7 +530,7 @@ export function DashboardHome() {
       value: jobs.filter(job => job.job_phase?.job_phase_label === 'Completed').length.toString(),
       trend: { value: 5, isPositive: true },
       color: phaseColors['Completed'] || '#1E40AF',
-      notation: 'Ready for Billing'
+      notation: 'Ready for QC'
     },
     {
       icon: ClipboardList,
@@ -540,6 +540,7 @@ export function DashboardHome() {
         job.job_phase?.job_phase_label === 'Pending Work Order' ||
         job.job_phase?.job_phase_label === 'Work Order' ||
         job.job_phase?.job_phase_label === 'Completed' ||
+        job.job_phase?.job_phase_label === 'Quality Control' ||
         job.job_phase?.job_phase_label === 'Invoicing' ||
         job.job_phase?.job_phase_label === 'Cancelled'
       ).length.toString(),
@@ -1050,7 +1051,7 @@ export function DashboardHome() {
         {/* Completed */}
         <DashboardCard 
           title="Completed" 
-          notation="Ready for Billing / Invoicing"
+          notation="Ready for Quality Control"
           viewAllLink="/dashboard/jobs/completed"
           titleColor="text-gray-900 dark:text-white"
           className="min-h-[400px]"

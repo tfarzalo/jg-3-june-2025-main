@@ -65,6 +65,18 @@ export default function ReportsPage() {
     setShowRun(true);
   };
 
+  const handleCloneTemplate = (template: ReportTemplate) => {
+    setEditing({
+      ...template,
+      id: `tmp-clone-${Date.now()}`,
+      name: `${template.name} Copy`,
+      columns: [...template.columns],
+      filters: { ...(template.filters || {}) },
+      sort: { ...(template.sort || {}) },
+      preset: false,
+    });
+  };
+
   const handleSaveTemplate = async (template: Pick<ReportTemplate, 'id' | 'name' | 'columns' | 'preset'>) => {
     try {
       setSavingTemplate(true);
@@ -151,6 +163,7 @@ export default function ReportsPage() {
             templates={savedTemplates}
             onRun={handleRunTemplate}
             onEdit={setEditing}
+            onClone={handleCloneTemplate}
             onDelete={handleDeleteTemplate}
           />
         )}

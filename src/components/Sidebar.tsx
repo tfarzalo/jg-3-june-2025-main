@@ -20,7 +20,8 @@ import {
   CalendarDays,
   MessageCircle,
   HelpCircle,
-  Briefcase
+  Briefcase,
+  ClipboardCheck
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { useUserRole } from '../contexts/UserRoleContext';
@@ -133,8 +134,10 @@ export function Sidebar() {
         return '#FBBF24'; // Amber/Yellow
       case 'Invoicing':
         return '#00A878'; // Green
-      case 'Completed':
+      case 'Completed Jobs':
         return '#F47C7C'; // Light Red/Pink
+      case 'Quality Control':
+        return '#047857'; // Emerald Green, distinct from Invoicing
       case 'Cancelled':
         return '#6C6C6C'; // Gray
       case 'Archives':
@@ -220,7 +223,8 @@ export function Sidebar() {
           { icon: FileText, label: 'Job Requests', to: '/dashboard/jobs/requests' },
           { icon: FileText, label: 'Work Orders', to: '/dashboard/jobs/work-orders' },
           { icon: Clock, label: 'Pending Work Orders', to: '/dashboard/jobs/pending-work-orders' },
-          { icon: CheckCircle, label: 'Completed', to: '/dashboard/jobs/completed' },
+          { icon: CheckCircle, label: 'Completed Jobs', to: '/dashboard/jobs/completed' },
+          { icon: ClipboardCheck, label: 'Quality Control', to: '/dashboard/jobs/quality-control' },
           { icon: DollarSign, label: 'Invoicing', to: '/dashboard/jobs/invoicing' },
           { icon: XCircle, label: 'Cancelled', to: '/dashboard/jobs/cancelled' },
           { icon: CalendarDays, label: 'Sub Scheduler', to: '/dashboard/sub-scheduler' },

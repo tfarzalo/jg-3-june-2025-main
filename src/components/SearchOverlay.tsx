@@ -1187,6 +1187,7 @@ function searchPages(term: string): SearchResult[] {
     { id: 'work-orders', title: 'Work Orders', subtitle: 'Active work orders', url: '/dashboard/jobs/work-orders', keywords: ['work orders', 'work order', 'wo'] },
     { id: 'pending-work-orders', title: 'Pending Work Orders', subtitle: 'Pending work orders', url: '/dashboard/jobs/pending-work-orders', keywords: ['pending', 'pending work orders'] },
     { id: 'completed', title: 'Completed Jobs', subtitle: 'Completed job list', url: '/dashboard/jobs/completed', keywords: ['completed', 'done'] },
+    { id: 'quality-control', title: 'Quality Control', subtitle: 'Quality Control job queue', url: '/dashboard/jobs/quality-control', keywords: ['quality control', 'qc', 'quality', 'scorecard'] },
     { id: 'invoicing', title: 'Invoicing', subtitle: 'Jobs ready for invoicing', url: '/dashboard/jobs/invoicing', keywords: ['invoice', 'invoicing', 'billing'] },
     { id: 'cancelled', title: 'Cancelled Jobs', subtitle: 'Cancelled job list', url: '/dashboard/jobs/cancelled', keywords: ['cancelled', 'canceled'] },
     { id: 'properties', title: 'Properties', subtitle: 'Property directory', url: '/dashboard/properties', keywords: ['properties', 'property'] },

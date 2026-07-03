@@ -213,7 +213,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
         if (phase === 'Job Request') {
           orderColumn = 'created_at';
           ascending = false;
-        } else if (['Work Order', 'Pending Work Order', 'Grading', 'Invoicing'].includes(phase)) {
+        } else if (['Work Order', 'Pending Work Order', 'Grading', 'Quality Control', 'Invoicing'].includes(phase)) {
           orderColumn = 'updated_at';
           ascending = false;
         }
@@ -364,7 +364,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
   // Preload common phases for faster navigation
   const preloadCommonPhases = useCallback(async () => {
     console.log('JobDataProvider: Preloading common phases...');
-    const commonPhases = ['Job Request', 'Pending Work Order', 'Work Order', 'Completed', 'Invoicing'];
+    const commonPhases = ['Job Request', 'Pending Work Order', 'Work Order', 'Completed', 'Quality Control', 'Invoicing'];
     
     // Debug each phase individually
     for (const phase of commonPhases) {
@@ -555,7 +555,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
       }, async (payload) => {
         console.log('JobDataProvider: Profile updated:', payload.new);
         // Refetch all jobs to update assigned_to names
-        const commonPhases = ['Job Request', 'Pending Work Order', 'Work Order', 'Completed', 'Invoicing'];
+        const commonPhases = ['Job Request', 'Pending Work Order', 'Work Order', 'Completed', 'Quality Control', 'Invoicing'];
         for (const phase of commonPhases) {
           fetchJobs(phase, true);
         }
@@ -573,7 +573,7 @@ export function JobDataProvider({ children }: { children: React.ReactNode }) {
             newAssignedTo: payload.new?.assigned_to
           });
           // Refetch jobs for all phases to update assignment display
-          const commonPhases = ['Job Request', 'Pending Work Order', 'Work Order', 'Completed', 'Invoicing'];
+          const commonPhases = ['Job Request', 'Pending Work Order', 'Work Order', 'Completed', 'Quality Control', 'Invoicing'];
           for (const phase of commonPhases) {
             fetchJobs(phase, true);
           }
