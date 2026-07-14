@@ -26,7 +26,7 @@ export function useJobPhaseChanges(jobId: string | undefined) {
   const lastFetchTimeRef = useRef<number>(0);
   const MIN_FETCH_INTERVAL = 5000; // Minimum time between fetches in milliseconds
 
-  const fetchPhaseChanges = useCallback(async () => {
+  const fetchPhaseChanges = useCallback(async (force = false) => {
     if (!jobId) {
       setPhaseChanges([]);
       setLoading(false);
@@ -35,7 +35,7 @@ export function useJobPhaseChanges(jobId: string | undefined) {
 
     // Prevent fetching too frequently
     const now = Date.now();
-    if (now - lastFetchTimeRef.current < MIN_FETCH_INTERVAL) {
+    if (!force && now - lastFetchTimeRef.current < MIN_FETCH_INTERVAL) {
       return;
     }
     lastFetchTimeRef.current = now;

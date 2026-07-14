@@ -216,9 +216,9 @@ export function SubcontractorDashboard() {
       cancelJob: "Cancel Job",
       cancelJobTitle: "Cancel Job",
       cancelJobPrompt: "Are you sure you want to cancel this job?",
-      cancelTripChargeIntro: "Once confirmed, this job will be moved to Cancelled and the customer will be charged the Cancellation Trip Charge.",
+      cancelTripChargeIntro: "Once confirmed, this job will be moved to Cancelled and the Cancellation Trip Charge will be added.",
       cancellationTripCharge: "Cancellation Trip Charge",
-      customerCharge: "Customer Charge",
+      subcontractorPay: "Subcontractor Pay",
       keepJobActive: "Keep Job Active",
       confirmCancelJob: "Confirm Cancellation",
       cancellingJob: "Cancelling...",
@@ -279,9 +279,9 @@ export function SubcontractorDashboard() {
       cancelJob: "Cancelar Trabajo",
       cancelJobTitle: "Cancelar Trabajo",
       cancelJobPrompt: "¿Está seguro de que desea cancelar este trabajo?",
-      cancelTripChargeIntro: "Una vez confirmado, este trabajo pasará a Cancelado y se cobrará al cliente el Cargo de Viaje por Cancelación.",
+      cancelTripChargeIntro: "Una vez confirmado, este trabajo pasará a Cancelado y se agregará el Cargo de Viaje por Cancelación.",
       cancellationTripCharge: "Cargo de Viaje por Cancelación",
-      customerCharge: "Cargo al Cliente",
+      subcontractorPay: "Pago del Subcontratista",
       keepJobActive: "Mantener Trabajo Activo",
       confirmCancelJob: "Confirmar Cancelación",
       cancellingJob: "Cancelando...",
@@ -1902,9 +1902,9 @@ export function SubcontractorDashboard() {
                 {text.cancellationTripCharge}
               </p>
               <div className="mt-3 flex items-center justify-between">
-                <span className="text-sm text-gray-700 dark:text-gray-300">{text.customerCharge}</span>
+                <span className="text-sm text-gray-700 dark:text-gray-300">{text.subcontractorPay}</span>
                 <span className="text-lg font-bold text-red-700 dark:text-red-200">
-                  {cancelJobModal.loading ? text.loadingTripCharge : formatCurrency(cancelJobModal.billAmount)}
+                  {cancelJobModal.loading ? text.loadingTripCharge : formatCurrency(cancelJobModal.subPayAmount)}
                 </span>
               </div>
             </div>

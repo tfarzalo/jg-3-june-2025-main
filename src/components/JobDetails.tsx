@@ -9,6 +9,7 @@ import {
   User, 
   Clock, 
   CheckCircle, 
+  Check,
   XCircle, 
   Edit, 
   Trash2, 
@@ -302,7 +303,8 @@ export function JobDetails() {
   const { job, loading: jobLoading, error: jobError, refetch: refetchJob } = useJobDetails(jobId);
   const { phaseChanges, loading: phaseChangesLoading, error: phaseChangesError, refetch: refetchPhaseChanges } = useJobPhaseChanges(jobId);
   const { phases, loading: phasesLoading } = usePhases();
-  const { isAdmin, isJGManagement, isSubcontractor, isSuperAdmin } = useUserRole();
+  const { role, isAdmin, isJGManagement, isSubcontractor, isSuperAdmin } = useUserRole();
+  const canInternalEdit = role !== null && role !== 'subcontractor';
   
   // Get job phase color (same approach as all jobs pages)
   const getJobPhaseColor = () => {
@@ -322,6 +324,8 @@ export function JobDetails() {
   const jobIdForFiles = job?.id ?? null;
   const canUseQualityControl = isAdmin || isJGManagement || isSuperAdmin;
   const canManagePainterNotes = isAdmin || isJGManagement;
+  const canEditCancellationReason = canInternalEdit;
+  const canEditExtraChargeNotes = canInternalEdit;
 
 
   
@@ -351,6 +355,9 @@ export function JobDetails() {
   const [editingScheduledDate, setEditingScheduledDate] = useState(false);
   const [scheduledDateDraft, setScheduledDateDraft] = useState('');
   const [savingScheduledDate, setSavingScheduledDate] = useState(false);
+  const [editingCancellationReason, setEditingCancellationReason] = useState(false);
+  const [cancellationReasonDraft, setCancellationReasonDraft] = useState('');
+  const [savingCancellationReason, setSavingCancellationReason] = useState(false);
 
   useEffect(() => {
     if (!job?.scheduled_date) return;
@@ -369,6 +376,9 @@ export function JobDetails() {
   const [showApproveButton, setShowApproveButton] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [showEnhancedNotificationModal, setShowEnhancedNotificationModal] = useState(false);
+  const [editingExtraChargeNoteId, setEditingExtraChargeNoteId] = useState<string | null>(null);
+  const [extraChargeNoteDraft, setExtraChargeNoteDraft] = useState('');
+  const [savingExtraChargeNote, setSavingExtraChargeNote] = useState(false);
 
   const resetCancelJobFlow = () => {
     setShowCancelJobConfirm(false);
@@ -3081,7 +3091,7 @@ export function JobDetails() {
   }, [job, derivedExtraCharges]);
 
   const isCancelled = phaseLabel === 'Cancelled';
-  const cancellationReasonForBanner = useMemo(() => {
+  const latestCancellationChange = useMemo(() => {
     if (!isCancelled || phaseChanges.length === 0) {
       return null;
     }
@@ -3090,14 +3100,188 @@ export function JobDetails() {
       (a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime()
     );
 
-    const latestCancellationChange = sortedChanges.find(
+    return sortedChanges.find(
       (change) =>
         change.to_phase_label === 'Cancelled' ||
         (change.change_reason || '').toLowerCase().includes('job cancelled')
-    );
-
-    return extractJobCancellationReason(latestCancellationChange?.change_reason);
+    ) || null;
   }, [isCancelled, phaseChanges]);
+
+  const cancellationReasonForBanner = useMemo(() => {
+    if (!isCancelled) return null;
+    return extractJobCancellationReason(latestCancellationChange?.change_reason);
+  }, [isCancelled, latestCancellationChange?.change_reason]);
+
+  const getCancellationChangeReasonWithUpdatedText = (existingReason: string | undefined, nextReason: string) => {
+    const trimmed = nextReason.trim();
+    const existing = existingReason || '';
+    const suffixIndex = existing.indexOf('; Cancellation Trip Charge');
+    const suffix = suffixIndex >= 0 ? existing.slice(suffixIndex) : '';
+
+    if (existing.toLowerCase().includes('job cancelled by admin:')) {
+      return `Job cancelled by admin: ${trimmed}${suffix}`;
+    }
+
+    if (existing.toLowerCase().includes('job cancelled after extra charges were declined')) {
+      return `Job cancelled after extra charges were declined: ${trimmed}${suffix}`;
+    }
+
+    return `Job cancelled by admin: ${trimmed}${suffix}`;
+  };
+
+  const startEditCancellationReason = () => {
+    setCancellationReasonDraft(cancellationReasonForBanner || '');
+    setEditingCancellationReason(true);
+  };
+
+  const cancelEditCancellationReason = () => {
+    setEditingCancellationReason(false);
+    setCancellationReasonDraft('');
+  };
+
+  const handleSaveCancellationReason = async () => {
+    if (!latestCancellationChange) {
+      toast.error('Cancellation history row was not found');
+      return;
+    }
+
+    const nextReason = cancellationReasonDraft.trim();
+    if (!nextReason) {
+      toast.error('Cancellation reason is required');
+      return;
+    }
+
+    setSavingCancellationReason(true);
+    try {
+      const nextChangeReason = getCancellationChangeReasonWithUpdatedText(
+        latestCancellationChange.change_reason,
+        nextReason
+      );
+
+      const { error } = await supabase
+        .from('job_phase_changes')
+        .update({ change_reason: nextChangeReason })
+        .eq('id', latestCancellationChange.id);
+
+      if (error) throw error;
+
+      await refetchPhaseChanges(true);
+      cancelEditCancellationReason();
+      toast.success('Cancellation reason updated');
+    } catch (error) {
+      console.error('Error updating cancellation reason:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update cancellation reason');
+    } finally {
+      setSavingCancellationReason(false);
+    }
+  };
+
+  const startEditExtraChargeNote = (lineId: string, currentNotes?: string) => {
+    setEditingExtraChargeNoteId(lineId);
+    setExtraChargeNoteDraft(currentNotes || '');
+  };
+
+  const cancelEditExtraChargeNote = () => {
+    setEditingExtraChargeNoteId(null);
+    setExtraChargeNoteDraft('');
+  };
+
+  const handleSaveExtraChargeNote = async (lineId: string) => {
+    if (!workOrderId) return;
+
+    const itemId = lineId.startsWith('extra-') ? lineId.slice('extra-'.length) : lineId;
+    const updatedItems = extraChargeLineItems.map((item) => (
+      item.id === itemId ? { ...item, notes: extraChargeNoteDraft.trim() } : item
+    ));
+
+    setSavingExtraChargeNote(true);
+    try {
+      const { error } = await supabase
+        .from('work_orders')
+        .update({ extra_charges_line_items: updatedItems })
+        .eq('id', workOrderId);
+
+      if (error) throw error;
+
+      await refetchJob(true);
+      cancelEditExtraChargeNote();
+      toast.success('Extra charge note updated');
+    } catch (error) {
+      console.error('Error updating extra charge note:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update extra charge note');
+    } finally {
+      setSavingExtraChargeNote(false);
+    }
+  };
+
+  const renderExtraChargeLineNotes = (line: { id: string; notes?: string }) => {
+    if (!line.id.startsWith('extra-')) {
+      return line.notes ? (
+        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 italic bg-white/50 dark:bg-black/20 rounded px-2 py-1">
+          Notes: {line.notes}
+        </div>
+      ) : null;
+    }
+
+    if (editingExtraChargeNoteId === line.id) {
+      return (
+        <div className="mt-3 space-y-2">
+          <textarea
+            value={extraChargeNoteDraft}
+            onChange={(e) => setExtraChargeNoteDraft(e.target.value)}
+            rows={2}
+            maxLength={500}
+            className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-[#0F172A] px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Add notes for this extra charge"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleSaveExtraChargeNote(line.id)}
+              disabled={savingExtraChargeNote}
+              className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Check className="h-3.5 w-3.5 mr-1" />
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={cancelEditExtraChargeNote}
+              disabled={savingExtraChargeNote}
+              className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
+            >
+              <X className="h-3.5 w-3.5 mr-1" />
+              Cancel
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="mt-2">
+        {line.notes ? (
+          <div className="text-xs text-gray-500 dark:text-gray-400 italic bg-white/50 dark:bg-black/20 rounded px-2 py-1">
+            Notes: {line.notes}
+          </div>
+        ) : (
+          <div className="text-xs text-gray-500 dark:text-gray-400 italic">
+            No notes
+          </div>
+        )}
+        {canEditExtraChargeNotes && (
+          <button
+            type="button"
+            onClick={() => startEditExtraChargeNote(line.id, line.notes)}
+            className="mt-2 inline-flex items-center text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            <Edit className="h-3.5 w-3.5 mr-1" />
+            Edit Notes
+          </button>
+        )}
+      </div>
+    );
+  };
 
   if (jobLoading || phasesLoading) {
     return (
@@ -3378,7 +3562,7 @@ export function JobDetails() {
           </div>
         </div>
 
-        {isCancelled && cancellationReasonForBanner && (
+        {isCancelled && (
           <div className="mb-6 rounded-xl border border-red-200 dark:border-red-700/40 bg-red-50 dark:bg-red-900/20 px-6 py-4">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex items-start gap-3">
@@ -3387,9 +3571,55 @@ export function JobDetails() {
                   <p className="text-sm font-semibold text-red-900 dark:text-red-100">
                     Cancelled
                   </p>
-                  <p className="text-sm text-red-800 dark:text-red-200 mt-1">
-                    Reason for cancellation: {cancellationReasonForBanner}
-                  </p>
+                  {editingCancellationReason ? (
+                    <div className="mt-2 space-y-2">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-red-900 dark:text-red-100">
+                        Reason for cancellation
+                      </label>
+                      <textarea
+                        value={cancellationReasonDraft}
+                        onChange={(e) => setCancellationReasonDraft(e.target.value)}
+                        rows={3}
+                        className="w-full min-w-[280px] rounded-md border border-red-300 dark:border-red-700 bg-white dark:bg-[#0F172A] px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSaveCancellationReason}
+                          disabled={savingCancellationReason}
+                          className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                        >
+                          <Check className="h-3.5 w-3.5 mr-1" />
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEditCancellationReason}
+                          disabled={savingCancellationReason}
+                          className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-white/80 dark:bg-gray-800 text-red-800 dark:text-red-100 hover:bg-white disabled:opacity-50"
+                        >
+                          <X className="h-3.5 w-3.5 mr-1" />
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-1">
+                      <p className="text-sm text-red-800 dark:text-red-200">
+                        Reason for cancellation: {cancellationReasonForBanner || 'No reason recorded'}
+                      </p>
+                      {canEditCancellationReason && latestCancellationChange && (
+                        <button
+                          type="button"
+                          onClick={startEditCancellationReason}
+                          className="mt-2 inline-flex items-center text-xs font-medium text-red-700 dark:text-red-200 hover:underline"
+                        >
+                          <Edit className="h-3.5 w-3.5 mr-1" />
+                          Edit Reason
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               {job?.cancellation_trip_charge_added && (
@@ -4536,9 +4766,7 @@ export function JobDetails() {
                                 <div className="flex justify-between items-start gap-4">
                                   <div>
                                     <div className="text-base font-bold mt-1.5 text-green-800 dark:text-green-200">{line.label}</div>
-                                    {line.notes && (
-                                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 italic bg-white/50 dark:bg-black/20 rounded px-2 py-1">Notes: {line.notes}</div>
-                                    )}
+                                    {renderExtraChargeLineNotes(line)}
                                   </div>
                                   <div className="text-right">
                                     <div className="text-sm text-gray-600 dark:text-gray-400">
@@ -4816,11 +5044,7 @@ export function JobDetails() {
                               <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                                 {line.quantity} {line.unit} × {formatCurrency(rate)}
                               </div>
-                              {line.notes && (
-                                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">
-                                  Notes: {line.notes}
-                                </div>
-                              )}
+                              {renderExtraChargeLineNotes(line)}
                             </div>
                             <div className="text-right">
                               <div className="text-sm text-gray-600 dark:text-gray-400">

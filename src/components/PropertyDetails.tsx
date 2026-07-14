@@ -240,7 +240,8 @@ interface PropertyContact {
 export function PropertyDetails() {
   const { propertyId } = useParams<{ propertyId: string }>();
   const navigate = useNavigate();
-  const { isSubcontractor, isAdmin } = useUserRole();
+  const { role, isSubcontractor, isAdmin } = useUserRole();
+  const canUseInHouseNotes = role !== null && role !== 'subcontractor';
   const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -363,6 +364,7 @@ export function PropertyDetails() {
   
   // State for new callback form
   const [showCallbackForm, setShowCallbackForm] = useState(false);
+  const [showPropertyNoteForm, setShowPropertyNoteForm] = useState(false);
   const [newCallback, setNewCallback] = useState({
     callback_date: format(new Date(), 'yyyy-MM-dd'),
     painter: '',
@@ -909,7 +911,7 @@ export function PropertyDetails() {
     fetchData();
   }, [propertyId, navigate]);
 
-  const handleAddCallback = async () => {
+  const handleAddCallback = async (omitUnitNumber = false) => {
     if (!propertyId) return;
 
     try {
@@ -922,7 +924,7 @@ export function PropertyDetails() {
           property_id: propertyId,
           callback_date: newCallback.callback_date,
           painter: newCallback.painter,
-          unit_number: newCallback.unit_number,
+          unit_number: omitUnitNumber ? null : newCallback.unit_number,
           reason: newCallback.reason,
           posted_by: userData.user.id
         });
@@ -937,6 +939,7 @@ export function PropertyDetails() {
         reason: ''
       });
       setShowCallbackForm(false);
+      setShowPropertyNoteForm(false);
 
       // Fetch updated callbacks
       const { data: callbackData, error: callbackError } = await supabase
@@ -2193,7 +2196,7 @@ export function PropertyDetails() {
                   </button>
                   <button
                     type="button"
-                    onClick={handleAddCallback}
+                    onClick={() => handleAddCallback(false)}
                     className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                   >
                     Add Callback
@@ -2239,12 +2242,12 @@ export function PropertyDetails() {
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold text-white flex items-center">
                 <FileText className="h-5 w-5 mr-2" />
-                {isAdmin ? 'In-House Notes' : isSubcontractor ? 'Painter Notes' : 'Notes and Important Updates'}
+                {canUseInHouseNotes ? 'In-House Notes' : isSubcontractor ? 'Painter Notes' : 'Notes and Important Updates'}
               </h3>
               {/* Show add button for callbacks-style notes for admins and subcontractors; otherwise keep Add Update for general updates */}
-              {(isAdmin || isSubcontractor) ? (
+              {(canUseInHouseNotes || isSubcontractor) ? (
                 <button
-                  onClick={() => setShowCallbackForm(true)}
+                  onClick={() => setShowPropertyNoteForm(true)}
                   className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-sm font-medium rounded-lg transition-colors backdrop-blur-sm"
                 >
                   <Plus className="h-4 w-4 mr-2 inline-block" />
@@ -2266,7 +2269,7 @@ export function PropertyDetails() {
           <div className="p-6">
 
             {/* If admin or subcontractor, render callbacks-style notes (Painter Notes / In-House Notes) */}
-            {(isAdmin || isSubcontractor) ? (
+            {(canUseInHouseNotes || isSubcontractor) ? (
               callbacks.length === 0 ? (
                 <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                   <Clipboard className="h-12 w-12 mx-auto mb-3 text-gray-400" />
@@ -2284,7 +2287,7 @@ export function PropertyDetails() {
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="inline-flex items-center rounded-full bg-slate-200 dark:bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
-                              {callback.painter || (isAdmin ? 'In-House' : 'Painter Note')}
+                              {callback.painter || (canUseInHouseNotes ? 'In-House' : 'Painter Note')}
                             </span>
                             {callback.unit_number && (
                               <span className="inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/40 px-2.5 py-1 text-xs font-semibold text-blue-700 dark:text-blue-200">
@@ -2371,7 +2374,7 @@ export function PropertyDetails() {
           </div>
 
           {/* Add Callback Form (reused for Painter Notes / In-House Notes) */}
-          {showCallbackForm && (isAdmin || isSubcontractor) && (
+          {showPropertyNoteForm && (canUseInHouseNotes || isSubcontractor) && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
               <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add New Note</h3>
@@ -2396,17 +2399,18 @@ export function PropertyDetails() {
                       placeholder="Enter painter or staff name"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Unit #</label>
-                    <input
-                      type="text"
-                      value={newCallback.unit_number}
-                      onChange={(e) => setNewCallback({...newCallback, unit_number: e.target.value})}
-                      className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
-                      placeholder="Enter unit number"
-                      required
-                    />
-                  </div>
+                  {isSubcontractor && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Unit #</label>
+                      <input
+                        type="text"
+                        value={newCallback.unit_number}
+                        onChange={(e) => setNewCallback({...newCallback, unit_number: e.target.value})}
+                        className="w-full rounded-md bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
+                        placeholder="Enter unit number"
+                      />
+                    </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Reason</label>
                     <textarea
@@ -2422,14 +2426,14 @@ export function PropertyDetails() {
                 <div className="mt-6 flex justify-end space-x-3">
                   <button
                     type="button"
-                    onClick={() => setShowCallbackForm(false)}
+                    onClick={() => setShowPropertyNoteForm(false)}
                     className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
-                    onClick={handleAddCallback}
+                    onClick={() => handleAddCallback(canUseInHouseNotes)}
                     className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                   >
                     Add Note
@@ -2440,7 +2444,7 @@ export function PropertyDetails() {
           )}
 
           {/* Delete Callback Confirmation (reused) */}
-          {showDeleteCallbackConfirm && (isAdmin || isSubcontractor) && (
+          {showDeleteCallbackConfirm && (canUseInHouseNotes || isSubcontractor) && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
               <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Delete Note</h3>
@@ -2492,7 +2496,7 @@ export function PropertyDetails() {
                 <Clipboard className="h-12 w-12 mx-auto mb-3 text-gray-400" />
                 <p className="font-medium">No painter notes recorded</p>
                 <p className="text-sm">
-                  {isAdmin ? 'Click "Add Note" to get started' : 'No painter notes are currently available for this property'}
+                  {canUseInHouseNotes ? 'Click "Add Note" to get started' : 'No painter notes are currently available for this property'}
                 </p>
               </div>
             ) : (
@@ -2541,7 +2545,7 @@ export function PropertyDetails() {
                           <span>{note.creator?.full_name || 'Unknown'}</span>
                         </div>
                       </div>
-                      {isAdmin && (
+                      {canUseInHouseNotes && (
                         <div className="flex items-center gap-2">
                           {editingGeneralNoteId === note.id ? (
                             <>
