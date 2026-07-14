@@ -807,7 +807,7 @@ export function EnhancedPropertyNotificationModal({
           const quantity = Number(item.quantity) || 0;
           const billRate = Number(item.billRate) || 0;
           const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
-          const descriptionBase = `${item.categoryName || 'Extra Charges'} - ${item.detailName || 'Item'}`;
+          const descriptionBase = item.description?.trim() || `${item.categoryName || 'Extra Charges'} - ${item.detailName || 'Item'}`;
           const description = item.notes ? `${descriptionBase} (${item.notes})` : descriptionBase;
           return {
             description,

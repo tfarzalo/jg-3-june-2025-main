@@ -134,7 +134,7 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
       const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
       return {
         id: `extra-${item.id}`,
-        label: `Extra Charges - ${item.categoryName}: ${item.detailName}`,
+        label: item.description?.trim() || `Extra Charges - ${item.categoryName}: ${item.detailName}`,
         unit_label: item.isHourly ? 'Hours' : 'Units',
         quantity_or_hours: quantity,
         is_hours: item.isHourly,

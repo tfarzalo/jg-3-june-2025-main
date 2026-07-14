@@ -709,7 +709,8 @@ export function JobListingPage({
         const rate = Number(item.billRate) || 0;
         const unitLabel = item.isHourly ? 'hrs' : 'units';
         const rateText = rate ? ` @ $${rate.toFixed(2)}` : '';
-        return `${item.categoryName}: ${item.detailName} (${quantity} ${unitLabel}${rateText})`;
+        const description = item.description?.trim() || `${item.categoryName}: ${item.detailName}`;
+        return `${description} (${quantity} ${unitLabel}${rateText})`;
       })
       .join('; ');
   };

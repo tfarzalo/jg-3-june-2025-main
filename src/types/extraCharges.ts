@@ -33,6 +33,7 @@ export interface ExtraChargeLineItem {
   categoryName: string; // For display
   detailId: string; // billing_details.id
   detailName: string; // For display
+  description?: string; // Admin-editable display description for the work order line
   quantity: number; // Hours (if hourly) or units (if fixed)
   billRate: number; // Rate per unit
   subRate: number; // Sub pay rate per unit

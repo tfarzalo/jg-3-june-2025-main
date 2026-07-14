@@ -379,6 +379,9 @@ export function JobDetails() {
   const [editingExtraChargeNoteId, setEditingExtraChargeNoteId] = useState<string | null>(null);
   const [extraChargeNoteDraft, setExtraChargeNoteDraft] = useState('');
   const [savingExtraChargeNote, setSavingExtraChargeNote] = useState(false);
+  const [editingExtraChargeDescriptionId, setEditingExtraChargeDescriptionId] = useState<string | null>(null);
+  const [extraChargeDescriptionDraft, setExtraChargeDescriptionDraft] = useState('');
+  const [savingExtraChargeDescription, setSavingExtraChargeDescription] = useState(false);
 
   const resetCancelJobFlow = () => {
     setShowCancelJobConfirm(false);
@@ -1814,7 +1817,7 @@ export function JobDetails() {
             const quantity = Number(item.quantity) || 0;
             const billRate = Number(item.billRate) || 0;
             const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
-            const lineText = `${item.categoryName} - ${item.detailName} (${quantity} ${item.isHourly ? 'hrs' : 'units'}) = ${formatCurrency(billAmount)}`;
+            const lineText = `${getExtraChargeItemDescription(item)} (${quantity} ${item.isHourly ? 'hrs' : 'units'}) = ${formatCurrency(billAmount)}`;
             const splitLine = doc.splitTextToSize(lineText, 170);
             doc.text(splitLine, margin, y);
             y += splitLine.length * 7;
@@ -1919,7 +1922,7 @@ export function JobDetails() {
           const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
           const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
           return {
-            description: `Extra Charges - ${item.categoryName}: ${item.detailName}`,
+            description: getExtraChargeItemDescription(item),
             qty_or_hours: quantity,
             unit: item.isHourly ? 'hrs' : 'units',
             rate: billRate,
@@ -2568,7 +2571,7 @@ export function JobDetails() {
           const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
           const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
           return {
-            description: `Extra Charges - ${item.categoryName}: ${item.detailName}`,
+            description: getExtraChargeItemDescription(item),
             qty_or_hours: quantity,
             unit: item.isHourly ? 'hrs' : 'units',
             rate: billRate,
@@ -2940,6 +2943,9 @@ export function JobDetails() {
   const legacyExtraChargesSubPay = job?.extra_charges_details?.sub_pay_amount ?? (extraHours > 0 ? extraHours * extraSubPayRate : 0);
   const extraChargesAmount = extraChargesFromItems ? extraChargeItemTotals.bill : legacyExtraChargesAmount;
   const extraChargesSubPay = extraChargesFromItems ? extraChargeItemTotals.sub : legacyExtraChargesSubPay;
+  const getExtraChargeItemDescription = (item: ExtraChargeLineItem) => (
+    item.description?.trim() || `Extra Charges - ${item.categoryName}: ${item.detailName}`
+  );
   const derivedExtraCharges = extraChargesFromItems
     ? {
         description: 'Itemized Extra Charges',
@@ -2999,7 +3005,7 @@ export function JobDetails() {
       const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
       lines.push({
         id: `extra-${item.id}`,
-        label: `Extra Charges - ${item.categoryName}: ${item.detailName}`,
+        label: getExtraChargeItemDescription(item),
         quantity,
         unit: item.isHourly ? 'hrs' : 'units',
         rate: billRate,
@@ -3190,6 +3196,12 @@ export function JobDetails() {
     if (!workOrderId) return;
 
     const itemId = lineId.startsWith('extra-') ? lineId.slice('extra-'.length) : lineId;
+    const existingItem = extraChargeLineItems.find((item) => item.id === itemId);
+    if (!existingItem) {
+      toast.error('Extra charge line item was not found');
+      return;
+    }
+
     const updatedItems = extraChargeLineItems.map((item) => (
       item.id === itemId ? { ...item, notes: extraChargeNoteDraft.trim() } : item
     ));
@@ -3214,8 +3226,138 @@ export function JobDetails() {
     }
   };
 
+  const startEditExtraChargeDescription = (lineId: string, currentDescription: string) => {
+    setEditingExtraChargeDescriptionId(lineId);
+    setExtraChargeDescriptionDraft(currentDescription);
+  };
+
+  const cancelEditExtraChargeDescription = () => {
+    setEditingExtraChargeDescriptionId(null);
+    setExtraChargeDescriptionDraft('');
+  };
+
+  const handleSaveExtraChargeDescription = async (lineId: string) => {
+    if (!workOrderId) return;
+
+    const nextDescription = extraChargeDescriptionDraft.trim();
+    if (!nextDescription) {
+      toast.error('Extra charge description is required');
+      return;
+    }
+
+    setSavingExtraChargeDescription(true);
+    try {
+      if (lineId === 'extra-legacy') {
+        const { error } = await supabase
+          .from('work_orders')
+          .update({ extra_charges_description: nextDescription })
+          .eq('id', workOrderId);
+
+        if (error) throw error;
+      } else {
+        const itemId = lineId.startsWith('extra-') ? lineId.slice('extra-'.length) : lineId;
+        const existingItem = extraChargeLineItems.find((item) => item.id === itemId);
+        if (!existingItem) {
+          throw new Error('Extra charge line item was not found');
+        }
+
+        const updatedItems = extraChargeLineItems.map((item) => (
+          item.id === itemId ? { ...item, description: nextDescription } : item
+        ));
+
+        const { error } = await supabase
+          .from('work_orders')
+          .update({ extra_charges_line_items: updatedItems })
+          .eq('id', workOrderId);
+
+        if (error) throw error;
+      }
+
+      await refetchJob(true);
+      cancelEditExtraChargeDescription();
+      toast.success('Extra charge description updated');
+    } catch (error) {
+      console.error('Error updating extra charge description:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update extra charge description');
+    } finally {
+      setSavingExtraChargeDescription(false);
+    }
+  };
+
+  const renderExtraChargeLineDescription = (
+    line: { id: string; label: string },
+    titleClassName = 'text-base font-bold mt-1.5 text-green-800 dark:text-green-200'
+  ) => {
+    const isEditableExtraChargeLine = line.id === 'extra-legacy' || (
+      line.id.startsWith('extra-') &&
+      extraChargeLineItems.some((item) => item.id === line.id.slice('extra-'.length))
+    );
+
+    if (!isEditableExtraChargeLine || !canEditExtraChargeNotes) {
+      return (
+        <div className={titleClassName}>
+          {line.label}
+        </div>
+      );
+    }
+
+    if (editingExtraChargeDescriptionId === line.id) {
+      return (
+        <div className="mt-1.5 space-y-2">
+          <textarea
+            value={extraChargeDescriptionDraft}
+            onChange={(e) => setExtraChargeDescriptionDraft(e.target.value)}
+            rows={2}
+            maxLength={500}
+            className="w-full min-w-[280px] rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-[#0F172A] px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Edit extra charge description"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleSaveExtraChargeDescription(line.id)}
+              disabled={savingExtraChargeDescription}
+              className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Check className="h-3.5 w-3.5 mr-1" />
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={cancelEditExtraChargeDescription}
+              disabled={savingExtraChargeDescription}
+              className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50"
+            >
+              <X className="h-3.5 w-3.5 mr-1" />
+              Cancel
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="mt-1.5">
+        <div className={titleClassName}>
+          {line.label}
+        </div>
+        <button
+          type="button"
+          onClick={() => startEditExtraChargeDescription(line.id, line.label)}
+          className="mt-2 inline-flex items-center text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
+        >
+          <Edit className="h-3.5 w-3.5 mr-1" />
+          Edit Description
+        </button>
+      </div>
+    );
+  };
+
   const renderExtraChargeLineNotes = (line: { id: string; notes?: string }) => {
-    if (!line.id.startsWith('extra-')) {
+    const itemId = line.id.startsWith('extra-') ? line.id.slice('extra-'.length) : null;
+    const hasStoredLineItem = itemId ? extraChargeLineItems.some((item) => item.id === itemId) : false;
+
+    if (!hasStoredLineItem) {
       return line.notes ? (
         <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 italic bg-white/50 dark:bg-black/20 rounded px-2 py-1">
           Notes: {line.notes}
@@ -4765,7 +4907,7 @@ export function JobDetails() {
                               <div key={line.id} className="p-4 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30">
                                 <div className="flex justify-between items-start gap-4">
                                   <div>
-                                    <div className="text-base font-bold mt-1.5 text-green-800 dark:text-green-200">{line.label}</div>
+                                    {renderExtraChargeLineDescription(line)}
                                     {renderExtraChargeLineNotes(line)}
                                   </div>
                                   <div className="text-right">
@@ -5040,7 +5182,7 @@ export function JobDetails() {
                         return (
                           <div key={line.id} className="flex justify-between items-start p-3 bg-gray-50 dark:bg-[#0F172A] rounded-lg">
                             <div className="flex-1">
-                              <div className="font-medium text-gray-900 dark:text-white">{line.label}</div>
+                              {renderExtraChargeLineDescription(line, 'font-medium text-gray-900 dark:text-white')}
                               <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                                 {line.quantity} {line.unit} × {formatCurrency(rate)}
                               </div>
