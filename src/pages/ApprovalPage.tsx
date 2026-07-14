@@ -415,8 +415,8 @@ const ApprovalPage: React.FC = () => {
           unitNumber: approvalData.job.unit_number,
           propertyAddress,
           extraChargesAmount: approvalData.extra_charges_data.total,
-          approverName: approvalData.approver_name,
-          approverEmail: approvalData.approver_email,
+          approverName: approverName || approvalData.approver_name,
+          approverEmail: approverEmail || approvalData.approver_email,
         });
       } catch (emailError) {
         console.warn('Failed to send internal notification email:', emailError);
@@ -521,8 +521,8 @@ const ApprovalPage: React.FC = () => {
           unitNumber: approvalData.job.unit_number,
           propertyAddress,
           extraChargesAmount: approvalData.extra_charges_data.total,
-          approverName: approvalData.approver_name,
-          approverEmail: approvalData.approver_email,
+          approverName: approverName || approvalData.approver_name,
+          approverEmail: approverEmail || approvalData.approver_email,
         });
       } catch (emailError) {
         console.warn('Failed to send internal notification email:', emailError);
