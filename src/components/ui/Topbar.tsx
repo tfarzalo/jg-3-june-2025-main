@@ -304,7 +304,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
 
           {/* Desktop action buttons - hidden on mobile */}
           {!isSubcontractor && !showOnlyProfile && (
-            <div className="hidden lg:flex items-center space-x-4">
+            <div className="hidden lg:flex items-center gap-2 xl:gap-3 flex-nowrap">
               {/* Hugh AI Assistant - left of search, admin/super admin only */}
               {isAdmin && (
                 <div className="relative" ref={hughRef}>
@@ -338,37 +338,30 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
               
               <button 
                 onClick={() => navigate('/dashboard/sub-scheduler')}
-                className="bg-[#7C3AED] hover:bg-[#6D28D9] text-white px-4 py-2 rounded-lg flex items-center transition-colors"
+                className="bg-[#7C3AED] hover:bg-[#6D28D9] text-white px-3 xl:px-4 py-2 rounded-lg flex items-center whitespace-nowrap transition-colors"
               >
-                <Calendar className="h-4 w-4 mr-2" />
+                <Calendar className="h-4 w-4 mr-1.5 xl:mr-2" />
                 Schedule
               </button>
               <button 
                 onClick={() => navigate('/dashboard/jobs/new')}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center transition-colors"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-3 xl:px-4 py-2 rounded-lg flex items-center whitespace-nowrap transition-colors"
               >
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="h-4 w-4 mr-1.5 xl:mr-2" />
                 New Job
               </button>
               <button 
-                onClick={() => navigate('/dashboard/properties/new')}
-                className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg flex items-center transition-colors"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                New Property
-              </button>
-              <button 
                 onClick={() => navigate('/dashboard/jobs/quality-control')}
-                className="bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-lg flex items-center transition-colors"
+                className="bg-emerald-700 hover:bg-emerald-800 text-white px-3 xl:px-4 py-2 rounded-lg flex items-center whitespace-nowrap transition-colors"
               >
-                <ClipboardCheck className="h-4 w-4 mr-2" />
+                <ClipboardCheck className="h-4 w-4 mr-1.5 xl:mr-2" />
                 Quality Control
               </button>
               <button 
                 onClick={() => navigate('/dashboard/reports')}
-                className="bg-[#9B111E] hover:bg-[#7f0e17] text-white px-4 py-2 rounded-lg flex items-center transition-colors"
+                className="bg-[#9B111E] hover:bg-[#7f0e17] text-white px-3 xl:px-4 py-2 rounded-lg flex items-center whitespace-nowrap transition-colors"
               >
-                <FileText className="h-4 w-4 mr-2" />
+                <FileText className="h-4 w-4 mr-1.5 xl:mr-2" />
                 Reports
               </button>
             </div>
