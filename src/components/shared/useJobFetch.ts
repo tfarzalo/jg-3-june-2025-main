@@ -60,12 +60,14 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
       else if (
         phaseLabel === 'Work Order' || 
         phaseLabel === 'Pending Work Order' ||
+        phaseLabel === 'Completed Work Orders' ||
         phaseLabel === 'Grading' || 
         phaseLabel === 'Quality Control' ||
         phaseLabel === 'Invoicing' ||
         (Array.isArray(phaseLabel) && (
           phaseLabel.includes('Work Order') || 
           phaseLabel.includes('Pending Work Order') ||
+          phaseLabel.includes('Completed Work Orders') ||
           phaseLabel.includes('Grading') || 
           phaseLabel.includes('Quality Control') ||
           phaseLabel.includes('Invoicing')

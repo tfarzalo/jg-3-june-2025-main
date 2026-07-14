@@ -132,6 +132,8 @@ export function Sidebar() {
         return '#E95420'; // Orange-Red
       case 'Pending Work Orders':
         return '#FBBF24'; // Amber/Yellow
+      case 'Completed Work Orders':
+        return '#0369A1'; // Sky Blue
       case 'Invoicing':
         return '#00A878'; // Green
       case 'Completed Jobs':
@@ -223,8 +225,9 @@ export function Sidebar() {
           { icon: FileText, label: 'Job Requests', to: '/dashboard/jobs/requests' },
           { icon: FileText, label: 'Work Orders', to: '/dashboard/jobs/work-orders' },
           { icon: Clock, label: 'Pending Work Orders', to: '/dashboard/jobs/pending-work-orders' },
-          { icon: CheckCircle, label: 'Completed Jobs', to: '/dashboard/jobs/completed' },
+          { icon: CheckCircle, label: 'Completed Work Orders', to: '/dashboard/jobs/completed-work-orders' },
           { icon: ClipboardCheck, label: 'Quality Control', to: '/dashboard/jobs/quality-control' },
+          { icon: CheckCircle, label: 'Completed Jobs', to: '/dashboard/jobs/completed' },
           { icon: DollarSign, label: 'Invoicing', to: '/dashboard/jobs/invoicing' },
           { icon: XCircle, label: 'Cancelled', to: '/dashboard/jobs/cancelled' },
           { icon: CalendarDays, label: 'Sub Scheduler', to: '/dashboard/sub-scheduler' },

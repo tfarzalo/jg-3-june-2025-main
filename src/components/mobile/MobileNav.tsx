@@ -38,6 +38,7 @@ export function MobileNav({ onClose }: MobileNavProps) {
       case 'Job Requests': return '#276EF1';
       case 'Work Orders': return '#E95420';
       case 'Pending Work Orders': return '#FBBF24';
+      case 'Completed Work Orders': return '#0369A1';
       case 'Completed': return '#F47C7C';
       case 'Quality Control': return '#047857';
       case 'Invoicing': return '#00A878';
@@ -165,7 +166,7 @@ export function MobileNav({ onClose }: MobileNavProps) {
           <span className="truncate">Pending Work Orders</span>
         </NavLink>
         <NavLink
-          to="/dashboard/jobs/completed"
+          to="/dashboard/jobs/completed-work-orders"
           onClick={onClose}
           className={({ isActive }) =>
             `flex items-center px-4 py-3 text-base font-medium rounded-lg transition-colors ${
@@ -175,8 +176,8 @@ export function MobileNav({ onClose }: MobileNavProps) {
             }`
           }
         >
-          <CheckCircle className="h-5 w-5 mr-3 flex-shrink-0" style={{ color: getIconColor('Completed') }} />
-          <span className="truncate">Completed Jobs</span>
+          <CheckCircle className="h-5 w-5 mr-3 flex-shrink-0" style={{ color: getIconColor('Completed Work Orders') }} />
+          <span className="truncate">Completed Work Orders</span>
         </NavLink>
         <NavLink
           to="/dashboard/jobs/quality-control"
@@ -191,6 +192,20 @@ export function MobileNav({ onClose }: MobileNavProps) {
         >
           <ClipboardCheck className="h-5 w-5 mr-3 flex-shrink-0" style={{ color: getIconColor('Quality Control') }} />
           <span className="truncate">Quality Control</span>
+        </NavLink>
+        <NavLink
+          to="/dashboard/jobs/completed"
+          onClick={onClose}
+          className={({ isActive }) =>
+            `flex items-center px-4 py-3 text-base font-medium rounded-lg transition-colors ${
+              isActive
+                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B]'
+            }`
+          }
+        >
+          <CheckCircle className="h-5 w-5 mr-3 flex-shrink-0" style={{ color: getIconColor('Completed') }} />
+          <span className="truncate">Completed Jobs</span>
         </NavLink>
         <NavLink
           to="/dashboard/jobs/invoicing"

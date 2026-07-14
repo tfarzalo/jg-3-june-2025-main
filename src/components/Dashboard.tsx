@@ -6,8 +6,9 @@ import { RouteGuard, SubcontractorRouteGuard, AdminRouteGuard, StrictAdminRouteG
 const DashboardHome = lazy(() => import('./DashboardHome').then(module => ({ default: module.DashboardHome })));
 const Jobs = lazy(() => import('./Jobs').then(module => ({ default: module.Jobs })));
 const JobRequests = lazy(() => import('./JobRequests').then(module => ({ default: module.JobRequests })));
- const WorkOrders = lazy(() => import('./WorkOrders').then(module => ({ default: module.WorkOrders })));
+const WorkOrders = lazy(() => import('./WorkOrders').then(module => ({ default: module.WorkOrders })));
 const PendingWorkOrders = lazy(() => import('./PendingWorkOrders').then(module => ({ default: module.PendingWorkOrders })));
+const CompletedWorkOrders = lazy(() => import('./CompletedWorkOrders').then(module => ({ default: module.CompletedWorkOrders })));
   const Invoicing = lazy(() => import('./Invoicing').then(module => ({ default: module.Invoicing })));
 const Completed = lazy(() => import('./Completed').then(module => ({ default: module.Completed })));
 const QualityControl = lazy(() => import('./QualityControl').then(module => ({ default: module.QualityControl })));
@@ -79,6 +80,7 @@ export function Dashboard() {
                 <Route path="requests" element={<JobRequests />} />
                 <Route path="work-orders" element={<WorkOrders />} />
                 <Route path="pending-work-orders" element={<PendingWorkOrders />} />
+                <Route path="completed-work-orders" element={<CompletedWorkOrders />} />
                 <Route path="invoicing" element={<Invoicing />} />
                 <Route path="completed" element={<Completed />} />
                 <Route path="quality-control" element={<QualityControl />} />

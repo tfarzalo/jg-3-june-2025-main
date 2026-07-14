@@ -992,11 +992,42 @@ export function JobDetails() {
 
       if (submitError) throw submitError;
 
+      if (!editingQualityControlId && phaseLabel === 'Quality Control') {
+        const completedPhase = phases.find((phase) => phase.job_phase_label === 'Completed');
+        if (!completedPhase) {
+          throw new Error('Completed phase not found');
+        }
+
+        const { error: phaseUpdateError } = await supabase
+          .from('jobs')
+          .update({
+            current_phase_id: completedPhase.id,
+            historical_data_mode: 'snapshot',
+          })
+          .eq('id', jobId);
+
+        if (phaseUpdateError) throw phaseUpdateError;
+
+        const { error: phaseChangeError } = await supabase
+          .from('job_phase_changes')
+          .insert({
+            job_id: jobId,
+            changed_by: userData.user.id,
+            from_phase_id: job.job_phase?.id,
+            to_phase_id: completedPhase.id,
+            change_reason: 'Quality Control submitted - job advanced to Completed',
+          });
+
+        if (phaseChangeError) throw phaseChangeError;
+      }
+
       toast.success(editingQualityControlId ? 'Quality Control updated' : 'Quality Control submitted');
       setShowQualityControlModal(false);
       setQualityControlExpanded(true);
       resetQualityControlForm();
       await fetchQualityControlSubmissions();
+      await refetchJob(true);
+      await refetchPhaseChanges(true);
     } catch (error) {
       console.error('Error submitting Quality Control:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to submit Quality Control');
@@ -3463,6 +3494,7 @@ export function JobDetails() {
   const hasBillingBreakdown = hasWorkOrder || hasCancellationTripCharge;
   const isJobRequest = phaseLabel === 'Job Request';
   const isPendingWorkOrder = phaseLabel === 'Pending Work Order';
+  const isCompletedWorkOrders = phaseLabel === 'Completed Work Orders';
   const isInvoicing = phaseLabel === 'Invoicing';
   const isCompleted = phaseLabel === 'Completed';
   const isQualityControl = phaseLabel === 'Quality Control';
@@ -3491,7 +3523,11 @@ export function JobDetails() {
   const phaseId = job?.job_phase?.id ?? null;
   const navPhasesSafe = Array.isArray(navPhases) ? navPhases : [];
   const currentNavPhaseIndex = phaseId
-    ? navPhasesSafe.findIndex(p => p?.id === phaseId)
+    ? (
+        isPendingWorkOrder
+          ? navPhasesSafe.findIndex(p => p?.job_phase_label === 'Work Order')
+          : navPhasesSafe.findIndex(p => p?.id === phaseId)
+      )
     : -1;
 
   // Add a helper function to handle phase change by phase object
@@ -3504,7 +3540,8 @@ export function JobDetails() {
       isHistoricalSnapshotJob &&
       (
         (isCompleted && ['Quality Control', 'Invoicing'].includes(phase.job_phase_label)) ||
-        (isQualityControl && phase.job_phase_label === 'Invoicing')
+        (isCompletedWorkOrders && phase.job_phase_label === 'Quality Control') ||
+        (isQualityControl && ['Completed', 'Invoicing'].includes(phase.job_phase_label))
       );
 
     if (isHistoricalSnapshotJob && !isFrozenPreservedPhaseAdvance) {
@@ -3651,7 +3688,7 @@ export function JobDetails() {
                 {reactivatingJob ? 'Re-Activating...' : 'Re-Activate Job'}
               </button>
             )}
-            {canChangePhase && !isPendingWorkOrder && !isCancelled && !(isHistoricalSnapshotJob && !(isCompleted || isQualityControl)) && (
+            {canChangePhase && !isCancelled && !(isHistoricalSnapshotJob && !(isCompletedWorkOrders || isCompleted || isQualityControl)) && (
               <>
                 {!isJobRequest && (
                   <button

@@ -4,7 +4,7 @@ import { useJobFetch } from './shared/useJobFetch';
 
 export function Jobs() {
   const { jobs, loading, error } = useJobFetch({ 
-    phaseLabel: ['Job Request', 'Pending Work Order', 'Work Order', 'Completed', 'Quality Control', 'Invoicing', 'Cancelled'] 
+    phaseLabel: ['Job Request', 'Pending Work Order', 'Work Order', 'Completed Work Orders', 'Quality Control', 'Completed', 'Invoicing', 'Cancelled'] 
   });
 
   return (
@@ -13,7 +13,7 @@ export function Jobs() {
       jobs={jobs}
       loading={loading}
       error={error}
-      phaseLabel={['Job Request', 'Pending Work Order', 'Work Order', 'Completed', 'Quality Control', 'Invoicing', 'Cancelled']}
+      phaseLabel={['Job Request', 'Pending Work Order', 'Work Order', 'Completed Work Orders', 'Quality Control', 'Completed', 'Invoicing', 'Cancelled']}
       showAddButton={true}
       hideAmountColumn={false}
       showArchivesButton={true}

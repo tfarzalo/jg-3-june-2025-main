@@ -239,11 +239,11 @@ export function DashboardHome() {
     };
   }, [roleLoading, isSubcontractor]); // Add dependencies for the conditional logic
 
-  // Get completed jobs with their completion dates
+  // Get completed work orders with their completion dates
   useEffect(() => {
     const fetchCompletedJobsWithDates = async () => {
       const completedJobsList = jobs.filter(job => 
-        job.job_phase?.job_phase_label === 'Completed'
+        job.job_phase?.job_phase_label === 'Completed Work Orders'
       ).slice(0, 8);
 
       // If no completed jobs, set empty array and return
@@ -468,11 +468,11 @@ export function DashboardHome() {
     return jobType?.job_type_label || 'Unknown Type';
   };
 
-  // Function to get the date when a job was moved to Completed phase
+  // Function to get the date when a job was moved to Completed Work Orders phase
   const getCompletedDate = async (jobId: string): Promise<string | null> => {
     try {
-      // Get the Completed phase ID
-      const completedPhase = phases.find(phase => phase.job_phase_label === 'Completed');
+      // Get the Completed Work Orders phase ID
+      const completedPhase = phases.find(phase => phase.job_phase_label === 'Completed Work Orders');
       if (!completedPhase) return null;
 
       // Find the most recent phase change to Completed for this job
@@ -526,10 +526,10 @@ export function DashboardHome() {
     },
     {
       icon: CheckCircle,
-      label: 'Completed',
-      value: jobs.filter(job => job.job_phase?.job_phase_label === 'Completed').length.toString(),
+      label: 'Completed Work Orders',
+      value: jobs.filter(job => job.job_phase?.job_phase_label === 'Completed Work Orders').length.toString(),
       trend: { value: 5, isPositive: true },
-      color: phaseColors['Completed'] || '#1E40AF',
+      color: phaseColors['Completed Work Orders'] || '#0369A1',
       notation: 'Ready for QC'
     },
     {
@@ -539,6 +539,7 @@ export function DashboardHome() {
         job.job_phase?.job_phase_label === 'Job Request' ||
         job.job_phase?.job_phase_label === 'Pending Work Order' ||
         job.job_phase?.job_phase_label === 'Work Order' ||
+        job.job_phase?.job_phase_label === 'Completed Work Orders' ||
         job.job_phase?.job_phase_label === 'Completed' ||
         job.job_phase?.job_phase_label === 'Quality Control' ||
         job.job_phase?.job_phase_label === 'Invoicing' ||
@@ -574,8 +575,8 @@ export function DashboardHome() {
                 ? '/dashboard/jobs/pending-work-orders'
                 : metric.label === 'Invoicing'
                 ? '/dashboard/jobs/invoicing'
-                : metric.label === 'Completed'
-                ? '/dashboard/jobs/completed'
+                : metric.label === 'Completed Work Orders'
+                ? '/dashboard/jobs/completed-work-orders'
                 : '/dashboard/jobs'
             } 
             state={
@@ -1048,14 +1049,14 @@ export function DashboardHome() {
           </div>
         </DashboardCard>
 
-        {/* Completed */}
+        {/* Completed Work Orders */}
         <DashboardCard 
-          title="Completed" 
+          title="Completed Work Orders" 
           notation="Ready for Quality Control"
-          viewAllLink="/dashboard/jobs/completed"
+          viewAllLink="/dashboard/jobs/completed-work-orders"
           titleColor="text-gray-900 dark:text-white"
           className="min-h-[400px]"
-          phaseColor={phaseColors['Completed'] || '#EF4444'}
+          phaseColor={phaseColors['Completed Work Orders'] || '#0369A1'}
         >
           <div className="space-y-4 max-h-[300px] overflow-y-auto">
             {loadingCompletedDates ? (

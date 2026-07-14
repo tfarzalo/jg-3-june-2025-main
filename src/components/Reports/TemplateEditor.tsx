@@ -173,7 +173,7 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
       } catch (e) {
         // ignore - fallback below
       }
-      if (mounted) setPhases(['Job Request','Work Order','Pending Work Order','Completed','Quality Control','Invoicing','Cancelled']);
+      if (mounted) setPhases(['Job Request','Work Order','Pending Work Order','Completed Work Orders','Quality Control','Completed','Invoicing','Cancelled']);
     })();
     return () => { mounted = false; };
   }, []);

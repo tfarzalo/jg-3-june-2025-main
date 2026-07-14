@@ -13,9 +13,9 @@ const matchesPhase = (key: keyof Omit<PhaseCounts, 'totalJobs' | 'loading' | 'er
     case 'pendingWorkOrders':
       return /(^| )pending work order(s)?( |$)/.test(value);
     case 'workOrders':
-      return /(^| )work order(s)?( |$)/.test(value) && !/pending/.test(value);
+      return /(^| )work order(s)?( |$)/.test(value) && !/pending|completed/.test(value);
     case 'completed':
-      return /(^| )completed( |$)/.test(value);
+      return value === 'completed';
     case 'cancelled':
       return /(^| )cancell?ed( |$)/.test(value);
     case 'invoicing':
