@@ -262,10 +262,19 @@ const ensureSubcontractorCalendarToken = useCallback(async (targetId: string) =>
       }),
     });
 
-    const result = await response.json();
+    const responseText = await response.text();
+    let result: { success?: boolean; error?: string; message?: string } = {};
+
+    if (responseText) {
+      try {
+        result = JSON.parse(responseText);
+      } catch {
+        result = { error: responseText };
+      }
+    }
 
     if (!response.ok || !result.success) {
-      throw new Error(result?.error || 'Failed to change password');
+      throw new Error(result.error || result.message || 'Failed to change password');
     }
   }, []);
 

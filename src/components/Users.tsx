@@ -471,6 +471,11 @@ export function Users() {
       return;
     }
 
+    if (passwordData.password.length < 8) {
+      toast.error('Password must be at least 8 characters long');
+      return;
+    }
+
     if (passwordData.password !== passwordData.confirmPassword) {
       toast.error('Passwords do not match');
       return;
@@ -499,10 +504,19 @@ export function Users() {
         }),
       });
 
-      const result = await response.json();
+      const responseText = await response.text();
+      let result: { success?: boolean; error?: string; message?: string } = {};
+
+      if (responseText) {
+        try {
+          result = JSON.parse(responseText);
+        } catch {
+          result = { error: responseText };
+        }
+      }
 
       if (!response.ok || !result.success) {
-        throw new Error(result?.error || 'Failed to change password');
+        throw new Error(result.error || result.message || 'Failed to change password');
       }
 
       toast.success('Password changed successfully');

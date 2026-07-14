@@ -8,7 +8,15 @@ const corsHeaders = {
   "Access-Control-Max-Age": "86400",
 };
 
-const ALLOWED_ROLES = ["admin", "jg_management", "is_super_admin"];
+function jsonResponse(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+    },
+    status,
+  });
+}
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -33,58 +41,102 @@ serve(async (req) => {
       },
     });
 
+    if (req.method !== "POST") {
+      return jsonResponse({ success: false, error: "Method not allowed" }, 405);
+    }
+
     // Get request body
     const { userId, password } = await req.json();
     
     // Validate inputs
     if (!userId || !password) {
-      throw new Error("Missing required fields");
+      return jsonResponse({ success: false, error: "Missing required fields" }, 400);
     }
 
     // Validate password length
     if (password.length < 8) {
-      throw new Error("Password must be at least 8 characters long");
+      return jsonResponse({ success: false, error: "Password must be at least 8 characters long" }, 400);
     }
 
-    // Check if the current user is an admin
     const authHeader = req.headers.get("Authorization");
-    if (authHeader) {
-      const token = authHeader.replace("Bearer ", "");
-      const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-      
-      if (userError) {
-        throw new Error("Authentication error: " + userError.message);
-      }
+    if (!authHeader) {
+      return jsonResponse({ success: false, error: "Authorization header is required" }, 401);
+    }
 
-      // Check if the current user is an admin
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user?.id)
-        .single();
-        
-      if (profileError) {
-        throw new Error("Error fetching user profile");
-      }
-      
-      if (!ALLOWED_ROLES.includes(profile.role)) {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            code: "not_admin",
-            error: "Only admins, super admins, and JG management can change user passwords",
-          }),
-          {
-            headers: {
-              ...corsHeaders,
-              "Content-Type": "application/json",
-            },
-            status: 403,
-          },
-        );
-      }
-    } else {
-      throw new Error("Authorization header is required");
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    
+    if (userError || !user) {
+      return jsonResponse(
+        {
+          success: false,
+          error: "Authentication failed: " + (userError?.message || "No user found"),
+        },
+        401,
+      );
+    }
+
+    let currentUserRole: string | null = null;
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileError) {
+      console.warn("Warning fetching current user's profile:", profileError.message);
+    } else if (profile?.role) {
+      currentUserRole = profile.role;
+    }
+
+    // app_metadata is server-controlled; user_metadata is intentionally not
+    // trusted for authorization decisions.
+    if (!currentUserRole && (user.app_metadata as Record<string, unknown> | null)?.role) {
+      currentUserRole = String((user.app_metadata as Record<string, unknown>).role);
+    }
+    
+    if (!currentUserRole || currentUserRole === "subcontractor") {
+      return jsonResponse(
+        {
+          success: false,
+          code: "not_admin",
+          error: "Only non-subcontractor users can change subcontractor passwords",
+          requesterRole: currentUserRole,
+        },
+        403,
+      );
+    }
+
+    const { data: targetProfile, error: targetProfileError } = await supabase
+      .from("profiles")
+      .select("id, role")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (targetProfileError) {
+      throw new Error("Error fetching target user profile: " + targetProfileError.message);
+    }
+
+    if (!targetProfile) {
+      return jsonResponse(
+        {
+          success: false,
+          code: "target_not_found",
+          error: "Target user profile was not found",
+        },
+        404,
+      );
+    }
+
+    if (targetProfile.role !== "subcontractor") {
+      return jsonResponse(
+        {
+          success: false,
+          code: "target_not_subcontractor",
+          error: "This function can only change subcontractor passwords",
+        },
+        403,
+      );
     }
 
     // Update the user's password
@@ -98,34 +150,16 @@ serve(async (req) => {
     }
 
     // Return success response
-    return new Response(
-      JSON.stringify({ 
-        success: true
-      }),
-      { 
-        headers: { 
-          ...corsHeaders, 
-          "Content-Type": "application/json",
-        },
-        status: 200,
-      }
-    );
+    return jsonResponse({ success: true });
   } catch (error) {
     console.error("Error updating user password:", error);
     
-    // Return error response
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: error.message,
-      }),
+    return jsonResponse(
       { 
-        headers: { 
-          ...corsHeaders, 
-          "Content-Type": "application/json",
-        },
-        status: 400,
-      }
+        success: false, 
+        error: error instanceof Error ? error.message : "Failed to update user password",
+      },
+      400,
     );
   }
 });
