@@ -2470,7 +2470,7 @@ const NewWorkOrder = () => {
                     <>
                       <div className="mt-4">
                         <label htmlFor="sprinklers_painted" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                          Was there paint on sprinkler heads?
+                          Was there paint on sprinkler heads? <span className="text-red-500">*</span>
                         </label>
                         <select
                           id="sprinklers_painted"

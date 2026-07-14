@@ -2401,7 +2401,7 @@ const NewWorkOrderPreview = () => {
                           className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
                         <label htmlFor="sprinklers_painted" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                          Paint on Sprinklers
+                          Paint on Sprinklers <span className="text-red-500">*</span>
                         </label>
                       </div>
                       <div className="mt-4 space-y-4">

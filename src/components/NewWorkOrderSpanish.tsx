@@ -490,7 +490,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                 <>
                   <div className="mt-4">
                     <label htmlFor="sprinklers_painted" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                      ¿Había pintura en las cabezas de los aspersores?
+                      ¿Había pintura en las cabezas de los aspersores? <span className="text-red-500">*</span>
                     </label>
                     <select
                       id="sprinklers_painted"

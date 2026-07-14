@@ -29,6 +29,7 @@ import { toast } from 'sonner';
 import { useEffect } from 'react';
 import { useUnreadMessages } from '../contexts/UnreadMessagesProvider';
 import { useMaintenanceMode } from '../contexts/MaintenanceModeContext';
+import { getPhaseLabelForNavigationLabel, useJobPhaseColorMap } from '../hooks/useJobPhaseColorMap';
 
 // Lightweight live connection indicator state
 function LiveStatusBadge({ isCollapsed }: { isCollapsed: boolean }) {
@@ -114,10 +115,16 @@ export function Sidebar() {
   const [loggingOut, setLoggingOut] = useState(false);
   const { unreadCount } = useUnreadMessages();
   const { isMaintenanceMode } = useMaintenanceMode();
+  const phaseColorMap = useJobPhaseColorMap();
 
 
   // Function to get icon color based on unified color palette
   const getIconColor = (label: string) => {
+    const phaseLabel = getPhaseLabelForNavigationLabel(label);
+    if (phaseLabel && phaseColorMap[phaseLabel]) {
+      return phaseColorMap[phaseLabel];
+    }
+
     switch (label) {
       // DASHBOARD
       case 'Dashboard':

@@ -18,10 +18,10 @@ export function usePhases() {
   const lastFetchTimeRef = useRef<number>(0);
   const MIN_FETCH_INTERVAL = 10000; // Minimum time between fetches in milliseconds
 
-  const fetchPhases = useCallback(async () => {
+  const fetchPhases = useCallback(async (force = false) => {
     // Prevent fetching too frequently
     const now = Date.now();
-    if (now - lastFetchTimeRef.current < MIN_FETCH_INTERVAL) {
+    if (!force && now - lastFetchTimeRef.current < MIN_FETCH_INTERVAL) {
       return;
     }
     lastFetchTimeRef.current = now;
@@ -56,7 +56,7 @@ export function usePhases() {
   const debouncedFetchPhases = useCallback(
     debounce(() => {
       if (isMountedRef.current) {
-        fetchPhases();
+        fetchPhases(true);
       }
     }, 1000),
     [fetchPhases]

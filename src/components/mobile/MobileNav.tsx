@@ -21,17 +21,24 @@ import {
 } from 'lucide-react';
 import { useUserRole } from '../../contexts/UserRoleContext';
 import { useUnreadMessages } from '../../contexts/UnreadMessagesProvider';
+import { getPhaseLabelForNavigationLabel, useJobPhaseColorMap } from '../../hooks/useJobPhaseColorMap';
 
 interface MobileNavProps {
   onClose: () => void;
 }
 
 export function MobileNav({ onClose }: MobileNavProps) {
-  const { isAdmin, isJGManagement, isSubcontractor } = useUserRole();
-  const canManageSettings = isAdmin || isJGManagement;
+  const { isAdmin, isSuperAdmin, isJGManagement, isSubcontractor } = useUserRole();
+  const canManageSettings = isAdmin || isSuperAdmin || isJGManagement;
   const { unreadCount } = useUnreadMessages();
+  const phaseColorMap = useJobPhaseColorMap();
 
   const getIconColor = (label: string) => {
+    const phaseLabel = getPhaseLabelForNavigationLabel(label);
+    if (phaseLabel && phaseColorMap[phaseLabel]) {
+      return phaseColorMap[phaseLabel];
+    }
+
     switch (label) {
       case 'Dashboard': return '#276EF1';
       case 'All Jobs': return '#8A9BA8';

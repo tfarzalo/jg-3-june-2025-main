@@ -233,9 +233,38 @@ export function DashboardHome() {
       )
       .subscribe();
 
+    const phaseSubscription = supabase
+      .channel('dashboard-job-phases')
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'job_phases' },
+        (payload) => {
+          const updatedPhase = payload.new as JobPhase;
+          setPhaseColors(prev => ({
+            ...prev,
+            [updatedPhase.job_phase_label]: updatedPhase.color_dark_mode,
+          }));
+          setPhases(prev => prev.map(phase => (
+            phase.id === updatedPhase.id ? { ...phase, ...updatedPhase } : phase
+          )));
+          setJobs(prev => prev.map(job => (
+            job.job_phase?.job_phase_label === updatedPhase.job_phase_label
+              ? {
+                  ...job,
+                  job_phase: {
+                    ...job.job_phase,
+                    color_dark_mode: updatedPhase.color_dark_mode,
+                  },
+                }
+              : job
+          )));
+        }
+      )
+      .subscribe();
+
     return () => {
       jobsSubscription.unsubscribe();
       activitySubscription.unsubscribe();
+      phaseSubscription.unsubscribe();
     };
   }, [roleLoading, isSubcontractor]); // Add dependencies for the conditional logic
 

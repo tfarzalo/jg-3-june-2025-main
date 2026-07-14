@@ -54,6 +54,7 @@ const VIEW_MODE_PREF_KEY = 'jg-calendar-view-mode-preference';
 const LOCAL_ORDER_KEY = 'jg-dev-calendar-3-local-order';
 const ASSIGNMENT_DECISION_URL = 'https://portal.jgpaintingprosinc.com/assignment/decision';
 const SUBCONTRACTOR_DASHBOARD_URL = 'https://portal.jgpaintingprosinc.com/dashboard/subcontractor';
+const UNASSIGNED_SUBCONTRACTOR_LABEL = 'Unassigned';
 
 type SourceType = 'job' | 'event';
 type CalendarViewMode = 'month' | 'week' | 'day' | 'agenda';
@@ -292,6 +293,26 @@ function isDailyAgendaEvent(event: CalendarEvent) {
   return event.title.includes('Paint') && event.title.includes('Callback') && event.title.includes('Repair');
 }
 
+function subcontractorGroupLabel(item: CalendarItem) {
+  if (item.type !== 'job') return 'Events';
+  return item.assignedSubcontractor?.trim() || UNASSIGNED_SUBCONTRACTOR_LABEL;
+}
+
+function compareCalendarItemsBySubcontractor(a: CalendarItem, b: CalendarItem) {
+  if (a.type !== b.type) return a.type === 'job' ? -1 : 1;
+  if (a.type === 'event' || b.type === 'event') return a.title.localeCompare(b.title);
+
+  const aGroup = subcontractorGroupLabel(a);
+  const bGroup = subcontractorGroupLabel(b);
+  const aUnassigned = aGroup === UNASSIGNED_SUBCONTRACTOR_LABEL;
+  const bUnassigned = bGroup === UNASSIGNED_SUBCONTRACTOR_LABEL;
+  if (aUnassigned !== bUnassigned) return aUnassigned ? 1 : -1;
+
+  const groupCompare = aGroup.localeCompare(bGroup);
+  if (groupCompare !== 0) return groupCompare;
+  return a.title.localeCompare(b.title);
+}
+
 export default function DevCalendar3Page() {
   const { role, isAdmin, isJGManagement } = useUserRole();
   const canManage = isAdmin || isJGManagement || role === 'is_super_admin';
@@ -308,6 +329,7 @@ export default function DevCalendar3Page() {
   const [preferencesHydrated, setPreferencesHydrated] = useState(false);
   const [viewPreferenceHydrated, setViewPreferenceHydrated] = useState(false);
   const [localOrder, setLocalOrder] = useState<Record<string, string[]>>(() => readJson(LOCAL_ORDER_KEY, {}));
+  const [sortBySubcontractor, setSortBySubcontractor] = useState(false);
   const [selectedItem, setSelectedItem] = useState<CalendarItem | null>(null);
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
   const [calendarListCollapsed, setCalendarListCollapsed] = useState(false);
@@ -564,6 +586,7 @@ export default function DevCalendar3Page() {
     Object.entries(grouped).forEach(([date, items]) => {
       const order = localOrder[date] || [];
       grouped[date] = [...items].sort((a, b) => {
+        if (sortBySubcontractor) return compareCalendarItemsBySubcontractor(a, b);
         const aIdx = order.indexOf(a.id);
         const bIdx = order.indexOf(b.id);
         if (aIdx !== -1 || bIdx !== -1) return (aIdx === -1 ? 9999 : aIdx) - (bIdx === -1 ? 9999 : bIdx);
@@ -573,7 +596,7 @@ export default function DevCalendar3Page() {
     });
 
     return grouped;
-  }, [localOrder, visibleItems]);
+  }, [localOrder, sortBySubcontractor, visibleItems]);
 
   const days = useMemo(() => {
     const output: Date[] = [];
@@ -1071,6 +1094,86 @@ JG Painting Pros Inc.`,
     </button>
   );
 
+  const renderSubcontractorGroupHeading = (label: string) => (
+    <div key={`subcontractor-group-${label}`} className="px-1 pt-1 text-[11px] font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">
+      {label}
+    </div>
+  );
+
+  const renderGroupedItemPills = (items: CalendarItem[], date: string, className = '') => {
+    let previousGroup = '';
+    return items.map((item) => {
+      const group = subcontractorGroupLabel(item);
+      const shouldShowGroup = sortBySubcontractor && group !== previousGroup;
+      previousGroup = group;
+      return (
+        <div key={item.id} className="space-y-1">
+          {shouldShowGroup && renderSubcontractorGroupHeading(group)}
+          {renderItemPill(item, date, className)}
+        </div>
+      );
+    });
+  };
+
+  const renderDayItemRows = (items: CalendarItem[], date: string) => {
+    let previousGroup = '';
+    return items.map((item) => {
+      const group = subcontractorGroupLabel(item);
+      const shouldShowGroup = sortBySubcontractor && group !== previousGroup;
+      previousGroup = group;
+      return (
+        <div key={item.id} className="space-y-1">
+          {shouldShowGroup && renderSubcontractorGroupHeading(group)}
+          <div
+            onDragOver={(event) => {
+              if (draggingItemId && draggingItemId !== item.id) {
+                event.preventDefault();
+              }
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              handleReorderDrop(date, item.id);
+            }}
+          >
+            {renderItemPill(item, date, 'py-1.5 px-2 text-[11px] leading-snug')}
+          </div>
+        </div>
+      );
+    });
+  };
+
+  const renderSelectedDayCards = () => {
+    let previousGroup = '';
+    return selectedDayItems.map((item, index) => {
+      const group = subcontractorGroupLabel(item);
+      const shouldShowGroup = sortBySubcontractor && group !== previousGroup;
+      previousGroup = group;
+      return (
+        <div key={item.id} className="space-y-2">
+          {shouldShowGroup && renderSubcontractorGroupHeading(group)}
+          <div className="rounded-lg border border-gray-200 dark:border-[#2D3B4E] p-3 bg-gray-50 dark:bg-[#0F172A]">
+            <button onClick={() => setSelectedItem(item)} className="w-full text-left" title={item.title}>
+              <div className="flex items-start gap-2">
+                <span className="mt-1 h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{item.title}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{item.type === 'job' ? item.status : item.allDay ? 'All day event' : 'Timed event'}</p>
+                </div>
+              </div>
+            </button>
+            {item.type === 'job' && !sortBySubcontractor && (
+              <div className="mt-3 flex gap-2">
+                <button disabled={index === 0} onClick={() => handleReorder(selectedDate, item.id, -1)} className="px-2 py-1 rounded border text-xs disabled:opacity-40 border-gray-200 dark:border-[#2D3B4E]">Up</button>
+                <button disabled={index === selectedDayItems.length - 1} onClick={() => handleReorder(selectedDate, item.id, 1)} className="px-2 py-1 rounded border text-xs disabled:opacity-40 border-gray-200 dark:border-[#2D3B4E]">Down</button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    });
+  };
+
   const renderWeekDayColumn = (day: Date, compact = false) => {
     const date = dateOnlyFromDate(day);
     const items = itemsByDate[date] || [];
@@ -1104,7 +1207,7 @@ JG Painting Pros Inc.`,
               Drop jobs or events here
             </div>
           ) : (
-            items.map((item) => renderItemPill(item, date, 'py-2 text-sm'))
+            renderGroupedItemPills(items, date, 'py-2 text-sm')
           )}
         </div>
       </div>
@@ -1207,23 +1310,7 @@ JG Painting Pros Inc.`,
             </div>
           ) : (
             <div className="space-y-1.5">
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                  onDragOver={(event) => {
-                    if (draggingItemId && draggingItemId !== item.id) {
-                      event.preventDefault();
-                    }
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    handleReorderDrop(date, item.id);
-                  }}
-                >
-                  {renderItemPill(item, date, 'py-1.5 px-2 text-[11px] leading-snug')}
-                </div>
-              ))}
+              {renderDayItemRows(items, date)}
             </div>
           )}
         </div>
@@ -1263,7 +1350,7 @@ JG Painting Pros Inc.`,
                   <p className="py-3 text-sm text-gray-400">No scheduled items. Drop a job or event here.</p>
                 ) : (
                   <div className="space-y-2">
-                    {items.map((item) => renderItemPill(item, date, 'py-2 text-sm'))}
+                    {renderGroupedItemPills(items, date, 'py-2 text-sm')}
                   </div>
                 )}
               </div>
@@ -1399,21 +1486,36 @@ JG Painting Pros Inc.`,
                 </button>
               </div>
               <div className="grid grid-cols-1 items-center gap-3 xl:grid-cols-[1fr_auto_1fr]">
-                <div className="inline-flex rounded-lg border border-gray-200 dark:border-[#2D3B4E] bg-gray-100 dark:bg-[#0F172A] p-1">
-                  {viewOptions.map((option) => (
-                    <button
-                      key={option}
-                      onClick={() => updateViewMode(option)}
-                      className={`px-3 py-1.5 text-sm font-medium capitalize rounded-md transition-colors ${
-                        viewMode === option
-                          ? 'bg-white text-gray-900 shadow-sm dark:bg-[#1E293B] dark:text-white'
-                          : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
-                      }`}
-                      aria-pressed={viewMode === option}
-                    >
-                      {option}
-                    </button>
-                  ))}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex rounded-lg border border-gray-200 dark:border-[#2D3B4E] bg-gray-100 dark:bg-[#0F172A] p-1">
+                    {viewOptions.map((option) => (
+                      <button
+                        key={option}
+                        onClick={() => updateViewMode(option)}
+                        className={`px-3 py-1.5 text-sm font-medium capitalize rounded-md transition-colors ${
+                          viewMode === option
+                            ? 'bg-white text-gray-900 shadow-sm dark:bg-[#1E293B] dark:text-white'
+                            : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+                        }`}
+                        aria-pressed={viewMode === option}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSortBySubcontractor((active) => !active)}
+                    className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                      sortBySubcontractor
+                        ? 'border-purple-300 bg-purple-200 text-purple-900 shadow-sm dark:border-purple-700 dark:bg-purple-900/60 dark:text-purple-100'
+                        : 'border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/40 dark:text-purple-200 dark:hover:bg-purple-900/50'
+                    }`}
+                    aria-pressed={sortBySubcontractor}
+                  >
+                    <User className="h-4 w-4" />
+                    Sort by Subcontractor
+                  </button>
                 </div>
                 <div className="flex items-center justify-center gap-2">
                   <button onClick={() => moveCalendar(-1)} className="p-2 rounded-lg border border-gray-200 dark:border-[#2D3B4E] bg-white dark:bg-[#1E293B]" aria-label="Previous date range">
@@ -1485,25 +1587,7 @@ JG Painting Pros Inc.`,
                       <div className="min-h-0 flex-1 overflow-y-auto p-3 space-y-2">
                         {selectedDayItems.length === 0 ? (
                           <p className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">No jobs or events scheduled.</p>
-                        ) : selectedDayItems.map((item, index) => (
-                          <div key={item.id} className="rounded-lg border border-gray-200 dark:border-[#2D3B4E] p-3 bg-gray-50 dark:bg-[#0F172A]">
-                            <button onClick={() => setSelectedItem(item)} className="w-full text-left" title={item.title}>
-                              <div className="flex items-start gap-2">
-                                <span className="mt-1 h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{item.title}</p>
-                                  <p className="text-xs text-gray-500 dark:text-gray-400">{item.type === 'job' ? item.status : item.allDay ? 'All day event' : 'Timed event'}</p>
-                                </div>
-                              </div>
-                            </button>
-                            {item.type === 'job' && (
-                              <div className="mt-3 flex gap-2">
-                                <button disabled={index === 0} onClick={() => handleReorder(selectedDate, item.id, -1)} className="px-2 py-1 rounded border text-xs disabled:opacity-40 border-gray-200 dark:border-[#2D3B4E]">Up</button>
-                                <button disabled={index === selectedDayItems.length - 1} onClick={() => handleReorder(selectedDate, item.id, 1)} className="px-2 py-1 rounded border text-xs disabled:opacity-40 border-gray-200 dark:border-[#2D3B4E]">Down</button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                        ) : renderSelectedDayCards()}
                       </div>
                     </section>
                   )}

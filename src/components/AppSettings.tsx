@@ -17,7 +17,8 @@ import {
   Loader2,
   MessageSquare,
   ClipboardList,
-  Sparkles
+  Sparkles,
+  Palette
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
@@ -33,6 +34,7 @@ import { SmsNotificationSettings } from './SmsNotificationSettings';
 import { SmsNotificationLogs } from './SmsNotificationLogs';
 import { WhatsNewManager } from './admin/WhatsNewManager';
 import { QualityControlLeaderboard } from './admin/QualityControlLeaderboard';
+import { JobPhaseColorManager } from './admin/JobPhaseColorManager';
 
 interface AppSettingsData {
   id: string;
@@ -48,7 +50,7 @@ export function AppSettings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const [activeTab, setActiveTab] = useState<'overview' | 'email-templates' | 'lead-forms' | 'qc-leaderboard' | 'daily-agenda' | 'users' | 'sub-assignment-alerts' | 'sms-notifications' | 'sms-logs' | 'bulk-schedule' | 'job-categories' | 'unit-sizes' | 'maintenance' | 'whats-new'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'email-templates' | 'lead-forms' | 'qc-leaderboard' | 'daily-agenda' | 'users' | 'sub-assignment-alerts' | 'sms-notifications' | 'sms-logs' | 'bulk-schedule' | 'job-categories' | 'unit-sizes' | 'job-phase-colors' | 'maintenance' | 'whats-new'>('overview');
   const [subAssignmentRecipients, setSubAssignmentRecipients] = useState<string[]>([]);
   const [adminOptions, setAdminOptions] = useState<AppSettingsData[]>([]);
 
@@ -373,6 +375,20 @@ export function AppSettings() {
               </button>
 
               <button
+                onClick={() => setActiveTab('job-phase-colors')}
+                className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'job-phase-colors'
+                    ? 'bg-violet-50 text-violet-700 dark:bg-violet-900/50 dark:text-violet-200'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
+                }`}
+              >
+                <Palette className={`flex-shrink-0 -ml-1 mr-3 h-6 w-6 ${
+                  activeTab === 'job-phase-colors' ? 'text-violet-700 dark:text-violet-200' : 'text-gray-400 group-hover:text-gray-500'
+                }`} />
+                <span className="truncate">Job Phase Colors</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab('users')}
                 className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'users'
@@ -532,6 +548,11 @@ export function AppSettings() {
             {/* Unit Sizes Tab */}
             {activeTab === 'unit-sizes' && (
               <UnitSizeManager />
+            )}
+
+            {/* Job Phase Colors Tab */}
+            {activeTab === 'job-phase-colors' && (
+              <JobPhaseColorManager />
             )}
 
             {/* User Management Tab */}
