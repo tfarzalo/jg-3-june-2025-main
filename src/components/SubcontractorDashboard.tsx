@@ -858,6 +858,32 @@ export function SubcontractorDashboard() {
     );
   };
 
+  const sortJobsByProperty = (jobs: Job[]) => {
+    return [...jobs].sort((a, b) => {
+      const propertyCompare = (a.property?.property_name || '').localeCompare(b.property?.property_name || '', undefined, {
+        sensitivity: 'base',
+        numeric: true,
+      });
+      if (propertyCompare !== 0) return propertyCompare;
+
+      const addressCompare = formatAddress(a.property).localeCompare(formatAddress(b.property), undefined, {
+        sensitivity: 'base',
+        numeric: true,
+      });
+      if (addressCompare !== 0) return addressCompare;
+
+      const unitCompare = String(a.unit_number || '').localeCompare(String(b.unit_number || ''), undefined, {
+        sensitivity: 'base',
+        numeric: true,
+      });
+      if (unitCompare !== 0) return unitCompare;
+
+      return (a.work_order_num || 0) - (b.work_order_num || 0);
+    });
+  };
+
+  const activeTabJobs = sortJobsByProperty(filteredByTab(displayedJobs, activeTab));
+
   const getFirstName = (fullName: string) => {
     return fullName.split(' ')[0] || fullName;
   };
@@ -1322,7 +1348,7 @@ export function SubcontractorDashboard() {
             </button>
           </div>
 
-          {filteredByTab(displayedJobs, activeTab).length === 0 ? (
+          {activeTabJobs.length === 0 ? (
             <div className="text-center py-8">
               <CalendarIcon className="h-12 w-12 mx-auto mb-4 text-gray-400 dark:text-gray-600" />
               <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">{text.noJobsTitle}</h3>
@@ -1333,7 +1359,7 @@ export function SubcontractorDashboard() {
             </div>
           ) : (
             <div className="space-y-4">
-              {filteredByTab(displayedJobs, activeTab).map(job => (
+              {activeTabJobs.map(job => (
                 <div 
                   key={job.id}
                   className={`bg-gray-50 dark:bg-[#0F172A] rounded-lg p-3 sm:p-4 border-l-4 ${
