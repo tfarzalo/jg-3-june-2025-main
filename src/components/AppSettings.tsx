@@ -291,6 +291,20 @@ export function AppSettings() {
               </button>
 
               <button
+                onClick={() => setActiveTab('job-phase-colors')}
+                className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'job-phase-colors'
+                    ? 'bg-violet-50 text-violet-700 dark:bg-violet-900/50 dark:text-violet-200'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
+                }`}
+              >
+                <Palette className={`flex-shrink-0 -ml-1 mr-3 h-6 w-6 ${
+                  activeTab === 'job-phase-colors' ? 'text-violet-700 dark:text-violet-200' : 'text-gray-400 group-hover:text-gray-500'
+                }`} />
+                <span className="truncate">Job Phase Colors</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab('email-templates')}
                 className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'email-templates'
@@ -372,20 +386,6 @@ export function AppSettings() {
                   activeTab === 'unit-sizes' ? 'text-blue-700 dark:text-blue-200' : 'text-gray-400 group-hover:text-gray-500'
                 }`} />
                 <span className="truncate">Unit Sizes</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('job-phase-colors')}
-                className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                  activeTab === 'job-phase-colors'
-                    ? 'bg-violet-50 text-violet-700 dark:bg-violet-900/50 dark:text-violet-200'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
-                }`}
-              >
-                <Palette className={`flex-shrink-0 -ml-1 mr-3 h-6 w-6 ${
-                  activeTab === 'job-phase-colors' ? 'text-violet-700 dark:text-violet-200' : 'text-gray-400 group-hover:text-gray-500'
-                }`} />
-                <span className="truncate">Job Phase Colors</span>
               </button>
 
               <button
@@ -516,6 +516,22 @@ export function AppSettings() {
                       </p>
                     </div>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('job-phase-colors')}
+                    className="mt-4 flex w-full items-start gap-4 rounded-lg border border-violet-200 bg-violet-50 p-4 text-left transition-colors hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-900/20 dark:hover:bg-violet-900/30"
+                  >
+                    <div className="rounded-full bg-violet-100 p-2 dark:bg-violet-800">
+                      <Palette className="h-5 w-5 text-violet-700 dark:text-violet-200" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-violet-950 dark:text-violet-100">Job Phase Colors</h3>
+                      <p className="mt-1 text-sm text-violet-700 dark:text-violet-300">
+                        Update the colors used for job phase badges, menu icons, calendar indicators, and dashboard accents.
+                      </p>
+                    </div>
+                  </button>
                 </div>
               </div>
             )}
