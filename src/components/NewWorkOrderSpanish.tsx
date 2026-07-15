@@ -107,7 +107,7 @@ interface NewWorkOrderSpanishProps {
   formData: any;
   handleInputChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
   handleSubmit: (e: React.FormEvent) => void;
-  handleUploadComplete: (filePath: string) => void;
+  handleUploadComplete: (filePath: string, folder?: string) => void;
   handleUploadError: (error: string) => void;
   handleImageDelete: (filePath: string) => void;
   jobCategories: JobCategory[];
@@ -518,7 +518,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                         jobId={job.id}
                         workOrderId={existingWorkOrder?.id || ''}
                         folder="sprinkler_with_cover"
-                        onUploadComplete={handleUploadComplete}
+                        onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_with_cover')}
                         onError={handleUploadError}
                         required={isSubcontractor}
                       />
@@ -531,7 +531,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                         jobId={job.id}
                         workOrderId={existingWorkOrder?.id || ''}
                         folder="sprinkler_without_cover"
-                        onUploadComplete={handleUploadComplete}
+                        onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_without_cover')}
                         onError={handleUploadError}
                         required={isSubcontractor}
                       />
@@ -559,7 +559,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                   jobId={job.id}
                   workOrderId={existingWorkOrder?.id || ''}
                   folder="before"
-                  onUploadComplete={handleUploadComplete}
+                  onUploadComplete={(filePath) => handleUploadComplete(filePath, 'before')}
                   onError={handleUploadError}
                   onImageDelete={handleImageDelete}
                   required={isSubcontractor}
@@ -586,7 +586,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                   jobId={job.id}
                   workOrderId={existingWorkOrder?.id || ''}
                   folder="other"
-                  onUploadComplete={handleUploadComplete}
+                  onUploadComplete={(filePath) => handleUploadComplete(filePath, 'other')}
                   onError={handleUploadError}
                   onImageDelete={handleImageDelete}
                 />

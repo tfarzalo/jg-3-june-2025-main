@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { CheckCircle, XCircle, Clock, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
@@ -18,7 +18,14 @@ interface ApprovalData {
     description?: string;
     requested_by?: string;
   };
-  job?: any;
+  job?: {
+    property?: {
+      property_name?: string;
+    };
+    unit_number?: string;
+    work_order_num?: number;
+    scheduled_date?: string;
+  };
   images?: Array<{
     id: string;
     file_path: string;
@@ -31,7 +38,6 @@ interface ApprovalData {
 
 export function PublicApprovalPage() {
   const { token } = useParams<{ token: string }>();
-  const navigate = useNavigate();
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   
   const [loading, setLoading] = useState(true);
@@ -149,19 +155,7 @@ export function PublicApprovalPage() {
 
   const { approval, job, images } = approvalData;
   const isAlreadyProcessed = approval?.status !== 'pending';
-
-  const viewExpiresDate = approval?.viewExpiresAt
-    ? new Date(approval.viewExpiresAt)
-    : null;
-
-  const formatViewExpiry = (date: Date) => {
-    return date.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-  };
+  const isExpiredRecord = approval?.status === 'expired';
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0F172A] py-8 px-4">
@@ -176,14 +170,20 @@ export function PublicApprovalPage() {
               <div className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
                 approval?.status === 'approved' 
                   ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                  : isExpiredRecord
+                  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
                   : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
               }`}>
                 {approval?.status === 'approved' ? (
                   <CheckCircle className="h-5 w-5" />
+                ) : isExpiredRecord ? (
+                  <Clock className="h-5 w-5" />
                 ) : (
                   <XCircle className="h-5 w-5" />
                 )}
-                <span className="font-semibold capitalize">{approval?.status}</span>
+                <span className="font-semibold capitalize">
+                  {isExpiredRecord ? 'Response window closed' : approval?.status}
+                </span>
               </div>
             )}
           </div>
@@ -361,10 +361,14 @@ export function PublicApprovalPage() {
             <div className={`inline-flex items-center justify-center w-14 h-14 rounded-full mb-4 ${
               approval?.status === 'approved'
                 ? 'bg-green-100 dark:bg-green-900/30'
+                : isExpiredRecord
+                ? 'bg-amber-100 dark:bg-amber-900/30'
                 : 'bg-red-100 dark:bg-red-900/30'
             }`}>
               {approval?.status === 'approved' ? (
                 <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
+              ) : isExpiredRecord ? (
+                <Clock className="h-8 w-8 text-amber-600 dark:text-amber-400" />
               ) : (
                 <XCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
               )}
@@ -372,21 +376,14 @@ export function PublicApprovalPage() {
             <p className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
               This request has been{' '}
               <span className={approval?.status === 'approved' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                {approval?.status === 'approved' ? 'Approved' : 'Declined'}
+                {approval?.status === 'approved' ? 'Approved' : isExpiredRecord ? 'Closed' : 'Declined'}
               </span>
             </p>
             <p className="text-gray-500 dark:text-gray-400 text-sm">
-              No further action can be taken on this request.
+              {isExpiredRecord
+                ? 'The response window has closed, but the record remains available for review.'
+                : 'No further action can be taken on this request.'}
             </p>
-            {viewExpiresDate && (
-              <div className="mt-4 inline-flex items-center space-x-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-400 rounded-lg px-4 py-2 text-sm">
-                <Clock className="h-4 w-4 flex-shrink-0" />
-                <span>
-                  This page will no longer be visible after{' '}
-                  <strong>{formatViewExpiry(viewExpiresDate)}</strong>.
-                </span>
-              </div>
-            )}
           </div>
         )}
       </div>

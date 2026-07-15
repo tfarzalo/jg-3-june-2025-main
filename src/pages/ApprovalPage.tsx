@@ -13,8 +13,26 @@ interface JobImage {
   file_path: string;
   file_name: string;
   image_type: string;
-  mime_type: string;
+  mime_type?: string;
   public_url?: string;
+  signedUrl?: string | null;
+}
+
+interface StoredJobDetails {
+  work_order_num?: number;
+  unit_number?: string;
+  property_name?: string;
+  property_address?: string;
+}
+
+interface ApprovalRpcResult {
+  data?: {
+    success?: boolean;
+    error?: string;
+  };
+  error?: {
+    message: string;
+  } | null;
 }
 
 interface ApprovalData {
@@ -30,7 +48,7 @@ interface ApprovalData {
       unit?: string;
     }>;
     total: number;
-    job_details?: any;
+    job_details?: StoredJobDetails;
     selected_images?: string[]; // Array of image IDs
     selected_image_types?: string[]; // Array of image types (for categorization)
     selected_image_entries?: Array<{
@@ -45,6 +63,9 @@ interface ApprovalData {
   approver_email: string;
   approver_name: string;
   expires_at: string;
+  used_at?: string | null;
+  decision?: 'approved' | 'declined' | null;
+  decision_at?: string | null;
   job: {
     id: string;
     work_order_num: number;
@@ -135,186 +156,56 @@ const ApprovalPage: React.FC = () => {
     try {
       console.log('Validating approval token:', token);
       
-      // Add a timeout to the query to avoid hanging
-      const queryTimeout = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Query timeout after 10 seconds')), 10000)
-      );
-      
-      // First, try to get just the approval token data
-      const basicTokenQuery = supabase
-        .from('approval_tokens')
-        .select('*')
-        .eq('token', token)
-        .is('used_at', null)
-        .gt('expires_at', new Date().toISOString())
-        .single();
+      const { data, error: validationError } = await supabase.functions.invoke('validate-approval-token', {
+        body: { token }
+      });
 
-      console.log('Starting basic token query...');
-      
-      const { data: basicTokenData, error: basicTokenError } = await Promise.race([
-        basicTokenQuery,
-        queryTimeout
-      ]) as any;
+      if (validationError || !data?.valid || !data?.token) {
+        setError(data?.error || validationError?.message || 'Invalid approval link');
+        return;
+      }
 
-      console.log('Basic token query result:', { basicTokenData, basicTokenError });
-
-      if (basicTokenError) {
-        console.error('Basic token validation error:', basicTokenError);
-        if (basicTokenError.code === 'PGRST116') {
-          console.log('Token not found with current criteria, checking if token exists at all...');
-          // Check if token exists at all (might be used or expired)
-          const { data: anyTokenData, error: anyTokenError } = await supabase
-            .from('approval_tokens')
-            .select('used_at, expires_at, created_at, decision, decision_at, approver_name, approver_email')
-            .eq('token', token)
-            .single();
-          
-          console.log('Any token query result:', { anyTokenData, anyTokenError });
-          
-          if (anyTokenError) {
-            setError('Invalid approval link - token not found in database');
-          } else if (anyTokenData.decision) {
-            // Token was already used — check 14-day post-decision read window
-            const decisionAt = new Date(anyTokenData.decision_at);
-            const fourteenDaysAfter = new Date(decisionAt.getTime() + 14 * 24 * 60 * 60 * 1000);
-            if (Date.now() <= fourteenDaysAfter.getTime()) {
-              // Within 14-day window — show read-only post-decision view
-              setPostDecisionView({
-                decision: anyTokenData.decision,
-                decision_at: anyTokenData.decision_at,
-                approver_name: anyTokenData.approver_name,
-                approver_email: anyTokenData.approver_email,
-              });
-              // Also load the full approval data for context
-              const { data: fullToken } = await supabase
-                .from('approval_tokens')
-                .select('*')
-                .eq('token', token!)
-                .single();
-              if (fullToken?.extra_charges_data?.job_details) {
-                const jd = fullToken.extra_charges_data.job_details;
-                setApprovalData({
-                  ...fullToken,
-                  job: {
-                    id: fullToken.job_id,
-                    work_order_num: jd.work_order_num,
-                    unit_number: jd.unit_number,
-                    property: { name: jd.property_name || 'Property', address: jd.property_address || '', address_2: '', city: '', state: '', zip: '' }
-                  }
-                } as ApprovalData);
-              }
-            } else {
-              setError(`This approval link has already been used on ${new Date(anyTokenData.used_at).toLocaleString()} and the 14-day viewing period has expired.`);
-            }
-          } else if (new Date(anyTokenData.expires_at) < new Date()) {
-            setError(`This approval link expired on ${new Date(anyTokenData.expires_at).toLocaleString()}`);
-          } else {
-            setError('Invalid approval link - unknown issue');
+      const tokenData = data.token;
+      const jobDetails = tokenData.extra_charges_data?.job_details || {};
+      const job = data.job || {};
+      const fullTokenData = {
+        ...tokenData,
+        job: {
+          id: tokenData.job_id,
+          work_order_num: job.work_order_num || jobDetails.work_order_num,
+          unit_number: job.unit_number || jobDetails.unit_number,
+          property: {
+            name: job.property?.name || jobDetails.property_name || 'Property',
+            address: job.property?.address || jobDetails.property_address || 'Address not available',
+            address_2: job.property?.address_2 || '',
+            city: job.property?.city || '',
+            state: job.property?.state || '',
+            zip: job.property?.zip || ''
           }
-        } else {
-          setError(`Database error: ${basicTokenError.message}`);
         }
-        return;
-      }
+      };
 
-      if (!basicTokenData) {
-        console.error('No basic token data returned');
-        setError('Invalid or expired approval link - no data returned');
-        return;
-      }
-
-      console.log('Basic token data found:', basicTokenData);
-
-      // Now try to get the full data with joins
-      console.log('Fetching full token data with job and property info...');
-      
-      // Try a different approach - separate queries if the join fails
-      let fullTokenData = basicTokenData;
-      
-      // Use the extra_charges_data stored in the token instead of querying
-      // This avoids RLS issues and is more reliable since we stored all needed data at send time
-      console.log('Using stored job details from token extra_charges_data');
-      
-      if (basicTokenData.extra_charges_data?.job_details) {
-        const jobDetails = basicTokenData.extra_charges_data.job_details;
-        fullTokenData = {
-          ...basicTokenData,
-          job: {
-            id: basicTokenData.job_id,
-            work_order_num: jobDetails.work_order_num,
-            unit_number: jobDetails.unit_number,
-            property: {
-              name: jobDetails.property_name || 'Property',
-              address: jobDetails.property_address || 'Address not available',
-              address_2: '',
-              city: '',
-              state: '',
-              zip: ''
-            }
-          }
-        };
-        console.log('Successfully loaded approval data from token:', fullTokenData);
-      } else {
-        console.error('No job details found in token extra_charges_data');
-        throw new Error('Approval data incomplete - please request a new approval link');
-      }
-
-      console.log('Final approval data:', fullTokenData);
       setApprovalData(fullTokenData as ApprovalData);
+      setPostDecisionView(
+        tokenData.decision && tokenData.decision_at
+          ? {
+              decision: tokenData.decision,
+              decision_at: tokenData.decision_at,
+              approver_name: tokenData.approver_name,
+              approver_email: tokenData.approver_email,
+            }
+          : null
+      );
 
-      const selectedEntries = basicTokenData.extra_charges_data?.selected_image_entries;
-      if (selectedEntries && Array.isArray(selectedEntries) && selectedEntries.length > 0) {
-        console.log('📸 Loading image entries stored with token:', selectedEntries.length);
-        const normalizedImages: JobImage[] = [];
-        for (const entry of selectedEntries) {
-          const bucket = entry.bucket || (entry.source === 'files' ? 'files' : 'job-images');
-          let publicUrl: string | undefined;
-          try {
-            const { data: signedData } = await supabase.storage
-              .from(bucket)
-              .createSignedUrl(entry.file_path, 60 * 60);
-            publicUrl = signedData?.signedUrl;
-          } catch (signedError) {
-            console.warn('Signed URL failed, falling back to public URL', signedError);
-          }
-          if (!publicUrl && supabaseUrl) {
-            publicUrl = `${supabaseUrl}/storage/v1/object/public/${bucket}/${entry.file_path}`;
-          }
-          normalizedImages.push({
-            id: entry.id,
-            file_path: entry.file_path,
-            file_name: entry.file_name,
-            image_type: entry.normalized_type || entry.source || 'photo',
-            mime_type: 'image/jpeg',
-            public_url: publicUrl,
-          });
-        }
-        setJobImages(normalizedImages);
-      } else if (basicTokenData.extra_charges_data?.selected_images &&
-        Array.isArray(basicTokenData.extra_charges_data.selected_images) &&
-        basicTokenData.extra_charges_data.selected_images.length > 0) {
-        console.log('📸 Loading selected images from job_images table...');
-        const { data: imagesData, error: imagesError } = await supabase
-          .from('job_images')
-          .select('id, file_path, file_name, image_type, mime_type')
-          .in('id', basicTokenData.extra_charges_data.selected_images);
-
-        if (imagesError) {
-          console.error('❌ Error loading images:', imagesError);
-        } else if (imagesData) {
-          setJobImages(
-            imagesData.map((img) => ({
-              ...img,
-              public_url: supabaseUrl
-                ? `${supabaseUrl}/storage/v1/object/public/job-images/${img.file_path}`
-                : undefined,
-            }))
-          );
-        }
-      } else {
-        console.log('ℹ️ No images selected in token (this is OK, but images are recommended for approval)');
-        console.log('   extra_charges_data:', basicTokenData.extra_charges_data);
-      }
+      const normalizedImages = (data.images || []).map((img: JobImage) => ({
+        id: img.id,
+        file_path: img.file_path,
+        file_name: img.file_name || img.file_path?.split('/').pop() || 'Job photo',
+        image_type: img.image_type || 'photo',
+        mime_type: img.mime_type || 'image/jpeg',
+        public_url: img.signedUrl || img.public_url,
+      }));
+      setJobImages(normalizedImages);
     } catch (err) {
       console.error('Error loading approval data:', err);
       if (err instanceof Error && err.message === 'Query timeout after 10 seconds') {
@@ -354,7 +245,7 @@ const ApprovalPage: React.FC = () => {
       const { data, error } = await Promise.race([
         approvalPromise,
         timeoutPromise
-      ]) as any;
+      ]) as ApprovalRpcResult;
 
       console.log('Approval function result:', { data, error });
 
@@ -369,6 +260,14 @@ const ApprovalPage: React.FC = () => {
       }
 
       console.log('Approval processed successfully');
+      setApprovalData(prev => prev ? {
+        ...prev,
+        approver_name: approverName || prev.approver_name,
+        approver_email: approverEmail || prev.approver_email,
+        decision: 'approved',
+        decision_at: new Date().toISOString(),
+        used_at: new Date().toISOString(),
+      } : prev);
       setApproved(true);
 
       // Notify the assigned subcontractor via SMS (best-effort)
@@ -421,6 +320,12 @@ const ApprovalPage: React.FC = () => {
       } catch (emailError) {
         console.warn('Failed to send internal notification email:', emailError);
         // Don't fail the approval if email fails
+      }
+
+      try {
+        await sendCustomerReceiptEmail('approved');
+      } catch (receiptError) {
+        console.warn('Failed to send customer approval receipt email:', receiptError);
       }
 
       // Force refresh notifications in the main application
@@ -488,7 +393,7 @@ const ApprovalPage: React.FC = () => {
       const { data, error } = await Promise.race([
         declinePromise,
         timeoutPromise
-      ]) as any;
+      ]) as ApprovalRpcResult;
 
       console.log('Decline function result:', { data, error });
 
@@ -503,6 +408,14 @@ const ApprovalPage: React.FC = () => {
       }
 
       console.log('Decline processed successfully');
+      setApprovalData(prev => prev ? {
+        ...prev,
+        approver_name: approverName || prev.approver_name,
+        approver_email: approverEmail || prev.approver_email,
+        decision: 'declined',
+        decision_at: new Date().toISOString(),
+        used_at: new Date().toISOString(),
+      } : prev);
       setDeclined(true);
 
       // Send internal notification email (best-effort, non-blocking)
@@ -527,6 +440,12 @@ const ApprovalPage: React.FC = () => {
       } catch (emailError) {
         console.warn('Failed to send internal notification email:', emailError);
         // Don't fail the decline if email fails
+      }
+
+      try {
+        await sendCustomerReceiptEmail('declined');
+      } catch (receiptError) {
+        console.warn('Failed to send customer decline receipt email:', receiptError);
       }
 
       // Notify parent window if applicable
@@ -581,6 +500,24 @@ const ApprovalPage: React.FC = () => {
     return `An unexpected error occurred: ${error}. Please contact JG Painting Pros Inc. for assistance.`;
   };
 
+  const sendCustomerReceiptEmail = async (decision: 'approved' | 'declined') => {
+    if (!token || !approvalData) return;
+
+    const { error } = await supabase.functions.invoke('send-approval-receipt-email', {
+      body: {
+        token,
+        decision,
+        approverName: approverName || approvalData.approver_name,
+        approverEmail: approverEmail || approvalData.approver_email,
+        reviewUrl: window.location.href,
+      },
+    });
+
+    if (error) {
+      throw error;
+    }
+  };
+
   const handleDownloadPDF = async () => {
     if (!approvalData) return;
     
@@ -593,8 +530,8 @@ const ApprovalPage: React.FC = () => {
         approverEmail: approvalData.approver_email,
         images: jobImages,
         supabaseUrl,
-        approvedAt: approved ? new Date().toISOString() : undefined,
-        status: approved ? 'approved' : 'pending'
+        approvedAt: approved || approvalData.decision === 'approved' ? (approvalData.decision_at || new Date().toISOString()) : undefined,
+        status: approved || approvalData.decision === 'approved' ? 'approved' : 'pending'
       });
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -656,7 +593,7 @@ const ApprovalPage: React.FC = () => {
             </span>
           </p>
           <p className="text-sm text-gray-500 mb-6">
-            We will proceed with the work order phase immediately. You will receive updates as work progresses.
+            We will proceed with the work order phase immediately. A copy of these charges and photos is being emailed to you for your records.
           </p>
           
           {/* Itemized Breakdown (Approved View) */}
@@ -776,7 +713,7 @@ const ApprovalPage: React.FC = () => {
             </span>
           </p>
           <p className="text-sm text-gray-500 mb-6">
-            The job will remain in "Pending Work Order" status. Our team has been notified and will contact you to discuss alternative options.
+            The job will remain in "Pending Work Order" status. Our team has been notified, and a copy of these charges and photos is being emailed to you for your records.
           </p>
           
           {/* Itemized Breakdown (Declined View for reference) */}
@@ -853,57 +790,9 @@ const ApprovalPage: React.FC = () => {
 
   if (!approvalData) return null;
 
-  // 14-day post-decision read-only view
-  if (postDecisionView) {
-    const isApproved = postDecisionView.decision === 'approved';
-    const decisionDate = new Date(postDecisionView.decision_at).toLocaleString('en-US', {
-      month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
-    });
-    const approverLabel = postDecisionView.approver_name || postDecisionView.approver_email || 'the approver';
-    return (
-      <div className={`min-h-screen flex items-center justify-center ${isApproved ? 'bg-green-50' : 'bg-red-50'} py-8`}>
-        <div className="max-w-lg w-full mx-auto bg-white rounded-2xl shadow-lg overflow-hidden">
-          <div className={`${isApproved ? 'bg-gradient-to-r from-green-600 to-green-700' : 'bg-gradient-to-r from-red-600 to-red-700'} px-6 py-6 text-center`}>
-            <div className="text-5xl mb-3">{isApproved ? '✅' : '❌'}</div>
-            <h1 className="text-2xl font-bold text-white">{isApproved ? 'Extra Charges Approved' : 'Extra Charges Declined'}</h1>
-            <p className="text-white/80 text-sm mt-1">Record of decision — view-only</p>
-          </div>
-          <div className="px-6 py-6">
-            {approvalData && (
-              <div className={`border rounded-xl p-4 mb-5 ${isApproved ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                <p className="font-semibold text-gray-900">Job #{approvalData.job.work_order_num.toString().padStart(6, '0')}</p>
-                <p className="text-gray-700 text-sm">{approvalData.job.property.name} · Unit {approvalData.job.unit_number}</p>
-                <p className="text-gray-700 font-medium mt-2">
-                  Total: ${approvalData.extra_charges_data.total.toFixed(2)}
-                </p>
-              </div>
-            )}
-            <div className="space-y-3 text-sm text-gray-700">
-              <div className="flex items-start gap-2">
-                <span className="font-semibold text-gray-900 w-28 shrink-0">Decision:</span>
-                <span className={`font-bold ${isApproved ? 'text-green-700' : 'text-red-700'}`}>
-                  {isApproved ? 'Approved' : 'Declined'}
-                </span>
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="font-semibold text-gray-900 w-28 shrink-0">Submitted by:</span>
-                <span>{approverLabel}</span>
-              </div>
-              <div className="flex items-start gap-2">
-                <span className="font-semibold text-gray-900 w-28 shrink-0">Date & Time:</span>
-                <span>{decisionDate}</span>
-              </div>
-            </div>
-            <div className="mt-6 pt-4 border-t border-gray-100 text-center text-xs text-gray-400">
-              This record link is available for 14 days after the decision was submitted.
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const isExpiringSoon = new Date(approvalData.expires_at).getTime() - Date.now() < 24 * 60 * 60 * 1000; // 24 hours
+  const isActionExpired = new Date(approvalData.expires_at).getTime() <= Date.now();
+  const isExpiringSoon = !isActionExpired && new Date(approvalData.expires_at).getTime() - Date.now() < 24 * 60 * 60 * 1000; // 24 hours
+  const isReadOnly = Boolean(postDecisionView) || isActionExpired;
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -934,6 +823,36 @@ const ApprovalPage: React.FC = () => {
               </p>
             </div>
           )}
+
+          {postDecisionView && (
+            <div className={`mt-6 mx-auto max-w-2xl border-2 rounded-lg p-4 shadow-md ${
+              postDecisionView.decision === 'approved'
+                ? 'bg-green-50 border-green-300'
+                : 'bg-red-50 border-red-300'
+            }`}>
+              <p className={`font-semibold ${
+                postDecisionView.decision === 'approved' ? 'text-green-800' : 'text-red-800'
+              }`}>
+                These extra charges were {postDecisionView.decision === 'approved' ? 'approved' : 'declined'} by{' '}
+                {postDecisionView.approver_name || postDecisionView.approver_email || 'the approver'} on{' '}
+                {new Date(postDecisionView.decision_at).toLocaleString()}.
+              </p>
+              <p className="text-sm text-gray-600 mt-1">
+                This page is available as a view-only record.
+              </p>
+            </div>
+          )}
+
+          {!postDecisionView && isActionExpired && (
+            <div className="mt-6 mx-auto max-w-2xl bg-amber-50 border-2 border-amber-300 rounded-lg p-4 shadow-md">
+              <p className="text-amber-800 font-semibold">
+                The approval response window has closed.
+              </p>
+              <p className="text-sm text-amber-700 mt-1">
+                The charge details and photos remain available here for reference.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Details Cards */}
@@ -949,19 +868,27 @@ const ApprovalPage: React.FC = () => {
           <ApprovalImageGallery images={jobImages} supabaseUrl={supabaseUrl} />
         )}
 
-        {/* Action Buttons */}
+        {/* Action Buttons / Record Controls */}
         <div className="bg-white border border-gray-200 rounded-lg p-8 shadow-lg">
           <div className="text-center">
             <div className="mb-6">
               <p className="text-gray-700 text-lg mb-3 font-medium">
-                Review the information above carefully
+                {isReadOnly ? 'Review record' : 'Review the information above carefully'}
               </p>
-              <p className="text-gray-600 mb-2">
-                By clicking "Approve Extra Charges" below, you authorize JG Painting Pros Inc. to proceed with the additional work and charges.
-              </p>
-              <p className="text-sm text-gray-500">
-                Your approval will move the job to the Work Order phase and our team will begin work immediately.
-              </p>
+              {isReadOnly ? (
+                <p className="text-gray-600 mb-2">
+                  No further approval action can be taken from this link, but the charges and photos remain available for reference.
+                </p>
+              ) : (
+                <>
+                  <p className="text-gray-600 mb-2">
+                    By clicking "Approve Extra Charges" below, you authorize JG Painting Pros Inc. to proceed with the additional work and charges.
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    Your approval will move the job to the Work Order phase and our team will begin work immediately.
+                  </p>
+                </>
+              )}
             </div>
 
             {/* Action Buttons */}
@@ -985,54 +912,60 @@ const ApprovalPage: React.FC = () => {
                 )}
               </button>
 
-              {/* Approve Button */}
-              <button
-                onClick={() => { setPendingAction('approve'); setApproverFormError(''); setShowApproverForm(true); }}
-                disabled={processing || declining}
-                className={`inline-flex items-center px-8 py-4 border border-transparent text-lg font-bold rounded-lg text-white transition-all shadow-lg ${
-                  processing || declining
-                    ? 'bg-gray-400 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 hover:shadow-xl transform hover:scale-105'
-                }`}
-              >
-                {processing ? (
-                  <>
-                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mr-3"></div>
-                    Processing Approval...
-                  </>
-                ) : (
-                  <>
-                    <span className="text-2xl mr-2">✅</span>
-                    Approve Extra Charges - ${approvalData.extra_charges_data.total.toFixed(2)}
-                  </>
-                )}
-              </button>
+              {!isReadOnly && (
+                <>
+                  {/* Approve Button */}
+                  <button
+                    onClick={() => { setPendingAction('approve'); setApproverFormError(''); setShowApproverForm(true); }}
+                    disabled={processing || declining}
+                    className={`inline-flex items-center px-8 py-4 border border-transparent text-lg font-bold rounded-lg text-white transition-all shadow-lg ${
+                      processing || declining
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 hover:shadow-xl transform hover:scale-105'
+                    }`}
+                  >
+                    {processing ? (
+                      <>
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mr-3"></div>
+                        Processing Approval...
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-2xl mr-2">✅</span>
+                        Approve Extra Charges - ${approvalData.extra_charges_data.total.toFixed(2)}
+                      </>
+                    )}
+                  </button>
 
-              {/* Decline Link - Subtle text link below */}
-              <button
-                onClick={() => { setPendingAction('decline'); setApproverFormError(''); setShowApproverForm(true); }}
-                disabled={processing || declining}
-                className={`text-sm transition-colors ${
-                  processing || declining
-                    ? 'text-gray-400 cursor-not-allowed'
-                    : 'text-gray-600 hover:text-red-600 hover:underline'
-                }`}
-              >
-                {declining ? (
-                  <span className="inline-flex items-center">
-                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current mr-2"></div>
-                    Processing decline...
-                  </span>
-                ) : (
-                  'I decline to approve these charges at this time'
-                )}
-              </button>
+                  {/* Decline Link - Subtle text link below */}
+                  <button
+                    onClick={() => { setPendingAction('decline'); setApproverFormError(''); setShowApproverForm(true); }}
+                    disabled={processing || declining}
+                    className={`text-sm transition-colors ${
+                      processing || declining
+                        ? 'text-gray-400 cursor-not-allowed'
+                        : 'text-gray-600 hover:text-red-600 hover:underline'
+                    }`}
+                  >
+                    {declining ? (
+                      <span className="inline-flex items-center">
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current mr-2"></div>
+                        Processing decline...
+                      </span>
+                    ) : (
+                      'I decline to approve these charges at this time'
+                    )}
+                  </button>
+                </>
+              )}
             </div>
 
             {/* Footer Info */}
             <div className="mt-8 pt-6 border-t border-gray-200">
               <p className="text-xs text-gray-400">
-                Secure approval link • Expires: {new Date(approvalData.expires_at).toLocaleString()}
+                {isReadOnly
+                  ? 'Secure approval record'
+                  : `Secure approval link • Response deadline: ${new Date(approvalData.expires_at).toLocaleString()}`}
               </p>
               <p className="text-xs text-gray-400 mt-1">
                 Questions? Contact JG Painting Pros Inc.

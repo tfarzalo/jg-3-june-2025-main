@@ -60,44 +60,8 @@ serve(async (req) => {
     }
 
     const now = new Date();
-    const VIEW_WINDOW_DAYS = 14;
-
-    if (approval.used_at) {
-      // Token was already used (approved/declined) — check if within 14-day view window
-      const usedAt = new Date(approval.used_at);
-      const viewExpiresAt = new Date(usedAt.getTime() + VIEW_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-
-      if (now > viewExpiresAt) {
-        return new Response(
-          JSON.stringify({ 
-            valid: false,
-            error: "This page is no longer available. The 14-day viewing period has ended."
-          }),
-          { 
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 410,
-          }
-        );
-      }
-
-      // Within view window — fall through to return data with viewExpiresAt
-      // (approval object is already fetched, continue below)
-    } else {
-      // Token not yet used — check action expiry
-      const expiresAt = new Date(approval.expires_at);
-      if (now > expiresAt) {
-        return new Response(
-          JSON.stringify({ 
-            valid: false,
-            error: "This approval link has expired."
-          }),
-          { 
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 410,
-          }
-        );
-      }
-    }
+    const expiresAt = new Date(approval.expires_at);
+    const actionExpired = !approval.used_at && now > expiresAt;
 
     // Extract selected images from extra_charges_data
     const selectedImageIds = approval.extra_charges_data?.selected_images || [];
@@ -136,15 +100,19 @@ serve(async (req) => {
             imagesWithSignedUrls.push({
               id: entry.id,
               file_path: entry.file_path,
+              file_name: entry.file_name,
               image_type: entry.normalized_type || entry.source || 'photo',
               signedUrl: null,
+              selected: true,
             });
           } else {
             imagesWithSignedUrls.push({
               id: entry.id,
               file_path: entry.file_path,
+              file_name: entry.file_name,
               image_type: entry.normalized_type || entry.source || 'photo',
               signedUrl: signedUrlData?.signedUrl || null,
+              selected: true,
             });
           }
         } catch (signedError) {
@@ -152,8 +120,10 @@ serve(async (req) => {
           imagesWithSignedUrls.push({
             id: entry.id,
             file_path: entry.file_path,
+            file_name: entry.file_name,
             image_type: entry.normalized_type || entry.source || 'photo',
             signedUrl: null,
+            selected: true,
           });
         }
       }
@@ -198,35 +168,34 @@ serve(async (req) => {
               return {
                 ...image,
                 signedUrl: null,
-                error: signedUrlError.message
+                error: signedUrlError.message,
+                selected: selectedImageIds.length === 0 || selectedImageIds.includes(image.id),
               };
             }
 
             return {
               ...image,
-              signedUrl: signedUrlData.signedUrl
+              signedUrl: signedUrlData.signedUrl,
+              selected: selectedImageIds.length === 0 || selectedImageIds.includes(image.id),
             };
           } catch (err) {
             console.error(`Exception creating signed URL:`, err);
             return {
               ...image,
               signedUrl: null,
-              error: err.message
+              error: err.message,
+              selected: selectedImageIds.length === 0 || selectedImageIds.includes(image.id),
             };
           }
         })
       );
     }
 
-    // Compute viewExpiresAt: if already used, 14 days after used_at; else null
-    const VIEW_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
-    const viewExpiresAt = approval.used_at
-      ? new Date(new Date(approval.used_at).getTime() + VIEW_WINDOW_MS).toISOString()
-      : null;
-
     // Determine the actual status
     let resolvedStatus: string;
-    if (approval.used_at) {
+    if (approval.decision) {
+      resolvedStatus = approval.decision === 'declined' ? 'declined' : 'approved';
+    } else if (approval.used_at) {
       // Look up real status from the approvals table via job_id and approval_type
       const { data: approvalRecord } = await supabase
         .from('approvals')
@@ -237,9 +206,25 @@ serve(async (req) => {
         .limit(1)
         .maybeSingle();
       resolvedStatus = approvalRecord?.status || 'approved';
+    } else if (actionExpired) {
+      resolvedStatus = 'expired';
     } else {
       resolvedStatus = 'pending';
     }
+
+    const jobDetails = approval.extra_charges_data?.job_details || {};
+    const normalizedJob = {
+      ...job,
+      property: {
+        ...(job?.property || {}),
+        name: job?.property?.property_name || jobDetails.property_name || 'Property',
+        address: job?.property?.address || jobDetails.property_address || '',
+        address_2: job?.property?.address_2 || '',
+        city: job?.property?.city || '',
+        state: job?.property?.state || '',
+        zip: job?.property?.zip || '',
+      },
+    };
 
     // Return success response with all data from approval_tokens
     return new Response(
@@ -250,11 +235,17 @@ serve(async (req) => {
           type: approval.approval_type,
           status: resolvedStatus,
           expiresAt: approval.expires_at,
-          viewExpiresAt,
+          usedAt: approval.used_at,
+          decision: approval.decision,
+          decisionAt: approval.decision_at,
+          approverName: approval.approver_name,
+          approverEmail: approval.approver_email,
+          actionExpired,
           amount: approval.extra_charges_data?.total,
           description: approval.extra_charges_data?.items?.[0]?.description
         },
-        job: job,
+        token: approval,
+        job: normalizedJob,
         images: imagesWithSignedUrls
       }),
       { 
