@@ -136,6 +136,7 @@ interface WorkOrder {
   job_category_id: string;
   has_sprinklers: boolean;
   sprinklers_painted: boolean;
+  sprinkler_form_left_in_unit: boolean;
   painted_ceilings: boolean;
   ceiling_rooms_count: number;
   individual_ceiling_count?: number | null;
@@ -152,6 +153,7 @@ interface WorkOrder {
   extra_charges_description?: string;
   extra_hours?: number;
   extra_charges_line_items?: ExtraChargeLineItem[];
+  repair_cost?: number | null;
   additional_comments?: string;
 }
 
@@ -1794,6 +1796,8 @@ export function JobDetails() {
         y += 10;
         doc.text(`Sprinklers Painted: ${job?.work_order?.sprinklers_painted ? 'Yes' : 'No'}`, margin, y);
         y += 10;
+        doc.text(`Sprinkler Form Left in Unit: ${job?.work_order?.sprinkler_form_left_in_unit ? 'Yes' : 'No'}`, margin, y);
+        y += 10;
       }
       
       if (job?.work_order?.painted_ceilings) {
@@ -2060,6 +2064,7 @@ export function JobDetails() {
           if (c === 'after'  || c === 'after_images')  return 'after_images';
           if (c === 'sprinkler' || c === 'sprinkler_images' || c === 'sprinkler_with_cover' || c === 'sprinkler_with_cover_images') return 'sprinkler_with_cover_images';
           if (c === 'sprinkler_without_cover' || c === 'sprinkler_without_cover_images') return 'sprinkler_without_cover_images';
+          if (c === 'sprinkler_form' || c === 'sprinkler_form_images') return 'sprinkler_form_images';
           if (c === 'other'  || c === 'other_files')   return 'other_files';
           if (c === 'job_files') return 'job_files';
           if (c === 'property_files') return 'property_files';
@@ -2073,6 +2078,7 @@ export function JobDetails() {
           { key: 'after_images',     label: 'After Images'     },
           { key: 'sprinkler_with_cover_images', label: 'Sprinkler Images with Cover' },
           { key: 'sprinkler_without_cover_images', label: 'Sprinkler Images without Cover' },
+          { key: 'sprinkler_form_images', label: 'Sprinkler Form Photo' },
         ];
 
         // Group rows into sections
@@ -4867,6 +4873,14 @@ export function JobDetails() {
                         </p>
                       </div>
                     )}
+                    {job?.work_order?.has_sprinklers && (
+                      <div className={`p-4 rounded-lg border ${job?.work_order?.sprinkler_form_left_in_unit ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
+                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Sprinkler Form Left in Unit</span>
+                        <p className={`text-base font-bold mt-2 ${job?.work_order?.sprinkler_form_left_in_unit ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                          {job?.work_order?.sprinkler_form_left_in_unit ? 'Yes' : 'No'}
+                        </p>
+                      </div>
+                    )}
                   </div>
                   {/* Sprinkler Images */}
                   {hasWorkOrder && job.work_order?.has_sprinklers && job.work_order?.id && (
@@ -4887,6 +4901,16 @@ export function JobDetails() {
                           )}
                         </div>
                       </div>
+                      {job.work_order?.sprinkler_form_left_in_unit && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">Sprinkler Form Photo</h4>
+                          <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                            {jobIdForFiles && (
+                              <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="sprinkler_form" />
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

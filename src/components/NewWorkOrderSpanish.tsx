@@ -48,6 +48,7 @@ interface Job {
   job_category_id: string;
   has_sprinklers: boolean;
   sprinklers_painted: boolean;
+  sprinkler_form_left_in_unit: boolean;
   painted_ceilings: boolean;
   ceiling_rooms_count: number;
   painted_patio: boolean;
@@ -76,6 +77,7 @@ interface WorkOrder {
   job_category_id: string;
   has_sprinklers: boolean;
   sprinklers_painted: boolean;
+  sprinkler_form_left_in_unit: boolean;
   painted_ceilings: boolean;
   ceiling_rooms_count: number;
   painted_patio: boolean;
@@ -478,6 +480,13 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                           target: { name: 'has_sprinklers', value: checked.toString(), type: 'checkbox', checked }
                         } as React.ChangeEvent<HTMLInputElement>;
                         handleInputChange(hasSprinklersEvent);
+
+                        if (!checked) {
+                          const sprinklerFormEvent = {
+                            target: { name: 'sprinkler_form_left_in_unit', value: 'false', type: 'checkbox', checked: false }
+                          } as React.ChangeEvent<HTMLInputElement>;
+                          handleInputChange(sprinklerFormEvent);
+                        }
                       }}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
@@ -510,6 +519,33 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                     </select>
                   </div>
                   <div className="mt-4 space-y-4">
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="sprinkler_form_left_in_unit"
+                        name="sprinkler_form_left_in_unit"
+                        checked={formData.sprinkler_form_left_in_unit}
+                        onChange={handleInputChange}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="sprinkler_form_left_in_unit" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                        ¿Se dejó un formulario de aspersores en la unidad?
+                      </label>
+                    </div>
+                    {formData.sprinkler_form_left_in_unit && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Foto del Formulario de Aspersores
+                        </label>
+                        <ImageUpload
+                          jobId={job.id}
+                          workOrderId={existingWorkOrder?.id || ''}
+                          folder="sprinkler_form"
+                          onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_form')}
+                          onError={handleUploadError}
+                        />
+                      </div>
+                    )}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Imágenes de Aspersores con Cubierta {isSubcontractor && <span className="text-red-500">*</span>}

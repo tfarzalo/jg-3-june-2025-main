@@ -1,3 +1,17 @@
+-- Add subcontractor-reported repair cost and return it through the admin job details payload.
+
+ALTER TABLE public.work_orders
+  ADD COLUMN IF NOT EXISTS repair_cost numeric(12,2) NOT NULL DEFAULT 0;
+
+ALTER TABLE public.work_orders
+  ADD COLUMN IF NOT EXISTS sprinkler_form_left_in_unit boolean NOT NULL DEFAULT false;
+
+COMMENT ON COLUMN public.work_orders.repair_cost IS
+  'Repair cost reported by subcontractor on the work order form; informational until admin sets repair_amount on the job.';
+
+COMMENT ON COLUMN public.work_orders.sprinkler_form_left_in_unit IS
+  'Whether the subcontractor/admin indicated a sprinkler form was left in the unit.';
+
 -- billing_categories has no property_id; property scoping must go through billing_details(property_id)
 
 -- Important: drop the old signature first so we can change the return type/shape
@@ -273,6 +287,7 @@ BEGIN
       'job_category', jc.name,
       'has_sprinklers', wo.has_sprinklers,
       'sprinklers_painted', wo.sprinklers_painted,
+      'sprinkler_form_left_in_unit', wo.sprinkler_form_left_in_unit,
       'painted_ceilings', wo.painted_ceilings,
       'ceiling_rooms_count', wo.ceiling_rooms_count,
       'individual_ceiling_count', wo.individual_ceiling_count,

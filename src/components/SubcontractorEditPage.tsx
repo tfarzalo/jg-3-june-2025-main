@@ -243,11 +243,14 @@ const ensureSubcontractorCalendarToken = useCallback(async (targetId: string) =>
     }
 }, []);
 
-  const updateSubcontractorPassword = useCallback(async (targetUserId: string, password: string) => {
+  const updateSubcontractorAuth = useCallback(async (
+    targetUserId: string,
+    updates: { password?: string; email?: string },
+  ) => {
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
     if (sessionError || !session) {
-      throw new Error('You must be logged in to change passwords');
+      throw new Error('You must be logged in to change subcontractor auth settings');
     }
 
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-password`, {
@@ -258,7 +261,7 @@ const ensureSubcontractorCalendarToken = useCallback(async (targetId: string) =>
       },
       body: JSON.stringify({
         userId: targetUserId,
-        password,
+        ...updates,
       }),
     });
 
@@ -274,7 +277,7 @@ const ensureSubcontractorCalendarToken = useCallback(async (targetId: string) =>
     }
 
     if (!response.ok || !result.success) {
-      throw new Error(result.error || result.message || 'Failed to change password');
+      throw new Error(result.error || result.message || 'Failed to update subcontractor auth record');
     }
   }, []);
 
@@ -310,7 +313,7 @@ useEffect(() => {
     try {
       setSaving(true);
       
-      await updateSubcontractorPassword(subcontractor.id, formData.password);
+      await updateSubcontractorAuth(subcontractor.id, { password: formData.password });
       
       toast.success('Password changed successfully');
       
@@ -399,10 +402,24 @@ useEffect(() => {
 
       // Upload avatar first if there's a new one
       const avatarUrl = await uploadAvatar();
+      const trimmedEmail = formData.email.trim();
+      const authUpdates: { email?: string; password?: string } = {};
+
+      if (trimmedEmail.toLowerCase() !== subcontractor.email.toLowerCase()) {
+        authUpdates.email = trimmedEmail;
+      }
+
+      if (formData.password) {
+        authUpdates.password = formData.password;
+      }
+
+      if (authUpdates.email || authUpdates.password) {
+        await updateSubcontractorAuth(subcontractor.id, authUpdates);
+      }
 
       // Update profile data
       const updateData: any = {
-        email: formData.email,
+        email: trimmedEmail,
         full_name: formData.full_name,
         phone: formData.phone,
         address: formData.address,
@@ -434,16 +451,6 @@ useEffect(() => {
         .eq('id', userId);
 
       if (profileError) throw profileError;
-
-      // Update password if provided
-      if (formData.password) {
-        try {
-          await updateSubcontractorPassword(userId, formData.password);
-        } catch (passwordError) {
-          console.error('Password update error:', passwordError);
-          toast.warning('Profile updated but password change failed. Please contact support.');
-        }
-      }
 
       toast.success('Subcontractor updated successfully');
       

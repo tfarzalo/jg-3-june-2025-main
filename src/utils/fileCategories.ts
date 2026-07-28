@@ -6,6 +6,7 @@ export type FileCategory =
   | 'sprinkler_images'
   | 'sprinkler_with_cover_images'
   | 'sprinkler_without_cover_images'
+  | 'sprinkler_form_images'
   | 'other_files';
 
 export const FILE_CATEGORY_LABELS: Record<FileCategory, string> = {
@@ -16,6 +17,7 @@ export const FILE_CATEGORY_LABELS: Record<FileCategory, string> = {
   sprinkler_images: 'Sprinkler Images',
   sprinkler_with_cover_images: 'Sprinkler Images with Cover',
   sprinkler_without_cover_images: 'Sprinkler Images without Cover',
+  sprinkler_form_images: 'Sprinkler Form Images',
   other_files: 'Other Files',
 };
 
@@ -27,6 +29,7 @@ export const FILE_CATEGORY_PATHS: Record<FileCategory, string> = {
   sprinkler_images: 'sprinkler-images',
   sprinkler_with_cover_images: 'sprinkler-images-with-cover',
   sprinkler_without_cover_images: 'sprinkler-images-without-cover',
+  sprinkler_form_images: 'sprinkler-form-images',
   other_files: 'other-files',
 };
 
@@ -38,6 +41,7 @@ export const FOLDER_KEY_TO_CATEGORY: Record<string, FileCategory> = {
   sprinkler: 'sprinkler_images',
   sprinkler_with_cover: 'sprinkler_with_cover_images',
   sprinkler_without_cover: 'sprinkler_without_cover_images',
+  sprinkler_form: 'sprinkler_form_images',
   other: 'other_files',
 };
 
@@ -49,6 +53,7 @@ export const FOLDER_NAME_TO_CATEGORY: Record<string, FileCategory> = {
   'Sprinkler Images': 'sprinkler_images',
   'Sprinkler Images with Cover': 'sprinkler_with_cover_images',
   'Sprinkler Images without Cover': 'sprinkler_without_cover_images',
+  'Sprinkler Form Images': 'sprinkler_form_images',
   'Other Files': 'other_files',
 };
 
@@ -58,6 +63,7 @@ const LEGACY_CATEGORY_MAP: Record<string, FileCategory> = {
   sprinkler: 'sprinkler_images',
   sprinkler_with_cover: 'sprinkler_with_cover_images',
   sprinkler_without_cover: 'sprinkler_without_cover_images',
+  sprinkler_form: 'sprinkler_form_images',
   other: 'other_files',
   job_files: 'job_files',
   property_files: 'property_files',
@@ -66,6 +72,7 @@ const LEGACY_CATEGORY_MAP: Record<string, FileCategory> = {
   sprinkler_images: 'sprinkler_images',
   sprinkler_with_cover_images: 'sprinkler_with_cover_images',
   sprinkler_without_cover_images: 'sprinkler_without_cover_images',
+  sprinkler_form_images: 'sprinkler_form_images',
   other_files: 'other_files',
 };
 
@@ -81,9 +88,12 @@ export const LEGACY_CATEGORY_ALIASES: Record<FileCategory, string[]> = {
     'sprinkler_with_cover',
     'sprinkler_without_cover_images',
     'sprinkler_without_cover',
+    'sprinkler_form_images',
+    'sprinkler_form',
   ],
   sprinkler_with_cover_images: ['sprinkler_with_cover_images', 'sprinkler_with_cover', 'sprinkler_images', 'sprinkler'],
   sprinkler_without_cover_images: ['sprinkler_without_cover_images', 'sprinkler_without_cover'],
+  sprinkler_form_images: ['sprinkler_form_images', 'sprinkler_form'],
   other_files: ['other_files', 'other'],
 };
 

@@ -62,6 +62,7 @@ interface Job {
   job_category_id: string;
   has_sprinklers: boolean;
   sprinklers_painted: boolean;
+  sprinkler_form_left_in_unit: boolean;
   painted_ceilings: boolean;
   ceiling_rooms_count: number;
   individual_ceiling_count?: number | null; // New field for individual ceiling count
@@ -100,6 +101,7 @@ interface WorkOrder {
   job_category_id: string;
   has_sprinklers: boolean;
   sprinklers_painted: boolean;
+  sprinkler_form_left_in_unit: boolean;
   painted_ceilings: boolean;
   ceiling_rooms_count: number;
   individual_ceiling_count?: number | null; // New field for individual ceiling count
@@ -140,6 +142,7 @@ interface WorkOrderDBPayload {
   job_category_id: string;
   has_sprinklers: boolean;
   sprinklers_painted: boolean;
+  sprinkler_form_left_in_unit: boolean;
   painted_ceilings: boolean;
   ceiling_rooms_count: number;
   individual_ceiling_count?: number | null; // New field for individual ceiling count
@@ -307,6 +310,7 @@ const buildWorkOrderPayload = (
     job_category_id: formData.job_category_id,
     has_sprinklers: formData.has_sprinklers ?? false,
     sprinklers_painted: formData.sprinklers_painted ?? false,
+    sprinkler_form_left_in_unit: formData.sprinkler_form_left_in_unit ?? false,
     painted_ceilings: formData.painted_ceilings ?? false,
     ceiling_rooms_count: (() => {
       // Always set to 0 for both service-based and individual ceiling painting
@@ -930,6 +934,7 @@ const NewWorkOrder = () => {
     has_sprinklers: false,
     sprinklers: false,
     sprinklers_painted: false,
+    sprinkler_form_left_in_unit: false,
     painted_ceilings: false,
     unit_size_id: '',
     ceiling_rooms_count: '' as string | number,
@@ -997,6 +1002,7 @@ const NewWorkOrder = () => {
   // State for tracking uploaded images
   const [beforeImagesUploaded, setBeforeImagesUploaded] = useState(false);
   const [sprinklerImagesUploaded, setSprinklerImagesUploaded] = useState(false);
+  const [sprinklerFormImagesUploaded, setSprinklerFormImagesUploaded] = useState(false);
   const [accentWallDisplayLabel, setAccentWallDisplayLabel] = useState<string | null>(null);
   const [extraChargesItems, setExtraChargesItems] = useState<ExtraChargeLineItem[]>([]);
 
@@ -1048,6 +1054,7 @@ const NewWorkOrder = () => {
         has_sprinklers: existingWorkOrder.has_sprinklers ?? false,
         sprinklers: existingWorkOrder.has_sprinklers ?? false,
         sprinklers_painted: existingWorkOrder.sprinklers_painted ?? false,
+        sprinkler_form_left_in_unit: existingWorkOrder.sprinkler_form_left_in_unit ?? false,
         painted_ceilings: existingWorkOrder.painted_ceilings ?? false,
         ceiling_rooms_count: ceilingRoomsCountValue,
         individual_ceiling_count: existingWorkOrder.individual_ceiling_count ?? null,
@@ -1105,6 +1112,7 @@ const NewWorkOrder = () => {
         has_sprinklers: job.has_sprinklers ?? false,
         sprinklers: job.has_sprinklers ?? false,
         sprinklers_painted: job.sprinklers_painted ?? false,
+        sprinkler_form_left_in_unit: false,
         painted_ceilings: job.painted_ceilings ?? false,
         ceiling_rooms_count: job.ceiling_rooms_count || '',
         individual_ceiling_count: job.individual_ceiling_count ?? null,
@@ -2056,6 +2064,8 @@ const NewWorkOrder = () => {
       setBeforeImagesUploaded(true);
     } else if (folder === 'sprinkler' || folder === 'sprinkler_with_cover' || folder === 'sprinkler_without_cover') {
       setSprinklerImagesUploaded(true);
+    } else if (folder === 'sprinkler_form') {
+      setSprinklerFormImagesUploaded(true);
     }
     
     // Optionally refresh the images list if needed
@@ -2457,7 +2467,8 @@ const NewWorkOrder = () => {
                       onChange={(e) => setFormData(prev => ({ 
                         ...prev, 
                         sprinklers: e.target.checked,
-                        has_sprinklers: e.target.checked 
+                        has_sprinklers: e.target.checked,
+                        sprinkler_form_left_in_unit: e.target.checked ? prev.sprinkler_form_left_in_unit : false
                       }))}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
@@ -2484,6 +2495,38 @@ const NewWorkOrder = () => {
                         </select>
                       </div>
                       <div className="mt-4 space-y-4">
+                        <div className="flex items-center">
+                          <input
+                            type="checkbox"
+                            id="sprinkler_form_left_in_unit"
+                            name="sprinkler_form_left_in_unit"
+                            checked={formData.sprinkler_form_left_in_unit}
+                            onChange={(e) => setFormData(prev => ({ ...prev, sprinkler_form_left_in_unit: e.target.checked }))}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <label htmlFor="sprinkler_form_left_in_unit" className="ml-2 block text-sm text-gray-900 dark:text-white">
+                            Was there a sprinkler form left in the unit?
+                          </label>
+                        </div>
+                        {formData.sprinkler_form_left_in_unit && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Sprinkler Form Photo
+                            </label>
+                            <ImageUpload
+                              jobId={jobId || ''}
+                              workOrderId={existingWorkOrder?.id || ''}
+                              folder="sprinkler_form"
+                              onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_form')}
+                              onError={handleUploadError}
+                            />
+                            {sprinklerFormImagesUploaded && (
+                              <p className="mt-2 text-xs text-green-700 dark:text-green-300">
+                                Sprinkler form photo uploaded.
+                              </p>
+                            )}
+                          </div>
+                        )}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Sprinkler Images with Cover {isSubcontractor && <span className="text-red-500">*</span>}

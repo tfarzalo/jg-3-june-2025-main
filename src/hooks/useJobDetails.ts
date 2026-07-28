@@ -65,6 +65,7 @@ export interface Job {
     job_category: string;
     has_sprinklers: boolean;
     sprinklers_painted: boolean;
+    sprinkler_form_left_in_unit: boolean;
     painted_ceilings: boolean;
     ceiling_rooms_count: number;
     individual_ceiling_count?: number | null;
@@ -82,6 +83,7 @@ export interface Job {
     has_extra_charges: boolean;
     extra_charges_description: string | null;
     extra_hours: number;
+    repair_cost?: number | null;
     additional_comments: string | null;
     is_active: boolean;
     frozen_billing_lines?: Array<{
@@ -385,6 +387,7 @@ export function useJobDetails(jobId: string | undefined) {
               job_category_id,
               has_sprinklers,
               sprinklers_painted,
+              sprinkler_form_left_in_unit,
               painted_ceilings,
               ceiling_rooms_count,
               individual_ceiling_count,
@@ -516,16 +519,31 @@ export function useJobDetails(jobId: string | undefined) {
         }
       }
 
-      // Ensure extra charge line items are present (RPC may omit JSONB field)
-      if (data?.work_order?.id && data.work_order.extra_charges_line_items === undefined) {
-        const { data: extraChargesData, error: extraChargesError } = await supabase
+      // Ensure work order fields are present when older RPC definitions omit newer columns.
+      if (
+        data?.work_order?.id &&
+        (
+          data.work_order.extra_charges_line_items === undefined ||
+          data.work_order.repair_cost === undefined ||
+          data.work_order.sprinkler_form_left_in_unit === undefined
+        )
+      ) {
+        const { data: workOrderFieldData, error: workOrderFieldError } = await supabase
           .from('work_orders')
-          .select('extra_charges_line_items')
+          .select('extra_charges_line_items, repair_cost, sprinkler_form_left_in_unit')
           .eq('id', data.work_order.id)
           .maybeSingle();
 
-        if (!extraChargesError && extraChargesData) {
-          data.work_order.extra_charges_line_items = extraChargesData.extra_charges_line_items ?? null;
+        if (!workOrderFieldError && workOrderFieldData) {
+          if (data.work_order.extra_charges_line_items === undefined) {
+            data.work_order.extra_charges_line_items = workOrderFieldData.extra_charges_line_items ?? null;
+          }
+          if (data.work_order.repair_cost === undefined) {
+            data.work_order.repair_cost = workOrderFieldData.repair_cost ?? 0;
+          }
+          if (data.work_order.sprinkler_form_left_in_unit === undefined) {
+            data.work_order.sprinkler_form_left_in_unit = workOrderFieldData.sprinkler_form_left_in_unit ?? false;
+          }
         }
       }
 

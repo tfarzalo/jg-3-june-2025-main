@@ -46,16 +46,23 @@ serve(async (req) => {
     }
 
     // Get request body
-    const { userId, password } = await req.json();
+    const { userId, password, email } = await req.json();
     
     // Validate inputs
-    if (!userId || !password) {
+    if (!userId || (!password && !email)) {
       return jsonResponse({ success: false, error: "Missing required fields" }, 400);
     }
 
     // Validate password length
-    if (password.length < 8) {
+    if (password && password.length < 8) {
       return jsonResponse({ success: false, error: "Password must be at least 8 characters long" }, 400);
+    }
+
+    if (email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return jsonResponse({ success: false, error: "Invalid email format" }, 400);
+      }
     }
 
     const authHeader = req.headers.get("Authorization");
@@ -139,10 +146,21 @@ serve(async (req) => {
       );
     }
 
-    // Update the user's password
+    const updatePayload: Record<string, unknown> = {};
+
+    if (password) {
+      updatePayload.password = password;
+    }
+
+    if (email) {
+      updatePayload.email = email;
+      updatePayload.email_confirm = true;
+    }
+
+    // Update the user's auth record
     const { error } = await supabase.auth.admin.updateUserById(
       userId,
-      { password }
+      updatePayload
     );
 
     if (error) {
@@ -150,7 +168,13 @@ serve(async (req) => {
     }
 
     // Return success response
-    return jsonResponse({ success: true });
+    return jsonResponse({
+      success: true,
+      updated: {
+        email: Boolean(email),
+        password: Boolean(password),
+      },
+    });
   } catch (error) {
     console.error("Error updating user password:", error);
     

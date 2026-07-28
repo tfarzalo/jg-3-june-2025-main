@@ -134,7 +134,6 @@ interface ExportConfig {
     lastModificationDate: boolean;
     description: boolean;
     assignedTo: boolean;
-    jobStatus: boolean;
     // Work Order Information
     submissionDate: boolean;
     isOccupied: boolean;
@@ -307,7 +306,6 @@ function getDefaultExportConfig(): ExportConfig {
       lastModificationDate: false,
       description: false,
       assignedTo: false,
-      jobStatus: false,
       // Work Order Information
       submissionDate: false,
       isOccupied: false,
@@ -422,6 +420,12 @@ export function JobListingPage({
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        const columns = {
+          ...defaults.columns,
+          ...(parsed?.columns || {})
+        };
+        delete (columns as Record<string, unknown>).jobStatus;
+
         return {
           dateRange: {
             ...defaults.dateRange,
@@ -435,10 +439,7 @@ export function JobListingPage({
             ...defaults.options,
             ...(parsed?.options || {})
           },
-          columns: {
-            ...defaults.columns,
-            ...(parsed?.columns || {})
-          }
+          columns
         };
       } catch (e) {
         console.error('Failed to parse saved export config:', e);
@@ -652,7 +653,7 @@ export function JobListingPage({
       if (section === 'jobInfo') {
         const jobFields: (keyof typeof newColumns)[] = [
           'workOrder', 'phase', 'property', 'address', 'unitNumber', 'unitSize',
-          'jobType', 'purchaseOrder', 'scheduledDate', 'lastModificationDate', 'description', 'assignedTo', 'jobStatus'
+          'jobType', 'purchaseOrder', 'scheduledDate', 'lastModificationDate', 'description', 'assignedTo'
         ];
         jobFields.forEach(field => {
           newColumns[field] = checked;
@@ -953,7 +954,6 @@ export function JobListingPage({
       if (exportConfig.columns.lastModificationDate) row['Last Modification Date'] = job.updated_at ? formatDate(job.updated_at) : 'N/A';
       if (exportConfig.columns.description) row['Description'] = job.description || 'N/A';
       if (exportConfig.columns.assignedTo) row['Assigned To'] = job.assigned_to_profile?.full_name || 'Unassigned';
-      if (exportConfig.columns.jobStatus) row['Job Status'] = job.job_phase?.job_phase_label || 'N/A';
       
       // Work Order Information
       if (exportConfig.columns.submissionDate) row['Submission Date'] = job.created_at ? formatDate(job.created_at) : 'N/A';
@@ -1349,8 +1349,9 @@ export function JobListingPage({
       const margin = 10;
       const startX = margin;
       const startY = 25;
-      const rowHeight = 6; // Smaller row height for better fit
-      const maxRowsPerPage = Math.floor((pageHeight - startY - margin) / rowHeight);
+      const baseRowHeight = 6;
+      const lineHeight = 3;
+      const maxLinesPerCell = 3;
 
       // Add title with date range
       const formattedStartDate = format(parseISO(exportConfig.dateRange.startDate), 'MMM d, yyyy');
@@ -1386,8 +1387,9 @@ export function JobListingPage({
 
         // Add data rows with proper text wrapping
         doc.setFont('helvetica', 'normal');
-        const endIndex = Math.min(startIndex + maxRowsPerPage, data.length);
-        for (let i = startIndex; i < endIndex; i++) {
+        let currentY = startY + baseRowHeight;
+        let i = startIndex;
+        for (; i < data.length; i++) {
           const row = data[i];
           currentX = startX;
           let maxLinesInRow = 1;
@@ -1398,34 +1400,32 @@ export function JobListingPage({
             const text = cell?.toString() || '';
             const maxWidth = colWidths[j] - 2;
             const wrapped = doc.splitTextToSize(text, maxWidth);
-            wrappedCells.push(wrapped);
-            maxLinesInRow = Math.max(maxLinesInRow, wrapped.length);
+            const visibleLines = wrapped.slice(0, maxLinesPerCell);
+            wrappedCells.push(visibleLines);
+            maxLinesInRow = Math.max(maxLinesInRow, visibleLines.length);
           });
+
+          const rowHeight = Math.max(baseRowHeight, maxLinesInRow * lineHeight + 2);
+          if (currentY + rowHeight > pageHeight - margin) {
+            break;
+          }
           
           // Second pass: render all cells with proper alignment
           wrappedCells.forEach((wrappedText, j) => {
             const cellX = currentX;
-            const baseY = startY + ((i - startIndex + 1) * rowHeight);
             
             // Render each line of wrapped text
             wrappedText.forEach((line, lineIndex) => {
-              if (lineIndex < 3) { // Limit to 3 lines max per cell for readability
-                doc.text(line, cellX, baseY + (lineIndex * 3)); // 3 points between lines
-              }
+              doc.text(line, cellX, currentY + (lineIndex * lineHeight));
             });
             
             currentX += colWidths[j];
           });
-          
-          // Adjust row height if we had wrapped content (up to 3 lines)
-          if (maxLinesInRow > 1) {
-            // Skip extra rows to account for wrapped content
-            const extraHeight = Math.min(maxLinesInRow - 1, 2) * 3;
-            // This is handled by the line spacing in the render above
-          }
+
+          currentY += rowHeight;
         }
 
-        return endIndex;
+        return i;
       };
 
       // Add data in pages

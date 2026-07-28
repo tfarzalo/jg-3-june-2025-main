@@ -41,6 +41,7 @@ export function JobRequestForm() {
   const [error, setError] = useState<string | null>(null);
   const [properties, setProperties] = useState<Property[]>([]);
   const [unitSizes, setUnitSizes] = useState<UnitSize[]>([]);
+  const [naUnitSize, setNaUnitSize] = useState<UnitSize | null>(null);
   const [jobTypes, setJobTypes] = useState<JobType[]>([]);
   const [jobCategories, setJobCategories] = useState<JobCategory[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -112,6 +113,7 @@ export function JobRequestForm() {
     testConnection();
     Promise.all([
       fetchProperties(),
+      fetchNaUnitSize(),
       fetchJobTypes(),
       fetchJobCategories()
     ]);
@@ -127,6 +129,20 @@ export function JobRequestForm() {
       setUnitSizes([]);
     }
   }, [formData.property_id]);
+
+  useEffect(() => {
+    if (!naUnitSize || !isCallbackJob()) return;
+    setFormData(prev => prev.unit_size_id === naUnitSize.id ? prev : { ...prev, unit_size_id: naUnitSize.id });
+    setUnitSizes(prev => prev.some(size => size.id === naUnitSize.id) ? prev : [...prev, naUnitSize]);
+  }, [naUnitSize, formData.job_type_id, formData.job_category_id]);
+
+  function isCallbackJob(draft = formData) {
+    const selectedJobType = jobTypes.find(jobType => jobType.id === draft.job_type_id);
+    const selectedJobCategory = jobCategories.find(category => category.id === draft.job_category_id);
+    return [selectedJobType?.job_type_label, selectedJobCategory?.name]
+      .filter(Boolean)
+      .some(label => String(label).trim().toLowerCase() === 'callback');
+  }
 
   const fetchProperties = async () => {
     try {
@@ -166,14 +182,36 @@ export function JobRequestForm() {
         }
       }
       uniqueSizes.sort((a, b) => a.unit_size_label.localeCompare(b.unit_size_label));
+      const naSize = naUnitSize || await fetchNaUnitSize();
+      if (naSize && !seen.has(naSize.id)) {
+        uniqueSizes.push(naSize);
+      }
 
       setUnitSizes(uniqueSizes);
       setDebugInfo(prev => ({ ...prev, unitSizesLoaded: true }));
       // Reset unit size selection when property changes
-      setFormData(prev => ({ ...prev, unit_size_id: '' }));
+      setFormData(prev => ({ ...prev, unit_size_id: isCallbackJob(prev) && naSize ? naSize.id : '' }));
     } catch (err) {
       console.error('Error fetching property unit sizes:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch unit sizes for this property');
+    }
+  };
+
+  const fetchNaUnitSize = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('unit_sizes')
+        .select('id, unit_size_label')
+        .ilike('unit_size_label', 'n/a')
+        .maybeSingle();
+
+      if (error) throw error;
+      const size = data as UnitSize | null;
+      setNaUnitSize(size);
+      return size;
+    } catch (err) {
+      console.error('Error fetching N/A unit size:', err);
+      return null;
     }
   };
 
@@ -441,12 +479,21 @@ export function JobRequestForm() {
     try {
       // Ensure the date is in YYYY-MM-DD format
       const scheduledDate = formData.scheduled_date;
+      const callbackJob = isCallbackJob();
+      let unitSizeId = formData.unit_size_id;
+      if (callbackJob) {
+        const naSize = naUnitSize || await fetchNaUnitSize();
+        if (!naSize) {
+          throw new Error('Callback jobs require an N/A unit size, but N/A was not found in Unit Size settings.');
+        }
+        unitSizeId = naSize.id;
+      }
       console.log('JobRequestForm: Sending EXACT string to database:', scheduledDate);
 
       const { data, error } = await supabase.rpc('create_job', {
         p_property_id: formData.property_id,
         p_unit_number: formData.unit_number,
-        p_unit_size_id: formData.unit_size_id,
+        p_unit_size_id: unitSizeId,
         p_job_type_id: formData.job_type_id,
         p_description: formData.description || '', // Ensure description is not null
         p_scheduled_date: scheduledDate,
@@ -492,7 +539,13 @@ export function JobRequestForm() {
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => {
+      const next = { ...prev, [name]: value };
+      if ((name === 'job_type_id' || name === 'job_category_id') && isCallbackJob(next) && naUnitSize) {
+        next.unit_size_id = naUnitSize.id;
+      }
+      return next;
+    });
     setHasChanges(true);
   };
 
@@ -517,6 +570,7 @@ export function JobRequestForm() {
   });
 
   const selectedProperty = properties.find(p => p.id === formData.property_id) || null;
+  const callbackJob = isCallbackJob();
 
   const handlePropertySelect = (property: Property) => {
     setFormData(prev => ({ ...prev, property_id: property.id }));
@@ -667,13 +721,21 @@ export function JobRequestForm() {
                 <select
                   id="unit_size_id"
                   name="unit_size_id"
-                  required
+                  required={!callbackJob}
                   value={formData.unit_size_id}
                   onChange={handleChange}
-                  disabled={!formData.property_id}
+                  disabled={!formData.property_id || callbackJob}
                   className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <option value="">{!formData.property_id ? 'Select a property first' : unitSizes.length === 0 ? 'No unit sizes configured for this property' : 'Select a unit size'}</option>
+                  <option value="">
+                    {!formData.property_id
+                      ? 'Select a property first'
+                      : callbackJob
+                      ? 'N/A auto-selected for Callback jobs'
+                      : unitSizes.length === 0
+                      ? 'No unit sizes configured for this property'
+                      : 'Select a unit size'}
+                  </option>
                   {unitSizes.map(size => (
                     <option key={size.id} value={size.id}>
                       {size.unit_size_label}

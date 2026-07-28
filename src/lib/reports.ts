@@ -132,8 +132,8 @@ const QUALITY_CONTROL_SECTION_REPORT_COLUMNS: ReportColumn[] = QUALITY_CONTROL_S
 }));
 
 export const REPORT_COLUMNS: ReportColumn[] = [
-  { key: 'work_order_num', label: 'Work Order #', value: job => formatWorkOrderNumber(job.work_order_num) },
   { key: 'scheduled_date', label: 'Scheduled Date', value: job => formatDate(job.scheduled_date) },
+  { key: 'work_order_num', label: 'Work Order #', value: job => formatWorkOrderNumber(job.work_order_num) },
   { key: 'property', label: 'Property', value: job => textFrom(job.property, 'property_name') },
   { key: 'unit_number', label: 'Unit #', value: job => job.unit_number },
   { key: 'unit_size', label: 'Unit Size', value: job => textFrom(job.unit_size, 'unit_size_label') || textFrom(firstWorkOrder(job), 'unit_size') },
@@ -142,13 +142,6 @@ export const REPORT_COLUMNS: ReportColumn[] = [
   { key: 'phase', label: 'Phase', value: job => textFrom(job.job_phase, 'job_phase_label') },
   { key: 'assigned_to', label: 'Assigned To', value: job => textFrom(job.assigned_to_profile, 'full_name') },
   { key: 'purchase_order', label: 'PO #', value: job => job.purchase_order },
-  { key: 'description', label: 'Description', value: job => {
-      const base = job.description || '';
-      if (job.extra_charges_list) {
-        return `${base}${base ? '\n\n' : ''}Extra Charges: ${job.extra_charges_list}`;
-      }
-      return base;
-    } },
   // Base billing breakdown
   { key: 'base_billing', label: 'Base Bill to Customer', value: job => job.base_billing_total },
   { key: 'base_pay_to_sub', label: 'Base Pay to Subcontractor', value: job => job.base_pay_to_sub },
@@ -158,6 +151,7 @@ export const REPORT_COLUMNS: ReportColumn[] = [
   { key: 'sub_pay', label: 'Sub Pay', value: job => job.sub_pay_total },
   // Extra charges breakdown
   { key: 'extra_items', label: 'Extra Charge Items', value: job => job.extra_items },
+  { key: 'description', label: 'Description', value: job => job.description || '' },
   { key: 'extra_charges_total', label: 'Extra Charges Billing', value: job => job.extra_charges_total },
   { key: 'extra_sub_total', label: 'Extra Pay to Subcontractor', value: job => job.extra_sub_total },
   { key: 'extra_profit', label: 'Extra Profit', value: job => job.extra_profit },
@@ -239,16 +233,17 @@ export const REPORT_COLUMNS: ReportColumn[] = [
 ];
 
 export const DEFAULT_REPORT_COLUMNS = [
-  'work_order_num',
   'scheduled_date',
+  'work_order_num',
   'property',
   'unit_number',
   'unit_size',
   'job_type',
   'job_category',
-  'phase',
   'assigned_to',
   'base_billing',
+  'extra_items',
+  'description',
   'extra_charges_total',
   'total_billing_amount',
   'sub_pay',
@@ -469,7 +464,7 @@ export async function generateReport(params: {
   if (error) throw new Error(error.message);
 
   // Jobs returned from Supabase (possibly already filtered by phaseIds above)
-  let jobs = (data || []) as ReportJob[];
+  let jobs = [...((data || []) as ReportJob[])].sort(compareReportJobsByPropertyAndUnit);
 
   const needsBillingTotals = selectedColumns.some(column => column.key === 'total_billing_amount' || column.key === 'sub_pay');
   if (needsBillingTotals || needsSubPay) {
@@ -1059,6 +1054,28 @@ function resolveColumns(keys: string[]) {
     .filter((column): column is ReportColumn => Boolean(column));
 
   return selected.length > 0 ? selected : fallback;
+}
+
+function compareReportJobsByPropertyAndUnit(a: ReportJob, b: ReportJob) {
+  const propertyComparison = textFrom(a.property, 'property_name').localeCompare(
+    textFrom(b.property, 'property_name'),
+    undefined,
+    { sensitivity: 'base', numeric: true }
+  );
+  if (propertyComparison !== 0) return propertyComparison;
+
+  const unitComparison = String(a.unit_number || '').localeCompare(
+    String(b.unit_number || ''),
+    undefined,
+    { sensitivity: 'base', numeric: true }
+  );
+  if (unitComparison !== 0) return unitComparison;
+
+  return formatWorkOrderNumber(a.work_order_num).localeCompare(
+    formatWorkOrderNumber(b.work_order_num),
+    undefined,
+    { sensitivity: 'base', numeric: true }
+  );
 }
 
 function normalizeColumns(columns: unknown): string[] {
