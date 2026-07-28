@@ -196,6 +196,8 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
     (!isSubcontractor || beforeImagesUploaded) &&
     // For subcontractors with sprinklers, require sprinkler images
     (!isSubcontractor || !formData.sprinklers || sprinklerImagesUploaded) &&
+    // When sprinklers are present, require confirmation that the sprinkler form was left in the unit
+    (!formData.sprinklers || formData.sprinkler_form_left_in_unit) &&
     // Extra Charges requirements - at least one line item when checkbox is checked
     (!formData.has_extra_charges || extraChargesItems.length > 0)
   );
@@ -519,33 +521,6 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                     </select>
                   </div>
                   <div className="mt-4 space-y-4">
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        id="sprinkler_form_left_in_unit"
-                        name="sprinkler_form_left_in_unit"
-                        checked={formData.sprinkler_form_left_in_unit}
-                        onChange={handleInputChange}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <label htmlFor="sprinkler_form_left_in_unit" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                        ¿Se dejó un formulario de aspersores en la unidad?
-                      </label>
-                    </div>
-                    {formData.sprinkler_form_left_in_unit && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Foto del Formulario de Aspersores
-                        </label>
-                        <ImageUpload
-                          jobId={job.id}
-                          workOrderId={existingWorkOrder?.id || ''}
-                          folder="sprinkler_form"
-                          onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_form')}
-                          onError={handleUploadError}
-                        />
-                      </div>
-                    )}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Imágenes de Aspersores con Cubierta {isSubcontractor && <span className="text-red-500">*</span>}
@@ -577,6 +552,36 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                         Las imágenes de aspersores son requeridas cuando la unidad tiene aspersores.
                       </p>
                     )}
+                    <fieldset className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/10 p-4">
+                      <div className="flex items-start">
+                        <input
+                          type="checkbox"
+                          id="sprinkler_form_left_in_unit"
+                          name="sprinkler_form_left_in_unit"
+                          checked={formData.sprinkler_form_left_in_unit}
+                          onChange={handleInputChange}
+                          required
+                          className="mt-0.5 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor="sprinkler_form_left_in_unit" className="ml-2 block text-sm font-medium text-gray-900 dark:text-white">
+                          Confirmo que se dejó un formulario de aspersores en la unidad. <span className="text-red-500">*</span>
+                        </label>
+                      </div>
+                      {formData.sprinkler_form_left_in_unit && (
+                        <div className="mt-4">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                            Foto del Formulario de Aspersores
+                          </label>
+                          <ImageUpload
+                            jobId={job.id}
+                            workOrderId={existingWorkOrder?.id || ''}
+                            folder="sprinkler_form"
+                            onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_form')}
+                            onError={handleUploadError}
+                          />
+                        </div>
+                      )}
+                    </fieldset>
                   </div>
                 </>
               )}

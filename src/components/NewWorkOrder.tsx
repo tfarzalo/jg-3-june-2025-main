@@ -2127,6 +2127,8 @@ const NewWorkOrder = () => {
     (!isSubcontractor || beforeImagesUploaded) &&
     // For subcontractors with sprinklers, require sprinkler images
     (!isSubcontractor || !formData.sprinklers || sprinklerImagesUploaded) &&
+    // When sprinklers are present, require confirmation that the sprinkler form was left in the unit
+    (!formData.sprinklers || formData.sprinkler_form_left_in_unit) &&
     // Extra Charges requirements - at least one line item when checkbox is checked
     (!formData.has_extra_charges || extraChargesItems.length > 0)
   );
@@ -2495,38 +2497,6 @@ const NewWorkOrder = () => {
                         </select>
                       </div>
                       <div className="mt-4 space-y-4">
-                        <div className="flex items-center">
-                          <input
-                            type="checkbox"
-                            id="sprinkler_form_left_in_unit"
-                            name="sprinkler_form_left_in_unit"
-                            checked={formData.sprinkler_form_left_in_unit}
-                            onChange={(e) => setFormData(prev => ({ ...prev, sprinkler_form_left_in_unit: e.target.checked }))}
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
-                          <label htmlFor="sprinkler_form_left_in_unit" className="ml-2 block text-sm text-gray-900 dark:text-white">
-                            Was there a sprinkler form left in the unit?
-                          </label>
-                        </div>
-                        {formData.sprinkler_form_left_in_unit && (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              Sprinkler Form Photo
-                            </label>
-                            <ImageUpload
-                              jobId={jobId || ''}
-                              workOrderId={existingWorkOrder?.id || ''}
-                              folder="sprinkler_form"
-                              onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_form')}
-                              onError={handleUploadError}
-                            />
-                            {sprinklerFormImagesUploaded && (
-                              <p className="mt-2 text-xs text-green-700 dark:text-green-300">
-                                Sprinkler form photo uploaded.
-                              </p>
-                            )}
-                          </div>
-                        )}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Sprinkler Images with Cover {isSubcontractor && <span className="text-red-500">*</span>}
@@ -2558,6 +2528,41 @@ const NewWorkOrder = () => {
                             Sprinkler images are required when unit has sprinklers.
                           </p>
                         )}
+                        <fieldset className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/10 p-4">
+                          <div className="flex items-start">
+                            <input
+                              type="checkbox"
+                              id="sprinkler_form_left_in_unit"
+                              name="sprinkler_form_left_in_unit"
+                              checked={formData.sprinkler_form_left_in_unit}
+                              onChange={(e) => setFormData(prev => ({ ...prev, sprinkler_form_left_in_unit: e.target.checked }))}
+                              required
+                              className="mt-0.5 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            />
+                            <label htmlFor="sprinkler_form_left_in_unit" className="ml-2 block text-sm font-medium text-gray-900 dark:text-white">
+                              I confirm a sprinkler form was left in the unit. <span className="text-red-500">*</span>
+                            </label>
+                          </div>
+                          {formData.sprinkler_form_left_in_unit && (
+                            <div className="mt-4">
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                                Sprinkler Form Photo
+                              </label>
+                              <ImageUpload
+                                jobId={jobId || ''}
+                                workOrderId={existingWorkOrder?.id || ''}
+                                folder="sprinkler_form"
+                                onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_form')}
+                                onError={handleUploadError}
+                              />
+                              {sprinklerFormImagesUploaded && (
+                                <p className="mt-2 text-xs text-green-700 dark:text-green-300">
+                                  Sprinkler form photo uploaded.
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </fieldset>
                       </div>
                     </>
                   )}
