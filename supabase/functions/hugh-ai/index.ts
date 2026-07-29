@@ -48,6 +48,8 @@ serve(async (req) => {
         .from("jobs")
         .select(`
           id,
+          property_id,
+          assigned_to,
           work_order_num,
           unit_number,
           scheduled_date,
@@ -60,10 +62,10 @@ serve(async (req) => {
           purchase_order,
           is_occupied,
           created_at,
-          property:properties(property_name, city, state),
+          property:properties(id, property_name, city, state),
           phase:job_phases!jobs_current_phase_id_fkey(job_phase_label),
           job_type:job_types!jobs_job_type_id_fkey(job_type_label),
-          assigned_to:profiles!jobs_assigned_to_fkey(full_name, company_name),
+          assigned_to_profile:profiles!jobs_assigned_to_fkey(id, full_name, company_name),
           unit_size:unit_sizes!jobs_unit_size_id_fkey(unit_size_label)
         `)
         .order("created_at", { ascending: false })
@@ -118,8 +120,10 @@ serve(async (req) => {
           bill_amount, sub_pay_amount, profit_amount,
           submission_date, created_at,
           job:jobs!work_orders_job_id_fkey(
+            id,
             work_order_num,
-            property:properties(property_name)
+            property_id,
+            property:properties(id, property_name)
           )
         `)
         .order("created_at", { ascending: false })
@@ -149,14 +153,17 @@ serve(async (req) => {
       wo: formatWO(j.work_order_num),
       job_link: `/dashboard/jobs/${j.id}`,
       unit: j.unit_number,
+      unit_link: `/dashboard/jobs/${j.id}`,
       property: (j.property as any)?.property_name,
-      property_link: j.property_id ? `/dashboard/properties/${j.property_id}` : null,
+      property_link: j.property_id ? `/dashboard/properties/${j.property_id}` : ((j.property as any)?.id ? `/dashboard/properties/${(j.property as any).id}` : null),
       city: (j.property as any)?.city,
       phase: (j.phase as any)?.job_phase_label,
       type: (j.job_type as any)?.job_type_label,
       size: (j.unit_size as any)?.unit_size_label,
-      sub: (j.assigned_to as any)?.full_name || (j.assigned_to as any)?.company_name,
-      sub_link: j.assigned_to ? `/dashboard/profile/${(j.assigned_to as any)?.id || j.assigned_to}` : null,
+      sub: (j.assigned_to_profile as any)?.full_name || (j.assigned_to_profile as any)?.company_name,
+      sub_profile_link: j.assigned_to ? `/dashboard/profile/${j.assigned_to}` : null,
+      sub_admin_link: j.assigned_to ? `/dashboard/users/subcontractors/${j.assigned_to}` : null,
+      sub_edit_link: j.assigned_to ? `/dashboard/subcontractor/edit/${j.assigned_to}` : null,
       status: j.status,
       assignment_status: j.assignment_status,
       priority: j.priority,
@@ -184,6 +191,25 @@ serve(async (req) => {
     // Work order billing summary
     const woTotal = (workOrders || []).reduce((sum, wo) => sum + (Number(wo.bill_amount) || 0), 0);
     const woProfitTotal = (workOrders || []).reduce((sum, wo) => sum + (Number(wo.profit_amount) || 0), 0);
+    const workOrderSummaries = (workOrders || []).slice(0, 75).map(wo => {
+      const job = wo.job as any;
+      const property = job?.property as any;
+      return {
+        work_order_submission_id: wo.id,
+        wo: formatWO(job?.work_order_num),
+        job_link: job?.id ? `/dashboard/jobs/${job.id}` : null,
+        unit: wo.unit_number,
+        unit_link: job?.id ? `/dashboard/jobs/${job.id}` : null,
+        property: property?.property_name,
+        property_link: job?.property_id ? `/dashboard/properties/${job.property_id}` : (property?.id ? `/dashboard/properties/${property.id}` : null),
+        submitted: wo.submission_date ? String(wo.submission_date).split("T")[0] : null,
+        bill_amount: wo.bill_amount,
+        sub_pay_amount: wo.sub_pay_amount,
+        profit_amount: wo.profit_amount,
+        full_paint: wo.is_full_paint,
+        occupied: wo.is_occupied,
+      };
+    });
 
     // Invoice stats
     const invoicePending = jobSummaries.filter(j => !j.invoice_sent).length;
@@ -213,7 +239,7 @@ ${(unitSizes || []).map(u => u.unit_size_label).join(", ")}
 ## PROPERTIES (${activeProperties.length} active)
 ${activeProperties.map(p => {
   const mgGroup = (p.property_management_group as any)?.company_name;
-  return `- ${p.property_name} | ${p.city}, ${p.state}${mgGroup ? ` | Managed by: ${mgGroup}` : ""}`;
+  return `- ${p.property_name} | Link: /dashboard/properties/${p.id} | ${p.city}, ${p.state}${mgGroup ? ` | Managed by: ${mgGroup}` : ""}`;
 }).join("\n")}
 
 ## PROPERTY MANAGEMENT GROUPS
@@ -223,7 +249,7 @@ ${(propertyGroups || []).map(g => `- ${g.company_name} (${g.group_status || "act
 ${adminUsers.map(u => `- ${u.full_name} (${u.role}) | ${u.email}`).join("\n")}
 
 ## SUBCONTRACTORS (${subcontractors.length} total)
-${subcontractors.map(s => `- ${s.full_name}${s.company_name ? ` / ${s.company_name}` : ""} | Active jobs: ${subWorkload[s.full_name] || 0}`).join("\n")}
+${subcontractors.map(s => `- ${s.full_name}${s.company_name ? ` / ${s.company_name}` : ""} | Active jobs: ${subWorkload[s.full_name] || 0} | Admin view: /dashboard/users/subcontractors/${s.id} | Edit: /dashboard/subcontractor/edit/${s.id} | Profile: /dashboard/profile/${s.id}`).join("\n")}
 
 ## JOB PHASE BREAKDOWN (all ${jobSummaries.length} jobs)
 ${Object.entries(phaseBreakdown).sort((a, b) => b[1] - a[1]).map(([phase, count]) => `- ${phase}: ${count} jobs`).join("\n")}
@@ -237,6 +263,9 @@ ${Object.entries(phaseBreakdown).sort((a, b) => b[1] - a[1]).map(([phase, count]
 - Total billed: $${woTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
 - Total profit: $${woProfitTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
 
+## RECENT WORK ORDER SUBMISSIONS (with job/property/unit links)
+${JSON.stringify(workOrderSummaries, null, 2)}
+
 ## ALL JOBS (work order #, unit, property, phase, type, size, assigned sub, status, scheduled date, billing)
 ${JSON.stringify(jobSummaries, null, 2)}
 
@@ -245,6 +274,12 @@ YOUR ROLE & INSTRUCTIONS
 ═══════════════════════════════════════════════
 - You have FULL access to this live data — always answer with specifics
 - Reference work order numbers, property names, subcontractor names, phases, and dates
+- When referencing a specific work order, job, unit, property, subcontractor, or subcontractor admin view, make the reference a markdown link using the provided app route.
+- Link jobs, work orders, and units to the job route: [WO-000123 Unit 12](/dashboard/jobs/job-id)
+- Link properties as [Property Name](/dashboard/properties/property-id)
+- Link subcontractor admin views as [Subcontractor Name admin view](/dashboard/users/subcontractors/user-id)
+- Link subcontractor edit pages only when the user asks to edit or manage subcontractor settings: [Edit Subcontractor Name](/dashboard/subcontractor/edit/user-id)
+- Do not invent links. Only use routes shown in the live data snapshot.
 - Answer questions about any job, property, subcontractor, phase, billing, or scheduling
 - Provide counts, lists, summaries, and analysis when asked
 - Proactively surface insights: overdue jobs, unassigned work, invoice gaps, subcontractor workload imbalances

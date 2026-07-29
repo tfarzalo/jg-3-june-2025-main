@@ -669,7 +669,9 @@ async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob
           extra_sub_total: totals.extraSub ?? 0,
           extra_profit: Number(((totals.extra ?? 0) - (totals.extraSub ?? 0)).toFixed(2)),
           extra_profit_margin: totals.extra ? Number((((totals.extra ?? 0) - (totals.extraSub ?? 0)) / (totals.extra ?? 1) * 100).toFixed(2)) : 0,
-          extra_items: (totals.extraItems || []).map(i => `${i.description}${i.qty ? ' x'+i.qty : ''} | $${Number(i.bill).toFixed(2)} | $${Number(i.sub).toFixed(2)} | $${Number(i.profit).toFixed(2)}`).join(';; '),
+          extra_items: (totals.extraItems || [])
+            .map(i => `${i.description}: $${Number(i.bill).toFixed(2)}`)
+            .join(';; '),
         };
       }
     } catch (e) {

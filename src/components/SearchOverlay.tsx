@@ -144,6 +144,7 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
       try {
         const normalizedTerm = term.trim();
         const safeTerm = escapePostgrestSearchTerm(normalizedTerm);
+        const unitSearchTerms = getUnitSearchTerms(normalizedTerm);
         const exactDate = parseSearchDate(normalizedTerm);
         const pageResults = searchPages(normalizedTerm);
         searchResults.push(...pageResults);
@@ -213,14 +214,14 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             `)
             .limit(25);
             
-          // If searching for a work order number specifically
+          // If searching for a work order number, include unit matches too.
           if (workOrderSearch && workOrderNumber) {
-            query = query.eq('work_order_num', workOrderNumber);
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber, true));
           } else if (exactDate) {
             query = query.gte('scheduled_date', `${exactDate}T00:00:00`).lte('scheduled_date', `${exactDate}T23:59:59`);
           } else {
             // Otherwise do a regular search
-            query = query.or(`unit_number.ilike.%${safeTerm}%,description.ilike.%${safeTerm}%,purchase_order.ilike.%${safeTerm}%`);
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, null, true));
           }
 
           if (dateFilter) {
@@ -478,11 +479,11 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             .limit(25);
 
           if (workOrderSearch && workOrderNumber) {
-            query = query.eq('work_order_num', workOrderNumber);
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber));
           } else if (exactDate) {
             query = query.gte('scheduled_date', `${exactDate}T00:00:00`).lte('scheduled_date', `${exactDate}T23:59:59`);
           } else {
-            query = query.or(`unit_number.ilike.%${safeTerm}%,description.ilike.%${safeTerm}%`);
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms));
           }
 
           if (dateFilter) {
@@ -537,11 +538,11 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             .limit(25);
 
           if (workOrderSearch && workOrderNumber) {
-            query = query.eq('work_order_num', workOrderNumber);
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber));
           } else if (exactDate) {
             query = query.gte('scheduled_date', `${exactDate}T00:00:00`).lte('scheduled_date', `${exactDate}T23:59:59`);
           } else {
-            query = query.or(`unit_number.ilike.%${safeTerm}%,description.ilike.%${safeTerm}%`);
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms));
           }
 
           if (dateFilter) {
@@ -1112,6 +1113,62 @@ function escapePostgrestSearchTerm(value: string) {
     .replace(/['"]/g, '')
     .replace(/[,()]/g, ' ')
     .trim();
+}
+
+function getUnitSearchTerms(value: string) {
+  const terms = new Set<string>();
+  const cleaned = escapePostgrestSearchTerm(value);
+  const normalized = cleaned.toLowerCase();
+
+  [
+    /(?:^|\s)(?:unit|apt|apartment|suite|ste|room|rm|#)\.?\s*#?\s*([a-z0-9-]+)/i,
+    /^#\s*([a-z0-9-]+)/i
+  ].forEach((pattern) => {
+    const match = cleaned.match(pattern);
+    if (match?.[1]) {
+      terms.add(match[1]);
+    }
+  });
+
+  const withoutUnitPrefix = normalized
+    .replace(/^(?:unit|apt|apartment|suite|ste|room|rm)\.?\s*#?\s*/i, '')
+    .trim();
+
+  if (withoutUnitPrefix && withoutUnitPrefix !== normalized) {
+    terms.add(withoutUnitPrefix);
+  }
+
+  return Array.from(terms)
+    .map(escapePostgrestSearchTerm)
+    .filter(Boolean);
+}
+
+function buildJobSearchFilter(
+  safeTerm: string,
+  unitSearchTerms: string[] = [],
+  workOrderNumber: number | null = null,
+  includePurchaseOrder = false
+) {
+  const clauses: string[] = [];
+  const textTerms = Array.from(new Set([safeTerm, ...unitSearchTerms].filter(Boolean)));
+
+  if (workOrderNumber !== null) {
+    clauses.push(`work_order_num.eq.${workOrderNumber}`);
+  }
+
+  textTerms.forEach((term) => {
+    clauses.push(`unit_number.ilike.%${term}%`);
+  });
+
+  if (safeTerm) {
+    clauses.push(`description.ilike.%${safeTerm}%`);
+
+    if (includePurchaseOrder) {
+      clauses.push(`purchase_order.ilike.%${safeTerm}%`);
+    }
+  }
+
+  return clauses.join(',');
 }
 
 function parseSearchDate(value: string) {

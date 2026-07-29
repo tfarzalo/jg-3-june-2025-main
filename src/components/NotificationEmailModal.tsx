@@ -3,6 +3,7 @@ import { X, Mail, Send, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { Job } from '../hooks/useJobDetails';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
+import { fetchContactTemplateTokens, replaceTemplateTokens, type ContactTemplateTokens } from '../lib/emailTemplateVariables';
 
 interface NotificationEmailModalProps {
   isOpen: boolean;
@@ -44,6 +45,7 @@ const NotificationEmailModal: React.FC<NotificationEmailModalProps> = ({
   const [emailViewMode, setEmailViewMode] = useState<'visual' | 'code'>('visual');
   const [showCCBCC, setShowCCBCC] = useState(false);
   const [showEmailPreview, setShowEmailPreview] = useState(false);
+  const [contactTemplateTokens, setContactTemplateTokens] = useState<ContactTemplateTokens>({});
 
   // Load template and initialize form
   useEffect(() => {
@@ -59,6 +61,12 @@ const NotificationEmailModal: React.FC<NotificationEmailModalProps> = ({
       setShowCCBCC(true);
     }
   }, [ccEmails, bccEmails]);
+
+  useEffect(() => {
+    if (!template || !job) return;
+    setEmailSubject(processTemplate(template.subject, job));
+    setEmailContent(processTemplate(template.body, job));
+  }, [template, job, contactTemplateTokens]);
 
   const resolveSecondaryEmail = async (
     propertyId: string,
@@ -179,9 +187,11 @@ const NotificationEmailModal: React.FC<NotificationEmailModalProps> = ({
         ? (job?.property?.primary_contact_email || job?.property?.ap_email || '')
         : (prop?.primary_contact_email || prop?.ap_email || '');
       const secondaryEmail = await resolveSecondaryEmail(job.property.id, preferred, prop);
+      const contactTokens = await fetchContactTemplateTokens(job.property.id);
       setRecipientEmail(preferred);
       setCcEmails(secondaryEmail || '');
       setBccEmails('');
+      setContactTemplateTokens(contactTokens);
     } catch {
       const preferred =
         job?.property?.primary_contact_email ||
@@ -190,6 +200,7 @@ const NotificationEmailModal: React.FC<NotificationEmailModalProps> = ({
       setRecipientEmail(preferred);
       setCcEmails('');
       setBccEmails('');
+      setContactTemplateTokens({});
     }
   };
 
@@ -201,11 +212,11 @@ const NotificationEmailModal: React.FC<NotificationEmailModalProps> = ({
     const unitNumber = job.unit_number || 'N/A';
     const jobNumber = job.work_order_num?.toString() || job.id.slice(0, 8);
 
-    return template
+    return replaceTemplateTokens(template
       .replace(/\{\{property_address\}\}/g, propertyAddress)
       .replace(/\{\{unit_number\}\}/g, unitNumber)
       .replace(/\{\{job_number\}\}/g, jobNumber)
-      .replace(/\{\{property_name\}\}/g, job.property.name || propertyAddress);
+      .replace(/\{\{property_name\}\}/g, job.property.name || propertyAddress), contactTemplateTokens);
   };
 
   // Render email content as styled HTML for visual preview

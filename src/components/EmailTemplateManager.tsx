@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
+import { CONTACT_TEMPLATE_VARIABLES } from '../lib/emailTemplateVariables';
 
 interface EmailTemplate {
   id: string;
@@ -108,7 +109,7 @@ export function EmailTemplateManager() {
     { variable: '{{property_name}}', description: 'Property name' },
     { variable: '{{property_address}}', description: 'Full property address' },
     { variable: '{{unit_number}}', description: 'Unit number' },
-    { variable: '{{ap_contact_name}}', description: 'AP Contact name for personalization' },
+    ...CONTACT_TEMPLATE_VARIABLES,
     { variable: '{{approval_link}}', description: 'Approval link URL (extra charges only)' },
     { variable: '{{approval_button}}', description: 'Approval button (extra charges only)' },
     { variable: '{{extra_charges_description}}', description: 'Extra charges description' },
@@ -951,7 +952,12 @@ export function EmailTemplateManager() {
             job_number: 'WO-000123',
             work_order_number: 'WO-000123',
             property_name: 'Sunset Apartments',
+            primary_contact_name: 'Maria Lopez',
+            community_manager_name: 'Samantha Reed',
+            maintenance_supervisor_name: 'David Chen',
             ap_contact_name: 'John Smith',
+            additional_contact_names: 'Alex Morgan, Taylor Brooks',
+            other_contact_names: 'Alex Morgan, Taylor Brooks',
             job_type: 'Unit Turn',
             scheduled_date: new Date().toLocaleDateString(),
             completion_date: new Date().toLocaleDateString(),

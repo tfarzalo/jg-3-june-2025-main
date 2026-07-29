@@ -76,18 +76,45 @@ function renderMarkdown(text: string) {
 }
 
 function renderInline(text: string): React.ReactNode {
-  // Bold: **text**
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  // Markdown links and bold text.
+  const parts = text.split(/(\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|https?:\/\/[^\s)]+|\/dashboard\/[^\s)]+)/g);
   return (
     <>
-      {parts.map((part, i) =>
-        /^\*\*[^*]+\*\*$/.test(part) ? (
+      {parts.map((part, i) => {
+        const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+
+        if (linkMatch) {
+          const [, label, href] = linkMatch;
+          return renderLink(label, href, i);
+        }
+
+        if (/^(https?:\/\/[^\s)]+|\/dashboard\/[^\s)]+)$/.test(part)) {
+          return renderLink(part, part, i);
+        }
+
+        return /^\*\*[^*]+\*\*$/.test(part) ? (
           <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>
         ) : (
           <React.Fragment key={i}>{part}</React.Fragment>
-        )
-      )}
+        );
+      })}
     </>
+  );
+}
+
+function renderLink(label: string, href: string, key: React.Key): React.ReactNode {
+  const isInternalLink = href.startsWith('/');
+
+  return (
+    <a
+      key={key}
+      href={href}
+      target={isInternalLink ? undefined : '_blank'}
+      rel={isInternalLink ? undefined : 'noreferrer'}
+      className="font-medium text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-700 dark:text-blue-300 dark:decoration-blue-500 dark:hover:text-blue-200"
+    >
+      {label}
+    </a>
   );
 }
 

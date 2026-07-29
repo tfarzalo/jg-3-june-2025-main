@@ -15,6 +15,7 @@ import { supabase } from '../utils/supabase';
 import { formatDisplayDate } from '../lib/dateUtils';
 import { ExtraChargeLineItem } from '../types/extraCharges';
 import { getEmailRecipients } from '../lib/contacts/emailRecipientsAdapter';
+import { fetchContactTemplateTokens, replaceTemplateTokens, type ContactTemplateTokens } from '../lib/emailTemplateVariables';
 import { getPreviewUrl } from '../utils/storagePreviews';
 import { FOLDER_KEY_TO_CATEGORY, LEGACY_CATEGORY_ALIASES, normalizeCategory } from '../utils/fileCategories';
 
@@ -222,6 +223,7 @@ export function EnhancedPropertyNotificationModal({
   const [sending, setSending] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [apContactName, setApContactName] = useState('');
+  const [contactTemplateTokens, setContactTemplateTokens] = useState<ContactTemplateTokens>({});
   const [pendingApproval, setPendingApproval] = useState<{ tokenId: string; expiresAt: string; sentAt: string } | null>(null);
   const [countdownTime, setCountdownTime] = useState('');
   const isApprovalBlocked = notificationType === 'extra_charges' && Boolean(pendingApproval);
@@ -347,14 +349,9 @@ export function EnhancedPropertyNotificationModal({
         setShowCCBCC(true);
       }
       
-      // Load AP contact name for template
-      const { data: prop } = await supabase
-        .from('properties')
-        .select('ap_name')
-        .eq('id', job.property.id)
-        .single();
-      
-      setApContactName(prop?.ap_name || job.property?.ap_name || '');
+      const contactTokens = await fetchContactTemplateTokens(job.property.id);
+      setContactTemplateTokens(contactTokens);
+      setApContactName(contactTokens.ap_contact_name || job.property?.ap_name || '');
       
     } catch (error) {
       console.error(`❌ Error loading ${mode} recipients:`, error);
@@ -362,6 +359,7 @@ export function EnhancedPropertyNotificationModal({
       const fallback = job.property?.ap_email || '';
       setRecipientEmail(fallback);
       setApContactName(job.property?.ap_name || '');
+      setContactTemplateTokens({});
     }
   }, [job, notificationType]);
 
@@ -569,6 +567,9 @@ export function EnhancedPropertyNotificationModal({
       assignTokens(job.property?.zip, ['property.zip', 'property_zip']);
       assignTokens(job.property?.ap_email, ['property.ap_email', 'ap_email']);
       assignTokens(job.property?.ap_name, ['property.ap_name']);
+      Object.entries(contactTemplateTokens).forEach(([token, value]) => {
+        assignTokens(value, [token]);
+      });
 
       assignTokens(job.unit_number, ['job.unit_number', 'unit_number']);
       assignTokens(workOrderCode, ['job.work_order_num', 'job_number', 'work_order_number']);
@@ -627,7 +628,7 @@ export function EnhancedPropertyNotificationModal({
         // But preserve the content inside the brackets
         processed = processed.replace(/\{([^{}]+)\}/g, '$1');
         
-        return processed;
+        return replaceTemplateTokens(processed, contactTemplateTokens);
       };
 
       return {
@@ -636,7 +637,7 @@ export function EnhancedPropertyNotificationModal({
         signature: applyTokens(template.signature),
       };
     },
-    [job, apContactName]
+    [job, apContactName, contactTemplateTokens]
   );
 
   const checkPendingApproval = useCallback(async () => {

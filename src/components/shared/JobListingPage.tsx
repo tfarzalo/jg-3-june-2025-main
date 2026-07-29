@@ -275,6 +275,31 @@ function getJobScheduledDateOnly(scheduledDate?: string | null) {
   return scheduledDate.split('T')[0] || '';
 }
 
+function getUnitSearchTerms(value: string) {
+  const terms = new Set<string>();
+  const cleaned = value.trim().toLowerCase();
+
+  [
+    /(?:^|\s)(?:unit|apt|apartment|suite|ste|room|rm|#)\.?\s*#?\s*([a-z0-9-]+)/i,
+    /^#\s*([a-z0-9-]+)/i
+  ].forEach((pattern) => {
+    const match = cleaned.match(pattern);
+    if (match?.[1]) {
+      terms.add(match[1]);
+    }
+  });
+
+  const withoutUnitPrefix = cleaned
+    .replace(/^(?:unit|apt|apartment|suite|ste|room|rm)\.?\s*#?\s*/i, '')
+    .trim();
+
+  if (withoutUnitPrefix && withoutUnitPrefix !== cleaned) {
+    terms.add(withoutUnitPrefix);
+  }
+
+  return Array.from(terms).filter(Boolean);
+}
+
 function getDefaultExportDateRange() {
   return {
     startDate: format(subMonths(new Date(), 1), 'yyyy-MM-dd'),
@@ -707,11 +732,10 @@ export function JobListingPage({
     return lineItems
       .map((item) => {
         const quantity = Number(item.quantity) || 0;
-        const rate = Number(item.billRate) || 0;
-        const unitLabel = item.isHourly ? 'hrs' : 'units';
-        const rateText = rate ? ` @ $${rate.toFixed(2)}` : '';
+        const billRate = Number(item.billRate) || 0;
+        const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
         const description = item.description?.trim() || `${item.categoryName}: ${item.detailName}`;
-        return `${description} (${quantity} ${unitLabel}${rateText})`;
+        return `${description}: ${formatCurrency(billAmount)}`;
       })
       .join('; ');
   };
@@ -992,7 +1016,7 @@ export function JobListingPage({
       }
       if (exportConfig.columns.extraChargesLineItems) {
         row['Extra Charges Line Items'] = isCancellationTripCharge
-          ? `Cancellation Trip Charge: ${formatCurrency(cancellationTripCharge.billAmount)} bill / ${formatCurrency(cancellationTripCharge.subPayAmount)} sub pay`
+          ? `Cancellation Trip Charge: ${formatCurrency(cancellationTripCharge.billAmount)}`
           : formatExtraChargeLineItems(extraChargeLineItems);
       }
       if (exportConfig.columns.extraHours) {
@@ -1319,7 +1343,7 @@ export function JobListingPage({
             return descText || 'N/A';
           })(),
           extraChargesLineItems: isCancellationTripCharge
-            ? `Cancellation Trip Charge: ${formatCurrency(cancellationTripCharge.billAmount)} bill / ${formatCurrency(cancellationTripCharge.subPayAmount)} sub pay`
+            ? `Cancellation Trip Charge: ${formatCurrency(cancellationTripCharge.billAmount)}`
             : formatExtraChargeLineItems(extraChargeLineItems),
           extraHours: ((hasExtraChargeItems ? extraChargeTotals.hours : workOrder?.extra_hours) ?? null) !== null
             ? String(hasExtraChargeItems ? extraChargeTotals.hours : workOrder?.extra_hours)
@@ -1723,6 +1747,7 @@ export function JobListingPage({
   const sortedAndFilteredJobs = getSortedJobs(
     jobs.filter((job) => {
       const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+      const unitSearchTerms = getUnitSearchTerms(searchTerm);
       const scheduledDateOnly = getJobScheduledDateOnly(job.scheduled_date);
       const assignedSubcontractor = job.assigned_to_profile?.full_name?.trim() || '';
 
@@ -1734,7 +1759,8 @@ export function JobListingPage({
         job.purchase_order || '',
         formatWorkOrderNumber(job.work_order_num),
         assignedSubcontractor
-      ].some((value) => value.toLowerCase().includes(normalizedSearchTerm));
+      ].some((value) => value.toLowerCase().includes(normalizedSearchTerm)) ||
+        unitSearchTerms.some((unitSearchTerm) => job.unit_number.toLowerCase().includes(unitSearchTerm));
 
       const matchesProperty = propertyFilter === 'all' || job.property.property_name === propertyFilter;
       const matchesSubcontractor =
