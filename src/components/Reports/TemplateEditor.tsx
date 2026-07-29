@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { REPORT_COLUMNS, type ReportTemplate } from '../../lib/reports';
+import { EXTRA_CHARGE_ITEM_COLUMN_KEYS, REPORT_COLUMNS, type ReportTemplate } from '../../lib/reports';
 import { formatJobPhaseLabel } from '../../lib/jobPhaseLabels';
 
 type TemplateDraft = Pick<ReportTemplate, 'id' | 'name' | 'columns' | 'preset' | 'filters'>;
@@ -35,7 +35,7 @@ const COLUMN_CATEGORIES = [
       'base_profit_margin',
       'total_billing_amount',
       'sub_pay',
-      'extra_items',
+      ...EXTRA_CHARGE_ITEM_COLUMN_KEYS,
       'extra_charges_total',
       'extra_sub_total',
       'extra_profit',

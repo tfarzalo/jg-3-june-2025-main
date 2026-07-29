@@ -28,6 +28,15 @@ export type ReportColumn = {
 type RelatedRecord = Record<string, unknown> | null;
 type ReportRow = Record<string, string | number | boolean | null | undefined>;
 type BillingTotals = { bill: number; sub: number };
+type ExtraChargeReportItem = {
+  name?: string;
+  description: string;
+  unit?: string;
+  qty?: number;
+  bill: number;
+  sub: number;
+  profit: number;
+};
 type QualityControlSubmissionRecord = {
   id: string;
   job_id: string;
@@ -103,7 +112,8 @@ type ReportJob = {
   extra_sub_total?: number | string | null;
   extra_profit?: number | string | null;
   extra_profit_margin?: number | string | null;
-  extra_items?: string | null; // itemized extra charges as joined string
+  extra_items?: string | null; // legacy combined itemized extra charges string
+  extra_item_details?: ExtraChargeReportItem[];
   quality_control_submissions?: QualityControlSubmissionRecord[];
   quality_control_latest?: QualityControlSubmissionRecord | null;
   quality_control_submission_count?: number;
@@ -132,6 +142,26 @@ const QUALITY_CONTROL_SECTION_REPORT_COLUMNS: ReportColumn[] = QUALITY_CONTROL_S
   },
 }));
 
+const EXTRA_CHARGE_ITEM_COLUMN_COUNT = 10;
+export const EXTRA_CHARGE_ITEM_COLUMN_KEYS = Array.from(
+  { length: EXTRA_CHARGE_ITEM_COLUMN_COUNT },
+  (_, index) => `extra_item_${index + 1}`
+);
+
+const formatExtraChargeReportItemText = (item?: ExtraChargeReportItem) => {
+  if (!item) return '';
+  const name = item.name?.trim();
+  const description = item.description?.trim();
+  const detail = [name, description && description !== name ? description : ''].filter(Boolean).join(' - ');
+  return `${formatCurrency(item.bill)}${detail ? ` - ${detail}` : ''}`;
+};
+
+const EXTRA_CHARGE_ITEM_REPORT_COLUMNS: ReportColumn[] = EXTRA_CHARGE_ITEM_COLUMN_KEYS.map((key, index) => ({
+  key,
+  label: `Extra Charge ${index + 1}`,
+  value: job => formatExtraChargeReportItemText(job.extra_item_details?.[index]),
+}));
+
 export const REPORT_COLUMNS: ReportColumn[] = [
   { key: 'scheduled_date', label: 'Scheduled Date', value: job => formatDate(job.scheduled_date) },
   { key: 'work_order_num', label: 'Work Order #', value: job => formatWorkOrderNumber(job.work_order_num) },
@@ -151,7 +181,8 @@ export const REPORT_COLUMNS: ReportColumn[] = [
   { key: 'total_billing_amount', label: 'Total Bill to Customer', value: job => billingTotalForReport(job) },
   { key: 'sub_pay', label: 'Sub Pay', value: job => job.sub_pay_total },
   // Extra charges breakdown
-  { key: 'extra_items', label: 'Extra Charge Items', value: job => job.extra_items },
+  ...EXTRA_CHARGE_ITEM_REPORT_COLUMNS,
+  { key: 'extra_items', label: 'Extra Charge Items (Combined)', value: job => job.extra_items },
   { key: 'description', label: 'Description', value: job => job.description || '' },
   { key: 'extra_charges_total', label: 'Extra Charges Billing', value: job => job.extra_charges_total },
   { key: 'extra_sub_total', label: 'Extra Pay to Subcontractor', value: job => job.extra_sub_total },
@@ -243,7 +274,7 @@ export const DEFAULT_REPORT_COLUMNS = [
   'job_category',
   'assigned_to',
   'base_billing',
-  'extra_items',
+  ...EXTRA_CHARGE_ITEM_COLUMN_KEYS,
   'description',
   'extra_charges_total',
   'total_billing_amount',
@@ -467,7 +498,16 @@ export async function generateReport(params: {
   // Jobs returned from Supabase (possibly already filtered by phaseIds above)
   let jobs = [...((data || []) as ReportJob[])].sort(compareReportJobsByPropertyAndUnit);
 
-  const needsBillingTotals = selectedColumns.some(column => column.key === 'total_billing_amount' || column.key === 'sub_pay');
+  const needsBillingTotals = selectedColumns.some(column =>
+    column.key === 'total_billing_amount' ||
+    column.key === 'sub_pay' ||
+    column.key === 'extra_charges_total' ||
+    column.key === 'extra_sub_total' ||
+    column.key === 'extra_profit' ||
+    column.key === 'extra_profit_margin' ||
+    column.key === 'extra_items' ||
+    column.key.startsWith('extra_item_')
+  );
   if (needsBillingTotals || needsSubPay) {
     jobs = await enrichJobsWithBillingTotals(jobs);
   }
@@ -671,8 +711,9 @@ async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob
           extra_profit: Number(((totals.extra ?? 0) - (totals.extraSub ?? 0)).toFixed(2)),
           extra_profit_margin: totals.extra ? Number((((totals.extra ?? 0) - (totals.extraSub ?? 0)) / (totals.extra ?? 1) * 100).toFixed(2)) : 0,
           extra_items: (totals.extraItems || [])
-            .map(i => `${i.description}: $${Number(i.bill).toFixed(2)}`)
+            .map(i => `${formatExtraChargeReportItemText(i)}`)
             .join(';; '),
+          extra_item_details: totals.extraItems || [],
         };
       }
     } catch (e) {
@@ -701,6 +742,7 @@ async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob
           extra_profit: Number((snapshot.bill - snapshot.sub).toFixed(2)),
           extra_profit_margin: snapshot.bill ? Number((((snapshot.bill - snapshot.sub) / snapshot.bill) * 100).toFixed(2)) : 0,
           extra_items: '',
+          extra_item_details: [],
         };
       }
 
@@ -718,6 +760,7 @@ async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob
         extra_profit: 0,
         extra_profit_margin: 0,
         extra_items: '',
+        extra_item_details: [],
       };
     }
 
@@ -736,6 +779,7 @@ async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob
       extra_profit: 0,
       extra_profit_margin: 0,
       extra_items: '',
+      extra_item_details: [],
     };
   }));
 }
@@ -840,7 +884,7 @@ export function downloadTextFile(content: string, filename: string, type: string
 
 // End of helpers
 
-function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals & { extra?: number; extraList?: string; base?: number; baseSub?: number; extraSub?: number; extraItems?: {description:string,unit?:string,qty?:number,bill:number,sub:number,profit:number}[] } {
+function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals & { extra?: number; extraList?: string; base?: number; baseSub?: number; extraSub?: number; extraItems?: ExtraChargeReportItem[] } {
   const jobDetails = details as Record<string, unknown> | null;
   if (!jobDetails) {
     const b = numberFrom(job.total_billing_amount);
@@ -867,7 +911,7 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
       base: 0,
       baseSub: 0,
       extraSub: cSub || 0,
-      extraItems: [{ description: 'Cancellation Trip Charge', bill: Number((cBill || 0).toFixed(2)), sub: Number((cSub || 0).toFixed(2)), profit: Number(((cBill || 0) - (cSub || 0)).toFixed(2)) }],
+      extraItems: [{ name: 'Cancellation Trip Charge', description: '', bill: Number((cBill || 0).toFixed(2)), sub: Number((cSub || 0).toFixed(2)), profit: Number(((cBill || 0) - (cSub || 0)).toFixed(2)) }],
     };
   }
 
@@ -882,7 +926,7 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
   let nonBaseBill: number = 0;
   let nonBaseSub: number = 0;
 
-  const extraItems: {description:string,unit?:string,qty?:number,bill:number,sub:number,profit:number}[] = [];
+  const extraItems: ExtraChargeReportItem[] = [];
 
   const extraLineItems = arrayFrom(workOrder?.extra_charges_line_items);
   if (extraLineItems.length > 0) {
@@ -901,12 +945,24 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
 
     extraLineItems.forEach((item: any) => {
       const qty = numberFrom(item.quantity);
-      const desc = String(item.description ?? item.name ?? item.item ?? '');
+      const itemName = [
+        String(item.categoryName ?? item.category_name ?? item.category ?? '').trim(),
+        String(item.detailName ?? item.detail_name ?? item.name ?? item.item ?? '').trim(),
+      ].filter(Boolean).join(': ');
+      const desc = String(item.description ?? '').trim();
       const unit = String(item.unit ?? item.unit_type ?? '');
       const amt = numberFrom(item.calculatedBillAmount, qty * numberFrom(item.billRate));
       const subAmt = numberFrom(item.calculatedSubAmount, qty * numberFrom(item.subRate));
       const profit = Number((amt - subAmt).toFixed(2));
-      extraItems.push({ description: desc, unit: unit || undefined, qty: qty || undefined, bill: Number(amt.toFixed(2)), sub: Number(subAmt.toFixed(2)), profit });
+      extraItems.push({
+        name: itemName || undefined,
+        description: desc || itemName || 'Extra Charge',
+        unit: unit || undefined,
+        qty: qty || undefined,
+        bill: Number(amt.toFixed(2)),
+        sub: Number(subAmt.toFixed(2)),
+        profit
+      });
     });
   } else {
     const eBill = numberFrom(extra?.bill_amount);
@@ -914,7 +970,7 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
     nonBaseBill += eBill;
     nonBaseSub += eSub;
     if (extra && (extra?.bill_amount || extra?.sub_pay_amount)) {
-      extraItems.push({ description: String(extra?.description ?? 'Extra Charges'), bill: Number(eBill.toFixed(2)), sub: Number(eSub.toFixed(2)), profit: Number((eBill - eSub).toFixed(2)) });
+      extraItems.push({ name: 'Extra Charges', description: String(extra?.description ?? '').trim(), bill: Number(eBill.toFixed(2)), sub: Number(eSub.toFixed(2)), profit: Number((eBill - eSub).toFixed(2)) });
     }
   }
 
@@ -937,7 +993,7 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
     const cSub = numberFrom(jobDetails.cancellation_trip_charge_sub_pay_amount);
     nonBaseBill += cBill;
     nonBaseSub += cSub;
-    extraItems.push({ description: 'Cancellation Trip Charge', bill: Number(cBill.toFixed(2)), sub: Number(cSub.toFixed(2)), profit: Number((cBill - cSub).toFixed(2)) });
+    extraItems.push({ name: 'Cancellation Trip Charge', description: '', bill: Number(cBill.toFixed(2)), sub: Number(cSub.toFixed(2)), profit: Number((cBill - cSub).toFixed(2)) });
   }
 
   nonBaseBill += numberFrom(jobDetails.repair_amount);
@@ -1083,9 +1139,15 @@ function compareReportJobsByPropertyAndUnit(a: ReportJob, b: ReportJob) {
 
 function normalizeColumns(columns: unknown): string[] {
   if (!Array.isArray(columns)) return DEFAULT_REPORT_COLUMNS;
-  return columns
+  return Array.from(new Set(columns
     .filter((column): column is string => typeof column === 'string')
-    .map(column => column === 'paint_type' ? 'job_category' : column);
+    .flatMap(expandReportColumnKey)));
+}
+
+function expandReportColumnKey(column: string): string[] {
+  if (column === 'paint_type') return ['job_category'];
+  if (column === 'extra_items') return EXTRA_CHARGE_ITEM_COLUMN_KEYS;
+  return [column];
 }
 
 function firstWorkOrder(job: ReportJob) {
