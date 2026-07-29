@@ -16,7 +16,6 @@ import { MetricTile } from './ui/MetricTile';
 import { DashboardCard } from './ui/DashboardCard';
 import { supabase } from '../utils/supabase';
 import { formatDate, formatDateTime } from '../lib/dateUtils';
-import TodaysAgendaModal from './modals/TodaysAgendaModal';
 import { useDashboardJobs } from './shared/useDashboardJobs';
 import { useUserRole } from '../contexts/UserRoleContext';
 import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
@@ -58,7 +57,6 @@ interface ActivityItem {
 export function DashboardHome() {
   const navigate = useNavigate();
   const { isSubcontractor, loading: roleLoading } = useUserRole();
-  const [isAgendaModalOpen, setIsAgendaModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
@@ -655,14 +653,6 @@ export function DashboardHome() {
               </div>
               <div className="flex items-center space-x-2">
                 <span className="text-gray-500">Total: {sortedTodaysJobs.length}</span>
-                {allTodaysJobs.length > 4 && (
-                  <button 
-                    onClick={() => setIsAgendaModalOpen(true)}
-                    className="text-blue-500 hover:text-blue-700 font-medium"
-                  >
-                    View Calendar
-                  </button>
-                )}
               </div>
             </div>
           </div>
@@ -957,14 +947,6 @@ export function DashboardHome() {
               </div>
               <div className="flex items-center space-x-2">
                 <span className="text-gray-500">Total: {sortedTodaysJobs.length}</span>
-                {allTodaysJobs.length > 4 && (
-                  <button 
-                    onClick={() => setIsAgendaModalOpen(true)}
-                    className="text-blue-500 hover:text-blue-700 font-medium"
-                  >
-                    View Calendar
-                  </button>
-                )}
               </div>
             </div>
           </div>
@@ -1189,12 +1171,6 @@ export function DashboardHome() {
           </div>
         </DashboardCard>
       </div>
-      
-      <TodaysAgendaModal 
-        open={isAgendaModalOpen} 
-        onClose={() => setIsAgendaModalOpen(false)} 
-        jobs={allTodaysJobs} 
-      />
     </div>
   );
 }
