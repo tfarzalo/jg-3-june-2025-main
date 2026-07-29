@@ -121,6 +121,7 @@ interface NewWorkOrderSpanishProps {
   isEditMode: boolean;
   isSubcontractor: boolean;
   sprinklerImagesUploaded: boolean;
+  sprinklerFormImagesUploaded: boolean;
   beforeImagesUploaded: boolean;
   ceilingPaintOptions: Array<{
     id: string, 
@@ -166,6 +167,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
   isEditMode,
   isSubcontractor,
   sprinklerImagesUploaded,
+  sprinklerFormImagesUploaded,
   beforeImagesUploaded,
   ceilingPaintOptions,
   accentWallOptions,
@@ -196,8 +198,8 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
     (!isSubcontractor || beforeImagesUploaded) &&
     // For subcontractors with sprinklers, require sprinkler images
     (!isSubcontractor || !formData.sprinklers || sprinklerImagesUploaded) &&
-    // When sprinklers are present, require confirmation that the sprinkler form was left in the unit
-    (!formData.sprinklers || formData.sprinkler_form_left_in_unit) &&
+    // If a sprinkler form was left in the unit, require a photo of it
+    (!formData.sprinkler_form_left_in_unit || sprinklerFormImagesUploaded) &&
     // Extra Charges requirements - at least one line item when checkbox is checked
     (!formData.has_extra_charges || extraChargesItems.length > 0)
   );
@@ -560,17 +562,16 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                           name="sprinkler_form_left_in_unit"
                           checked={formData.sprinkler_form_left_in_unit}
                           onChange={handleInputChange}
-                          required
                           className="mt-0.5 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
                         <label htmlFor="sprinkler_form_left_in_unit" className="ml-2 block text-sm font-medium text-gray-900 dark:text-white">
-                          Confirmo que se dejó un formulario de aspersores en la unidad. <span className="text-red-500">*</span>
+                          Confirmo que se dejó un formulario de aspersores en la unidad.
                         </label>
                       </div>
                       {formData.sprinkler_form_left_in_unit && (
                         <div className="mt-4">
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                            Foto del Formulario de Aspersores
+                            Foto del Formulario de Aspersores <span className="text-red-500">*</span>
                           </label>
                           <ImageUpload
                             jobId={job.id}
@@ -578,6 +579,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                             folder="sprinkler_form"
                             onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_form')}
                             onError={handleUploadError}
+                            required
                           />
                         </div>
                       )}

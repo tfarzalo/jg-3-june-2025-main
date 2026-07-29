@@ -88,16 +88,20 @@ export function ImageGallery({ workOrderId, jobId, folder, allowDelete = false }
         throw error;
       }
 
-      if (!data || data.length === 0) {
+      const filteredData = folder === 'sprinkler_form'
+        ? (data || []).filter((file: any) => typeof file.name === 'string' && file.name.includes('_sprinkler_form_'))
+        : (data || []);
+
+      if (!filteredData || filteredData.length === 0) {
         setFiles([]);
         setLoading(false);
         return;
       }
 
-      console.log('[ImageGallery] 📸 Processing', data.length, 'files for preview URLs');
+      console.log('[ImageGallery] 📸 Processing', filteredData.length, 'files for preview URLs');
 
       // Generate preview URLs for all files
-      const filesWithPreviews = await Promise.all((data || []).map(async (file) => {
+      const filesWithPreviews = await Promise.all((filteredData || []).map(async (file) => {
         try {
           console.log('[ImageGallery] Getting preview for:', file.storage_path || file.path);
           const previewResult = await getPreviewUrl(supabase, 'files', file.storage_path || file.path);

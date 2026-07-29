@@ -2127,8 +2127,8 @@ const NewWorkOrder = () => {
     (!isSubcontractor || beforeImagesUploaded) &&
     // For subcontractors with sprinklers, require sprinkler images
     (!isSubcontractor || !formData.sprinklers || sprinklerImagesUploaded) &&
-    // When sprinklers are present, require confirmation that the sprinkler form was left in the unit
-    (!formData.sprinklers || formData.sprinkler_form_left_in_unit) &&
+    // If a sprinkler form was left in the unit, require a photo of it
+    (!formData.sprinkler_form_left_in_unit || sprinklerFormImagesUploaded) &&
     // Extra Charges requirements - at least one line item when checkbox is checked
     (!formData.has_extra_charges || extraChargesItems.length > 0)
   );
@@ -2257,6 +2257,7 @@ const NewWorkOrder = () => {
                 isEditMode={isEditMode}
                 isSubcontractor={isSubcontractor}
                 sprinklerImagesUploaded={sprinklerImagesUploaded}
+                sprinklerFormImagesUploaded={sprinklerFormImagesUploaded}
                 beforeImagesUploaded={beforeImagesUploaded}
                 ceilingPaintOptions={ceilingPaintOptions}
                 accentWallOptions={accentWallOptions}
@@ -2535,18 +2536,22 @@ const NewWorkOrder = () => {
                               id="sprinkler_form_left_in_unit"
                               name="sprinkler_form_left_in_unit"
                               checked={formData.sprinkler_form_left_in_unit}
-                              onChange={(e) => setFormData(prev => ({ ...prev, sprinkler_form_left_in_unit: e.target.checked }))}
-                              required
+                              onChange={(e) => {
+                                setFormData(prev => ({ ...prev, sprinkler_form_left_in_unit: e.target.checked }));
+                                if (!e.target.checked) {
+                                  setSprinklerFormImagesUploaded(false);
+                                }
+                              }}
                               className="mt-0.5 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                             />
                             <label htmlFor="sprinkler_form_left_in_unit" className="ml-2 block text-sm font-medium text-gray-900 dark:text-white">
-                              I confirm a sprinkler form was left in the unit. <span className="text-red-500">*</span>
+                              I confirm a sprinkler form was left in the unit.
                             </label>
                           </div>
                           {formData.sprinkler_form_left_in_unit && (
                             <div className="mt-4">
                               <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                                Sprinkler Form Photo
+                                Sprinkler Form Photo <span className="text-red-500">*</span>
                               </label>
                               <ImageUpload
                                 jobId={jobId || ''}
@@ -2554,6 +2559,7 @@ const NewWorkOrder = () => {
                                 folder="sprinkler_form"
                                 onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_form')}
                                 onError={handleUploadError}
+                                required
                               />
                               {sprinklerFormImagesUploaded && (
                                 <p className="mt-2 text-xs text-green-700 dark:text-green-300">

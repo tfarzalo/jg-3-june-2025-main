@@ -132,8 +132,12 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
         if (error) throw error;
 
-        if (data && data.length > 0) {
-          const files = await Promise.all(data.map(async (file: any) => {
+    const filteredData = folder === 'sprinkler_form'
+      ? (data || []).filter((file: any) => typeof file.name === 'string' && file.name.includes('_sprinkler_form_'))
+      : (data || []);
+
+    if (filteredData && filteredData.length > 0) {
+          const files = await Promise.all(filteredData.map(async (file: any) => {
             try {
               const previewResult = await getPreviewUrl(supabase, 'files', file.path);
               return {
