@@ -55,6 +55,14 @@ interface JobData {
   };
 }
 
+const isInvalidFolderReferenceError = (error: any) => (
+  error?.code === '23503' ||
+  String(error?.message || '').toLowerCase().includes('foreign key') ||
+  String(error?.message || '').toLowerCase().includes('invalid reference') ||
+  String(error?.details || '').toLowerCase().includes('parent folder') ||
+  String(error?.details || '').toLowerCase().includes('folder exists')
+);
+
 const ImageUpload: React.FC<ImageUploadProps> = ({
   jobId,
   workOrderId,
@@ -513,12 +521,40 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           if (
             dbError &&
             folder === 'sprinkler_form' &&
-            (dbError.code === '23503' || dbError.message?.toLowerCase().includes('foreign key'))
+            isInvalidFolderReferenceError(dbError)
           ) {
             console.warn('  ⚠️ Retrying sprinkler form file record without folder_id after FK failure:', dbError);
             const retry = await supabase
               .from('files')
               .insert({ ...fileRecord, folder_id: null })
+              .select()
+              .single();
+            dbError = retry.error;
+          }
+
+          if (
+            dbError &&
+            folder === 'sprinkler_form' &&
+            dbError.code === '23514'
+          ) {
+            console.warn('  ⚠️ Retrying sprinkler form file record with legacy sprinkler_images category after category constraint failure:', dbError);
+            const retry = await supabase
+              .from('files')
+              .insert({ ...fileRecord, folder_id: null, category: 'sprinkler_images' })
+              .select()
+              .single();
+            dbError = retry.error;
+          }
+
+          if (
+            dbError &&
+            folder === 'sprinkler_form' &&
+            isInvalidFolderReferenceError(dbError)
+          ) {
+            console.warn('  ⚠️ Retrying sprinkler form file record with legacy category and no folder after reference failure:', dbError);
+            const retry = await supabase
+              .from('files')
+              .insert({ ...fileRecord, folder_id: null, category: 'sprinkler_images' })
               .select()
               .single();
             dbError = retry.error;

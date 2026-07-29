@@ -175,6 +175,32 @@ serve(async (req) => {
       occupied: j.is_occupied,
     }));
 
+    const linkTargets = [
+      ...jobSummaries.flatMap(j => [
+        j.wo && j.job_link ? { label: j.wo, href: j.job_link } : null,
+        j.wo && j.unit && j.job_link ? { label: `${j.wo} Unit ${j.unit}`, href: j.job_link } : null,
+      ]),
+      ...activeProperties.map(p => ({
+        label: p.property_name,
+        href: `/dashboard/properties/${p.id}`,
+      })),
+      ...(propertyGroups || []).map(g => ({
+        label: g.company_name,
+        href: `/dashboard/property-groups/${g.id}`,
+      })),
+      ...subcontractors.flatMap(s => {
+        const displayName = s.full_name || s.company_name || s.email;
+        return [
+          displayName ? { label: displayName, href: `/dashboard/users/subcontractors/${s.id}` } : null,
+          s.company_name && s.company_name !== displayName
+            ? { label: s.company_name, href: `/dashboard/users/subcontractors/${s.id}` }
+            : null,
+        ];
+      }),
+    ].filter((target): target is { label: string; href: string } =>
+      Boolean(target?.label && target?.href)
+    );
+
     // Phase breakdown counts
     const phaseBreakdown: Record<string, number> = {};
     for (const j of jobSummaries) {
@@ -243,7 +269,7 @@ ${activeProperties.map(p => {
 }).join("\n")}
 
 ## PROPERTY MANAGEMENT GROUPS
-${(propertyGroups || []).map(g => `- ${g.company_name} (${g.group_status || "active"})`).join("\n")}
+${(propertyGroups || []).map(g => `- ${g.company_name} (${g.group_status || "active"}) | Link: /dashboard/property-groups/${g.id}`).join("\n")}
 
 ## TEAM MEMBERS (Admins/Management)
 ${adminUsers.map(u => `- ${u.full_name} (${u.role}) | ${u.email}`).join("\n")}
@@ -279,6 +305,7 @@ YOUR ROLE & INSTRUCTIONS
 - Link properties as [Property Name](/dashboard/properties/property-id)
 - Link subcontractor admin views as [Subcontractor Name admin view](/dashboard/users/subcontractors/user-id)
 - Link subcontractor edit pages only when the user asks to edit or manage subcontractor settings: [Edit Subcontractor Name](/dashboard/subcontractor/edit/user-id)
+- Link property groups as [Property Group Name](/dashboard/property-groups/group-id)
 - Do not invent links. Only use routes shown in the live data snapshot.
 - Answer questions about any job, property, subcontractor, phase, billing, or scheduling
 - Provide counts, lists, summaries, and analysis when asked
@@ -349,9 +376,10 @@ YOUR ROLE & INSTRUCTIONS
     const replyText =
       geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ||
       "I'm sorry, I couldn't generate a response. Please try again.";
+    const replyWithLinks = linkifyHughReply(replyText, linkTargets);
 
     return new Response(
-      JSON.stringify({ reply: replyText }),
+      JSON.stringify({ reply: replyWithLinks }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
     );
   } catch (error) {
@@ -362,3 +390,56 @@ YOUR ROLE & INSTRUCTIONS
     );
   }
 });
+
+function linkifyHughReply(reply: string, targets: { label: string; href: string }[]) {
+  if (!reply || targets.length === 0) return reply;
+
+  const uniqueTargets = Array.from(
+    new Map(
+      targets
+        .filter(target => target.label.trim().length >= 3)
+        .map(target => [target.label.toLowerCase(), target])
+    ).values()
+  ).sort((a, b) => b.label.length - a.label.length);
+
+  return linkifyPlainText(reply, uniqueTargets);
+}
+
+function linkifyPlainText(text: string, targets: { label: string; href: string }[]) {
+  let output = text;
+
+  for (const target of targets) {
+    output = replaceOutsideMarkdownLinks(output, segment => linkifyTarget(segment, target));
+  }
+
+  return output;
+}
+
+function replaceOutsideMarkdownLinks(text: string, replaceSegment: (segment: string) => string) {
+  const markdownLinkPattern = /\[[^\]]+\]\([^)]+\)/g;
+  const parts: string[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = markdownLinkPattern.exec(text)) !== null) {
+    parts.push(replaceSegment(text.slice(cursor, match.index)));
+    parts.push(match[0]);
+    cursor = match.index + match[0].length;
+  }
+
+  parts.push(replaceSegment(text.slice(cursor)));
+  return parts.join("");
+}
+
+function linkifyTarget(text: string, target: { label: string; href: string }) {
+  const escapedLabel = escapeRegex(target.label.trim());
+  const pattern = new RegExp(`(^|[^\\w\\]/])(${escapedLabel})(?=$|[^\\w\\)])`, "gi");
+
+  return text.replace(pattern, (_full, prefix, label) => (
+    `${prefix}[${label}](${target.href})`
+  ));
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

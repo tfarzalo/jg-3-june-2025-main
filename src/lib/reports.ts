@@ -465,6 +465,9 @@ export async function generateReport(params: {
        has_extra_charges,
        extra_charges_description,
        extra_hours,
+       repair_cost,
+       repair_description,
+       misc_additional_cost_items,
        additional_comments,
        is_active,
        submission_date,
@@ -996,20 +999,44 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
     extraItems.push({ name: 'Cancellation Trip Charge', description: '', bill: Number(cBill.toFixed(2)), sub: Number(cSub.toFixed(2)), profit: Number((cBill - cSub).toFixed(2)) });
   }
 
-  nonBaseBill += numberFrom(jobDetails.repair_amount);
-  nonBaseSub += numberFrom(jobDetails.repair_sub_pay);
+  const miscAdditionalCostItems = arrayFrom(workOrder?.misc_additional_cost_items);
+  if (miscAdditionalCostItems.length > 0) {
+    miscAdditionalCostItems.forEach((item) => {
+      const billAmount = numberFrom(item.price);
+      const subAmount = numberFrom(item.subPay, item.sub_pay, item.sub_pay_amount);
+      const description = String(item.description ?? '').trim() || 'Miscellaneous additional cost';
+      nonBaseBill += billAmount;
+      nonBaseSub += subAmount;
+      if (billAmount > 0 || subAmount > 0 || description) {
+        extraItems.push({
+          name: 'Miscellaneous Additional Cost',
+          description,
+          bill: Number(billAmount.toFixed(2)),
+          sub: Number(subAmount.toFixed(2)),
+          profit: Number((billAmount - subAmount).toFixed(2)),
+        });
+      }
+    });
+  } else {
+    const repairBill = numberFrom(jobDetails.repair_amount, workOrder?.repair_cost);
+    const repairSub = numberFrom(jobDetails.repair_sub_pay);
+    nonBaseBill += repairBill;
+    nonBaseSub += repairSub;
+    if (repairBill > 0 || repairSub > 0) {
+      extraItems.push({
+        name: 'Miscellaneous Additional Cost',
+        description: String(workOrder?.repair_description ?? '').trim() || 'Miscellaneous additional cost',
+        bill: Number(repairBill.toFixed(2)),
+        sub: Number(repairSub.toFixed(2)),
+        profit: Number((repairBill - repairSub).toFixed(2)),
+      });
+    }
+  }
 
   // If the job is in a Cancelled phase, we should ignore the base billing portion entirely
   const phaseLabel = String(jobDetails.phase_label ?? jobDetails.job_phase_label ?? textFrom(job.job_phase, 'job_phase_label') ?? '').toLowerCase();
   const isPhaseCancelled = phaseLabel.includes('cancel');
 
-  const includeBase = !isPhaseCancelled && storedBill > 0 && baseBill > 0 && storedBill >= baseBill;
-  const calculatedBill = (includeBase ? baseBill : 0) + nonBaseBill;
-  // If job is cancelled, ignore stored base billing and treat total as the non-base components (extras/cancellation)
-  const bill = storedBill > 0 && !isPhaseCancelled ? storedBill : nonBaseBill;
-  const sub = bill > 0 ? (includeBase ? baseSub : 0) + nonBaseSub : 0;
-
-  // Determine base portion:
   let basePortion = 0;
   if (isPhaseCancelled) {
     basePortion = 0;
@@ -1021,9 +1048,17 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
     basePortion = 0;
   }
 
+  const calculatedBill = basePortion + nonBaseBill;
+  // Prefer the detailed grand total. Keep storedBill as a fallback/guard for older rows
+  // where some billing components may only exist in jobs.total_billing_amount.
+  const bill = isPhaseCancelled
+    ? nonBaseBill
+    : Math.max(calculatedBill, storedBill);
+  const baseSubTotal = Number((!isPhaseCancelled && basePortion > 0 ? baseSub : 0).toFixed(2));
+  const sub = bill > 0 ? baseSubTotal + nonBaseSub : 0;
+
   const extraPortion = Number((bill - basePortion || 0).toFixed(2));
   const extraSubTotal = Number((nonBaseSub || 0).toFixed(2));
-  const baseSubTotal = Number(((includeBase ? baseSub : 0)).toFixed(2));
 
   const baseProfit = Number((basePortion - baseSubTotal).toFixed(2));
   const baseMargin = basePortion ? Number(((baseProfit / basePortion) * 100).toFixed(2)) : 0;

@@ -201,6 +201,29 @@ interface ValidationResult {
   warnings: string[];
 }
 
+const OPTIONAL_WORK_ORDER_COLUMNS = [
+  'sprinkler_form_left_in_unit',
+  'repair_cost',
+  'repair_description',
+  'misc_additional_cost_items',
+];
+
+const stripOptionalWorkOrderColumns = (payload: Record<string, any>) => {
+  const next = { ...payload };
+  OPTIONAL_WORK_ORDER_COLUMNS.forEach(column => {
+    delete next[column];
+  });
+  return next;
+};
+
+const isMissingWorkOrderColumnError = (error: any) => (
+  error?.code === '42703' ||
+  OPTIONAL_WORK_ORDER_COLUMNS.some(column =>
+    String(error?.message || '').includes(column) ||
+    String(error?.details || '').includes(column)
+  )
+);
+
 // Helper functions for data transformation
 const toDbNumber = (value: any): number | null => {
   if (value === null || value === undefined || value === '') return null;
@@ -1823,18 +1846,19 @@ const NewWorkOrder = () => {
           console.error('  - Check functions called during INSERT/UPDATE');
         }
         
-        // If it's a column doesn't exist error, try without the new columns
-        if (workOrderResult.error.code === '42703' || workOrderResult.error.message?.includes('column') || workOrderResult.error.code === '22P02') {
-          console.log('Attempting fallback without new billing detail columns...');
+        // If production is missing newer optional columns, retry without them.
+        // This keeps subcontractor submission working even before the SQL migration is applied.
+        if (isMissingWorkOrderColumnError(workOrderResult.error) || workOrderResult.error.message?.includes('column') || workOrderResult.error.code === '22P02') {
+          console.log('Attempting fallback without newer optional work order columns...');
           
           // Remove the new columns and try again
-          const fallbackPayload = {
+          const fallbackPayload = stripOptionalWorkOrderColumns({
             ...cleanPayload,
             ceiling_billing_detail_id: undefined,
             accent_wall_billing_detail_id: undefined,
             individual_ceiling_count: undefined,
             ceiling_display_label: undefined,
-          };
+          });
           
           if (existingWorkOrder) {
             const { data: fallbackData, error: fallbackError } = await supabase
@@ -1857,7 +1881,7 @@ const NewWorkOrder = () => {
             console.error('Fallback also failed:', workOrderResult.error);
             throw workOrderResult.error;
           } else {
-            console.log('Fallback succeeded - work order created without new columns');
+            console.log('Fallback succeeded - work order created without newer optional columns');
           }
         } else {
           throw workOrderResult.error;
@@ -2044,7 +2068,13 @@ const NewWorkOrder = () => {
         }
       }
       
-      setError(err instanceof Error ? err.message : 'Failed to create/update work order');
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : err && typeof err === 'object' && 'message' in err
+            ? String((err as any).message)
+            : 'Failed to create/update work order';
+      setError(errorMessage);
       setSaving(false);
     }
   };
@@ -2179,7 +2209,7 @@ const NewWorkOrder = () => {
     // For subcontractors, also require before images
     (!isSubcontractor || beforeImagesUploaded) &&
     // For subcontractors with sprinklers, require sprinkler images
-    (!isSubcontractor || !formData.sprinklers || sprinklerImagesUploaded) &&
+    (!isSubcontractor || !formData.has_sprinklers || sprinklerImagesUploaded) &&
     // If a sprinkler form was left in the unit, require a photo of it
     (!formData.sprinkler_form_left_in_unit || sprinklerFormImagesUploaded) &&
     // Extra Charges requirements - at least one line item when checkbox is checked
