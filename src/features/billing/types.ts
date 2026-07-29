@@ -38,6 +38,11 @@ export type JobBillingPayload = {
   repair_sub_pay?: number;       // admin-set: paid to subcontractor for repair
   repair_cost?: number;          // sub-reported: informational only
   repair_description?: string | null;
+  misc_additional_cost_items?: Array<{
+    id: string;
+    description: string;
+    price: number;
+  }>;
   is_editing_repair?: boolean;
   repair_amount_input?: string;
   repair_sub_pay_input?: string;

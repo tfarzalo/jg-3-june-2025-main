@@ -125,6 +125,12 @@ interface BillingDetails {
   };
 }
 
+interface MiscAdditionalCostItem {
+  id: string;
+  description: string;
+  price: number;
+}
+
 interface WorkOrder {
   id: string;
   submission_date: string;
@@ -155,6 +161,7 @@ interface WorkOrder {
   extra_charges_line_items?: ExtraChargeLineItem[];
   repair_cost?: number | null;
   repair_description?: string | null;
+  misc_additional_cost_items?: MiscAdditionalCostItem[];
   additional_comments?: string;
 }
 
@@ -241,6 +248,37 @@ interface JobNote {
   updated_at?: string;
   created_by_name: string;
 }
+
+const createMiscAdditionalCostItem = (): MiscAdditionalCostItem => ({
+  id: `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  description: '',
+  price: 0
+});
+
+const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostItem[] => {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item: any) => ({
+      id: typeof item?.id === 'string' && item.id ? item.id : `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      description: typeof item?.description === 'string' ? item.description : '',
+      price: Number.isFinite(Number(item?.price)) ? Math.max(0, Number(item.price)) : 0
+    }))
+    .filter(item => item.description.trim() || item.price > 0);
+};
+
+const miscAdditionalCostItemsFromWorkOrder = (workOrder?: WorkOrder | null): MiscAdditionalCostItem[] => {
+  const normalized = normalizeMiscAdditionalCostItems(workOrder?.misc_additional_cost_items);
+  if (normalized.length > 0) return normalized;
+  const legacyAmount = Number(workOrder?.repair_cost ?? 0);
+  if (legacyAmount > 0) {
+    return [{
+      id: 'legacy-misc-additional-cost',
+      description: workOrder?.repair_description || 'Miscellaneous additional cost',
+      price: legacyAmount
+    }];
+  }
+  return [];
+};
 
 type QualityControlSubmission = {
   id: string;
@@ -424,6 +462,7 @@ export function JobDetails() {
   const [billingWarnings, setBillingWarnings] = useState<string[]>([]);
   const [repairAmountInput, setRepairAmountInput] = useState<string>('');
   const [repairSubPayInput, setRepairSubPayInput] = useState<string>('');
+  const [miscAdditionalCostItemsInput, setMiscAdditionalCostItemsInput] = useState<MiscAdditionalCostItem[]>([]);
   const [isEditingRepairAmount, setIsEditingRepairAmount] = useState(false);
   const [repairExpanded, setRepairExpanded] = useState(false);
   const [savingRepairAmount, setSavingRepairAmount] = useState(false);
@@ -524,6 +563,16 @@ export function JobDetails() {
     return /dry\s*wall/i.test(text) || drywallInAdditional;
   }, [job?.work_order?.additional_comments, job?.work_order?.extra_charges_description, supplementalBillingLines]);
 
+  const miscAdditionalCostItems = useMemo(
+    () => miscAdditionalCostItemsFromWorkOrder(job?.work_order),
+    [job?.work_order?.misc_additional_cost_items, job?.work_order?.repair_cost, job?.work_order?.repair_description]
+  );
+
+  const miscAdditionalCostTotal = useMemo(
+    () => miscAdditionalCostItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0),
+    [miscAdditionalCostItems]
+  );
+
   // Initialize recipient email with property AP contact when job loads
   useEffect(() => {
     if (!recipientEmail) {
@@ -540,16 +589,18 @@ export function JobDetails() {
     if (!isEditingRepairAmount) {
       setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
       setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+      setMiscAdditionalCostItemsInput(miscAdditionalCostItems);
     }
-  }, [job?.repair_amount, job?.repair_sub_pay, isEditingRepairAmount]);
+  }, [job?.repair_amount, job?.repair_sub_pay, miscAdditionalCostItems, isEditingRepairAmount]);
 
   useEffect(() => {
     if (!canEditRepairInCurrentPhase) {
       setIsEditingRepairAmount(false);
       setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
       setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+      setMiscAdditionalCostItemsInput(miscAdditionalCostItems);
     }
-  }, [canEditRepairInCurrentPhase, job?.repair_amount, job?.repair_sub_pay]);
+  }, [canEditRepairInCurrentPhase, job?.repair_amount, job?.repair_sub_pay, miscAdditionalCostItems]);
 
   const fetchJobNotes = useCallback(async () => {
     if (!jobId || !isAdmin) {
@@ -2769,17 +2820,23 @@ export function JobDetails() {
     await refetchJob();
   };
 
-  // Repair amount handler
+  // Miscellaneous additional cost handler
   const handleSaveRepairAmount = async () => {
     if (!jobId) return;
     if (!canEditRepairInCurrentPhase) {
-      toast.error(`Repair can only be edited in Job Request or Work Order. Current phase: ${phaseLabel}.`);
+      toast.error(`Miscellaneous additional costs can only be edited in Job Request or Work Order. Current phase: ${phaseLabel}.`);
       return;
     }
     const parsedAmount = parseFloat(repairAmountInput);
     const parsedSubPay = parseFloat(repairSubPayInput);
     const amount = isNaN(parsedAmount) ? 0 : Math.max(0, parsedAmount);
     const subPay = isNaN(parsedSubPay) ? 0 : Math.max(0, parsedSubPay);
+    const miscItems = normalizeMiscAdditionalCostItems(miscAdditionalCostItemsInput);
+    const miscTotal = miscItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+    const miscDescription = miscItems
+      .filter(item => item.description.trim())
+      .map(item => item.description.trim())
+      .join('; ');
     setSavingRepairAmount(true);
     try {
       const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -2791,6 +2848,20 @@ export function JobDetails() {
         .update({ repair_amount: amount, repair_sub_pay: subPay })
         .eq('id', jobId);
       if (error) throw error;
+
+      if (job?.work_order?.id) {
+        const { error: workOrderError } = await supabase
+          .from('work_orders')
+          .update({
+            misc_additional_cost_items: miscItems,
+            repair_cost: miscTotal,
+            repair_description: miscDescription
+          })
+          .eq('id', job.work_order.id);
+        if (workOrderError) throw workOrderError;
+      } else if (miscItems.length > 0) {
+        throw new Error('A work order must exist before miscellaneous additional cost items can be saved.');
+      }
 
       const currentPhase = job?.job_phase?.label?.trim();
       const hadRepairBefore = (job?.repair_amount ?? 0) > 0;
@@ -2817,7 +2888,7 @@ export function JobDetails() {
             changed_by: userData.user.id,
             from_phase_id: job?.job_phase?.id,
             to_phase_id: pendingPhase.id,
-            change_reason: 'Admin set repair amount — job moved to Pending Work Order for approval'
+            change_reason: 'Admin set miscellaneous additional cost amount - job moved to Pending Work Order for approval'
           });
         }
       }
@@ -2839,22 +2910,22 @@ export function JobDetails() {
             changed_by: userData.user.id,
             from_phase_id: job?.job_phase?.id,
             to_phase_id: revertPhase.id,
-            change_reason: `Admin cleared repair amount — no other extra charges, job reverted to ${revertLabel}`
+            change_reason: `Admin cleared miscellaneous additional cost amount - no other extra charges, job reverted to ${revertLabel}`
           });
         }
       }
 
       setIsEditingRepairAmount(false);
       await refetchJob(true);
-      toast.success(amount === 0 ? 'Repair cost cleared' : 'Repair amounts saved');
+      toast.success(amount === 0 && miscItems.length === 0 ? 'Miscellaneous additional costs cleared' : 'Miscellaneous additional costs saved');
 
       // Keep repair section expanded after save so the user can see the saved values
-      if (amount > 0) {
+      if (amount > 0 || miscItems.length > 0) {
         setRepairExpanded(true);
       }
     } catch (err) {
-      console.error('Error saving repair amount:', err);
-      toast.error('Failed to save repair amount');
+      console.error('Error saving miscellaneous additional costs:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to save miscellaneous additional costs');
     } finally {
       setSavingRepairAmount(false);
     }
@@ -4002,7 +4073,7 @@ export function JobDetails() {
               </div>
             </div>
 
-            {/* Repair Fields — Admin only, phase-gated */}
+            {/* Miscellaneous Additional Cost Fields - Admin only, phase-gated */}
             {canManageRepair && (
               <div className="px-6 pb-4">
                 <div className={`border rounded-xl overflow-hidden transition-colors ${
@@ -4020,11 +4091,13 @@ export function JobDetails() {
                       setRepairExpanded(next);
                       if (next && !(job.repair_amount ?? 0)) {
                         setIsEditingRepairAmount(true);
+                        setMiscAdditionalCostItemsInput(miscAdditionalCostItems);
                       }
                       if (!next) {
                         setIsEditingRepairAmount(false);
                         setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
                         setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+                        setMiscAdditionalCostItemsInput(miscAdditionalCostItems);
                       }
                     }}
                     disabled={isRepairLocked}
@@ -4036,15 +4109,15 @@ export function JobDetails() {
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-sm">🔧</span>
-                      <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider">Repair</span>
+                      <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider">Miscellaneous Additional Cost</span>
                       {(job.repair_amount ?? 0) > 0 && !repairExpanded && (
                         <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">
                           &nbsp;·&nbsp;{formatCurrency(job.repair_amount ?? 0)} bill / {formatCurrency(job.repair_sub_pay ?? 0)} sub
                         </span>
                       )}
-                      {(job.work_order?.repair_cost ?? 0) > 0 && !repairExpanded && (
+                      {miscAdditionalCostTotal > 0 && !repairExpanded && (
                         <span className="text-xs text-zinc-400 dark:text-zinc-500 truncate">
-                          &nbsp;(Sub: {formatCurrency(job.work_order?.repair_cost ?? 0)})
+                          &nbsp;(Items: {formatCurrency(miscAdditionalCostTotal)})
                         </span>
                       )}
                       {isRepairLocked && (
@@ -4064,7 +4137,7 @@ export function JobDetails() {
                       {isRepairLocked && (
                         <div className="px-4 py-3 bg-zinc-50 dark:bg-zinc-900/30 border-b border-zinc-200 dark:border-zinc-700/60">
                           <p className="text-sm text-zinc-600 dark:text-zinc-300">
-                            Repair amounts can only be edited while the job is in <span className="font-semibold">Job Request</span> or <span className="font-semibold">Work Order</span>.
+                            Miscellaneous additional costs can only be edited while the job is in <span className="font-semibold">Job Request</span> or <span className="font-semibold">Work Order</span>.
                           </p>
                           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
                             Current phase: {phaseLabel}
@@ -4072,16 +4145,86 @@ export function JobDetails() {
                         </div>
                       )}
 
-                      {/* Sub's reported cost — only shown when relevant */}
-                      {(job.work_order?.repair_cost ?? 0) > 0 && (
+                      {/* Sub/admin miscellaneous items - only shown when relevant */}
+                      {miscAdditionalCostItems.length > 0 && (
                         <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-800/40 border-b border-zinc-100 dark:border-zinc-700/60">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-zinc-500 dark:text-zinc-400">Sub reported cost:</span>
-                            <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{formatCurrency(job.work_order?.repair_cost ?? 0)}</span>
+                          <div className="flex items-center justify-between gap-3 mb-2">
+                            <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Miscellaneous items</span>
+                            <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{formatCurrency(miscAdditionalCostTotal)}</span>
                           </div>
-                          {job.work_order?.repair_description && (
-                            <div className="text-xs text-zinc-600 dark:text-zinc-300 mt-1">
-                              {job.work_order.repair_description}
+                          <div className="space-y-1">
+                            {miscAdditionalCostItems.map(item => (
+                              <div key={item.id} className="flex items-start justify-between gap-3 text-xs text-zinc-600 dark:text-zinc-300">
+                                <span>{item.description || 'Miscellaneous additional cost'}</span>
+                                <span className="font-semibold text-zinc-700 dark:text-zinc-200">{formatCurrency(item.price)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {isEditingRepairAmount && !isRepairLocked && (
+                        <div className="px-4 py-3 space-y-3 border-b border-zinc-100 dark:border-zinc-700/60">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                              Miscellaneous item rows
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setMiscAdditionalCostItemsInput(prev => [...prev, createMiscAdditionalCostItem()])}
+                              className="inline-flex items-center px-2 py-1 text-xs font-semibold text-blue-600 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800/60"
+                            >
+                              <Plus className="h-3.5 w-3.5 mr-1" />
+                              Add Item
+                            </button>
+                          </div>
+                          {miscAdditionalCostItemsInput.length === 0 ? (
+                            <div className="rounded-lg border border-dashed border-zinc-300 dark:border-zinc-600 p-3 text-xs text-zinc-500 dark:text-zinc-400">
+                              No miscellaneous additional costs added.
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {miscAdditionalCostItemsInput.map((item, index) => (
+                                <div key={item.id} className="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3 space-y-2">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Item {index + 1}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setMiscAdditionalCostItemsInput(prev => prev.filter(existing => existing.id !== item.id))}
+                                      className="inline-flex items-center text-xs font-semibold text-red-600 dark:text-red-400"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5 mr-1" />
+                                      Remove
+                                    </button>
+                                  </div>
+                                  <div className="grid grid-cols-1 md:grid-cols-[1fr_140px] gap-2">
+                                    <input
+                                      type="text"
+                                      value={item.description}
+                                      onChange={e => setMiscAdditionalCostItemsInput(prev => prev.map(existing =>
+                                        existing.id === item.id ? { ...existing, description: e.target.value } : existing
+                                      ))}
+                                      className="w-full px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-[#0F172A] text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-sm"
+                                      placeholder="Description"
+                                    />
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={item.price === 0 ? '' : item.price}
+                                      onChange={e => setMiscAdditionalCostItemsInput(prev => prev.map(existing =>
+                                        existing.id === item.id ? { ...existing, price: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 } : existing
+                                      ))}
+                                      className="w-full px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-[#0F172A] text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-sm"
+                                      placeholder="0.00"
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                              <div className="flex items-center justify-between text-xs font-semibold text-zinc-600 dark:text-zinc-300 pt-1">
+                                <span>Items total</span>
+                                <span>{formatCurrency(miscAdditionalCostItemsInput.reduce((sum, item) => sum + (Number(item.price) || 0), 0))}</span>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -4109,7 +4252,7 @@ export function JobDetails() {
                               onClick={() => setIsEditingRepairAmount(true)}
                               className="text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 underline underline-offset-2"
                             >
-                              Edit amounts
+                              Edit items and amounts
                             </button>
                           )}
                         </div>
@@ -4162,6 +4305,7 @@ export function JobDetails() {
                                 setIsEditingRepairAmount(false);
                                 setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
                                 setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+                                setMiscAdditionalCostItemsInput(miscAdditionalCostItems);
                               }}
                               className="px-3 py-1.5 text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-600 dark:text-zinc-300 rounded-lg border border-zinc-200 dark:border-zinc-600 transition-colors"
                             >
@@ -4965,7 +5109,6 @@ export function JobDetails() {
                     {(() => {
                       const repairAmount = job?.repair_amount ?? 0;
                       const repairSubPay = job?.repair_sub_pay ?? 0;
-                      const repairCost = job?.work_order?.repair_cost ?? 0;
                       const hasRepair = repairAmount > 0;
                       const hasLines = unifiedExtraLines.length > 0;
                       if (!hasRepair && !hasLines) return null;
@@ -4996,14 +5139,16 @@ export function JobDetails() {
                               <div className="flex justify-between items-start gap-4">
                                 <div>
                                   <div className="text-base font-bold mt-1.5 text-green-800 dark:text-green-200">
-                                    Repair
+                                    Miscellaneous Additional Cost
                                   </div>
-                                  {repairCost > 0 && (
+                                  {miscAdditionalCostItems.length > 0 && (
                                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                      Sub reported: {formatCurrency(repairCost)}
-                                      {job.work_order?.repair_description && (
-                                        <span className="block mt-0.5">{job.work_order.repair_description}</span>
-                                      )}
+                                      Items total: {formatCurrency(miscAdditionalCostTotal)}
+                                      {miscAdditionalCostItems.map(item => (
+                                        <span key={item.id} className="block mt-0.5">
+                                          {item.description || 'Miscellaneous additional cost'} - {formatCurrency(item.price)}
+                                        </span>
+                                      ))}
                                     </div>
                                   )}
                                 </div>
@@ -5192,6 +5337,7 @@ export function JobDetails() {
                   repair_amount: job.repair_amount ?? 0,
                   repair_cost: job.work_order?.repair_cost ?? 0,
                   repair_description: job.work_order?.repair_description ?? null,
+                  misc_additional_cost_items: miscAdditionalCostItems,
                   repair_sub_pay: job.repair_sub_pay ?? 0,
                   is_editing_repair: isEditingRepairAmount,
                   repair_amount_input: repairAmountInput,
@@ -5203,6 +5349,7 @@ export function JobDetails() {
                     setIsEditingRepairAmount(false);
                     setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
                     setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+                    setMiscAdditionalCostItemsInput(miscAdditionalCostItems);
                   },
                   on_repair_input_change: (val: string) => setRepairAmountInput(val),
                   on_repair_sub_pay_change: (val: string) => setRepairSubPayInput(val),

@@ -85,6 +85,11 @@ export interface Job {
     extra_hours: number;
     repair_cost?: number | null;
     repair_description?: string | null;
+    misc_additional_cost_items?: Array<{
+      id: string;
+      description: string;
+      price: number;
+    }> | null;
     additional_comments: string | null;
     is_active: boolean;
     frozen_billing_lines?: Array<{
@@ -527,12 +532,13 @@ export function useJobDetails(jobId: string | undefined) {
           data.work_order.extra_charges_line_items === undefined ||
           data.work_order.repair_cost === undefined ||
           data.work_order.repair_description === undefined ||
+          data.work_order.misc_additional_cost_items === undefined ||
           data.work_order.sprinkler_form_left_in_unit === undefined
         )
       ) {
         const { data: workOrderFieldData, error: workOrderFieldError } = await supabase
           .from('work_orders')
-          .select('extra_charges_line_items, repair_cost, repair_description, sprinkler_form_left_in_unit')
+          .select('extra_charges_line_items, repair_cost, repair_description, misc_additional_cost_items, sprinkler_form_left_in_unit')
           .eq('id', data.work_order.id)
           .maybeSingle();
 
@@ -545,6 +551,9 @@ export function useJobDetails(jobId: string | undefined) {
           }
           if (data.work_order.repair_description === undefined) {
             data.work_order.repair_description = workOrderFieldData.repair_description ?? null;
+          }
+          if (data.work_order.misc_additional_cost_items === undefined) {
+            data.work_order.misc_additional_cost_items = workOrderFieldData.misc_additional_cost_items ?? null;
           }
           if (data.work_order.sprinkler_form_left_in_unit === undefined) {
             data.work_order.sprinkler_form_left_in_unit = workOrderFieldData.sprinkler_form_left_in_unit ?? false;

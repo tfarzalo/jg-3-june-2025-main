@@ -108,6 +108,7 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
   const repairSubPay = billing.repair_sub_pay ?? 0;
   const repairCost = billing.repair_cost ?? 0;
   const repairDescription = billing.repair_description?.trim();
+  const miscAdditionalCostItems = billing.misc_additional_cost_items ?? [];
   const isEditingRepair = billing.is_editing_repair ?? false;
   const repairInput = billing.repair_amount_input ?? '';
   const repairSubPayInput = billing.repair_sub_pay_input ?? '';
@@ -161,9 +162,11 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
     ...(repairAmount > 0 ? [{
       id: 'repair',
       label: [
-        'Repair',
-        repairCost > 0 ? `Sub reported: ${formatCurrency(repairCost)}` : '',
-        repairDescription || ''
+        'Miscellaneous Additional Cost',
+        repairCost > 0 ? `Items total: ${formatCurrency(repairCost)}` : '',
+        miscAdditionalCostItems.length > 0
+          ? miscAdditionalCostItems.map(item => `${item.description || 'Item'} (${formatCurrency(item.price)})`).join('; ')
+          : (repairDescription || '')
       ].filter(Boolean).join(' - '),
       unit_label: '—',
       quantity_or_hours: null as unknown as number,

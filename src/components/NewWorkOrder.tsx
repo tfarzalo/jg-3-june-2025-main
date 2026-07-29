@@ -28,6 +28,11 @@ import { validateAllExtraCharges } from '../utils/extraChargesValidation';
 import { isFrozenHistoricalSnapshot } from '../lib/jobs/historicalDataMode';
 import { dispatchSmsNotification, dispatchSmsNotificationBatch } from '../lib/sms/dispatchSmsNotification';
 
+interface MiscAdditionalCostItem {
+  id: string;
+  description: string;
+  price: number;
+}
 
 interface Job {
   id: string;
@@ -80,6 +85,7 @@ interface Job {
   extra_hours: number;
   repair_cost: number;
   repair_description: string;
+  misc_additional_cost_items?: MiscAdditionalCostItem[];
   additional_comments: string;
   created_by: string;
 }
@@ -123,6 +129,7 @@ interface WorkOrder {
   extra_charges_line_items?: ExtraChargeLineItem[];
   repair_cost: number;
   repair_description: string;
+  misc_additional_cost_items?: MiscAdditionalCostItem[];
   additional_comments: string;
   additional_services?: Record<string, any>;
 }
@@ -163,6 +170,7 @@ interface WorkOrderDBPayload {
   extra_charges_line_items?: ExtraChargeLineItem[];
   repair_cost?: number;
   repair_description?: string;
+  misc_additional_cost_items?: MiscAdditionalCostItem[];
   additional_comments: string;
   prepared_by: string;
   ceiling_billing_detail_id?: string | null;
@@ -284,6 +292,23 @@ const numOrNull = (v: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const createMiscAdditionalCostItem = (): MiscAdditionalCostItem => ({
+  id: `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  description: '',
+  price: 0
+});
+
+const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostItem[] => {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item: any) => ({
+      id: typeof item?.id === 'string' && item.id ? item.id : `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      description: typeof item?.description === 'string' ? item.description : '',
+      price: Number.isFinite(Number(item?.price)) ? Math.max(0, Number(item.price)) : 0
+    }))
+    .filter(item => item.description.trim() || item.price > 0);
+};
+
 // Utility functions for building and validating DB payloads
 const buildWorkOrderPayload = (
   formData: any, 
@@ -391,8 +416,12 @@ const buildWorkOrderPayload = (
     extra_charges_description: formData.extra_charges_description || '',
     extra_hours: toDbNumber(formData.extra_hours) || 0,
     extra_charges_line_items: formData.has_extra_charges ? extraChargesItems : [],
-    repair_cost: toDbNumber(formData.repair_cost) || 0,
-    repair_description: formData.repair_cost > 0 ? formData.repair_description.trim() : '',
+    repair_cost: formData.misc_additional_cost_items.reduce((sum, item) => sum + (Number(item.price) || 0), 0),
+    repair_description: formData.misc_additional_cost_items
+      .filter(item => item.description.trim())
+      .map(item => item.description.trim())
+      .join('; '),
+    misc_additional_cost_items: normalizeMiscAdditionalCostItems(formData.misc_additional_cost_items),
     additional_comments: formData.additional_comments || '',
     prepared_by: '', // Will be set during submission - this gets overridden
     ceiling_billing_detail_id: nilIfEmpty(ceilingBillingDetailId),
@@ -957,6 +986,7 @@ const NewWorkOrder = () => {
     extra_hours: 0,
     repair_cost: 0,
     repair_description: '',
+    misc_additional_cost_items: [] as MiscAdditionalCostItem[],
     additional_comments: ''
   });
 
@@ -1077,6 +1107,15 @@ const NewWorkOrder = () => {
         extra_hours: existingWorkOrder.extra_hours ?? 0,
         repair_cost: existingWorkOrder.repair_cost ?? 0,
         repair_description: existingWorkOrder.repair_description || '',
+        misc_additional_cost_items: normalizeMiscAdditionalCostItems(existingWorkOrder.misc_additional_cost_items).length > 0
+          ? normalizeMiscAdditionalCostItems(existingWorkOrder.misc_additional_cost_items)
+          : ((existingWorkOrder.repair_cost ?? 0) > 0
+            ? [{
+                id: 'legacy-misc-additional-cost',
+                description: existingWorkOrder.repair_description || 'Miscellaneous additional cost',
+                price: existingWorkOrder.repair_cost ?? 0
+              }]
+            : []),
         additional_comments: existingWorkOrder.additional_comments || ''
       });
 
@@ -1135,6 +1174,7 @@ const NewWorkOrder = () => {
         extra_hours: job.extra_hours ?? 0,
         repair_cost: 0,
         repair_description: '',
+        misc_additional_cost_items: [] as MiscAdditionalCostItem[],
         additional_comments: job.additional_comments || '',
         ceiling_mode: 'unit_size' as 'unit_size' | 'individual'
       });
@@ -2634,63 +2674,106 @@ const NewWorkOrder = () => {
               </div>
             </div>
 
-              {/* Repair Cost */}
+              {/* Miscellaneous Additional Cost */}
               <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
                 {/* Header */}
                 <div className="bg-gradient-to-r from-red-600 to-red-700 dark:from-red-700 dark:to-red-800 px-6 py-4">
-                  <h2 className="text-xl font-semibold text-white">Repair Cost</h2>
+                  <h2 className="text-xl font-semibold text-white">Miscellaneous Additional Cost</h2>
                 </div>
                 {/* Content */}
-                <div className="p-6 space-y-3">
+                <div className="p-6 space-y-4">
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    If repairs were performed during this job, enter the total repair cost below. Leave at <strong>$0</strong> if no repairs were needed.
+                    If any miscellaneous additional costs apply to this job, add each item below with a description and price.
                   </p>
-                  <div>
-                    <label htmlFor="repair_cost" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                      Repair Cost (if applicable)
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 font-medium">$</span>
-                      <input
-                        type="number"
-                        id="repair_cost"
-                        name="repair_cost"
-                        min="0"
-                        step="0.01"
-                        value={formData.repair_cost === 0 ? '' : formData.repair_cost}
-                        onChange={(e) => setFormData(prev => ({
-                          ...prev,
-                          repair_cost: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0,
-                          repair_description: e.target.value === '' ? '' : prev.repair_description
-                        }))}
-                        placeholder="0.00"
-                        className="w-full pl-7 pr-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+
+                  {formData.misc_additional_cost_items.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-gray-300 dark:border-[#2D3B4E] p-4 text-sm text-gray-500 dark:text-gray-400">
+                      No miscellaneous additional costs added.
                     </div>
-                    {formData.repair_cost > 0 && (
-                      <div className="mt-4 space-y-2">
-                        <label htmlFor="repair_description" className="block text-sm font-medium text-gray-700 dark:text-gray-200">
-                          Repair Description
-                        </label>
-                        <input
-                          type="text"
-                          id="repair_description"
-                          name="repair_description"
-                          value={formData.repair_description}
-                          onChange={(e) => setFormData(prev => ({
-                            ...prev,
-                            repair_description: e.target.value
-                          }))}
-                          placeholder="Briefly describe the repair work performed"
-                          className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                          <span>ℹ</span>
-                          <span>Repair cost will be reviewed by admin. They will set the billing amounts and send approval if needed.</span>
-                        </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {formData.misc_additional_cost_items.map((item, index) => (
+                        <div key={item.id} className="rounded-lg border border-gray-200 dark:border-[#2D3B4E] p-3 space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">Item {index + 1}</span>
+                            <button
+                              type="button"
+                              onClick={() => setFormData(prev => ({
+                                ...prev,
+                                misc_additional_cost_items: prev.misc_additional_cost_items.filter(existing => existing.id !== item.id)
+                              }))}
+                              className="px-2 py-1 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-[1fr_160px] gap-3">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                                Description
+                              </label>
+                              <input
+                                type="text"
+                                value={item.description}
+                                onChange={(e) => setFormData(prev => ({
+                                  ...prev,
+                                  misc_additional_cost_items: prev.misc_additional_cost_items.map(existing =>
+                                    existing.id === item.id ? { ...existing, description: e.target.value } : existing
+                                  )
+                                }))}
+                                placeholder="Describe the additional cost"
+                                className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                                Price
+                              </label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 font-medium">$</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={item.price === 0 ? '' : item.price}
+                                  onChange={(e) => setFormData(prev => ({
+                                    ...prev,
+                                    misc_additional_cost_items: prev.misc_additional_cost_items.map(existing =>
+                                      existing.id === item.id ? { ...existing, price: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 } : existing
+                                    )
+                                  }))}
+                                  placeholder="0.00"
+                                  className="w-full pl-7 pr-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="flex items-center justify-between text-sm font-semibold text-gray-700 dark:text-gray-200 border-t border-gray-200 dark:border-[#2D3B4E] pt-3">
+                        <span>Total</span>
+                        <span>{formatCurrency(formData.misc_additional_cost_items.reduce((sum, item) => sum + (Number(item.price) || 0), 0))}</span>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({
+                      ...prev,
+                      misc_additional_cost_items: [...prev.misc_additional_cost_items, createMiscAdditionalCostItem()]
+                    }))}
+                    className="inline-flex items-center px-4 py-2 text-sm font-semibold bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800/60 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                  >
+                    Add Miscellaneous Cost
+                  </button>
+
+                  {formData.misc_additional_cost_items.length > 0 && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                      <span>ℹ</span>
+                      <span>Miscellaneous additional costs will be reviewed by admin. They will set billing amounts and send approval if needed.</span>
+                    </p>
+                  )}
                 </div>
               </div>
 

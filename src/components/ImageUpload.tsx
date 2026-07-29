@@ -482,29 +482,61 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
           console.log('  ✅ Storage upload successful');
 
-          // Create database record
+          // Create database record. Sprinkler form photos can be uploaded before
+          // a work_order row exists, so retry without folder_id if production has
+          // stale folder metadata that violates the self-referential folder FK.
           console.log('  💾 Creating database record...');
-          const { error: dbError } = await supabase
+          const fileRecord = {
+            name: fileName,
+            path: filePath,
+            size: optimized.optimizedSize,
+            original_size: optimized.originalSize,
+            optimized_size: optimized.optimizedSize,
+            type: mimeType,
+            uploaded_by: user.id,
+            property_id: jobData.property_id,
+            job_id: jobId,
+            folder_id: subfolderId,
+            category,
+            work_order_id: workOrderId || null,
+            storage_path: fileStoragePath,
+            original_filename: originalFile.name,
+            bucket: 'files'
+          };
+
+          let { error: dbError } = await supabase
             .from('files')
-            .insert({
-              name: fileName,
-              path: filePath,
-              size: optimized.optimizedSize,
-              original_size: optimized.originalSize,
-              optimized_size: optimized.optimizedSize,
-              type: mimeType,
-              uploaded_by: user.id,
-              property_id: jobData.property_id,
-              job_id: jobId,
-              folder_id: subfolderId,
-              category,
-              work_order_id: workOrderId || null,
-              storage_path: fileStoragePath,
-              original_filename: originalFile.name,
-              bucket: 'files'
-            })
+            .insert(fileRecord)
             .select()
             .single();
+
+          if (
+            dbError &&
+            folder === 'sprinkler_form' &&
+            (dbError.code === '23503' || dbError.message?.toLowerCase().includes('foreign key'))
+          ) {
+            console.warn('  ⚠️ Retrying sprinkler form file record without folder_id after FK failure:', dbError);
+            const retry = await supabase
+              .from('files')
+              .insert({ ...fileRecord, folder_id: null })
+              .select()
+              .single();
+            dbError = retry.error;
+          }
+
+          if (
+            dbError &&
+            dbError.code === '23505'
+          ) {
+            console.warn('  ⚠️ Retrying file record with unique display name after duplicate name failure:', dbError);
+            const uniqueName = fileName.replace(/(\.[^.]+)?$/, `_${Date.now()}$1`);
+            const retry = await supabase
+              .from('files')
+              .insert({ ...fileRecord, name: uniqueName, folder_id: folder === 'sprinkler_form' ? null : fileRecord.folder_id })
+              .select()
+              .single();
+            dbError = retry.error;
+          }
 
           if (dbError) {
             console.error('  ❌ Database error:', dbError);
@@ -519,8 +551,14 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                 dbError.message?.includes('permission') || 
                 dbError.message?.includes('row-level security')) {
               errorMsg = 'Permission denied: Unable to save file record. You may not have access to upload files for this job.';
-            } else if (dbError.message?.includes('foreign key') || dbError.message?.includes('violates')) {
-              errorMsg = 'Invalid reference: Check property or parent folder exists.';
+            } else if (dbError.code === '23514') {
+              errorMsg = `Upload configuration error: file category "${category}" is not allowed by the database.`;
+            } else if (dbError.code === '23505') {
+              errorMsg = 'A file with this generated name already exists. Please try uploading again.';
+            } else if (dbError.message?.includes('foreign key')) {
+              errorMsg = `Invalid reference: ${dbError.details || dbError.message}`;
+            } else if (dbError.message?.includes('violates')) {
+              errorMsg = `Failed to save file record: ${dbError.details || dbError.message}`;
             } else {
               errorMsg = `Failed to save file record: ${dbError.message}`;
             }
