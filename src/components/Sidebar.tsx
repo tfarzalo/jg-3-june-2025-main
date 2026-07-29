@@ -157,7 +157,7 @@ export function Sidebar() {
       // PROPERTIES
       case 'Properties':
         return '#009688'; // Teal Green
-      case 'Property Mgmt Groups':
+      case 'Property Groups':
         return '#009688'; // Teal Green (same group, consistent shade)
       
       // FILE MANAGEMENT
@@ -244,7 +244,7 @@ export function Sidebar() {
         title: 'PROPERTIES',
         items: [
           { icon: Building2, label: 'Properties', to: '/dashboard/properties', dataTutorial: 'properties' },
-          { icon: Building2, label: 'Property Mgmt Groups', to: '/dashboard/property-groups' },
+          { icon: Building2, label: 'Property Groups', to: '/dashboard/property-groups' },
         ]
       },
       {

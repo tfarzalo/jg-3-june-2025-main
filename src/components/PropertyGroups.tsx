@@ -131,7 +131,7 @@ export function PropertyGroups() {
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center space-x-3">
           <Building2 className="h-8 w-8 text-gray-600 dark:text-gray-400" />
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Property Management Groups</h1>
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Property Groups</h1>
         </div>
         <div className="flex space-x-3">
           {selectedGroups.length > 0 && (

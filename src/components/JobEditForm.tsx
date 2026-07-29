@@ -62,6 +62,7 @@ interface Job {
   job_category_id: string | null;
   description: string;
   scheduled_date: string;
+  purchase_order: string | null;
   work_order_num: number;
   job_phase: JobPhase;
   property: {
@@ -102,7 +103,8 @@ export function JobEditForm() {
     job_category_id: '',
     job_type_id: '',
     description: '',
-    scheduled_date: ''
+    scheduled_date: '',
+    purchase_order: ''
   });
   const [hasChanges, setHasChanges] = useState(false);
   const { attemptNavigate } = useUnsavedChangesPrompt(hasChanges, async () => {
@@ -168,6 +170,7 @@ export function JobEditForm() {
           job_category_id,
           description,
           scheduled_date,
+          purchase_order,
           property:properties (
             property_name
           ),
@@ -201,7 +204,8 @@ export function JobEditForm() {
         job_category_id: data.job_category_id || '',
         job_type_id: data.job_type_id,
         description: data.description || '',
-        scheduled_date: formatDateForInput(data.scheduled_date)
+        scheduled_date: formatDateForInput(data.scheduled_date),
+        purchase_order: data.purchase_order || ''
       });
 
       setLoadingJob(false);
@@ -516,7 +520,8 @@ export function JobEditForm() {
           job_category_id: formData.job_category_id || null,
           job_type_id: formData.job_type_id,
           description: formData.description,
-          scheduled_date: scheduledDate
+          scheduled_date: scheduledDate,
+          purchase_order: formData.purchase_order?.trim() || null
         })
         .eq('id', jobId)
         .select('scheduled_date');
@@ -994,6 +999,21 @@ export function JobEditForm() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label htmlFor="purchase_order" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                  Purchase Order (PO#)
+                </label>
+                <input
+                  type="text"
+                  id="purchase_order"
+                  name="purchase_order"
+                  value={formData.purchase_order}
+                  onChange={handleChange}
+                  placeholder="Optional"
+                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
 
               <div>

@@ -1192,7 +1192,7 @@ function searchPages(term: string): SearchResult[] {
     { id: 'invoicing', title: 'Invoicing', subtitle: 'Jobs ready for invoicing', url: '/dashboard/jobs/invoicing', keywords: ['invoice', 'invoicing', 'billing'] },
     { id: 'cancelled', title: 'Cancelled Jobs', subtitle: 'Cancelled job list', url: '/dashboard/jobs/cancelled', keywords: ['cancelled', 'canceled'] },
     { id: 'properties', title: 'Properties', subtitle: 'Property directory', url: '/dashboard/properties', keywords: ['properties', 'property'] },
-    { id: 'property-groups', title: 'Property Management Groups', subtitle: 'Property management companies', url: '/dashboard/property-groups', keywords: ['property groups', 'management groups', 'property management'] },
+    { id: 'property-groups', title: 'Property Groups', subtitle: 'Property management companies', url: '/dashboard/property-groups', keywords: ['property groups', 'management groups', 'property management'] },
     { id: 'files', title: 'File Manager', subtitle: 'Files and folders', url: '/dashboard/files', keywords: ['files', 'file manager', 'documents'] },
     { id: 'users', title: 'Users', subtitle: 'User and subcontractor management', url: '/dashboard/users', keywords: ['users', 'subcontractors', 'subs', 'sub'] },
     { id: 'calendar', title: 'Calendar', subtitle: 'Job calendar', url: '/dashboard/calendar', keywords: ['calendar', 'schedule', 'date'] },
