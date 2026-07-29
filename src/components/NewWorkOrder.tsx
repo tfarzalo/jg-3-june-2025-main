@@ -79,6 +79,7 @@ interface Job {
   extra_charges_description: string;
   extra_hours: number;
   repair_cost: number;
+  repair_description: string;
   additional_comments: string;
   created_by: string;
 }
@@ -121,6 +122,7 @@ interface WorkOrder {
   extra_hours: number;
   extra_charges_line_items?: ExtraChargeLineItem[];
   repair_cost: number;
+  repair_description: string;
   additional_comments: string;
   additional_services?: Record<string, any>;
 }
@@ -160,6 +162,7 @@ interface WorkOrderDBPayload {
   extra_hours: number;
   extra_charges_line_items?: ExtraChargeLineItem[];
   repair_cost?: number;
+  repair_description?: string;
   additional_comments: string;
   prepared_by: string;
   ceiling_billing_detail_id?: string | null;
@@ -389,6 +392,7 @@ const buildWorkOrderPayload = (
     extra_hours: toDbNumber(formData.extra_hours) || 0,
     extra_charges_line_items: formData.has_extra_charges ? extraChargesItems : [],
     repair_cost: toDbNumber(formData.repair_cost) || 0,
+    repair_description: formData.repair_cost > 0 ? formData.repair_description.trim() : '',
     additional_comments: formData.additional_comments || '',
     prepared_by: '', // Will be set during submission - this gets overridden
     ceiling_billing_detail_id: nilIfEmpty(ceilingBillingDetailId),
@@ -952,6 +956,7 @@ const NewWorkOrder = () => {
     extra_charges_description: '',
     extra_hours: 0,
     repair_cost: 0,
+    repair_description: '',
     additional_comments: ''
   });
 
@@ -1071,6 +1076,7 @@ const NewWorkOrder = () => {
         extra_charges_description: existingWorkOrder.extra_charges_description || '',
         extra_hours: existingWorkOrder.extra_hours ?? 0,
         repair_cost: existingWorkOrder.repair_cost ?? 0,
+        repair_description: existingWorkOrder.repair_description || '',
         additional_comments: existingWorkOrder.additional_comments || ''
       });
 
@@ -1128,6 +1134,7 @@ const NewWorkOrder = () => {
         extra_charges_description: job.extra_charges_description || '',
         extra_hours: job.extra_hours ?? 0,
         repair_cost: 0,
+        repair_description: '',
         additional_comments: job.additional_comments || '',
         ceiling_mode: 'unit_size' as 'unit_size' | 'individual'
       });
@@ -2653,17 +2660,35 @@ const NewWorkOrder = () => {
                         value={formData.repair_cost === 0 ? '' : formData.repair_cost}
                         onChange={(e) => setFormData(prev => ({
                           ...prev,
-                          repair_cost: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0
+                          repair_cost: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0,
+                          repair_description: e.target.value === '' ? '' : prev.repair_description
                         }))}
                         placeholder="0.00"
                         className="w-full pl-7 pr-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     {formData.repair_cost > 0 && (
-                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-2 flex items-center gap-1">
-                        <span>ℹ</span>
-                        <span>Repair cost will be reviewed by admin. They will set the billing amounts and send approval if needed.</span>
-                      </p>
+                      <div className="mt-4 space-y-2">
+                        <label htmlFor="repair_description" className="block text-sm font-medium text-gray-700 dark:text-gray-200">
+                          Repair Description
+                        </label>
+                        <input
+                          type="text"
+                          id="repair_description"
+                          name="repair_description"
+                          value={formData.repair_description}
+                          onChange={(e) => setFormData(prev => ({
+                            ...prev,
+                            repair_description: e.target.value
+                          }))}
+                          placeholder="Briefly describe the repair work performed"
+                          className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                          <span>ℹ</span>
+                          <span>Repair cost will be reviewed by admin. They will set the billing amounts and send approval if needed.</span>
+                        </p>
+                      </div>
                     )}
                   </div>
                 </div>

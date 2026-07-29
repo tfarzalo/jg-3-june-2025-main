@@ -51,7 +51,9 @@ export function ImageGallery({ workOrderId, jobId, folder, allowDelete = false }
       setError(null);
 
       const category = FOLDER_KEY_TO_CATEGORY[folder] || 'other_files';
-      const categoryAliases = LEGACY_CATEGORY_ALIASES[category] || [category];
+      const categoryAliases = folder === 'sprinkler_form'
+        ? Array.from(new Set([...(LEGACY_CATEGORY_ALIASES[category] || [category]), 'sprinkler_images', 'sprinkler']))
+        : (LEGACY_CATEGORY_ALIASES[category] || [category]);
       const folderLabel = FILE_CATEGORY_LABELS[category];
 
       console.log('[ImageGallery] Starting file fetch', { workOrderId, jobId, folder, category, folderLabel });
@@ -88,9 +90,10 @@ export function ImageGallery({ workOrderId, jobId, folder, allowDelete = false }
         throw error;
       }
 
-      const filteredData = folder === 'sprinkler_form'
-        ? (data || []).filter((file: any) => typeof file.name === 'string' && file.name.includes('_sprinkler_form_'))
-        : (data || []);
+      const filteredData = (data || []).filter((file: any) => {
+        const isLegacySprinklerForm = typeof file.name === 'string' && file.name.includes('_sprinkler_form_');
+        return folder === 'sprinkler_form' ? isLegacySprinklerForm : !isLegacySprinklerForm;
+      });
 
       if (!filteredData || filteredData.length === 0) {
         setFiles([]);

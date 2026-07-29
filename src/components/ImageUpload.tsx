@@ -113,7 +113,9 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     const fetchImages = async () => {
       try {
     const category = FOLDER_KEY_TO_CATEGORY[folder];
-    const categoryAliases = LEGACY_CATEGORY_ALIASES[category] || [category];
+    const categoryAliases = folder === 'sprinkler_form'
+      ? Array.from(new Set([...(LEGACY_CATEGORY_ALIASES[category] || [category]), 'sprinkler_images', 'sprinkler']))
+      : (LEGACY_CATEGORY_ALIASES[category] || [category]);
     let query = supabase
       .from('files')
       .select('*')
@@ -132,9 +134,10 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
         if (error) throw error;
 
-    const filteredData = folder === 'sprinkler_form'
-      ? (data || []).filter((file: any) => typeof file.name === 'string' && file.name.includes('_sprinkler_form_'))
-      : (data || []);
+    const filteredData = (data || []).filter((file: any) => {
+      const isLegacySprinklerForm = typeof file.name === 'string' && file.name.includes('_sprinkler_form_');
+      return folder === 'sprinkler_form' ? isLegacySprinklerForm : !isLegacySprinklerForm;
+    });
 
     if (filteredData && filteredData.length > 0) {
           const files = await Promise.all(filteredData.map(async (file: any) => {
@@ -349,7 +352,9 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     try {
       const category = FOLDER_KEY_TO_CATEGORY[folder];
       const categoryPath = FILE_CATEGORY_PATHS[category];
-      const categoryAliases = LEGACY_CATEGORY_ALIASES[category] || [category];
+      const categoryAliases = folder === 'sprinkler_form'
+        ? Array.from(new Set([...(LEGACY_CATEGORY_ALIASES[category] || [category]), 'sprinkler_images', 'sprinkler']))
+        : (LEGACY_CATEGORY_ALIASES[category] || [category]);
       console.log('📤 Starting upload process:', { jobId, workOrderId, folder, category, fileCount: files.length });
 
       // Get job and property details

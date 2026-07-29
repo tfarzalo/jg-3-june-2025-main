@@ -107,6 +107,7 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
   const repairAmount = billing.repair_amount ?? 0;
   const repairSubPay = billing.repair_sub_pay ?? 0;
   const repairCost = billing.repair_cost ?? 0;
+  const repairDescription = billing.repair_description?.trim();
   const isEditingRepair = billing.is_editing_repair ?? false;
   const repairInput = billing.repair_amount_input ?? '';
   const repairSubPayInput = billing.repair_sub_pay_input ?? '';
@@ -159,7 +160,11 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
     // Repair line item — only shown when admin has set a repair amount
     ...(repairAmount > 0 ? [{
       id: 'repair',
-      label: `Repair${repairCost > 0 ? ` (Sub reported: ${formatCurrency(repairCost)})` : ''}`,
+      label: [
+        'Repair',
+        repairCost > 0 ? `Sub reported: ${formatCurrency(repairCost)}` : '',
+        repairDescription || ''
+      ].filter(Boolean).join(' - '),
       unit_label: '—',
       quantity_or_hours: null as unknown as number,
       is_hours: false,

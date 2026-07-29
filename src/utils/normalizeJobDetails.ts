@@ -45,6 +45,7 @@ export type WorkOrderLite = {
   extra_hours?: number;
   additional_comments?: string | null;
   repair_cost?: number;
+  repair_description?: string | null;
   // keep other fields as-is
   [k: string]: any;
 };
@@ -144,6 +145,7 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
         extra_hours: Number(work_orderRaw?.extra_hours ?? 0),
         additional_comments: work_orderRaw?.additional_comments ?? null,
         repair_cost: Number(work_orderRaw?.repair_cost ?? 0),
+        repair_description: work_orderRaw?.repair_description ?? null,
       }
     : null;
 

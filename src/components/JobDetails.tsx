@@ -154,6 +154,7 @@ interface WorkOrder {
   extra_hours?: number;
   extra_charges_line_items?: ExtraChargeLineItem[];
   repair_cost?: number | null;
+  repair_description?: string | null;
   additional_comments?: string;
 }
 
@@ -2057,7 +2058,8 @@ export function JobDetails() {
 
       if (!fileError && fileRows && fileRows.length > 0) {
         // Normalise category values using the same alias map the UI uses
-        const normalise = (cat: string | null | undefined): string => {
+        const normalise = (cat: string | null | undefined, name?: string | null): string => {
+          if (typeof name === 'string' && name.includes('_sprinkler_form_')) return 'sprinkler_form_images';
           if (!cat) return 'other_files';
           const c = cat.trim().toLowerCase();
           if (c === 'before' || c === 'before_images') return 'before_images';
@@ -2084,7 +2086,7 @@ export function JobDetails() {
         // Group rows into sections
         const grouped: Record<string, typeof fileRows> = {};
         for (const file of fileRows) {
-          const key = normalise(file.category);
+          const key = normalise(file.category, file.name);
           if (!grouped[key]) grouped[key] = [];
           grouped[key].push(file);
         }
@@ -4072,9 +4074,16 @@ export function JobDetails() {
 
                       {/* Sub's reported cost — only shown when relevant */}
                       {(job.work_order?.repair_cost ?? 0) > 0 && (
-                        <div className="flex items-center gap-2 px-4 py-2 bg-zinc-50 dark:bg-zinc-800/40 border-b border-zinc-100 dark:border-zinc-700/60">
-                          <span className="text-xs text-zinc-500 dark:text-zinc-400">Sub reported cost:</span>
-                          <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{formatCurrency(job.work_order?.repair_cost ?? 0)}</span>
+                        <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-800/40 border-b border-zinc-100 dark:border-zinc-700/60">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-zinc-500 dark:text-zinc-400">Sub reported cost:</span>
+                            <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{formatCurrency(job.work_order?.repair_cost ?? 0)}</span>
+                          </div>
+                          {job.work_order?.repair_description && (
+                            <div className="text-xs text-zinc-600 dark:text-zinc-300 mt-1">
+                              {job.work_order.repair_description}
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -4990,7 +4999,12 @@ export function JobDetails() {
                                     Repair
                                   </div>
                                   {repairCost > 0 && (
-                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Sub reported: {formatCurrency(repairCost)}</div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                      Sub reported: {formatCurrency(repairCost)}
+                                      {job.work_order?.repair_description && (
+                                        <span className="block mt-0.5">{job.work_order.repair_description}</span>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
                                 <div className="text-right">
@@ -5177,6 +5191,7 @@ export function JobDetails() {
                       })),
                   repair_amount: job.repair_amount ?? 0,
                   repair_cost: job.work_order?.repair_cost ?? 0,
+                  repair_description: job.work_order?.repair_description ?? null,
                   repair_sub_pay: job.repair_sub_pay ?? 0,
                   is_editing_repair: isEditingRepairAmount,
                   repair_amount_input: repairAmountInput,
