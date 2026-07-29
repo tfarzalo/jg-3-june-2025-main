@@ -23,6 +23,7 @@ import { useTheme } from './ThemeProvider';
 import { supabase, setupAvatarRefreshListener } from '../../utils/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthProvider';
+import { formatJobPhaseLabel } from '../../lib/jobPhaseLabels';
 import { useUserRole } from '../../contexts/UserRoleContext';
 import { SearchOverlay } from '../SearchOverlay';
 import { Button } from './Button';
@@ -497,7 +498,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                                         className="inline-flex items-center rounded-full px-2.5 py-0.5 text-white"
                                         style={{ backgroundColor: fromPhase.color }}
                                       >
-                                        {fromPhase.label}
+                                        {formatJobPhaseLabel(fromPhase.label)}
                                       </span>
                                     )}
                                     {fromPhase && toPhase && (
@@ -508,7 +509,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                                         className="inline-flex items-center rounded-full px-2.5 py-0.5 text-white"
                                         style={{ backgroundColor: toPhase.color }}
                                       >
-                                        {toPhase.label}
+                                        {formatJobPhaseLabel(toPhase.label)}
                                       </span>
                                     )}
                                   </div>

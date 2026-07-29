@@ -31,6 +31,7 @@ import {
   DEFAULT_CANCELLATION_TRIP_CHARGE,
   findCancellationTripChargeRate,
 } from '../lib/billing/cancellationTripCharge';
+import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 
 
 
@@ -436,13 +437,14 @@ export function SubcontractorDashboard() {
   };
 
   const translateJobPhase = (jobPhase: string): string => {
-    if (language === 'en') return jobPhase;
+    if (language === 'en') return formatJobPhaseLabel(jobPhase);
     
     const jobPhaseTranslations: { [key: string]: string } = {
       'Job Request': 'Solicitud de Trabajo',
       'Approved': 'Aprobado',
       'In Progress': 'En Progreso',
       'Completed': 'Completado',
+      'Completed Jobs': 'Trabajos Completados',
       'On Hold': 'En Espera',
       'Cancelled': 'Cancelado',
       'Pending': 'Pendiente',

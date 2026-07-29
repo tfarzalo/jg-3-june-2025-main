@@ -19,6 +19,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { supabase } from '../utils/supabase';
 import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
+import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 
 interface ActivityItem {
   id: string;
@@ -420,7 +421,7 @@ export function Activity() {
                           style={{ color: phase.color }}
                         >
                           <span className="w-2 h-2 rounded-full mr-1" style={{ backgroundColor: phase.color }}></span>
-                          {phase.label}
+                          {formatJobPhaseLabel(phase.label)}
                         </span>
                       </label>
                     ))}
@@ -584,7 +585,7 @@ export function Activity() {
                               color: 'white'
                             }}
                           >
-                            {activity.from_phase_label}
+                            {formatJobPhaseLabel(activity.from_phase_label)}
                           </span>
                           <ArrowRight className="h-4 w-4 text-gray-500 dark:text-gray-400 mr-2" />
                         </>
@@ -596,7 +597,7 @@ export function Activity() {
                           color: 'white'
                         }}
                       >
-                        {activity.to_phase_label}
+                        {formatJobPhaseLabel(activity.to_phase_label)}
                       </span>
                     </div>
                     

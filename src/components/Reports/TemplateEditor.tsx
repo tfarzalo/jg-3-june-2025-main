@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { REPORT_COLUMNS, type ReportTemplate } from '../../lib/reports';
+import { formatJobPhaseLabel } from '../../lib/jobPhaseLabels';
 
 type TemplateDraft = Pick<ReportTemplate, 'id' | 'name' | 'columns' | 'preset' | 'filters'>;
 
@@ -321,7 +322,7 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
                         });
                       }}
                     />
-                    <span className="text-sm">{p}</span>
+                    <span className="text-sm">{formatJobPhaseLabel(p)}</span>
                   </label>
                 ))}
               </div>

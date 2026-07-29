@@ -50,6 +50,7 @@ export type WorkOrderLite = {
     id: string;
     description: string;
     price: number;
+    subPay?: number | null;
   }> | null;
   // keep other fields as-is
   [k: string]: any;

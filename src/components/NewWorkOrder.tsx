@@ -32,6 +32,7 @@ interface MiscAdditionalCostItem {
   id: string;
   description: string;
   price: number;
+  subPay?: number | null;
 }
 
 interface Job {
@@ -295,7 +296,8 @@ const numOrNull = (v: unknown): number | null => {
 const createMiscAdditionalCostItem = (): MiscAdditionalCostItem => ({
   id: `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   description: '',
-  price: 0
+  price: 0,
+  subPay: null
 });
 
 const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostItem[] => {
@@ -304,9 +306,12 @@ const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostIte
     .map((item: any) => ({
       id: typeof item?.id === 'string' && item.id ? item.id : `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       description: typeof item?.description === 'string' ? item.description : '',
-      price: Number.isFinite(Number(item?.price)) ? Math.max(0, Number(item.price)) : 0
+      price: Number.isFinite(Number(item?.price)) ? Math.max(0, Number(item.price)) : 0,
+      subPay: item?.subPay === null || item?.subPay === undefined || item?.subPay === ''
+        ? null
+        : (Number.isFinite(Number(item.subPay)) ? Math.max(0, Number(item.subPay)) : null)
     }))
-    .filter(item => item.description.trim() || item.price > 0);
+    .filter(item => item.description.trim() || item.price > 0 || item.subPay != null);
 };
 
 // Utility functions for building and validating DB payloads
@@ -1113,7 +1118,8 @@ const NewWorkOrder = () => {
             ? [{
                 id: 'legacy-misc-additional-cost',
                 description: existingWorkOrder.repair_description || 'Miscellaneous additional cost',
-                price: existingWorkOrder.repair_cost ?? 0
+                price: existingWorkOrder.repair_cost ?? 0,
+                subPay: null
               }]
             : []),
         additional_comments: existingWorkOrder.additional_comments || ''

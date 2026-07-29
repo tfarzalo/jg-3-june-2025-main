@@ -42,6 +42,7 @@ export type JobBillingPayload = {
     id: string;
     description: string;
     price: number;
+    subPay?: number | null;
   }>;
   is_editing_repair?: boolean;
   repair_amount_input?: string;

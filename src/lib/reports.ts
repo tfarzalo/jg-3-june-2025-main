@@ -5,6 +5,7 @@ import {
   QUALITY_CONTROL_SCORE_TOTAL,
   getQualityControlSectionTotal,
 } from './qualityControl';
+import { formatJobPhaseLabel } from './jobPhaseLabels';
 
 export type ReportTemplate = {
   id: string;
@@ -139,7 +140,7 @@ export const REPORT_COLUMNS: ReportColumn[] = [
   { key: 'unit_size', label: 'Unit Size', value: job => textFrom(job.unit_size, 'unit_size_label') || textFrom(firstWorkOrder(job), 'unit_size') },
   { key: 'job_type', label: 'Job Type', value: job => textFrom(job.job_type, 'job_type_label') },
   { key: 'job_category', label: 'Job Category', value: job => textFrom(job.job_category, 'name') || textFrom(firstWorkOrder(job), 'job_category') },
-  { key: 'phase', label: 'Phase', value: job => textFrom(job.job_phase, 'job_phase_label') },
+  { key: 'phase', label: 'Phase', value: job => formatJobPhaseLabel(textFrom(job.job_phase, 'job_phase_label')) },
   { key: 'assigned_to', label: 'Assigned To', value: job => textFrom(job.assigned_to_profile, 'full_name') },
   { key: 'purchase_order', label: 'PO #', value: job => job.purchase_order },
   // Base billing breakdown
@@ -177,7 +178,7 @@ export const REPORT_COLUMNS: ReportColumn[] = [
         return '';
       }
     } },
-  { key: 'approval', label: 'Approval (Completed)', value: job => {
+  { key: 'approval', label: 'Approval (Completed Jobs)', value: job => {
       const phaseLabel = textFrom(job.job_phase, 'job_phase_label') || String(job['phase'] || job['status'] || '');
       const isCompleted = String(phaseLabel).toLowerCase().includes('completed') || String(job['status'] || '').toLowerCase() === 'completed' || Boolean(job['completed_at'] || job['completed_on']);
       if (isCompleted) return 'Yes';

@@ -61,6 +61,7 @@ import { usePhases } from '../hooks/usePhases';
 import { useUserRole } from '../contexts/UserRoleContext';
 import { FLAGS } from '../config/flags';
 import { BillingBreakdownV2 } from '../features/jobs/JobDetails/BillingBreakdownV2';
+import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import { ExtraChargeLineItem } from '../types/extraCharges';
@@ -129,6 +130,7 @@ interface MiscAdditionalCostItem {
   id: string;
   description: string;
   price: number;
+  subPay?: number | null;
 }
 
 interface WorkOrder {
@@ -252,7 +254,8 @@ interface JobNote {
 const createMiscAdditionalCostItem = (): MiscAdditionalCostItem => ({
   id: `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   description: '',
-  price: 0
+  price: 0,
+  subPay: null
 });
 
 const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostItem[] => {
@@ -261,9 +264,12 @@ const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostIte
     .map((item: any) => ({
       id: typeof item?.id === 'string' && item.id ? item.id : `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       description: typeof item?.description === 'string' ? item.description : '',
-      price: Number.isFinite(Number(item?.price)) ? Math.max(0, Number(item.price)) : 0
+      price: Number.isFinite(Number(item?.price)) ? Math.max(0, Number(item.price)) : 0,
+      subPay: item?.subPay === null || item?.subPay === undefined || item?.subPay === ''
+        ? null
+        : (Number.isFinite(Number(item.subPay)) ? Math.max(0, Number(item.subPay)) : null)
     }))
-    .filter(item => item.description.trim() || item.price > 0);
+    .filter(item => item.description.trim() || item.price > 0 || item.subPay != null);
 };
 
 const miscAdditionalCostItemsFromWorkOrder = (workOrder?: WorkOrder | null): MiscAdditionalCostItem[] => {
@@ -274,7 +280,8 @@ const miscAdditionalCostItemsFromWorkOrder = (workOrder?: WorkOrder | null): Mis
     return [{
       id: 'legacy-misc-additional-cost',
       description: workOrder?.repair_description || 'Miscellaneous additional cost',
-      price: legacyAmount
+      price: legacyAmount,
+      subPay: null
     }];
   }
   return [];
@@ -571,6 +578,26 @@ export function JobDetails() {
   const miscAdditionalCostTotal = useMemo(
     () => miscAdditionalCostItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0),
     [miscAdditionalCostItems]
+  );
+
+  const hasMiscAdditionalCostItemsMissingSubPay = useMemo(
+    () => miscAdditionalCostItems.some(item => (item.description.trim() || item.price > 0) && item.subPay == null),
+    [miscAdditionalCostItems]
+  );
+
+  const miscAdditionalCostInputTotal = useMemo(
+    () => miscAdditionalCostItemsInput.reduce((sum, item) => sum + (Number(item.price) || 0), 0),
+    [miscAdditionalCostItemsInput]
+  );
+
+  const miscAdditionalCostSubPayInputTotal = useMemo(
+    () => miscAdditionalCostItemsInput.reduce((sum, item) => sum + (Number(item.subPay) || 0), 0),
+    [miscAdditionalCostItemsInput]
+  );
+
+  const hasMiscAdditionalCostInputMissingSubPay = useMemo(
+    () => miscAdditionalCostItemsInput.some(item => (item.description.trim() || item.price > 0) && item.subPay == null),
+    [miscAdditionalCostItemsInput]
   );
 
   // Initialize recipient email with property AP contact when job loads
@@ -1049,7 +1076,7 @@ export function JobDetails() {
       if (!editingQualityControlId && phaseLabel === 'Quality Control') {
         const completedPhase = phases.find((phase) => phase.job_phase_label === 'Completed');
         if (!completedPhase) {
-          throw new Error('Completed phase not found');
+          throw new Error('Completed Jobs phase not found');
         }
 
         const { error: phaseUpdateError } = await supabase
@@ -1069,7 +1096,7 @@ export function JobDetails() {
             changed_by: userData.user.id,
             from_phase_id: job.job_phase?.id,
             to_phase_id: completedPhase.id,
-            change_reason: 'Quality Control submitted - job advanced to Completed',
+            change_reason: 'Quality Control submitted - job advanced to Completed Jobs',
           });
 
         if (phaseChangeError) throw phaseChangeError;
@@ -2827,12 +2854,10 @@ export function JobDetails() {
       toast.error(`Miscellaneous additional costs can only be edited in Job Request or Work Order. Current phase: ${phaseLabel}.`);
       return;
     }
-    const parsedAmount = parseFloat(repairAmountInput);
-    const parsedSubPay = parseFloat(repairSubPayInput);
-    const amount = isNaN(parsedAmount) ? 0 : Math.max(0, parsedAmount);
-    const subPay = isNaN(parsedSubPay) ? 0 : Math.max(0, parsedSubPay);
     const miscItems = normalizeMiscAdditionalCostItems(miscAdditionalCostItemsInput);
     const miscTotal = miscItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+    const subPay = miscItems.reduce((sum, item) => sum + (Number(item.subPay) || 0), 0);
+    const amount = miscTotal;
     const miscDescription = miscItems
       .filter(item => item.description.trim())
       .map(item => item.description.trim())
@@ -3001,7 +3026,7 @@ export function JobDetails() {
           changed_by: userData.user.id,
           from_phase_id: job.job_phase?.id,
           to_phase_id: completedPhase.id,
-          change_reason: 'Invoice marked as paid - auto-transitioned to completed'
+          change_reason: 'Invoice marked as paid - auto-transitioned to Completed Jobs'
         });
 
       if (phaseChangeError) throw phaseChangeError;
@@ -3009,7 +3034,7 @@ export function JobDetails() {
       // Refresh job data to show updated status
       await refetchJob();
       
-      toast.success('Invoice marked as paid and job moved to completed phase');
+      toast.success('Invoice marked as paid and job moved to Completed Jobs phase');
     } catch (error) {
       console.error('Error marking invoice as paid:', error);
       toast.error('Failed to mark invoice as paid');
@@ -3781,7 +3806,7 @@ export function JobDetails() {
                     }}
                   >
                     <ArrowLeft className="h-4 w-4 mr-2" />
-                    {changingPhase ? 'Changing...' : `Previous: ${currentNavPhaseIndex > 0 ? navPhases[currentNavPhaseIndex - 1].job_phase_label : 'N/A'}`}
+                    {changingPhase ? 'Changing...' : `Previous: ${currentNavPhaseIndex > 0 ? formatJobPhaseLabel(navPhases[currentNavPhaseIndex - 1].job_phase_label) : 'N/A'}`}
                   </button>
                 )}
                 <button
@@ -3795,7 +3820,7 @@ export function JobDetails() {
                   }}
                 >
                   <ArrowRight className="h-4 w-4 mr-2" />
-                  {changingPhase ? 'Changing...' : `Next: ${currentNavPhaseIndex < navPhases.length - 1 ? navPhases[currentNavPhaseIndex + 1].job_phase_label : 'N/A'}`}
+                  {changingPhase ? 'Changing...' : `Next: ${currentNavPhaseIndex < navPhases.length - 1 ? formatJobPhaseLabel(navPhases[currentNavPhaseIndex + 1].job_phase_label) : 'N/A'}`}
                 </button>
               </>
             )}
@@ -4154,79 +4179,125 @@ export function JobDetails() {
                           </div>
                           <div className="space-y-1">
                             {miscAdditionalCostItems.map(item => (
-                              <div key={item.id} className="flex items-start justify-between gap-3 text-xs text-zinc-600 dark:text-zinc-300">
+                              <div key={item.id} className="grid grid-cols-1 gap-1 text-xs text-zinc-600 dark:text-zinc-300 sm:grid-cols-[1fr_120px_120px] sm:items-start">
                                 <span>{item.description || 'Miscellaneous additional cost'}</span>
-                                <span className="font-semibold text-zinc-700 dark:text-zinc-200">{formatCurrency(item.price)}</span>
+                                <span className="font-semibold text-zinc-700 dark:text-zinc-200 sm:text-right">Bill: {formatCurrency(item.price)}</span>
+                                <span className={`font-semibold sm:text-right ${item.subPay == null ? 'text-amber-700 dark:text-amber-300' : 'text-zinc-700 dark:text-zinc-200'}`}>
+                                  Sub: {item.subPay == null ? 'Needs input' : formatCurrency(item.subPay)}
+                                </span>
                               </div>
                             ))}
                           </div>
+                          {hasMiscAdditionalCostItemsMissingSubPay && (
+                            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200">
+                              Sub pay needs input for one or more miscellaneous additional cost items.
+                            </div>
+                          )}
                         </div>
                       )}
 
                       {isEditingRepairAmount && !isRepairLocked && (
-                        <div className="px-4 py-3 space-y-3 border-b border-zinc-100 dark:border-zinc-700/60">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                              Miscellaneous item rows
+                        <div className="px-4 py-3 space-y-4 border-b border-zinc-100 dark:border-zinc-700/60">
+                          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                            If any miscellaneous additional costs apply to this job, add each item below with a description, bill to customer amount, and pay to sub amount.
+                          </p>
+                          {hasMiscAdditionalCostInputMissingSubPay && (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200">
+                              Sub pay needs input for one or more miscellaneous additional cost items.
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => setMiscAdditionalCostItemsInput(prev => [...prev, createMiscAdditionalCostItem()])}
-                              className="inline-flex items-center px-2 py-1 text-xs font-semibold text-blue-600 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800/60"
-                            >
-                              <Plus className="h-3.5 w-3.5 mr-1" />
-                              Add Item
-                            </button>
-                          </div>
+                          )}
                           {miscAdditionalCostItemsInput.length === 0 ? (
-                            <div className="rounded-lg border border-dashed border-zinc-300 dark:border-zinc-600 p-3 text-xs text-zinc-500 dark:text-zinc-400">
+                            <div className="rounded-lg border border-dashed border-zinc-300 dark:border-zinc-600 p-4 text-sm text-zinc-500 dark:text-zinc-400">
                               No miscellaneous additional costs added.
                             </div>
                           ) : (
-                            <div className="space-y-2">
+                            <div className="space-y-3">
                               {miscAdditionalCostItemsInput.map((item, index) => (
-                                <div key={item.id} className="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3 space-y-2">
+                                <div key={item.id} className="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3 space-y-3">
                                   <div className="flex items-center justify-between gap-3">
-                                    <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Item {index + 1}</span>
+                                    <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">Item {index + 1}</span>
                                     <button
                                       type="button"
                                       onClick={() => setMiscAdditionalCostItemsInput(prev => prev.filter(existing => existing.id !== item.id))}
-                                      className="inline-flex items-center text-xs font-semibold text-red-600 dark:text-red-400"
+                                      className="inline-flex items-center px-2 py-1 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
                                     >
                                       <Trash2 className="h-3.5 w-3.5 mr-1" />
                                       Remove
                                     </button>
                                   </div>
-                                  <div className="grid grid-cols-1 md:grid-cols-[1fr_140px] gap-2">
-                                    <input
-                                      type="text"
-                                      value={item.description}
-                                      onChange={e => setMiscAdditionalCostItemsInput(prev => prev.map(existing =>
-                                        existing.id === item.id ? { ...existing, description: e.target.value } : existing
-                                      ))}
-                                      className="w-full px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-[#0F172A] text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-sm"
-                                      placeholder="Description"
-                                    />
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      step="0.01"
-                                      value={item.price === 0 ? '' : item.price}
-                                      onChange={e => setMiscAdditionalCostItemsInput(prev => prev.map(existing =>
-                                        existing.id === item.id ? { ...existing, price: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 } : existing
-                                      ))}
-                                      className="w-full px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-[#0F172A] text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-sm"
-                                      placeholder="0.00"
-                                    />
+                                  <div className="grid grid-cols-1 md:grid-cols-[1fr_160px_160px] gap-3">
+                                    <div>
+                                      <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-1">
+                                        Description
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={item.description}
+                                        onChange={e => setMiscAdditionalCostItemsInput(prev => prev.map(existing =>
+                                          existing.id === item.id ? { ...existing, description: e.target.value } : existing
+                                        ))}
+                                        className="w-full px-4 py-3 bg-zinc-50 dark:bg-[#0F172A] border border-zinc-300 dark:border-zinc-600 rounded-lg text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
+                                        placeholder="Describe the additional cost"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-1">
+                                        Bill to Customer
+                                      </label>
+                                      <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-400 font-medium">$</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          value={item.price === 0 ? '' : item.price}
+                                          onChange={e => setMiscAdditionalCostItemsInput(prev => prev.map(existing =>
+                                            existing.id === item.id ? { ...existing, price: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 } : existing
+                                          ))}
+                                          className="w-full pl-7 pr-4 py-3 bg-zinc-50 dark:bg-[#0F172A] border border-zinc-300 dark:border-zinc-600 rounded-lg text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none"
+                                          placeholder="0.00"
+                                        />
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-1">
+                                        Pay to Sub
+                                      </label>
+                                      <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-400 font-medium">$</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          value={item.subPay == null ? '' : item.subPay}
+                                          onChange={e => setMiscAdditionalCostItemsInput(prev => prev.map(existing =>
+                                            existing.id === item.id ? { ...existing, subPay: e.target.value === '' ? null : parseFloat(e.target.value) || 0 } : existing
+                                          ))}
+                                          className={`w-full pl-7 pr-4 py-3 bg-zinc-50 dark:bg-[#0F172A] border rounded-lg text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none ${
+                                            item.subPay == null ? 'border-amber-300 dark:border-amber-700' : 'border-zinc-300 dark:border-zinc-600'
+                                          }`}
+                                          placeholder="0.00"
+                                        />
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
                               ))}
-                              <div className="flex items-center justify-between text-xs font-semibold text-zinc-600 dark:text-zinc-300 pt-1">
-                                <span>Items total</span>
-                                <span>{formatCurrency(miscAdditionalCostItemsInput.reduce((sum, item) => sum + (Number(item.price) || 0), 0))}</span>
+                              <div className="grid grid-cols-1 gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200 border-t border-zinc-200 dark:border-zinc-700 pt-3 sm:grid-cols-[1fr_160px_160px]">
+                                <span>Total</span>
+                                <span className="sm:text-right">Bill: {formatCurrency(miscAdditionalCostInputTotal)}</span>
+                                <span className="sm:text-right">Sub: {formatCurrency(miscAdditionalCostSubPayInputTotal)}</span>
                               </div>
                             </div>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => setMiscAdditionalCostItemsInput(prev => [...prev, createMiscAdditionalCostItem()])}
+                            className="inline-flex items-center px-4 py-2 text-sm font-semibold bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                          >
+                            <Plus className="h-4 w-4 mr-2" />
+                            Add Miscellaneous Cost
+                          </button>
                         </div>
                       )}
 
@@ -4257,41 +4328,7 @@ export function JobDetails() {
                           )}
                         </div>
                       ) : !isEditingRepairAmount || isRepairLocked ? null : (
-                        /* Edit fields */
                         <div className="px-4 py-3 space-y-3">
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">
-                                Bill to Customer
-                              </label>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={repairAmountInput}
-                                onChange={e => setRepairAmountInput(e.target.value)}
-                                disabled={isRepairLocked}
-                                className="w-full px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-[#0F172A] text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-sm"
-                                placeholder="0.00"
-                                autoFocus
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">
-                                Pay to Sub
-                              </label>
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={repairSubPayInput}
-                                onChange={e => setRepairSubPayInput(e.target.value)}
-                                disabled={isRepairLocked}
-                                className="w-full px-3 py-1.5 border border-zinc-300 dark:border-zinc-600 rounded-lg bg-white dark:bg-[#0F172A] text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none text-sm"
-                                placeholder="0.00"
-                              />
-                            </div>
-                          </div>
                           <div className="flex gap-2">
                             <button
                               onClick={handleSaveRepairAmount}
@@ -4435,7 +4472,7 @@ export function JobDetails() {
                         <div className="ml-4 flex-1">
                           <div className="flex items-start justify-between gap-2">
                             <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                              {change.to_phase_label}
+                              {formatJobPhaseLabel(change.to_phase_label)}
                             </h3>
                             <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
                               {formatDate(change.changed_at)}
@@ -4443,7 +4480,7 @@ export function JobDetails() {
                           </div>
                           {change.from_phase_label && (
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                              From: <span className="font-medium">{change.from_phase_label}</span>
+                              From: <span className="font-medium">{formatJobPhaseLabel(change.from_phase_label)}</span>
                             </p>
                           )}
                           {change.change_reason && (

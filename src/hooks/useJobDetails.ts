@@ -89,6 +89,7 @@ export interface Job {
       id: string;
       description: string;
       price: number;
+      subPay?: number | null;
     }> | null;
     additional_comments: string | null;
     is_active: boolean;

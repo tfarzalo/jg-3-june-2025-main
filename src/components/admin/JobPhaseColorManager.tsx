@@ -3,6 +3,7 @@ import { Loader2, Palette, RotateCcw, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { supabase } from '../../utils/supabase';
+import { formatJobPhaseLabel } from '../../lib/jobPhaseLabels';
 
 interface JobPhaseColor {
   id: string;
@@ -75,7 +76,7 @@ export function JobPhaseColorManager() {
           ? { ...candidate, color_light_mode: lightColor, color_dark_mode: darkColor }
           : candidate
       )));
-      toast.success(`${phase.job_phase_label} colors updated`);
+      toast.success(`${formatJobPhaseLabel(phase.job_phase_label)} colors updated`);
     } catch (error) {
       console.error('Failed to save job phase colors:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to save job phase colors');
@@ -107,6 +108,7 @@ export function JobPhaseColorManager() {
 
         <div className="divide-y divide-gray-200 dark:divide-gray-700">
           {phases.map((phase) => {
+            const displayLabel = formatJobPhaseLabel(phase.job_phase_label);
             const lightColorValid = isValidHexColor(phase.color_light_mode);
             const darkColorValid = isValidHexColor(phase.color_dark_mode);
 
@@ -116,7 +118,7 @@ export function JobPhaseColorManager() {
                   <div className="flex flex-wrap items-center gap-3">
                     <span className="h-4 w-4 rounded-full border border-white shadow" style={{ backgroundColor: phase.color_dark_mode }} />
                     <div className="min-w-0">
-                      <h3 className="font-semibold text-gray-900 dark:text-white">{phase.job_phase_label}</h3>
+                      <h3 className="font-semibold text-gray-900 dark:text-white">{displayLabel}</h3>
                       <p className="text-xs text-gray-500 dark:text-gray-400">Display order {phase.sort_order ?? '-'}</p>
                     </div>
                   </div>
@@ -130,7 +132,7 @@ export function JobPhaseColorManager() {
                           value={lightColorValid ? phase.color_light_mode : '#ffffff'}
                           onChange={(event) => updateDraftColor(phase.id, 'color_light_mode', event.target.value.toUpperCase())}
                           className="h-11 w-12 rounded border border-gray-300 bg-white p-1 dark:border-gray-600 dark:bg-[#0F172A]"
-                          aria-label={`${phase.job_phase_label} light color picker`}
+                          aria-label={`${displayLabel} light color picker`}
                         />
                         <input
                           value={phase.color_light_mode}
@@ -151,7 +153,7 @@ export function JobPhaseColorManager() {
                           value={darkColorValid ? phase.color_dark_mode : '#000000'}
                           onChange={(event) => updateDraftColor(phase.id, 'color_dark_mode', event.target.value.toUpperCase())}
                           className="h-11 w-12 rounded border border-gray-300 bg-white p-1 dark:border-gray-600 dark:bg-[#0F172A]"
-                          aria-label={`${phase.job_phase_label} dark color picker`}
+                          aria-label={`${displayLabel} dark color picker`}
                         />
                         <input
                           value={phase.color_dark_mode}
@@ -174,7 +176,7 @@ export function JobPhaseColorManager() {
                         <span className="text-sm font-semibold text-gray-900 dark:text-white">Menu icon and job card accent</span>
                       </div>
                       <span className="inline-flex rounded-full px-3 py-1 text-xs font-semibold text-white" style={{ backgroundColor: phase.color_dark_mode }}>
-                        {phase.job_phase_label}
+                        {displayLabel}
                       </span>
                     </div>
                     <div className="mt-3 rounded-md border-t-4 bg-white p-3 text-sm font-medium text-gray-900 shadow-sm dark:bg-[#111827] dark:text-white" style={{ borderTopColor: phase.color_dark_mode }}>

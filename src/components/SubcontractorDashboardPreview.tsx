@@ -21,6 +21,7 @@ import { useUserRole } from '../contexts/UserRoleContext';
 import { LoadingScreen } from './ui/LoadingScreen';
 import { Lightbox } from './Lightbox';
 import { SubcontractorDashboardActions } from './SubcontractorDashboardActions';
+import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 
 
 interface Job {
@@ -1029,7 +1030,7 @@ export function SubcontractorDashboardPreview() {
                           color: 'white'
                         }}
                       >
-                        {job.job_phase?.job_phase_label || text.unknownPhase}
+                        {formatJobPhaseLabel(job.job_phase?.job_phase_label) || text.unknownPhase}
                       </span>
                     </div>
 
@@ -1403,7 +1404,7 @@ export function SubcontractorDashboardPreview() {
                             color: 'white'
                           }}
                         >
-                          {job.job_phase?.job_phase_label || text.unknownPhase}
+                          {formatJobPhaseLabel(job.job_phase?.job_phase_label) || text.unknownPhase}
                         </span>
                       </div>
                       <div className="flex flex-col space-y-1">

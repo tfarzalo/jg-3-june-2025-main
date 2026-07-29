@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../utils/supabase';
 import { Search, ArrowUpDown } from 'lucide-react';
 import { formatDisplayDate } from '../../lib/dateUtils';
+import { formatJobPhaseLabel } from '../../lib/jobPhaseLabels';
 import { Link } from 'react-router-dom';
 
 interface SubcontractorJobHistoryProps {
@@ -334,7 +335,7 @@ export function SubcontractorJobHistory({ userId, userName }: SubcontractorJobHi
                             color: 'white'
                           }}
                         >
-                          {job.job_phase.job_phase_label}
+                          {formatJobPhaseLabel(job.job_phase.job_phase_label)}
                         </span>
                       )}
                     </td>

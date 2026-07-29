@@ -19,6 +19,7 @@ import { formatDate, formatDateTime } from '../lib/dateUtils';
 import TodaysAgendaModal from './modals/TodaysAgendaModal';
 import { useDashboardJobs } from './shared/useDashboardJobs';
 import { useUserRole } from '../contexts/UserRoleContext';
+import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 
 interface JobPhase {
   id: string;
@@ -1161,7 +1162,7 @@ export function DashboardHome() {
                           <ArrowRight className="h-4 w-4 text-gray-400" />
                         </span>
                         <span style={{ color: activity.to_phase_color }}>
-                          {activity.to_phase_label}
+                          {formatJobPhaseLabel(activity.to_phase_label)}
                         </span>
                       </p>
                       <span className="text-xs text-gray-500 dark:text-gray-400">

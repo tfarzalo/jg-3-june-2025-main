@@ -28,6 +28,7 @@ import { supabase } from '../utils/supabase';
 import { PropertyMap } from './PropertyMap';
 import { coercePhoneList, formatAddress, formatPhoneNumber } from '../lib/utils/formatUtils';
 import { formatDate, formatDisplayDate } from '../lib/dateUtils';
+import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { PaintColorsViewer } from './properties/PaintColorsViewer';
@@ -2753,7 +2754,7 @@ export function PropertyDetails() {
                                 color: 'white'
                               }}
                             >
-                              {job.job_phase.job_phase_label}
+                              {formatJobPhaseLabel(job.job_phase.job_phase_label)}
                             </span>
                           ) : (
                             <span className="text-sm text-gray-500 dark:text-gray-400">Unknown Phase</span>

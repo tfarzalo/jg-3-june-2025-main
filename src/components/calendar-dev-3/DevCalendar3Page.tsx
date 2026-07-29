@@ -15,6 +15,7 @@ import {
   subMonths,
 } from 'date-fns';
 import { formatInTimeZone, zonedTimeToUtc } from 'date-fns-tz';
+import { formatJobPhaseLabel } from '../../lib/jobPhaseLabels';
 import {
   CalendarDays,
   Check,
@@ -1405,13 +1406,13 @@ JG Painting Pros Inc.`,
                 <button
                   onClick={() => toggleStatus(phase.job_phase_label)}
                   className="min-w-0 flex-1 flex items-center gap-3 text-left text-sm text-gray-700 dark:text-gray-300"
-                  aria-label={`Toggle ${phase.job_phase_label}`}
+                  aria-label={`Toggle ${formatJobPhaseLabel(phase.job_phase_label)}`}
                 >
                   <span className={`h-4 w-4 rounded border flex items-center justify-center ${visibility.statuses[phase.job_phase_label] !== false ? 'bg-gray-900 dark:bg-white border-gray-900 dark:border-white text-white dark:text-gray-900' : 'border-gray-300'}`}>
                     {visibility.statuses[phase.job_phase_label] !== false && <Check className="h-3 w-3" />}
                   </span>
                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: phase.color_dark_mode }} />
-                  <span className="truncate">{phase.job_phase_label}</span>
+                  <span className="truncate">{formatJobPhaseLabel(phase.job_phase_label)}</span>
                 </button>
                 <SubscribeIconButton target={getPhaseSubscriptionTarget(phase)} />
               </div>

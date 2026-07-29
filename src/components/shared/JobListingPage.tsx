@@ -23,6 +23,7 @@ import jsPDF from 'jspdf';
 import { supabase } from '@/utils/supabase';
 import { toast } from 'sonner';
 import { JobDataModeIndicator } from '@/components/jobs/JobDataModeIndicator';
+import { formatJobPhaseLabel } from '@/lib/jobPhaseLabels';
 
 export interface Job {
   id: string;
@@ -967,7 +968,7 @@ export function JobListingPage({
       
       // Job Information
       if (exportConfig.columns.workOrder) row['Work Order #'] = formatWorkOrderNumber(job.work_order_num);
-      if (exportConfig.columns.phase) row['Phase'] = job.job_phase?.job_phase_label || 'N/A';
+      if (exportConfig.columns.phase) row['Phase'] = formatJobPhaseLabel(job.job_phase?.job_phase_label) || 'N/A';
       if (exportConfig.columns.property) row['Property'] = job.property.property_name || 'N/A';
       if (exportConfig.columns.address) row['Address'] = formatAddress(job.property) || 'N/A';
       if (exportConfig.columns.unitNumber) row['Unit #'] = job.unit_number || 'N/A';
@@ -1302,7 +1303,7 @@ export function JobListingPage({
         // Map each column key to its value
         const valueMap: Record<string, string> = {
           workOrder: formatWorkOrderNumber(job.work_order_num),
-          phase: job.job_phase?.job_phase_label || 'N/A',
+          phase: formatJobPhaseLabel(job.job_phase?.job_phase_label) || 'N/A',
           property: job.property.property_name || 'N/A',
           address: formatAddress(job.property) || 'N/A',
           unitNumber: job.unit_number || 'N/A',
@@ -2134,7 +2135,7 @@ export function JobListingPage({
                             color: 'white'
                           }}
                         >
-                          {job.job_phase.job_phase_label}
+                          {formatJobPhaseLabel(job.job_phase.job_phase_label)}
                         </span>
                         <JobDataModeIndicator
                           phaseLabel={job.job_phase.job_phase_label}

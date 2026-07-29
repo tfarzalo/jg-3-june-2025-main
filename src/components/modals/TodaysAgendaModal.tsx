@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useUserRole } from '../../contexts/UserRoleContext';
 import { WorkOrderLink } from '../shared/WorkOrderLink';
 import { PropertyLink } from '../shared/PropertyLink';
+import { formatJobPhaseLabel } from '../../lib/jobPhaseLabels';
 
 interface TodaysAgendaModalProps {
   open: boolean;
@@ -155,7 +156,7 @@ export const TodaysAgendaModal: React.FC<TodaysAgendaModalProps> = ({ open, onCl
                                     backgroundColor: jobPhase?.color_dark_mode || '#6B7280'
                                   }}
                                 >
-                                  {jobPhase?.job_phase_label || 'Unknown'}
+                                  {formatJobPhaseLabel(jobPhase?.job_phase_label) || 'Unknown'}
                                 </span>
                               </div>
                             </div>

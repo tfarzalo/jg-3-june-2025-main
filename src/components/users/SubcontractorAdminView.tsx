@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Briefcase, Building2, CalendarDays, CheckCircle2, ChevronDown, Clock3, Search } from 'lucide-react';
 import { supabase } from '../../utils/supabase';
 import { formatDisplayDate } from '../../lib/dateUtils';
+import { formatJobPhaseLabel } from '../../lib/jobPhaseLabels';
 
 interface SubcontractorAdminViewProps {
   userId: string;
@@ -164,7 +165,7 @@ export function SubcontractorAdminView({ userId, userName, userEmail }: Subcontr
                   className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
                   style={{ backgroundColor: job.job_phase.color_dark_mode || '#4B5563' }}
                 >
-                  {job.job_phase.job_phase_label}
+                  {formatJobPhaseLabel(job.job_phase.job_phase_label)}
                 </span>
               )}
               <span className="text-xs text-gray-500 dark:text-gray-400">

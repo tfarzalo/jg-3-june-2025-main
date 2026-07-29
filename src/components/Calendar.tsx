@@ -28,6 +28,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
 import { SubcontractorLink } from './shared/SubcontractorLink';
+import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 // [CAL_EVENTS] imports
 import EventModal from './calendar/EventModal';
 import EventDetailsModal from './calendar/EventDetailsModal';
@@ -916,7 +917,7 @@ export function Calendar() {
                     className="w-3 h-3 rounded-full mr-2"
                     style={{ backgroundColor: phase.color_dark_mode }}
                   ></span>
-                  {phase.job_phase_label}
+                  {formatJobPhaseLabel(phase.job_phase_label)}
                   {selectedPhases.includes(phase.job_phase_label) ? (
                     <Check className="h-4 w-4 ml-2" />
                   ) : null}
@@ -1191,7 +1192,7 @@ export function Calendar() {
                             color: 'white'
                           }}
                         >
-                          {job.job_phase.job_phase_label}
+                          {formatJobPhaseLabel(job.job_phase.job_phase_label)}
                         </span>
                       </div>
                       
@@ -1302,7 +1303,7 @@ export function Calendar() {
                   color: 'white'
                 }}
               >
-                {selectedJob.job_phase.job_phase_label}
+                {formatJobPhaseLabel(selectedJob.job_phase.job_phase_label)}
               </span>
             </div>
             
@@ -1470,7 +1471,7 @@ export function Calendar() {
                         color: 'white'
                       }}
                     >
-                      {job.job_phase.job_phase_label}
+                      {formatJobPhaseLabel(job.job_phase.job_phase_label)}
                     </span>
                   </div>
                 </div>

@@ -19,6 +19,7 @@ import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { SubcontractorJobHistory } from './users/SubcontractorJobHistory';
 import { formatDisplayDate } from '../lib/dateUtils';
+import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 import { formatPhoneNumber, mapInputValueByField } from '../lib/utils/formatUtils';
 import { normalizeToE164US, isStorablePhone } from '../lib/utils/phoneE164';
 
@@ -1043,7 +1044,7 @@ export function UserProfile() {
                                   color: 'white'
                                 }}
                               >
-                                {job.job_phase.job_phase_label}
+                                {formatJobPhaseLabel(job.job_phase.job_phase_label)}
                               </span>
                             ) : (
                               <span className="text-gray-500 dark:text-gray-400 text-sm">N/A</span>
