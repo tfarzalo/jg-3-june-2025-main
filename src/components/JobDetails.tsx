@@ -2297,6 +2297,43 @@ export function JobDetails() {
       if (userError) throw userError;
       if (!userData.user) throw new Error('User not found');
 
+      const { data: approverProfile } = await supabase
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', userData.user.id)
+        .maybeSingle();
+
+      const approverName = approverProfile?.full_name || userData.user.email || 'Admin';
+      const approverEmail = approverProfile?.email || userData.user.email || null;
+      const approvedAt = new Date().toISOString();
+
+      const { data: latestApprovalToken, error: approvalFetchError } = await supabase
+        .from('approval_tokens')
+        .select('id')
+        .eq('job_id', job.id)
+        .eq('approval_type', 'extra_charges')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (approvalFetchError) throw approvalFetchError;
+
+      if (latestApprovalToken?.id) {
+        const { error: tokenUpdateError } = await supabase
+          .from('approval_tokens')
+          .update({
+            used_at: approvedAt,
+            decision: 'approved',
+            decision_at: approvedAt,
+            approver_name: approverName,
+            approver_email: approverEmail,
+            decline_reason: null
+          })
+          .eq('id', latestApprovalToken.id);
+
+        if (tokenUpdateError) throw tokenUpdateError;
+      }
+
       // Get the Work Order phase ID
       const { data: phaseData, error: phaseError } = await supabase
         .from('job_phases')
@@ -2323,19 +2360,21 @@ export function JobDetails() {
           changed_by: userData.user.id,
           from_phase_id: job?.job_phase?.id,
           to_phase_id: phaseData.id,
-          change_reason: 'Extra charges approved manually - job advanced to Work Order'
+          change_reason: `Extra charges approved manually by ${approverName} - job advanced to Work Order`
         });
 
       if (phaseChangeError) console.error('Error logging phase change:', phaseChangeError);
 
       // Refresh the job data
-      await refetchJob();
+      await refetchJob(true);
+      await refetchPhaseChanges();
       
       // Refetch approval decision to update the UI status
       await fetchApprovalDecision();
+      await fetchPendingApproval();
       
       setShowApproveButton(false);
-      toast.success('Extra charges approved successfully!');
+      toast.success('Extra charges approved and job advanced to Work Order');
     } catch (error) {
       console.error('Error approving extra charges:', error);
       toast.error('Failed to approve extra charges. Please try again.');
