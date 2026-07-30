@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Check,
@@ -15,9 +15,10 @@ import { supabase } from '../utils/supabase';
 import { formatDisplayDate } from '../lib/dateUtils';
 import { ExtraChargeLineItem } from '../types/extraCharges';
 import { getEmailRecipients } from '../lib/contacts/emailRecipientsAdapter';
-import { fetchContactTemplateTokens, replaceTemplateTokens, type ContactTemplateTokens } from '../lib/emailTemplateVariables';
+import { CONTACT_TEMPLATE_VARIABLES, fetchContactTemplateTokens, replaceTemplateTokens, type ContactTemplateTokens } from '../lib/emailTemplateVariables';
 import { getPreviewUrl } from '../utils/storagePreviews';
 import { FOLDER_KEY_TO_CATEGORY, LEGACY_CATEGORY_ALIASES, normalizeCategory } from '../utils/fileCategories';
+import { RichTextEditor } from './RichTextEditor';
 
 interface Job {
   id: string;
@@ -51,12 +52,22 @@ interface Job {
     sub_pay_amount?: number;
     profit_amount?: number;
   };
+  repair_amount?: number | null;
+  repair_sub_pay?: number | null;
   work_order?: {
     id?: string | null;
     has_extra_charges?: boolean;
     extra_charges_description?: string;
     extra_hours?: number;
     extra_charges_line_items?: ExtraChargeLineItem[];
+    repair_cost?: number | null;
+    repair_description?: string | null;
+    misc_additional_cost_items?: Array<{
+      id?: string;
+      description?: string | null;
+      price?: number | string | null;
+      subPay?: number | string | null;
+    }>;
   };
 }
 
@@ -138,6 +149,7 @@ const NOTIFICATION_TYPE_LABELS: Record<EnhancedPropertyNotificationModalProps['n
   drywall_repairs: 'Drywall Repairs Notification',
   general_work_order: 'Work Order Email',
 };
+const BLANK_GENERAL_WORK_ORDER_TEMPLATE_ID = '__blank_general_work_order__';
 
 const formatCurrency = (value?: number | null) => {
   if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -212,6 +224,7 @@ export function EnhancedPropertyNotificationModal({
   onSent,
   additionalServices = [],
 }: EnhancedPropertyNotificationModalProps) {
+  const subjectInputRef = useRef<HTMLInputElement>(null);
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null);
   const [emailSubject, setEmailSubject] = useState('');
@@ -233,6 +246,7 @@ export function EnhancedPropertyNotificationModal({
   const [pendingApproval, setPendingApproval] = useState<{ tokenId: string; expiresAt: string; sentAt: string } | null>(null);
   const [countdownTime, setCountdownTime] = useState('');
   const isApprovalBlocked = notificationType === 'extra_charges' && Boolean(pendingApproval);
+  const isGeneralWorkOrderEmail = notificationType === 'general_work_order';
 
   const steps = useMemo(
     () => [
@@ -258,6 +272,26 @@ export function EnhancedPropertyNotificationModal({
     scheduled_date: job?.scheduled_date || '',
     work_order_num: job?.work_order_num || null,
   }), [job]);
+
+  const templateVariables = useMemo(
+    () => [
+      { variable: '{{job_number}}', description: 'Job number (e.g., WO-000123)' },
+      { variable: '{{work_order_number}}', description: 'Work order number' },
+      { variable: '{{property_name}}', description: 'Property name' },
+      { variable: '{{property_address}}', description: 'Full property address' },
+      { variable: '{{unit_number}}', description: 'Unit number' },
+      { variable: '{{job_type}}', description: 'Job type' },
+      { variable: '{{job_phase}}', description: 'Current job phase' },
+      { variable: '{{scheduled_date}}', description: 'Scheduled date' },
+      { variable: '{{completion_date}}', description: 'Completed date' },
+      ...CONTACT_TEMPLATE_VARIABLES,
+      { variable: '{{recipient_name}}', description: 'Recipient/contact name' },
+      { variable: '{{extra_charges_description}}', description: 'Extra charges description' },
+      { variable: '{{estimated_cost}}', description: 'Estimated extra charges amount (plain number)' },
+      { variable: '{{extra_charges.bill_amount}}', description: 'Extra charges amount (formatted)' },
+    ],
+    []
+  );
 
   const resolveSecondaryEmail = useCallback(async (
     propertyId: string,
@@ -513,12 +547,29 @@ export function EnhancedPropertyNotificationModal({
 
       if (templateError) throw templateError;
 
-      setTemplates(
-        (templateData || []).map((template) => ({
+      const normalizedTemplates = (templateData || []).map((template) => ({
           ...template,
           included_sections: template.included_sections ?? [],
-        }))
-      );
+        }));
+
+      if (notificationType === 'general_work_order') {
+        const blankTemplate: EmailTemplate = {
+          id: BLANK_GENERAL_WORK_ORDER_TEMPLATE_ID,
+          name: 'Write Custom Work Order Email',
+          subject: 'Work Order Update - {{job_number}} - {{property_name}}',
+          body: '',
+          signature: '',
+          template_type: 'notification',
+          template_category: 'property_notification',
+          trigger_phase: 'general_work_order',
+          description: 'Start with a blank rich text email and insert variables as needed.',
+          included_sections: ['job_details', 'before_images', 'after_images', 'sprinkler_images', 'other_images'],
+        } as EmailTemplate;
+        setTemplates([blankTemplate, ...normalizedTemplates]);
+        setSelectedTemplate(blankTemplate);
+      } else {
+        setTemplates(normalizedTemplates);
+      }
 
       const [jobImageResults, workOrderImageResults] = await Promise.all([
         fetchJobImagesFromTable(),
@@ -537,12 +588,11 @@ export function EnhancedPropertyNotificationModal({
     } finally {
       setLoading(false);
     }
-  }, [job, fetchJobImagesFromTable, fetchWorkOrderImages]);
+  }, [job, notificationType, fetchJobImagesFromTable, fetchWorkOrderImages]);
 
-  const processTemplate = useCallback(
-    (template: EmailTemplate | null) => {
-      if (!template || !job) return { subject: '', body: '', signature: '' };
-
+  const applyEmailTokens = useCallback(
+    (text: string) => {
+      if (!job) return text;
       const workOrderCode = job.work_order_num
         ? `WO-${String(job.work_order_num).padStart(6, '0')}`
         : job.job_number || job.id?.slice(0, 8)?.toUpperCase() || '';
@@ -619,31 +669,36 @@ export function EnhancedPropertyNotificationModal({
         'extra_charges.profit_amount_formatted',
       ]);
 
-      const applyTokens = (text: string) => {
-        let processed = text;
+      let processed = text || '';
         
-        // First pass: Replace all known tokens
-        Object.entries(replacements).forEach(([token, value]) => {
-          const single = new RegExp(`\\{\\s*${escapeRegExp(token)}\\s*\\}`, 'gi');
-          const double = new RegExp(`\\{\\{\\s*${escapeRegExp(token)}\\s*\\}\\}`, 'gi');
-          processed = processed.replace(single, value).replace(double, value);
-        });
+      // First pass: Replace all known tokens
+      Object.entries(replacements).forEach(([token, value]) => {
+        const single = new RegExp(`\\{\\s*${escapeRegExp(token)}\\s*\\}`, 'gi');
+        const double = new RegExp(`\\{\\{\\s*${escapeRegExp(token)}\\s*\\}\\}`, 'gi');
+        processed = processed.replace(single, value).replace(double, value);
+      });
         
-        // Second pass: Clean up any remaining unmatched brackets with content
-        // This prevents {SomeName} or {SomeValue} from showing if they weren't in our token list
-        // But preserve the content inside the brackets
-        processed = processed.replace(/\{([^{}]+)\}/g, '$1');
+      // Second pass: Clean up any remaining unmatched brackets with content
+      // This prevents {SomeName} or {SomeValue} from showing if they weren't in our token list
+      // But preserve the content inside the brackets
+      processed = processed.replace(/\{([^{}]+)\}/g, '$1');
         
-        return replaceTemplateTokens(processed, contactTemplateTokens);
-      };
-
-      return {
-        subject: applyTokens(template.subject),
-        body: applyTokens(template.body),
-        signature: applyTokens(template.signature),
-      };
+      return replaceTemplateTokens(processed, contactTemplateTokens);
     },
     [job, apContactName, contactTemplateTokens]
+  );
+
+  const processTemplate = useCallback(
+    (template: EmailTemplate | null) => {
+      if (!template || !job) return { subject: '', body: '', signature: '' };
+
+      return {
+        subject: applyEmailTokens(template.subject),
+        body: applyEmailTokens(template.body),
+        signature: applyEmailTokens(template.signature),
+      };
+    },
+    [job, applyEmailTokens]
   );
 
   const checkPendingApproval = useCallback(async () => {
@@ -771,6 +826,49 @@ export function EnhancedPropertyNotificationModal({
     setSelectedImageIds((prev) => prev.filter((id) => !ids.has(id)));
   };
 
+  const insertVariableIntoSubject = (variable: string) => {
+    const element = subjectInputRef.current;
+    if (!element) {
+      setEmailSubject((current) => `${current}${variable}`);
+      return;
+    }
+
+    const start = element.selectionStart || 0;
+    const end = element.selectionEnd || 0;
+    const nextValue = emailSubject.substring(0, start) + variable + emailSubject.substring(end);
+    setEmailSubject(nextValue);
+    setTimeout(() => {
+      const cursorPosition = start + variable.length;
+      element.setSelectionRange(cursorPosition, cursorPosition);
+      element.focus();
+    }, 0);
+  };
+
+  const insertVariableIntoBody = (variable: string) => {
+    setEmailContent((current) => `${current}${current ? ' ' : ''}${variable}`);
+  };
+
+  const renderVariableButtons = (onInsert: (variable: string) => void) => (
+    <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-3 dark:border-blue-900/40 dark:bg-blue-900/20">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-800 dark:text-blue-200">
+        Insert Variables
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {templateVariables.map((variable) => (
+          <button
+            key={variable.variable}
+            type="button"
+            onClick={() => onInsert(variable.variable)}
+            className="rounded bg-white px-2 py-1 text-xs font-mono text-blue-800 shadow-sm hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-100 dark:hover:bg-blue-900"
+            title={variable.description}
+          >
+            {variable.variable}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   const buildJobDetailsRows = () => [
     { label: 'Property', value: jobDetailsData.property_name || '—' },
     { label: 'Address', value: jobDetailsData.property_address || '—' },
@@ -838,6 +936,40 @@ export function EnhancedPropertyNotificationModal({
         sub_pay_amount: details.sub_pay_amount,
         profit_amount: details.profit_amount,
       });
+    }
+
+    const miscItems = Array.isArray(job?.work_order?.misc_additional_cost_items)
+      ? job.work_order.misc_additional_cost_items
+      : [];
+
+    if (miscItems.length > 0) {
+      miscItems.forEach((item) => {
+        const billAmount = Number(item.price) || 0;
+        const subPayAmount = Number(item.subPay) || 0;
+        if (billAmount <= 0 && !item.description?.trim()) return;
+
+        items.push({
+          description: item.description?.trim() || 'Miscellaneous additional cost',
+          quantity: 1,
+          unit: 'item',
+          bill_amount: billAmount,
+          sub_pay_amount: subPayAmount,
+          profit_amount: billAmount - subPayAmount,
+        });
+      });
+    } else {
+      const repairAmount = Number(job?.repair_amount ?? job?.work_order?.repair_cost ?? 0) || 0;
+      if (repairAmount > 0) {
+        const repairSubPay = Number(job?.repair_sub_pay ?? 0) || 0;
+        items.push({
+          description: job?.work_order?.repair_description?.trim() || 'Miscellaneous additional cost',
+          quantity: 1,
+          unit: 'item',
+          bill_amount: repairAmount,
+          sub_pay_amount: repairSubPay,
+          profit_amount: repairAmount - repairSubPay,
+        });
+      }
     }
 
     return items;
@@ -1121,14 +1253,17 @@ export function EnhancedPropertyNotificationModal({
   };
 
   const buildFinalEmailHtml = (approvalLink?: string, cidMap?: Record<string, string>) => {
-    const bodyHtml = emailContent.trim().startsWith('<')
-      ? emailContent
-      : emailContent.replace(/\n/g, '<br />');
-    const signatureHtml = emailSignature.trim().startsWith('<')
-      ? emailSignature
-      : emailSignature.replace(/\n/g, '<br />');
+    const processedEmailContent = applyEmailTokens(emailContent);
+    const processedEmailSignature = applyEmailTokens(emailSignature);
+    const bodyHtml = processedEmailContent.trim().startsWith('<')
+      ? processedEmailContent
+      : processedEmailContent.replace(/\n/g, '<br />');
+    const signatureHtml = processedEmailSignature.trim().startsWith('<')
+      ? processedEmailSignature
+      : processedEmailSignature.replace(/\n/g, '<br />');
 
     let composedBody = bodyHtml;
+    const hasApprovalButtonToken = /{{\s*approval_button\s*}}/i.test(composedBody);
     if (approvalLink) {
       composedBody = composedBody
         .replace(/{{\s*approval_link\s*}}/gi, approvalLink)
@@ -1144,7 +1279,7 @@ export function EnhancedPropertyNotificationModal({
     return `
       <div style="font-family: 'Inter', Arial, sans-serif; font-size: 14px; color: #111827; line-height: 1.6;">
         ${composedBody}
-        ${!composedBody.includes('approval_button') && approvalLink ? buildApprovalLinkHtml(approvalLink) : ''}
+        ${!hasApprovalButtonToken && approvalLink ? buildApprovalLinkHtml(approvalLink) : ''}
         ${sectionHtml}
         ${previewDisclaimerHtml}
         <div style="margin-top: 24px;">${signatureHtml}</div>
@@ -1265,7 +1400,7 @@ export function EnhancedPropertyNotificationModal({
       const { error } = await supabase.functions.invoke('send-email', {
         body: {
           to: recipientEmail,
-          subject: emailSubject,
+          subject: applyEmailTokens(emailSubject),
           html: finalHtml,
           cc: ccEmails.split(',').map((email) => email.trim()).filter(Boolean),
           bcc: allBcc.filter(Boolean),
@@ -1301,7 +1436,7 @@ export function EnhancedPropertyNotificationModal({
                 notes: `Extra charges approval email sent to ${recipientEmail}`
               });
             }
-          } else {
+          } else if (notificationType === 'sprinkler_paint' || notificationType === 'drywall_repairs') {
             // For notification-only emails (sprinkler_paint, drywall_repairs), 
             // auto-advance from Pending Work Order to Work Order
             const { data: pendingPhaseData } = await supabase
@@ -1575,21 +1710,40 @@ export function EnhancedPropertyNotificationModal({
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
           <input
+            ref={subjectInputRef}
             type="text"
             value={emailSubject}
             onChange={(event) => setEmailSubject(event.target.value)}
             className={INPUT_FIELD_CLASSES}
           />
+          {isGeneralWorkOrderEmail && (
+            <div className="mt-2">
+              {renderVariableButtons(insertVariableIntoSubject)}
+            </div>
+          )}
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Message</label>
-          <textarea
-            rows={6}
-            value={emailContent}
-            onChange={(event) => setEmailContent(event.target.value)}
-            className={`${TEXTAREA_CLASSES} min-h-[180px]`}
-          />
+          {isGeneralWorkOrderEmail ? (
+            <div className="space-y-3">
+              {renderVariableButtons(insertVariableIntoBody)}
+              <RichTextEditor
+                value={emailContent}
+                onChange={setEmailContent}
+                placeholder="Write the email message..."
+                variables={templateVariables}
+                height="280px"
+              />
+            </div>
+          ) : (
+            <textarea
+              rows={6}
+              value={emailContent}
+              onChange={(event) => setEmailContent(event.target.value)}
+              className={`${TEXTAREA_CLASSES} min-h-[180px]`}
+            />
+          )}
         </div>
 
         <div>
@@ -1638,6 +1792,8 @@ export function EnhancedPropertyNotificationModal({
         minute: '2-digit',
         hour12: true
       }).format(new Date(sentAt));
+    const previewEmailContent = applyEmailTokens(emailContent);
+    const previewEmailSignature = applyEmailTokens(emailSignature);
 
     return (
     <div className="space-y-6">
@@ -1670,7 +1826,10 @@ export function EnhancedPropertyNotificationModal({
 
       <div className="space-y-4 rounded-lg border border-gray-200 p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900/50">
         <h3 className="text-base font-semibold text-gray-900 dark:text-white">Email Preview</h3>
-        <div className="prose prose-sm max-w-none text-gray-900 dark:text-gray-100 dark:prose-invert" dangerouslySetInnerHTML={{ __html: emailContent.replace(/\n/g, '<br/>') }} />
+        <p className="text-sm font-semibold text-gray-900 dark:text-white">
+          Subject: {applyEmailTokens(emailSubject)}
+        </p>
+        <div className="prose prose-sm max-w-none text-gray-900 dark:text-gray-100 dark:prose-invert" dangerouslySetInnerHTML={{ __html: previewEmailContent.replace(/\n/g, '<br/>') }} />
         {renderJobDetailsPreview()}
         {renderBillingPreview()}
         {(() => {
@@ -1712,7 +1871,7 @@ export function EnhancedPropertyNotificationModal({
             ✓ {selectedImages.length} image{selectedImages.length !== 1 ? 's' : ''} will be embedded directly in this email.
           </p>
         )}
-        <div className="prose prose-sm max-w-none text-gray-900 dark:text-gray-100 dark:prose-invert" dangerouslySetInnerHTML={{ __html: emailSignature.replace(/\n/g, '<br/>') }} />
+        <div className="prose prose-sm max-w-none text-gray-900 dark:text-gray-100 dark:prose-invert" dangerouslySetInnerHTML={{ __html: previewEmailSignature.replace(/\n/g, '<br/>') }} />
       </div>
     </div>
     );
