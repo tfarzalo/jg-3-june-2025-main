@@ -27,6 +27,7 @@ import { ExtraChargeLineItem } from '../types/extraCharges';
 import { validateAllExtraCharges } from '../utils/extraChargesValidation';
 import { isFrozenHistoricalSnapshot } from '../lib/jobs/historicalDataMode';
 import { dispatchSmsNotification, dispatchSmsNotificationBatch } from '../lib/sms/dispatchSmsNotification';
+import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
 
 interface MiscAdditionalCostItem {
   id: string;
@@ -326,14 +327,15 @@ const createMiscAdditionalCostItem = (): MiscAdditionalCostItem => ({
 const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostItem[] => {
   if (!Array.isArray(items)) return [];
   return items
-    .map((item: any) => ({
-      id: typeof item?.id === 'string' && item.id ? item.id : `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      description: typeof item?.description === 'string' ? item.description : '',
-      price: Number.isFinite(Number(item?.price)) ? Math.max(0, Number(item.price)) : 0,
-      subPay: item?.subPay === null || item?.subPay === undefined || item?.subPay === ''
-        ? null
-        : (Number.isFinite(Number(item.subPay)) ? Math.max(0, Number(item.subPay)) : null)
-    }))
+    .map((item: any) => {
+      const { billAmount, subPayAmount } = getMiscAdditionalCostAmounts(item ?? {});
+      return {
+        id: typeof item?.id === 'string' && item.id ? item.id : `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        description: typeof item?.description === 'string' ? item.description : '',
+        price: billAmount,
+        subPay: subPayAmount
+      };
+    })
     .filter(item => item.description.trim() || item.price > 0 || item.subPay != null);
 };
 

@@ -57,6 +57,7 @@ import {
 import { optimizeImage } from '../lib/utils/imageOptimization';
 import { useJobDetails } from '../hooks/useJobDetails';
 import { useJobPhaseChanges } from '../hooks/useJobPhaseChanges';
+import { useJobActivityLog, type JobActivityCategory } from '../hooks/useJobActivityLog';
 import { usePhases } from '../hooks/usePhases';
 import { useUserRole } from '../contexts/UserRoleContext';
 import { FLAGS } from '../config/flags';
@@ -82,6 +83,8 @@ import {
   resolveAdminJobCancellationReason,
 } from '../lib/jobs/cancellationReasons';
 import { isFrozenHistoricalSnapshot } from '../lib/jobs/historicalDataMode';
+import { logJobActivity } from '../lib/jobActivity';
+import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
 import {
   QUALITY_CONTROL_LIKERT_VALUES,
   QUALITY_CONTROL_SCORE_SECTIONS,
@@ -261,14 +264,15 @@ const createMiscAdditionalCostItem = (): MiscAdditionalCostItem => ({
 const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostItem[] => {
   if (!Array.isArray(items)) return [];
   return items
-    .map((item: any) => ({
-      id: typeof item?.id === 'string' && item.id ? item.id : `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      description: typeof item?.description === 'string' ? item.description : '',
-      price: Number.isFinite(Number(item?.price)) ? Math.max(0, Number(item.price)) : 0,
-      subPay: item?.subPay === null || item?.subPay === undefined || item?.subPay === ''
-        ? null
-        : (Number.isFinite(Number(item.subPay)) ? Math.max(0, Number(item.subPay)) : null)
-    }))
+    .map((item: any) => {
+      const { billAmount, subPayAmount } = getMiscAdditionalCostAmounts(item ?? {});
+      return {
+        id: typeof item?.id === 'string' && item.id ? item.id : `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        description: typeof item?.description === 'string' ? item.description : '',
+        price: billAmount,
+        subPay: subPayAmount
+      };
+    })
     .filter(item => item.description.trim() || item.price > 0 || item.subPay != null);
 };
 
@@ -349,7 +353,7 @@ export function JobDetails() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const { job, loading: jobLoading, error: jobError, refetch: refetchJob } = useJobDetails(jobId);
-  const { phaseChanges, loading: phaseChangesLoading, error: phaseChangesError, refetch: refetchPhaseChanges } = useJobPhaseChanges(jobId);
+  const { phaseChanges, refetch: refetchPhaseChanges } = useJobPhaseChanges(jobId);
   const { phases, loading: phasesLoading } = usePhases();
   const { role, isAdmin, isJGManagement, isSubcontractor, isSuperAdmin } = useUserRole();
   const canInternalEdit = role !== null && role !== 'subcontractor';
@@ -374,6 +378,17 @@ export function JobDetails() {
   const canManagePainterNotes = isAdmin || isJGManagement;
   const canEditCancellationReason = canInternalEdit;
   const canEditExtraChargeNotes = canInternalEdit;
+  const {
+    activityItems,
+    loading: activityLogLoading,
+    error: activityLogError,
+    refetch: refetchActivityLog,
+  } = useJobActivityLog({
+    jobId,
+    workOrder: job?.work_order,
+    includeInternalNotes: isAdmin || isJGManagement || isSuperAdmin,
+    includePainterNotes: canManagePainterNotes,
+  });
 
 
   
@@ -395,7 +410,7 @@ export function JobDetails() {
   const [deleting, setDeleting] = useState(false);
   const [cancellingJob, setCancellingJob] = useState(false);
   const [reactivatingJob, setReactivatingJob] = useState(false);
-  const [showPhaseHistory, setShowPhaseHistory] = useState(false);
+  const [activityFilter, setActivityFilter] = useState<'all' | JobActivityCategory>('all');
   const [showWorkOrderDetails, setShowWorkOrderDetails] = useState(false);
   const [subcontractors, setSubcontractors] = useState<{id: string, full_name: string}[]>([]);
   const [selectedSubcontractor, setSelectedSubcontractor] = useState<string | null>(null);
@@ -412,6 +427,46 @@ export function JobDetails() {
     setScheduledDateDraft(job.scheduled_date.split('T')[0]);
     setEditingScheduledDate(false);
   }, [job?.scheduled_date]);
+
+  const activityFilterOptions: Array<{ value: 'all' | JobActivityCategory; label: string }> = [
+    { value: 'all', label: 'All' },
+    { value: 'phase', label: 'Phase' },
+    { value: 'email', label: 'Emails' },
+    { value: 'approval', label: 'Approvals' },
+    { value: 'note', label: 'Notes' },
+    { value: 'work_order', label: 'Work Order' },
+    { value: 'file', label: 'Files' },
+    { value: 'edit', label: 'Edits' },
+  ];
+
+  const filteredActivityItems = useMemo(
+    () => activityFilter === 'all'
+      ? activityItems
+      : activityItems.filter((item) => item.category === activityFilter),
+    [activityFilter, activityItems]
+  );
+
+  const getActivityStyle = (category: JobActivityCategory) => {
+    switch (category) {
+      case 'phase':
+        return { color: '#7C3AED', icon: Clock };
+      case 'email':
+        return { color: '#0284C7', icon: Mail };
+      case 'approval':
+        return { color: '#059669', icon: CheckCircle2 };
+      case 'note':
+        return { color: '#D97706', icon: MessageSquare };
+      case 'work_order':
+        return { color: '#4F46E5', icon: ClipboardList };
+      case 'file':
+        return { color: '#0891B2', icon: FileImage };
+      case 'edit':
+        return { color: '#DB2777', icon: Edit };
+      default:
+        return { color: '#64748B', icon: Bell };
+    }
+  };
+
   const [assigning, setAssigning] = useState(false);
   const [emailContent, setEmailContent] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
@@ -1671,6 +1726,7 @@ export function JobDetails() {
     if (!isAdmin) return;
 
     try {
+      const note = jobNotes.find((item) => item.id === noteId);
       const { error } = await supabase
         .from('job_notes')
         .delete()
@@ -1678,7 +1734,23 @@ export function JobDetails() {
 
       if (error) throw error;
 
+      if (jobId) {
+        await logJobActivity({
+          jobId,
+          eventType: 'job_note_deleted',
+          title: 'Job note deleted',
+          description: note ? `Deleted job note: ${note.topic}` : 'Deleted a job note',
+          action: 'deleted',
+          metadata: {
+            note_id: noteId,
+            topic: note?.topic || null,
+            note_preview: note?.note_content ? note.note_content.slice(0, 160) : null,
+          },
+        });
+      }
+
       await fetchJobNotes();
+      await refetchActivityLog();
       toast.success('Job note deleted');
     } catch (err) {
       console.error('Error deleting job note:', err);
@@ -1727,6 +1799,7 @@ export function JobDetails() {
     if (!canManagePainterNotes) return;
 
     try {
+      const note = painterNotes.find((item) => item.id === noteId);
       const { error } = await supabase
         .from('job_painter_notes')
         .delete()
@@ -1734,7 +1807,23 @@ export function JobDetails() {
 
       if (error) throw error;
 
+      if (jobId) {
+        await logJobActivity({
+          jobId,
+          eventType: 'painter_note_deleted',
+          title: 'Painter note deleted',
+          description: note ? `Deleted painter note: ${note.topic}` : 'Deleted a painter note',
+          action: 'deleted',
+          metadata: {
+            note_id: noteId,
+            topic: note?.topic || null,
+            note_preview: note?.note_content ? note.note_content.slice(0, 160) : null,
+          },
+        });
+      }
+
       await fetchPainterNotes();
+      await refetchActivityLog();
       toast.success('Painter note deleted');
     } catch (err) {
       console.error('Error deleting painter note:', err);
@@ -1743,6 +1832,7 @@ export function JobDetails() {
   };
 
   const handleAssignSubcontractor = async () => {
+    if (!jobId) return;
     if (!selectedSubcontractor) return;
     
     setAssigning(true);
@@ -1760,8 +1850,24 @@ export function JobDetails() {
         .eq('id', jobId);
         
       if (error) throw error;
+
+      const assignedName = subcontractors.find((subcontractor) => subcontractor.id === selectedSubcontractor)?.full_name || 'Selected subcontractor';
+      await logJobActivity({
+        jobId,
+        eventType: 'subcontractor_assigned',
+        title: 'Subcontractor assignment updated',
+        description: `${assignedName} was assigned to this job`,
+        action: 'assigned',
+        metadata: {
+          assigned_to: selectedSubcontractor,
+          assigned_to_name: assignedName,
+          previous_assigned_to: job?.assigned_to || null,
+          previous_assigned_to_name: job?.assigned_to_name || null,
+        },
+      });
       
       await refetchJob();
+      await refetchActivityLog();
       setShowAssignModal(false);
       toast.success('Subcontractor assigned successfully');
     } catch (err) {
@@ -1790,7 +1896,20 @@ export function JobDetails() {
 
       if (error) throw error;
 
+      await logJobActivity({
+        jobId,
+        eventType: 'scheduled_date_updated',
+        title: 'Scheduled date updated',
+        description: `Scheduled date changed from ${currentDate || 'not set'} to ${scheduledDateDraft}`,
+        action: 'updated',
+        metadata: {
+          previous_scheduled_date: currentDate || null,
+          scheduled_date: scheduledDateDraft,
+        },
+      });
+
       await refetchJob();
+      await refetchActivityLog();
       setEditingScheduledDate(false);
       toast.success('Scheduled date updated');
     } catch (err) {
@@ -2889,6 +3008,7 @@ export function JobDetails() {
     
     // Refresh job data to show updated status
     await refetchJob();
+    await refetchActivityLog();
   };
 
   // Miscellaneous additional cost handler
@@ -2984,8 +3104,27 @@ export function JobDetails() {
         }
       }
 
+      await logJobActivity({
+        jobId,
+        eventType: 'misc_additional_costs_updated',
+        title: miscItems.length > 0 ? 'Miscellaneous additional costs updated' : 'Miscellaneous additional costs cleared',
+        description: miscItems.length > 0
+          ? `${miscItems.length} item${miscItems.length === 1 ? '' : 's'} saved • Bill ${formatCurrency(amount)} • Sub pay ${formatCurrency(subPay)}`
+          : 'All miscellaneous additional cost items were cleared',
+        action: 'updated',
+        metadata: {
+          item_count: miscItems.length,
+          bill_total: amount,
+          sub_pay_total: subPay,
+          items: miscItems,
+          previous_bill_total: job?.repair_amount ?? 0,
+          previous_sub_pay_total: job?.repair_sub_pay ?? 0,
+        },
+      });
+
       setIsEditingRepairAmount(false);
       await refetchJob(true);
+      await refetchActivityLog();
       toast.success(amount === 0 && miscItems.length === 0 ? 'Miscellaneous additional costs cleared' : 'Miscellaneous additional costs saved');
 
       // Keep repair section expanded after save so the user can see the saved values
@@ -3981,7 +4120,7 @@ export function JobDetails() {
             </div>
 
             {/* Content Section */}
-            <div className="p-6">
+            <div className="px-6 pt-6 pb-0">
               {(job.assignment_status === 'declined' || (job.assignment_status === 'pending' && job.assigned_to)) && (
                 <div className={`mb-6 rounded-lg border px-4 py-3 flex items-start space-x-3 ${job.assignment_status === 'declined' ? 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/20 dark:border-red-800 dark:text-red-300' : 'bg-yellow-50 border-yellow-200 text-yellow-800 dark:bg-yellow-900/20 dark:border-yellow-800 dark:text-yellow-300'}`}>
                   <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
@@ -4458,100 +4597,108 @@ export function JobDetails() {
             </div>
           </div>
 
-          {/* Phase History */}
+          {/* Job Activity Log */}
           <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
             {/* Header */}
             <div className="bg-gradient-to-r from-purple-600 to-purple-700 dark:from-purple-700 dark:to-purple-800 px-6 py-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-semibold text-white flex items-center">
                   <Clock className="h-5 w-5 mr-2" />
-                  Phase History
+                  Job Activity Log
                 </h2>
-                <button
-                  onClick={() => setShowPhaseHistory(!showPhaseHistory)}
-                  className="text-sm text-white/80 hover:text-white font-medium transition-colors flex items-center"
-                >
-                  {showPhaseHistory ? (
-                    <>
-                      <ChevronUp className="h-4 w-4 mr-1" />
-                      Show Less
-                    </>
-                  ) : (
-                    <>
-                      <ChevronDown className="h-4 w-4 mr-1" />
-                      Show All
-                    </>
-                  )}
-                </button>
+                <span className="text-sm font-medium text-white/80">
+                  {filteredActivityItems.length} item{filteredActivityItems.length === 1 ? '' : 's'}
+                </span>
               </div>
             </div>
 
             {/* Content */}
             <div className="p-6">
-              {phaseChangesLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
-                </div>
-              ) : phaseChangesError ? (
-                <div className="text-red-500 dark:text-red-400 text-sm">
-                  {phaseChangesError}
-                </div>
-              ) : phaseChanges.length === 0 ? (
-                <div className="text-gray-500 dark:text-gray-400 text-center py-8">
-                  No phase changes recorded
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {(showPhaseHistory ? phaseChanges : phaseChanges.slice(0, 3)).map((change, index) => (
-                    <div key={change.id} className="relative pb-4">
-                      {index < (showPhaseHistory ? phaseChanges.length : Math.min(3, phaseChanges.length)) - 1 && (
-                        <div className="absolute left-4 top-10 h-full w-0.5 bg-gray-200 dark:bg-gray-700"></div>
-                      )}
-                      <div className="flex items-start">
-                        <div 
-                          className="rounded-full h-9 w-9 flex items-center justify-center flex-shrink-0 z-10 shadow-lg"
-                          style={{ backgroundColor: change.to_phase_color || '#4B5563' }}
-                        >
-                          <Clock className="h-4 w-4 text-white" />
-                        </div>
-                        <div className="ml-4 flex-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                              {formatJobPhaseLabel(change.to_phase_label)}
-                            </h3>
-                            <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                              {formatDate(change.changed_at)}
-                            </span>
+              <div className="mb-5 flex flex-wrap gap-2">
+                {activityFilterOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setActivityFilter(option.value)}
+                    className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      activityFilter === option.value
+                        ? 'border-purple-500 bg-purple-50 text-purple-700 dark:border-purple-400 dark:bg-purple-900/30 dark:text-purple-200'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-purple-200 hover:text-purple-700 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-300 dark:hover:border-purple-700 dark:hover:text-purple-200'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="h-[520px] overflow-y-auto overscroll-contain pb-6 pr-2 scroll-pb-6">
+                {activityLogLoading ? (
+                  <div className="flex h-full items-center justify-center">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
+                  </div>
+                ) : activityLogError ? (
+                  <div className="text-red-500 dark:text-red-400 text-sm">
+                    {activityLogError}
+                  </div>
+                ) : filteredActivityItems.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-gray-500 dark:text-gray-400">
+                    No activity recorded for this filter
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {filteredActivityItems.map((activity, index) => {
+                      const activityStyle = getActivityStyle(activity.category);
+                      const ActivityIcon = activityStyle.icon;
+
+                      return (
+                      <div key={activity.id} className="relative pb-4">
+                        {index < filteredActivityItems.length - 1 && (
+                          <div className="absolute left-4 top-10 h-full w-0.5 bg-gray-200 dark:bg-gray-700"></div>
+                        )}
+                        <div className="flex items-start">
+                          <div
+                            className="rounded-full h-9 w-9 flex items-center justify-center flex-shrink-0 z-10 shadow-lg"
+                            style={{ backgroundColor: activityStyle.color }}
+                          >
+                            <ActivityIcon className="h-4 w-4 text-white" />
                           </div>
-                          {change.from_phase_label && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                              From: <span className="font-medium">{formatJobPhaseLabel(change.from_phase_label)}</span>
-                            </p>
-                          )}
-                          {change.change_reason && (
-                            <p className="text-sm text-gray-700 dark:text-gray-300 mt-2 bg-gray-50 dark:bg-gray-800/50 rounded px-2 py-1.5">
-                              {change.change_reason}
-                            </p>
-                          )}
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 flex items-center">
-                            <User className="h-3 w-3 mr-1" />
-                            {change.changed_by_name || 'Unknown'}
-                          </p>
+                          <div className="ml-4 flex-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                                {activity.title}
+                              </h3>
+                              <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                {formatDate(activity.timestamp)}
+                              </span>
+                            </div>
+                            {activity.description && (
+                              <p className="text-sm text-gray-700 dark:text-gray-300 mt-2 bg-gray-50 dark:bg-gray-800/50 rounded px-2 py-1.5">
+                                {activity.description}
+                              </p>
+                            )}
+                            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                              <span className="flex items-center">
+                                <User className="h-3 w-3 mr-1" />
+                                {activity.actorName || 'Unknown'}
+                              </span>
+                              {activity.actorEmail && (
+                                <span className="flex items-center">
+                                  <Mail className="h-3 w-3 mr-1" />
+                                  {activity.actorEmail}
+                                </span>
+                              )}
+                              <span className="rounded bg-gray-100 px-1.5 py-0.5 font-medium capitalize text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                                {activity.category.replace('_', ' ')}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                  
-                  {!showPhaseHistory && phaseChanges.length > 3 && (
-                    <button
-                      onClick={() => setShowPhaseHistory(true)}
-                      className="text-sm text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 font-medium w-full text-center mt-4 py-2 border-t border-gray-200 dark:border-gray-700 pt-4"
-                    >
-                      View {phaseChanges.length - 3} More Changes
-                    </button>
-                  )}
-                </div>
-              )}
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

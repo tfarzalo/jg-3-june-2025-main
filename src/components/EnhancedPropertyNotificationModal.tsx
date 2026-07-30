@@ -19,6 +19,8 @@ import { CONTACT_TEMPLATE_VARIABLES, fetchContactTemplateTokens, replaceTemplate
 import { getPreviewUrl } from '../utils/storagePreviews';
 import { FOLDER_KEY_TO_CATEGORY, LEGACY_CATEGORY_ALIASES, normalizeCategory } from '../utils/fileCategories';
 import { RichTextEditor } from './RichTextEditor';
+import { logJobActivity } from '../lib/jobActivity';
+import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
 
 interface Job {
   id: string;
@@ -944,8 +946,8 @@ export function EnhancedPropertyNotificationModal({
 
     if (miscItems.length > 0) {
       miscItems.forEach((item) => {
-        const billAmount = Number(item.price) || 0;
-        const subPayAmount = Number(item.subPay) || 0;
+        const { billAmount, subPayAmount } = getMiscAdditionalCostAmounts(item);
+        const normalizedSubPay = subPayAmount ?? 0;
         if (billAmount <= 0 && !item.description?.trim()) return;
 
         items.push({
@@ -953,8 +955,8 @@ export function EnhancedPropertyNotificationModal({
           quantity: 1,
           unit: 'item',
           bill_amount: billAmount,
-          sub_pay_amount: subPayAmount,
-          profit_amount: billAmount - subPayAmount,
+          sub_pay_amount: normalizedSubPay,
+          profit_amount: billAmount - normalizedSubPay,
         });
       });
     } else {
@@ -1410,6 +1412,27 @@ export function EnhancedPropertyNotificationModal({
       });
 
       if (error) throw error;
+
+      await logJobActivity({
+        jobId: job.id,
+        eventType: `${notificationType}_email_sent`,
+        title: `${NOTIFICATION_TYPE_LABELS[notificationType]} sent`,
+        description: `${NOTIFICATION_TYPE_LABELS[notificationType]} sent to ${recipientEmail}`,
+        action: 'other',
+        metadata: {
+          notification_type: notificationType,
+          recipient_email: recipientEmail,
+          cc_emails: ccEmails.split(',').map((email) => email.trim()).filter(Boolean),
+          bcc_emails: allBcc.filter(Boolean),
+          subject: applyEmailTokens(emailSubject),
+          template_id: selectedTemplate.id,
+          template_name: selectedTemplate.name,
+          included_sections: safeSections,
+          selected_image_count: selectedImages.length,
+          inline_attachment_count: inlineAttachments.length,
+          approval_link_created: Boolean(approvalLink),
+        },
+      });
 
       // If the job is in "Pending Work Order" phase, handle based on notification type
       if (job?.job_phase?.label === 'Pending Work Order') {

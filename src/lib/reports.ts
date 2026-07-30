@@ -6,6 +6,7 @@ import {
   getQualityControlSectionTotal,
 } from './qualityControl';
 import { formatJobPhaseLabel } from './jobPhaseLabels';
+import { getMiscAdditionalCostAmounts } from './miscAdditionalCosts';
 
 export type ReportTemplate = {
   id: string;
@@ -1002,8 +1003,8 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
   const miscAdditionalCostItems = arrayFrom(workOrder?.misc_additional_cost_items);
   if (miscAdditionalCostItems.length > 0) {
     miscAdditionalCostItems.forEach((item) => {
-      const billAmount = numberFrom(item.price);
-      const subAmount = numberFrom(item.subPay, item.sub_pay, item.sub_pay_amount);
+      const { billAmount, subPayAmount } = getMiscAdditionalCostAmounts(item);
+      const subAmount = subPayAmount ?? 0;
       const description = String(item.description ?? '').trim() || 'Miscellaneous additional cost';
       nonBaseBill += billAmount;
       nonBaseSub += subAmount;
