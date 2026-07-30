@@ -124,8 +124,6 @@ export function DashboardHome() {
           const { count, error } = await supabase
             .from('jobs')
             .select('id', { count: 'exact', head: true })
-            .eq('is_archived', false)
-            .eq('is_deleted', false)
             .eq('current_phase_id', phaseId);
 
           if (error) throw error;
@@ -165,8 +163,6 @@ export function DashboardHome() {
             ? supabase
                 .from('jobs')
                 .select(jobListSelect)
-                .eq('is_archived', false)
-                .eq('is_deleted', false)
                 .eq('current_phase_id', phaseIdByLabel['Pending Work Order'])
                 .order('updated_at', { ascending: false })
                 .limit(8)
@@ -175,8 +171,6 @@ export function DashboardHome() {
             ? supabase
                 .from('jobs')
                 .select(jobListSelect)
-                .eq('is_archived', false)
-                .eq('is_deleted', false)
                 .eq('current_phase_id', phaseIdByLabel['Completed Work Orders'])
                 .order('updated_at', { ascending: false })
                 .limit(8)
@@ -478,11 +472,6 @@ export function DashboardHome() {
   
   // Pending Work Orders list
   const pendingWorkOrders = jobs.filter(job => job.job_phase?.job_phase_label === 'Pending Work Order');
-
-  // Debug logging
-  console.log('Dashboard: todaysJobs from hook:', todaysJobs.length);
-  console.log('Dashboard: allTodaysJobs:', allTodaysJobs.length);
-  console.log('Dashboard: sortedTodaysJobs:', sortedTodaysJobs.length);
 
   // Helper functions to handle array/object data from useDashboardJobs
   const getJobPhaseColor = (job: any) => {

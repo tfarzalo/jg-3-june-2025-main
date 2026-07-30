@@ -106,18 +106,10 @@ export function useDashboardJobs(): UseDashboardJobsResult {
         throw new Error('No phases data received');
       }
 
-      console.log('Fetched phases:', phases);
-
       const phaseMapData = phases.reduce((acc, phase) => ({
         ...acc,
         [phase.job_phase_label]: phase.id
       }), {} as Record<string, string>);
-      
-      console.log('Phase map data:', phaseMapData);
-      console.log('Available phase names:', Object.keys(phaseMapData));
-      console.log('Looking for Invoicing phase ID:', phaseMapData['Invoicing']);
-      console.log('Looking for Invoice phase ID:', phaseMapData['Invoice']);
-      console.log('Looking for Billing phase ID:', phaseMapData['Billing']);
       
       setPhaseMap(phaseMapData);
       phaseMapRef.current = phaseMapData;
@@ -310,12 +302,6 @@ export function useDashboardJobs(): UseDashboardJobsResult {
       if (pendingWorkOrderJobsResult.error) throw pendingWorkOrderJobsResult.error;
       if (invoicingJobsResult.error) throw invoicingJobsResult.error;
       if (todayJobsResult.error) throw todayJobsResult.error;
-
-      console.log('Job Requests:', requestJobsResult.data);
-      console.log('Work Orders:', workOrderJobsResult.data);
-      console.log('Pending Work Orders:', pendingWorkOrderJobsResult.data);
-      console.log('Invoicing Jobs:', invoicingJobsResult.data);
-      console.log('Today\'s Jobs:', todayJobsResult.data);
 
       // Set phase-specific jobs
       if (isMountedRef.current) {
