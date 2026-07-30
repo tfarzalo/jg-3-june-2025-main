@@ -8,6 +8,37 @@ const corsHeaders = {
   "Access-Control-Max-Age": "86400",
 };
 
+const completedDeletePhaseLabels = new Set([
+  "Completed",
+  "Completed Jobs",
+  "Invoicing",
+  "Cancelled",
+  "Archived",
+]);
+
+const optionalSchemaErrorCodes = new Set([
+  "42P01", // undefined_table
+  "42703", // undefined_column
+  "PGRST200",
+  "PGRST204",
+  "PGRST205",
+]);
+
+function isMissingSchemaError(error: any): boolean {
+  const message = String(error?.message || "").toLowerCase();
+  return optionalSchemaErrorCodes.has(String(error?.code || "")) ||
+    message.includes("could not find the table") ||
+    (message.includes("could not find the") && message.includes("column")) ||
+    message.includes("schema cache");
+}
+
+function formatJobLabel(job: any): string {
+  const wo = job?.work_order_num ? `WO #${job.work_order_num}` : "Work order";
+  const property = job?.property?.property_name || job?.properties?.property_name;
+  const unit = job?.unit_number ? `Unit ${job.unit_number}` : null;
+  return [wo, property, unit].filter(Boolean).join(" - ");
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
@@ -135,6 +166,57 @@ serve(async (req) => {
     const historicalName = userProfile?.full_name || userProfile?.email || "Deleted user";
     const historicalEmail = userProfile?.email || null;
 
+    const { data: assignedJobs, error: assignedJobsError } = await supabase
+      .from("jobs")
+      .select(`
+        id,
+        work_order_num,
+        unit_number,
+        historical_data_mode,
+        snapshot_frozen_at,
+        property:properties(property_name),
+        phase:job_phases!jobs_current_phase_id_fkey(job_phase_label)
+      `)
+      .eq("assigned_to", userId);
+
+    if (assignedJobsError) {
+      throw new Error(
+        `Failed to check assigned jobs before deletion: ${assignedJobsError.message}`,
+      );
+    }
+
+    const blockingJobs = (assignedJobs || []).filter((job: any) => {
+      const phaseLabel = job?.phase?.job_phase_label || "";
+      return !completedDeletePhaseLabels.has(phaseLabel);
+    });
+
+    if (blockingJobs.length > 0) {
+      const jobLabels = blockingJobs.slice(0, 5).map(formatJobLabel);
+      const remainingCount = Math.max(blockingJobs.length - jobLabels.length, 0);
+      const suffix = remainingCount > 0 ? ` and ${remainingCount} more` : "";
+      return new Response(
+        JSON.stringify({
+          code: "assigned_frozen_jobs_block",
+          success: false,
+          message:
+            `This user cannot be deleted yet because they are assigned to ${blockingJobs.length} non-completed job${blockingJobs.length === 1 ? "" : "s"}: ${jobLabels.join("; ")}${suffix}. Reassign or complete those jobs before deleting this user.`,
+          jobs: blockingJobs.map((job: any) => ({
+            id: job.id,
+            label: formatJobLabel(job),
+            phase: job?.phase?.job_phase_label || null,
+            snapshot_frozen_at: job?.snapshot_frozen_at || null,
+          })),
+        }),
+        {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+          status: 409,
+        },
+      );
+    }
+
     // Freeze any live job assignment labels before removing the profile FK target.
     const { error: jobHistoryError } = await supabase
       .from("jobs")
@@ -223,6 +305,28 @@ serve(async (req) => {
       systemUserId = fallbackAdmin.id;
     }
 
+    let authReferenceUserId = systemUserId;
+    const { data: replacementAuthUser, error: replacementAuthError } =
+      await supabase.auth.admin.getUserById(systemUserId);
+
+    if (replacementAuthError || !replacementAuthUser?.user) {
+      const { data: fallbackAuthAdmin } = await supabase
+        .from("profiles")
+        .select("id")
+        .in("role", ["admin", "jg_management", "is_super_admin"])
+        .neq("id", userId)
+        .limit(1)
+        .maybeSingle();
+
+      if (!fallbackAuthAdmin?.id) {
+        throw new Error(
+          "No admin auth user available to preserve required historical references",
+        );
+      }
+
+      authReferenceUserId = fallbackAuthAdmin.id;
+    }
+
     const requiredProfileReferences = [
       { table: "job_phase_changes", column: "changed_by" },
       { table: "property_callbacks", column: "posted_by" },
@@ -236,7 +340,16 @@ serve(async (req) => {
         .eq(reference.column, userId);
 
       if (referenceError) {
-        throw new Error(`Failed to reassign ${reference.table}.${reference.column}: ${referenceError.message}`);
+        if (isMissingSchemaError(referenceError)) {
+          console.warn(
+            `Skipping missing required profile reference ${reference.table}.${reference.column}:`,
+            referenceError.message,
+          );
+          continue;
+        }
+        throw new Error(
+          `Failed to reassign ${reference.table}.${reference.column}: ${referenceError.message}`,
+        );
       }
     }
 
@@ -247,6 +360,11 @@ serve(async (req) => {
       { table: "whats_new_entries", column: "updated_by" },
       { table: "user_role_assignments", column: "assigned_by" },
       { table: "conversations", column: "deleted_by" },
+      { table: "job_quality_control_submissions", column: "submitted_by" },
+      { table: "lead_forms", column: "created_by" },
+      { table: "leads", column: "assigned_to" },
+      { table: "contacts", column: "assigned_to" },
+      { table: "contact_history", column: "created_by" },
     ];
 
     for (const reference of nullableProfileReferences) {
@@ -256,7 +374,16 @@ serve(async (req) => {
         .eq(reference.column, userId);
 
       if (referenceError) {
-        throw new Error(`Failed to clear ${reference.table}.${reference.column}: ${referenceError.message}`);
+        if (isMissingSchemaError(referenceError)) {
+          console.warn(
+            `Skipping missing optional profile reference ${reference.table}.${reference.column}:`,
+            referenceError.message,
+          );
+          continue;
+        }
+        throw new Error(
+          `Failed to clear ${reference.table}.${reference.column}: ${referenceError.message}`,
+        );
       }
     }
 
@@ -270,11 +397,20 @@ serve(async (req) => {
     for (const reference of requiredAuthReferences) {
       const { error: referenceError } = await supabase
         .from(reference.table)
-        .update({ [reference.column]: systemUserId })
+        .update({ [reference.column]: authReferenceUserId })
         .eq(reference.column, userId);
 
       if (referenceError) {
-        throw new Error(`Failed to reassign ${reference.table}.${reference.column}: ${referenceError.message}`);
+        if (isMissingSchemaError(referenceError)) {
+          console.warn(
+            `Skipping missing required auth reference ${reference.table}.${reference.column}:`,
+            referenceError.message,
+          );
+          continue;
+        }
+        throw new Error(
+          `Failed to reassign ${reference.table}.${reference.column}: ${referenceError.message}`,
+        );
       }
     }
 
@@ -290,6 +426,14 @@ serve(async (req) => {
       { table: "employee_form_pdf_files", column: "created_by" },
       { table: "employee_form_submissions", column: "last_saved_by" },
       { table: "sms_notification_logs", column: "user_id" },
+      { table: "sms_notification_queue", column: "user_id" },
+      { table: "notifications", column: "user_id" },
+      { table: "user_notifications", column: "user_id" },
+      { table: "password_reset_tokens", column: "user_id" },
+      { table: "calendar_tokens", column: "user_id" },
+      { table: "daily_email_settings", column: "user_id" },
+      { table: "report_templates", column: "user_id" },
+      { table: "report_runs", column: "user_id" },
     ];
 
     for (const reference of nullableAuthReferences) {
@@ -299,7 +443,17 @@ serve(async (req) => {
         .eq(reference.column, userId);
 
       if (referenceError) {
-        console.warn(`Failed to clear optional ${reference.table}.${reference.column}:`, referenceError.message);
+        if (isMissingSchemaError(referenceError)) {
+          console.warn(
+            `Skipping missing optional auth reference ${reference.table}.${reference.column}:`,
+            referenceError.message,
+          );
+        } else {
+          console.warn(
+            `Failed to clear optional ${reference.table}.${reference.column}:`,
+            referenceError.message,
+          );
+        }
       }
     }
 
