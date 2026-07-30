@@ -4291,7 +4291,7 @@ export function JobDetails() {
 
             {/* Miscellaneous Additional Cost Fields - Admin only, phase-gated */}
             {canManageRepair && (
-              <div className="px-6 pb-4">
+              <div className="px-6 pt-3 pb-4">
                 <div className={`border rounded-xl overflow-hidden transition-colors ${
                   isRepairLocked
                     ? 'bg-zinc-100 dark:bg-zinc-900/60 border-zinc-200 dark:border-zinc-700 opacity-70'
