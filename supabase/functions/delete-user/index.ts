@@ -27,6 +27,7 @@ const optionalSchemaErrorCodes = new Set([
 function isMissingSchemaError(error: any): boolean {
   const message = String(error?.message || "").toLowerCase();
   return optionalSchemaErrorCodes.has(String(error?.code || "")) ||
+    (!error?.code && !error?.message) ||
     message.includes("could not find the table") ||
     (message.includes("could not find the") && message.includes("column")) ||
     message.includes("schema cache");
@@ -381,8 +382,9 @@ serve(async (req) => {
           );
           continue;
         }
-        throw new Error(
-          `Failed to clear ${reference.table}.${reference.column}: ${referenceError.message}`,
+        console.warn(
+          `Failed to clear optional profile reference ${reference.table}.${reference.column}:`,
+          referenceError.message || JSON.stringify(referenceError),
         );
       }
     }
