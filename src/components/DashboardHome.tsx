@@ -60,6 +60,7 @@ export function DashboardHome() {
   const [loading, setLoading] = useState(true);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
+  const [phaseCounts, setPhaseCounts] = useState<Record<string, number>>({});
   const [phaseColors, setPhaseColors] = useState<Record<string, string>>({});
   const [completedJobs, setCompletedJobs] = useState<any[]>([]);
   const [loadingCompletedDates, setLoadingCompletedDates] = useState(false);
@@ -92,51 +93,106 @@ export function DashboardHome() {
       try {
         setLoading(true);
         
-        // Fetch jobs, properties, job phases, and activities in parallel
-        const [jobsResult, propertiesResult, phasesResult] = await Promise.all([
-          supabase
-            .from('jobs')
-            .select(`
-              id,
-              work_order_num,
-              unit_number,
-              scheduled_date,
-              created_at,
-              updated_at,
-              property:properties(property_name),
-              job_phase:current_phase_id(job_phase_label, color_dark_mode),
-              assigned_to:profiles(full_name),
-              job_type:job_types(job_type_label),
-              total_billing_amount
-            `)
-            .order('created_at', { ascending: false }),
-          supabase
-            .from('properties')
-            .select('*')
-            .eq('is_archived', false)
-            .order('property_name'),
-          supabase
-            .from('job_phases')
-            .select('id, job_phase_label, color_dark_mode')
-        ]);
+        // Fetch phase metadata first, then use light count/list queries instead
+        // of pulling the full jobs table into the dashboard.
+        const phasesResult = await supabase
+          .from('job_phases')
+          .select('id, job_phase_label, color_dark_mode');
         
-        if (jobsResult.error) throw jobsResult.error;
-        if (propertiesResult.error) throw propertiesResult.error;
         if (phasesResult.error) throw phasesResult.error;
         
-        setJobs(jobsResult.data || []);
-        setPhases(phasesResult.data || []);
+        const phasesData = phasesResult.data || [];
+        setPhases(phasesData);
         
         // Create and set a map for easy lookup of phase colors
-        const colorsMap: Record<string, string> = (phasesResult.data || []).reduce((acc: Record<string, string>, phase: JobPhase) => {
+        const colorsMap: Record<string, string> = phasesData.reduce((acc: Record<string, string>, phase: JobPhase) => {
           acc[phase.job_phase_label] = phase.color_dark_mode;
           return acc;
         }, {} as Record<string, string>);
-        
+
         setPhaseColors(colorsMap);
-        
-        // Fetch activities
-        await fetchActivities();
+
+        const phaseIdByLabel: Record<string, string> = phasesData.reduce((acc: Record<string, string>, phase: JobPhase) => {
+          acc[phase.job_phase_label] = phase.id;
+          return acc;
+        }, {});
+
+        const countPhase = async (label: string) => {
+          const phaseId = phaseIdByLabel[label];
+          if (!phaseId) return [label, 0] as const;
+
+          const { count, error } = await supabase
+            .from('jobs')
+            .select('id', { count: 'exact', head: true })
+            .eq('is_archived', false)
+            .eq('is_deleted', false)
+            .eq('current_phase_id', phaseId);
+
+          if (error) throw error;
+          return [label, count || 0] as const;
+        };
+
+        const jobListSelect = `
+          id,
+          work_order_num,
+          unit_number,
+          scheduled_date,
+          created_at,
+          updated_at,
+          property:properties(property_name),
+          job_phase:current_phase_id(job_phase_label, color_dark_mode),
+          assigned_to:profiles(full_name),
+          job_type:job_types(job_type_label),
+          total_billing_amount
+        `;
+
+        const [
+          countEntries,
+          pendingJobsResult,
+          completedJobsResult
+        ] = await Promise.all([
+          Promise.all([
+            'Job Request',
+            'Work Order',
+            'Pending Work Order',
+            'Completed Work Orders',
+            'Completed',
+            'Quality Control',
+            'Invoicing',
+            'Cancelled',
+          ].map(countPhase)),
+          phaseIdByLabel['Pending Work Order']
+            ? supabase
+                .from('jobs')
+                .select(jobListSelect)
+                .eq('is_archived', false)
+                .eq('is_deleted', false)
+                .eq('current_phase_id', phaseIdByLabel['Pending Work Order'])
+                .order('updated_at', { ascending: false })
+                .limit(8)
+            : Promise.resolve({ data: [], error: null }),
+          phaseIdByLabel['Completed Work Orders']
+            ? supabase
+                .from('jobs')
+                .select(jobListSelect)
+                .eq('is_archived', false)
+                .eq('is_deleted', false)
+                .eq('current_phase_id', phaseIdByLabel['Completed Work Orders'])
+                .order('updated_at', { ascending: false })
+                .limit(8)
+            : Promise.resolve({ data: [], error: null })
+        ]);
+
+        if (pendingJobsResult.error) throw pendingJobsResult.error;
+        if (completedJobsResult.error) throw completedJobsResult.error;
+
+        setPhaseCounts(Object.fromEntries(countEntries));
+        setJobs([
+          ...(pendingJobsResult.data || []),
+          ...(completedJobsResult.data || []),
+        ]);
+
+        fetchActivities();
         
       } catch (err) {
         console.error('Error fetching dashboard data:', err);
@@ -154,68 +210,21 @@ export function DashboardHome() {
         { event: 'INSERT', schema: 'public', table: 'jobs' },
         async (payload) => {
           console.log('New job added:', payload.new);
-          // Fetch the complete job data with relations
-          const { data: newJob, error } = await supabase
-            .from('jobs')
-            .select(`
-              id,
-              work_order_num,
-              unit_number,
-              scheduled_date,
-              property:properties(property_name),
-              job_phase:current_phase_id(job_phase_label, color_dark_mode),
-              assigned_to:profiles(full_name),
-              job_type:job_types(job_type_label),
-              total_billing_amount
-            `)
-            .eq('id', payload.new.id)
-            .eq('is_archived', false)
-            .eq('is_deleted', false)
-            .single();
-          
-          if (!error && newJob) {
-            setJobs(prev => [newJob, ...prev]);
-          }
+          fetchData();
         }
       )
       .on('postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'jobs' },
         async (payload) => {
           console.log('Job updated:', payload.new);
-          // Fetch the complete updated job data
-          const { data: updatedJob, error } = await supabase
-            .from('jobs')
-            .select(`
-              id,
-              work_order_num,
-              unit_number,
-              scheduled_date,
-              property:properties(property_name),
-              job_phase:current_phase_id(job_phase_label, color_dark_mode),
-              assigned_to:profiles(full_name),
-              job_type:job_types(job_type_label),
-              total_billing_amount
-            `)
-            .eq('id', payload.new.id)
-            .eq('is_archived', false)
-            .eq('is_deleted', false)
-            .single();
-          
-          if (!error && updatedJob) {
-            setJobs(prev => prev.map(job => 
-              job.id === updatedJob.id ? updatedJob : job
-            ));
-          } else if (error || !updatedJob) {
-            // If the job was archived/deleted or we can't fetch it, remove it from state
-            setJobs(prev => prev.filter(job => job.id !== payload.new.id));
-          }
+          fetchData();
         }
       )
       .on('postgres_changes',
         { event: 'DELETE', schema: 'public', table: 'jobs' },
         (payload) => {
           console.log('Job deleted:', payload.old);
-          setJobs(prev => prev.filter(job => job.id !== payload.old.id));
+          fetchData();
         }
       )
       .subscribe();
@@ -529,7 +538,7 @@ export function DashboardHome() {
     { 
       icon: ClipboardList,
       label: 'Job Requests',
-      value: jobs.filter(job => job.job_phase?.job_phase_label === 'Job Request').length.toString(),
+      value: (phaseCounts['Job Request'] || 0).toString(),
       trend: { value: 12, isPositive: true },
       color: 'blue',
       notation: 'New / Scheduled'
@@ -537,9 +546,7 @@ export function DashboardHome() {
     {
       icon: FileText,
       label: 'Work Orders',
-      value: jobs.filter(job => 
-        job.job_phase?.job_phase_label === 'Work Order'
-      ).length.toString(),
+      value: (phaseCounts['Work Order'] || 0).toString(),
       trend: { value: 15, isPositive: true },
       color: 'orange',
       notation: 'In House'
@@ -547,7 +554,7 @@ export function DashboardHome() {
     {
       icon: Clock,
       label: 'Pending Work Orders',
-      value: jobs.filter(job => job.job_phase?.job_phase_label === 'Pending Work Order').length.toString(),
+      value: (phaseCounts['Pending Work Order'] || 0).toString(),
       trend: { value: 8, isPositive: true },
       color: 'yellow',
       notation: 'Per Customer'
@@ -555,7 +562,7 @@ export function DashboardHome() {
     {
       icon: CheckCircle,
       label: 'Completed Work Orders',
-      value: jobs.filter(job => job.job_phase?.job_phase_label === 'Completed Work Orders').length.toString(),
+      value: (phaseCounts['Completed Work Orders'] || 0).toString(),
       trend: { value: 5, isPositive: true },
       color: phaseColors['Completed Work Orders'] || '#0369A1',
       notation: 'Ready for QC'
@@ -563,16 +570,16 @@ export function DashboardHome() {
     {
       icon: ClipboardList,
       label: 'All Jobs',
-      value: jobs.filter(job => 
-        job.job_phase?.job_phase_label === 'Job Request' ||
-        job.job_phase?.job_phase_label === 'Pending Work Order' ||
-        job.job_phase?.job_phase_label === 'Work Order' ||
-        job.job_phase?.job_phase_label === 'Completed Work Orders' ||
-        job.job_phase?.job_phase_label === 'Completed' ||
-        job.job_phase?.job_phase_label === 'Quality Control' ||
-        job.job_phase?.job_phase_label === 'Invoicing' ||
-        job.job_phase?.job_phase_label === 'Cancelled'
-      ).length.toString(),
+      value: [
+        'Job Request',
+        'Pending Work Order',
+        'Work Order',
+        'Completed Work Orders',
+        'Completed',
+        'Quality Control',
+        'Invoicing',
+        'Cancelled',
+      ].reduce((sum, label) => sum + (phaseCounts[label] || 0), 0).toString(),
       trend: { value: 4, isPositive: true },
       color: 'purple',
       notation: 'All Phases'
