@@ -475,13 +475,16 @@ serve(async (req) => {
     }
 
     // Delete user from auth first. profiles.id cascades from auth.users, so this
-    // avoids deleting the visible profile if auth deletion is blocked.
+    // avoids deleting the visible profile if auth deletion is blocked. Supabase
+    // can return an empty database error when hard delete is blocked by managed
+    // schema references such as storage ownership, so fall back to soft delete.
     console.log("Deleting user from auth...");
+    let authDeleteMode: "hard" | "soft" | "missing" = "hard";
     const { error: authError } = await supabase.auth.admin.deleteUser(userId);
 
     if (authError) {
       console.error("Auth deletion failed:", authError);
-      const authMessage = authError.message || "";
+      const authMessage = authError.message || JSON.stringify(authError);
       const authStatus = "status" in authError
         ? Number(authError.status)
         : undefined;
@@ -489,14 +492,30 @@ serve(async (req) => {
         authMessage.toLowerCase().includes("not found");
 
       if (!authUserMissing) {
-        throw new Error(`Auth user deletion failed; profile was not deleted: ${authMessage}`);
-      }
+        console.warn("Hard auth delete failed; attempting soft auth delete");
+        const { error: softDeleteError } = await supabase.auth.admin.deleteUser(
+          userId,
+          true,
+        );
 
-      console.warn("Auth user was already missing; deleting orphaned profile only");
+        if (softDeleteError) {
+          const softDeleteMessage = softDeleteError.message ||
+            JSON.stringify(softDeleteError);
+          throw new Error(
+            `Auth user deletion failed; profile was not deleted: ${softDeleteMessage}`,
+          );
+        }
+
+        authDeleteMode = "soft";
+      } else {
+        authDeleteMode = "missing";
+      }
     }
 
     console.log(
-      authError ? "Auth user already absent" : "User deleted successfully from auth",
+      authDeleteMode === "missing"
+        ? "Auth user already absent"
+        : `User ${authDeleteMode}-deleted successfully from auth`,
     );
 
     // The auth delete should cascade to profiles. This cleanup is intentionally
@@ -517,7 +536,10 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true,
-        message: "User deleted successfully"
+        message: authDeleteMode === "soft"
+          ? "User deleted successfully. Auth account was soft-deleted because database references prevented hard deletion."
+          : "User deleted successfully",
+        authDeleteMode,
       }),
       { 
         headers: { 
