@@ -4355,10 +4355,10 @@ export function JobDetails() {
                       )}
 
                       {/* Sub/admin miscellaneous items - only shown when relevant */}
-                      {miscAdditionalCostItems.length > 0 && (
+                      {miscAdditionalCostItems.length > 0 && !isEditingRepairAmount && (
                         <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-800/40 border-b border-zinc-100 dark:border-zinc-700/60">
                           <div className="flex items-center justify-between gap-3 mb-2">
-                            <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Miscellaneous items</span>
+                            <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Saved items</span>
                             <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{formatCurrency(miscAdditionalCostTotal)}</span>
                           </div>
                           <div className="space-y-1">
@@ -4367,14 +4367,14 @@ export function JobDetails() {
                                 <span>{item.description || 'Miscellaneous additional cost'}</span>
                                 <span className="font-semibold text-zinc-700 dark:text-zinc-200 sm:text-right">Bill: {formatCurrency(item.price)}</span>
                                 <span className={`font-semibold sm:text-right ${item.subPay == null ? 'text-amber-700 dark:text-amber-300' : 'text-zinc-700 dark:text-zinc-200'}`}>
-                                  Sub: {item.subPay == null ? 'Needs input' : formatCurrency(item.subPay)}
+                                  Pay to Sub: {item.subPay == null ? 'Needs input' : formatCurrency(item.subPay)}
                                 </span>
                               </div>
                             ))}
                           </div>
                           {hasMiscAdditionalCostItemsMissingSubPay && (
                             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200">
-                              Sub pay needs input for one or more miscellaneous additional cost items.
+                              Pay to Sub needs input for one or more saved items.
                             </div>
                           )}
                         </div>
@@ -4382,12 +4382,15 @@ export function JobDetails() {
 
                       {isEditingRepairAmount && !isRepairLocked && (
                         <div className="px-4 py-3 space-y-4 border-b border-zinc-100 dark:border-zinc-700/60">
-                          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                            If any miscellaneous additional costs apply to this job, add each item below with a description, bill to customer amount, and pay to sub amount.
-                          </p>
+                          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-800/60 dark:bg-blue-900/20 dark:text-blue-100">
+                            <p className="font-semibold">Billing changes require customer approval.</p>
+                            <p className="mt-1 text-xs leading-5 text-blue-800 dark:text-blue-200">
+                              Changing <span className="font-semibold">Bill to Customer</span> moves the job back to Pending Work Order. Changing only <span className="font-semibold">Pay to Sub</span> updates internal totals and does not require additional approval.
+                            </p>
+                          </div>
                           {hasMiscAdditionalCostInputMissingSubPay && (
                             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200">
-                              Sub pay needs input for one or more miscellaneous additional cost items.
+                              Pay to Sub needs input for one or more items.
                             </div>
                           )}
                           {miscAdditionalCostItemsInput.length === 0 ? (
@@ -4488,13 +4491,13 @@ export function JobDetails() {
                       {/* Read-only saved values */}
                       {!isEditingRepairAmount && (job.repair_amount ?? 0) > 0 ? (
                         <div className="px-4 py-3">
-                          <div className="grid grid-cols-3 gap-4 mb-3">
+                          <div className="grid grid-cols-1 gap-4 mb-4 sm:grid-cols-3">
                             <div>
-                              <div className="text-xs text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Bill</div>
+                              <div className="text-xs text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Bill to Customer</div>
                               <div className="text-base font-bold text-zinc-900 dark:text-white">{formatCurrency(job.repair_amount ?? 0)}</div>
                             </div>
                             <div>
-                              <div className="text-xs text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Sub Pay</div>
+                              <div className="text-xs text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Pay to Sub</div>
                               <div className="text-base font-bold text-zinc-900 dark:text-white">{formatCurrency(job.repair_sub_pay ?? 0)}</div>
                             </div>
                             <div>
@@ -4502,12 +4505,17 @@ export function JobDetails() {
                               <div className="text-base font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency((job.repair_amount ?? 0) - (job.repair_sub_pay ?? 0))}</div>
                             </div>
                           </div>
+                          <div className="mb-4 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs leading-5 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/30 dark:text-zinc-300">
+                            Editing customer billing sends the job back to Pending Work Order for approval. Pay to Sub edits only update internal totals.
+                          </div>
                           {canEditRepairInCurrentPhase && (
                             <button
+                              type="button"
                               onClick={() => setIsEditingRepairAmount(true)}
-                              className="text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 underline underline-offset-2"
+                              className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-800/60 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/30"
                             >
-                              Edit items and amounts
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit Misc Costs
                             </button>
                           )}
                         </div>
