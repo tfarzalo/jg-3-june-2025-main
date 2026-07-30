@@ -451,7 +451,7 @@ export function JobDetails() {
     setOtherCancelReason('');
     setPendingCancelChangeReason('');
   };
-  const [notificationType, setNotificationType] = useState<'sprinkler_paint' | 'drywall_repairs' | 'extra_charges' | null>(null);
+  const [notificationType, setNotificationType] = useState<'sprinkler_paint' | 'drywall_repairs' | 'extra_charges' | 'general_work_order' | null>(null);
   const [additionalBillingLines, setAdditionalBillingLines] = useState<Array<{
     key: string;
     label: string;
@@ -2876,6 +2876,11 @@ export function JobDetails() {
     setShowEnhancedNotificationModal(true);
   };
 
+  const handleSendGeneralWorkOrderEmail = () => {
+    setNotificationType('general_work_order');
+    setShowEnhancedNotificationModal(true);
+  };
+
   const handleNotificationSent = async () => {
     toast.success('Notification sent successfully');
     setShowNotificationModal(false);
@@ -3637,6 +3642,7 @@ export function JobDetails() {
   const hasBillingBreakdown = hasWorkOrder || hasCancellationTripCharge;
   const isJobRequest = phaseLabel === 'Job Request';
   const isPendingWorkOrder = phaseLabel === 'Pending Work Order';
+  const isWorkOrder = phaseLabel === 'Work Order';
   const isCompletedWorkOrders = phaseLabel === 'Completed Work Orders';
   const isInvoicing = phaseLabel === 'Invoicing';
   const isCompleted = phaseLabel === 'Completed';
@@ -5047,6 +5053,29 @@ export function JobDetails() {
                 </div>
               );
             })()}
+
+            {hasWorkOrder && isWorkOrder && (isAdmin || isJGManagement) && (
+              <div className="bg-sky-50 dark:bg-sky-900/20 border-b border-sky-200 dark:border-sky-700/30 text-sky-900 dark:text-sky-100 px-6 py-4 relative z-[50]">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start">
+                    <Mail className="h-5 w-5 mr-2 text-sky-600 dark:text-sky-300 mt-0.5" />
+                    <div>
+                      <p className="font-medium">Send Work Order Email</p>
+                      <p className="mt-1 text-sm">
+                        Send a property email with a selected template, work order details, and selected job images.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleSendGeneralWorkOrderEmail}
+                    className="inline-flex items-center justify-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    <Mail className="h-4 w-4 mr-2" />
+                    Prepare Email
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Content Section */}
             <div className="p-6">
@@ -6524,7 +6553,7 @@ export function JobDetails() {
 
 
         {/* Notification Email Modal */}
-        {showNotificationModal && notificationType && notificationType !== 'extra_charges' && (
+        {showNotificationModal && notificationType && notificationType !== 'extra_charges' && notificationType !== 'general_work_order' && (
           <NotificationEmailModal
             isOpen={showNotificationModal}
             onClose={() => {

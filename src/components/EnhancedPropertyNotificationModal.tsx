@@ -99,7 +99,7 @@ interface EnhancedPropertyNotificationModalProps {
   isOpen: boolean;
   onClose: () => void;
   job: Job | null;
-  notificationType: 'extra_charges' | 'sprinkler_paint' | 'drywall_repairs';
+  notificationType: 'extra_charges' | 'sprinkler_paint' | 'drywall_repairs' | 'general_work_order';
   onSent?: () => void;
   additionalServices?: Array<{
     label: string;
@@ -132,6 +132,12 @@ const IMAGE_TYPE_LABELS: Record<ImageBucket, string> = {
 
 const IMAGE_PREVIEW_DISCLAIMER =
   'Images shown in this email are quick previews—the full-resolution files remain available on the approval review page.';
+const NOTIFICATION_TYPE_LABELS: Record<EnhancedPropertyNotificationModalProps['notificationType'], string> = {
+  extra_charges: 'Extra Charges Approval',
+  sprinkler_paint: 'Sprinkler Paint Notification',
+  drywall_repairs: 'Drywall Repairs Notification',
+  general_work_order: 'Work Order Email',
+};
 
 const formatCurrency = (value?: number | null) => {
   if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -1362,7 +1368,7 @@ export function EnhancedPropertyNotificationModal({
       </div>
       {jobImages.length > 0 && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {(['before', 'sprinkler', 'other'] as ImageBucket[]).map((bucket) => {
+          {(['before', 'after', 'sprinkler', 'other'] as ImageBucket[]).map((bucket) => {
             const bucketIds = getIdsForBucket(bucket);
             const allSelected = bucketIds.length > 0 && bucketIds.every((id) => selectedImageIds.includes(id));
             const anySelected = bucketIds.some((id) => selectedImageIds.includes(id));
@@ -1482,7 +1488,7 @@ export function EnhancedPropertyNotificationModal({
                   <div>
                     <p className="text-base font-semibold text-gray-900 dark:text-white">{template.name}</p>
                     <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      {template.template_type === 'extra_charges' ? 'Approval' : 'Notification'} Template
+                      {template.template_type === 'extra_charges' ? 'Approval' : notificationType === 'general_work_order' ? 'Work Order Email' : 'Notification'} Template
                     </p>
                   </div>
                   {isSelected && <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />}
@@ -1670,6 +1676,7 @@ export function EnhancedPropertyNotificationModal({
         {(() => {
           const bucketCounts: { bucket: ImageBucket; label: string; count: number }[] = [
             { bucket: 'before', label: IMAGE_TYPE_LABELS.before, count: selectedImages.filter((img) => img.normalizedType === 'before').length },
+            { bucket: 'after', label: IMAGE_TYPE_LABELS.after, count: selectedImages.filter((img) => img.normalizedType === 'after').length },
             { bucket: 'sprinkler', label: IMAGE_TYPE_LABELS.sprinkler, count: selectedImages.filter((img) => img.normalizedType === 'sprinkler').length },
             { bucket: 'other', label: IMAGE_TYPE_LABELS.other, count: selectedImages.filter((img) => img.normalizedType === 'other').length }
           ];
@@ -1692,6 +1699,7 @@ export function EnhancedPropertyNotificationModal({
           );
         })()}
         {renderImagePreview('before', 'before_images')}
+        {renderImagePreview('after', 'after_images')}
         {renderImagePreview('sprinkler', 'sprinkler_images')}
         {renderImagePreview('other', 'other_images')}
         {notificationType === 'extra_charges' && selectedImages.length > 0 && (
@@ -1726,7 +1734,7 @@ export function EnhancedPropertyNotificationModal({
         <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
           <div className="flex items-center space-x-2">
             <Mail className="h-5 w-5 text-blue-600" />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Send Property Notification</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Send {NOTIFICATION_TYPE_LABELS[notificationType]}</h2>
           </div>
           <button onClick={onClose} className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700">
             <X className="h-5 w-5" />
