@@ -291,6 +291,8 @@ const miscAdditionalCostItemsFromWorkOrder = (workOrder?: WorkOrder | null): Mis
   return [];
 };
 
+const amountToCents = (amount: number | null | undefined): number => Math.round((Number(amount) || 0) * 100);
+
 type QualityControlSubmission = {
   id: string;
   job_id: string;
@@ -3022,6 +3024,8 @@ export function JobDetails() {
     const miscTotal = miscItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
     const subPay = miscItems.reduce((sum, item) => sum + (Number(item.subPay) || 0), 0);
     const amount = miscTotal;
+    const previousBillAmount = job?.repair_amount ?? 0;
+    const billingAmountChanged = amountToCents(amount) !== amountToCents(previousBillAmount);
     const miscDescription = miscItems
       .filter(item => item.description.trim())
       .map(item => item.description.trim())
@@ -3063,8 +3067,8 @@ export function JobDetails() {
       );
 
       // --- Phase advancement: Job Request or Work Order → Pending Work Order ---
-      // When admin sets a repair amount on a job that isn't already pending/approved
-      if (amount > 0 && (currentPhase === 'Job Request' || currentPhase === 'Work Order')) {
+      // Only customer-facing billing amount changes require another approval cycle.
+      if (amount > 0 && billingAmountChanged && (currentPhase === 'Job Request' || currentPhase === 'Work Order')) {
         const { data: pendingPhase, error: phaseErr } = await supabase
           .from('job_phases')
           .select('id')
@@ -3119,6 +3123,7 @@ export function JobDetails() {
           items: miscItems,
           previous_bill_total: job?.repair_amount ?? 0,
           previous_sub_pay_total: job?.repair_sub_pay ?? 0,
+          billing_amount_changed: billingAmountChanged,
         },
       });
 
