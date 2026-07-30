@@ -258,7 +258,7 @@ const createMiscAdditionalCostItem = (): MiscAdditionalCostItem => ({
   id: `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   description: '',
   price: 0,
-  subPay: null
+  subPay: 0
 });
 
 const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostItem[] => {
@@ -270,7 +270,7 @@ const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostIte
         id: typeof item?.id === 'string' && item.id ? item.id : `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         description: typeof item?.description === 'string' ? item.description : '',
         price: billAmount,
-        subPay: subPayAmount
+        subPay: subPayAmount ?? 0
       };
     })
     .filter(item => item.description.trim() || item.price > 0 || item.subPay != null);
@@ -285,7 +285,7 @@ const miscAdditionalCostItemsFromWorkOrder = (workOrder?: WorkOrder | null): Mis
       id: 'legacy-misc-additional-cost',
       description: workOrder?.repair_description || 'Miscellaneous additional cost',
       price: legacyAmount,
-      subPay: null
+      subPay: 0
     }];
   }
   return [];
@@ -367,10 +367,10 @@ export function JobDetails() {
 
   // Null-safe accessors to prevent crashes during slow loads
   const phaseLabel = job?.job_phase?.label ?? '—';
-  const canManageRepair = isAdmin || isJGManagement;
-  const canEditRepairInCurrentPhase = phaseLabel === 'Job Request' || phaseLabel === 'Work Order';
-  const isRepairLocked = canManageRepair && !canEditRepairInCurrentPhase;
   const isHistoricalSnapshotJob = isFrozenHistoricalSnapshot(phaseLabel, job?.historical_data_mode);
+  const canManageRepair = isAdmin || isJGManagement || isSuperAdmin;
+  const canEditRepairInCurrentPhase = canManageRepair && !isHistoricalSnapshotJob;
+  const isRepairLocked = canManageRepair && !canEditRepairInCurrentPhase;
   const unitSizeId = job?.unit_size?.id ?? null;
   const propertyName = job?.property?.name ?? '—';
   const workOrderNum = job?.work_order_num ?? '—';
@@ -641,6 +641,8 @@ export function JobDetails() {
     () => miscAdditionalCostItems.some(item => (item.description.trim() || item.price > 0) && item.subPay == null),
     [miscAdditionalCostItems]
   );
+
+  const hasMiscAdditionalCostsNeedingReview = miscAdditionalCostTotal > 0 && phaseLabel === 'Pending Work Order';
 
   const miscAdditionalCostInputTotal = useMemo(
     () => miscAdditionalCostItemsInput.reduce((sum, item) => sum + (Number(item.price) || 0), 0),
@@ -3017,7 +3019,7 @@ export function JobDetails() {
   const handleSaveRepairAmount = async () => {
     if (!jobId) return;
     if (!canEditRepairInCurrentPhase) {
-      toast.error(`Miscellaneous additional costs can only be edited in Job Request or Work Order. Current phase: ${phaseLabel}.`);
+      toast.error('Miscellaneous additional costs cannot be edited on frozen historical job data.');
       return;
     }
     const miscItems = normalizeMiscAdditionalCostItems(miscAdditionalCostItemsInput);
@@ -3068,7 +3070,7 @@ export function JobDetails() {
 
       // --- Phase advancement: Job Request or Work Order → Pending Work Order ---
       // Only customer-facing billing amount changes require another approval cycle.
-      if (amount > 0 && billingAmountChanged && (currentPhase === 'Job Request' || currentPhase === 'Work Order')) {
+      if (amount > 0 && billingAmountChanged && currentPhase !== 'Pending Work Order') {
         const { data: pendingPhase, error: phaseErr } = await supabase
           .from('job_phases')
           .select('id')
@@ -4293,6 +4295,8 @@ export function JobDetails() {
                 <div className={`border rounded-xl overflow-hidden transition-colors ${
                   isRepairLocked
                     ? 'bg-zinc-100 dark:bg-zinc-900/60 border-zinc-200 dark:border-zinc-700 opacity-70'
+                    : hasMiscAdditionalCostsNeedingReview
+                      ? 'bg-amber-50/60 dark:bg-amber-900/10 border-amber-300 dark:border-amber-700 shadow-sm shadow-amber-100 dark:shadow-none'
                     : 'bg-white dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-700/60'
                 }`}>
 
@@ -4336,7 +4340,12 @@ export function JobDetails() {
                       )}
                       {isRepairLocked && (
                         <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
-                          &nbsp;·&nbsp;Available only in Job Request or Work Order
+                          &nbsp;·&nbsp;Frozen historical data
+                        </span>
+                      )}
+                      {hasMiscAdditionalCostsNeedingReview && !repairExpanded && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                          Review before approval
                         </span>
                       )}
                     </div>
@@ -4351,7 +4360,7 @@ export function JobDetails() {
                       {isRepairLocked && (
                         <div className="px-4 py-3 bg-zinc-50 dark:bg-zinc-900/30 border-b border-zinc-200 dark:border-zinc-700/60">
                           <p className="text-sm text-zinc-600 dark:text-zinc-300">
-                            Miscellaneous additional costs can only be edited while the job is in <span className="font-semibold">Job Request</span> or <span className="font-semibold">Work Order</span>.
+                            Miscellaneous additional costs cannot be edited because this job is showing frozen historical data.
                           </p>
                           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
                             Current phase: {phaseLabel}
@@ -4361,7 +4370,11 @@ export function JobDetails() {
 
                       {/* Sub/admin miscellaneous items - only shown when relevant */}
                       {miscAdditionalCostItems.length > 0 && !isEditingRepairAmount && (
-                        <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-800/40 border-b border-zinc-100 dark:border-zinc-700/60">
+                        <div className={`px-4 py-2 border-b ${
+                          hasMiscAdditionalCostsNeedingReview
+                            ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800/60'
+                            : 'bg-zinc-50 dark:bg-zinc-800/40 border-zinc-100 dark:border-zinc-700/60'
+                        }`}>
                           <div className="flex items-center justify-between gap-3 mb-2">
                             <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Saved items</span>
                             <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{formatCurrency(miscAdditionalCostTotal)}</span>
@@ -4380,6 +4393,11 @@ export function JobDetails() {
                           {hasMiscAdditionalCostItemsMissingSubPay && (
                             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200">
                               Pay to Sub needs input for one or more saved items.
+                            </div>
+                          )}
+                          {hasMiscAdditionalCostsNeedingReview && (
+                            <div className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100">
+                              Subcontractor-submitted miscellaneous additional costs need admin review before any approval email is sent.
                             </div>
                           )}
                         </div>

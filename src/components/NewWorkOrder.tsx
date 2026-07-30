@@ -321,7 +321,7 @@ const createMiscAdditionalCostItem = (): MiscAdditionalCostItem => ({
   id: `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   description: '',
   price: 0,
-  subPay: null
+  subPay: 0
 });
 
 const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostItem[] => {
@@ -333,7 +333,7 @@ const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostIte
         id: typeof item?.id === 'string' && item.id ? item.id : `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         description: typeof item?.description === 'string' ? item.description : '',
         price: billAmount,
-        subPay: subPayAmount
+        subPay: subPayAmount ?? 0
       };
     })
     .filter(item => item.description.trim() || item.price > 0 || item.subPay != null);
@@ -1144,7 +1144,7 @@ const NewWorkOrder = () => {
                 id: 'legacy-misc-additional-cost',
                 description: existingWorkOrder.repair_description || 'Miscellaneous additional cost',
                 price: existingWorkOrder.repair_cost ?? 0,
-                subPay: null
+                subPay: 0
               }]
             : []),
         additional_comments: existingWorkOrder.additional_comments || ''
@@ -1765,13 +1765,13 @@ const NewWorkOrder = () => {
       // Build whitelisted payload (snake_case only; strip undefined)
       const dbPayload = buildWhitelistedPayload(workOrderPayload);
 
+      const miscAdditionalCostTotal = formData.misc_additional_cost_items.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
       const requiresApproval =
         Boolean(
           formData.has_extra_charges ||
           extraChargesItems.length > 0 ||
-          formData.has_sprinklers
-          // NOTE: repair_cost from the work order form is informational only.
-          // The admin sets repair_amount on the job, which drives the approval flow.
+          formData.has_sprinklers ||
+          miscAdditionalCostTotal > 0
         );
 
       // Get the target phase ID for phase advancement
