@@ -45,7 +45,7 @@ import {
   Mailbox
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
-import { formatDate, formatDisplayDate, formatTime } from '../lib/dateUtils';
+import { formatDate, formatDisplayDate, formatTime, formatDateTime } from '../lib/dateUtils';
 import { formatAddress, formatCurrency } from '../lib/utils/formatUtils';
 import { getPreviewUrl } from '../utils/storagePreviews';
 import { buildStoragePath, sanitizeFilename } from '../utils/storagePaths';
@@ -4700,7 +4700,7 @@ export function JobDetails() {
                                 {activity.title}
                               </h3>
                               <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                                {formatDate(activity.timestamp)}
+                                {formatDateTime(activity.timestamp)}
                               </span>
                             </div>
                             {activity.description && (
