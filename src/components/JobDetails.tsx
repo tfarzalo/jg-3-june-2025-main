@@ -642,6 +642,7 @@ export function JobDetails() {
     [miscAdditionalCostItems]
   );
 
+  const hasMiscAdditionalCostBilling = miscAdditionalCostTotal > 0 || (job?.repair_amount ?? 0) > 0;
   const hasMiscAdditionalCostsNeedingReview = miscAdditionalCostTotal > 0 && phaseLabel === 'Pending Work Order';
 
   const miscAdditionalCostInputTotal = useMemo(
@@ -4295,8 +4296,8 @@ export function JobDetails() {
                 <div className={`border rounded-xl overflow-hidden transition-colors ${
                   isRepairLocked
                     ? 'bg-zinc-100 dark:bg-zinc-900/60 border-zinc-200 dark:border-zinc-700 opacity-70'
-                    : hasMiscAdditionalCostsNeedingReview
-                      ? 'bg-amber-50/60 dark:bg-amber-900/10 border-amber-300 dark:border-amber-700 shadow-sm shadow-amber-100 dark:shadow-none'
+                    : hasMiscAdditionalCostBilling
+                      ? 'bg-red-50/80 dark:bg-red-950/20 border-red-400 dark:border-red-700 shadow-sm shadow-red-100 dark:shadow-none'
                     : 'bg-white dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-700/60'
                 }`}>
 
@@ -4344,7 +4345,7 @@ export function JobDetails() {
                         </span>
                       )}
                       {hasMiscAdditionalCostsNeedingReview && !repairExpanded && (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-800 dark:bg-red-900/40 dark:text-red-200">
                           Review before approval
                         </span>
                       )}
@@ -4371,8 +4372,8 @@ export function JobDetails() {
                       {/* Sub/admin miscellaneous items - only shown when relevant */}
                       {miscAdditionalCostItems.length > 0 && !isEditingRepairAmount && (
                         <div className={`px-4 py-2 border-b ${
-                          hasMiscAdditionalCostsNeedingReview
-                            ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800/60'
+                          hasMiscAdditionalCostBilling
+                            ? 'bg-red-50/80 dark:bg-red-950/20 border-red-200 dark:border-red-800/60'
                             : 'bg-zinc-50 dark:bg-zinc-800/40 border-zinc-100 dark:border-zinc-700/60'
                         }`}>
                           <div className="flex items-center justify-between gap-3 mb-2">
@@ -4396,7 +4397,7 @@ export function JobDetails() {
                             </div>
                           )}
                           {hasMiscAdditionalCostsNeedingReview && (
-                            <div className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100">
+                            <div className="mt-3 rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-semibold text-red-900 dark:border-red-700 dark:bg-red-950/30 dark:text-red-100">
                               Subcontractor-submitted miscellaneous additional costs need admin review before any approval email is sent.
                             </div>
                           )}
