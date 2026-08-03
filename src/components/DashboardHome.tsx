@@ -54,6 +54,9 @@ interface ActivityItem {
   user_full_name: string | null;
 }
 
+const actorNameFromApprovalReason = (reason: string | null | undefined) =>
+  reason?.match(/extra charges (?:approved|declined|rejected) by ([^.;-]+)/i)?.[1]?.trim() || null;
+
 export function DashboardHome() {
   const navigate = useNavigate();
   const { isSubcontractor, loading: roleLoading } = useUserRole();
@@ -425,7 +428,7 @@ export function DashboardHome() {
           job_work_order_num: job?.work_order_num || 0,
           job_unit_number: job?.unit_number || '',
           property_name: job?.property?.property_name || '',
-          user_full_name: user?.full_name || null
+          user_full_name: actorNameFromApprovalReason(change.change_reason) || user?.full_name || null
         } as ActivityItem;
       });
 

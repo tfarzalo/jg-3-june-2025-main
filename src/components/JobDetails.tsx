@@ -270,7 +270,7 @@ const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostIte
         id: typeof item?.id === 'string' && item.id ? item.id : `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         description: typeof item?.description === 'string' ? item.description : '',
         price: billAmount,
-        subPay: subPayAmount ?? 0
+        subPay: subPayAmount
       };
     })
     .filter(item => item.description.trim() || item.price > 0 || item.subPay != null);
@@ -583,7 +583,6 @@ export function JobDetails() {
     expiresAt: string;
     sentAt: string;
   } | null>(null);
-  const [pendingApprovalCountdown, setPendingApprovalCountdown] = useState('');
   const [reactivatedFromDecline, setReactivatedFromDecline] = useState(false);
   const effectiveApprovalDecision = useMemo(() => {
     if (reactivatedFromDecline) return null;
@@ -637,13 +636,23 @@ export function JobDetails() {
     [miscAdditionalCostItems]
   );
 
+  const miscAdditionalCostSubPayTotal = useMemo(
+    () => miscAdditionalCostItems.reduce((sum, item) => sum + (Number(item.subPay) || 0), 0),
+    [miscAdditionalCostItems]
+  );
+
+  const hasMiscAdditionalCostItemsMissingBillAmount = useMemo(
+    () => miscAdditionalCostItems.some(item => (item.description.trim() || (Number(item.subPay) || 0) > 0) && (Number(item.price) || 0) <= 0),
+    [miscAdditionalCostItems]
+  );
+
   const hasMiscAdditionalCostItemsMissingSubPay = useMemo(
     () => miscAdditionalCostItems.some(item => (item.description.trim() || item.price > 0) && item.subPay == null),
     [miscAdditionalCostItems]
   );
 
-  const hasMiscAdditionalCostBilling = miscAdditionalCostTotal > 0 || (job?.repair_amount ?? 0) > 0;
-  const hasMiscAdditionalCostsNeedingReview = miscAdditionalCostTotal > 0 && phaseLabel === 'Pending Work Order';
+  const hasMiscAdditionalCostBilling = miscAdditionalCostTotal > 0 || miscAdditionalCostSubPayTotal > 0 || (job?.repair_amount ?? 0) > 0;
+  const hasMiscAdditionalCostsNeedingReview = (miscAdditionalCostTotal > 0 || miscAdditionalCostSubPayTotal > 0) && phaseLabel === 'Pending Work Order';
 
   const miscAdditionalCostInputTotal = useMemo(
     () => miscAdditionalCostItemsInput.reduce((sum, item) => sum + (Number(item.price) || 0), 0),
@@ -657,6 +666,11 @@ export function JobDetails() {
 
   const hasMiscAdditionalCostInputMissingSubPay = useMemo(
     () => miscAdditionalCostItemsInput.some(item => (item.description.trim() || item.price > 0) && item.subPay == null),
+    [miscAdditionalCostItemsInput]
+  );
+
+  const hasMiscAdditionalCostInputMissingBillAmount = useMemo(
+    () => miscAdditionalCostItemsInput.some(item => (item.description.trim() || (Number(item.subPay) || 0) > 0) && (Number(item.price) || 0) <= 0),
     [miscAdditionalCostItemsInput]
   );
 
@@ -1369,28 +1383,6 @@ export function JobDetails() {
       channel.unsubscribe();
     };
   }, [jobId, fetchApprovalDecision, fetchPendingApproval, refetchJob]);
-
-  useEffect(() => {
-    if (!pendingApproval) {
-      setPendingApprovalCountdown('');
-      return;
-    }
-
-    const interval = setInterval(() => {
-      const timeLeft = new Date(pendingApproval.expiresAt).getTime() - Date.now();
-      if (timeLeft <= 0) {
-        setPendingApproval(null);
-        setPendingApprovalCountdown('');
-        clearInterval(interval);
-      } else {
-        const minutes = Math.floor(timeLeft / 60000);
-        const seconds = Math.floor((timeLeft % 60000) / 1000);
-        setPendingApprovalCountdown(`${minutes}:${seconds.toString().padStart(2, '0')}`);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [pendingApproval]);
 
   // Add effect to calculate and update total billing amount
   useEffect(() => {
@@ -2415,6 +2407,10 @@ export function JobDetails() {
 
   const handleApproveExtraCharges = async () => {
     if (!job) return;
+    if (hasMiscAdditionalCostItemsMissingBillAmount) {
+      toast.error('Enter Bill to Customer for miscellaneous additional costs before approving.');
+      return;
+    }
     
     try {
       const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -2996,6 +2992,10 @@ export function JobDetails() {
   };
 
   const handleSendExtraChargesNotification = () => {
+    if (hasMiscAdditionalCostItemsMissingBillAmount) {
+      toast.error('Enter Bill to Customer for miscellaneous additional costs before sending approval.');
+      return;
+    }
     setNotificationType('extra_charges');
     setShowEnhancedNotificationModal(true);
   };
@@ -3412,7 +3412,9 @@ export function JobDetails() {
     job?.work_order?.has_extra_charges ||
     unifiedExtraLines.length > 0 ||
     derivedExtraCharges ||
-    (job?.repair_amount ?? 0) > 0
+    (job?.repair_amount ?? 0) > 0 ||
+    miscAdditionalCostTotal > 0 ||
+    miscAdditionalCostSubPayTotal > 0
   );
   const notificationJob = useMemo(() => {
     if (!job) return job;
@@ -4339,6 +4341,11 @@ export function JobDetails() {
                           &nbsp;(Items: {formatCurrency(miscAdditionalCostTotal)})
                         </span>
                       )}
+                      {miscAdditionalCostTotal <= 0 && miscAdditionalCostSubPayTotal > 0 && !repairExpanded && (
+                        <span className="text-xs text-zinc-400 dark:text-zinc-500 truncate">
+                          &nbsp;(Sub Pay: {formatCurrency(miscAdditionalCostSubPayTotal)})
+                        </span>
+                      )}
                       {isRepairLocked && (
                         <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
                           &nbsp;·&nbsp;Frozen historical data
@@ -4378,7 +4385,9 @@ export function JobDetails() {
                         }`}>
                           <div className="flex items-center justify-between gap-3 mb-2">
                             <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Saved items</span>
-                            <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{formatCurrency(miscAdditionalCostTotal)}</span>
+                            <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                              Bill {formatCurrency(miscAdditionalCostTotal)} / Sub {formatCurrency(miscAdditionalCostSubPayTotal)}
+                            </span>
                           </div>
                           <div className="space-y-1">
                             {miscAdditionalCostItems.map(item => (
@@ -4391,6 +4400,11 @@ export function JobDetails() {
                               </div>
                             ))}
                           </div>
+                          {hasMiscAdditionalCostItemsMissingBillAmount && (
+                            <div className="mt-3 rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-semibold text-red-900 dark:border-red-700 dark:bg-red-950/30 dark:text-red-100">
+                              Bill to Customer needs input for one or more subcontractor-submitted items before approval can be sent.
+                            </div>
+                          )}
                           {hasMiscAdditionalCostItemsMissingSubPay && (
                             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200">
                               Pay to Sub needs input for one or more saved items.
@@ -4415,6 +4429,11 @@ export function JobDetails() {
                           {hasMiscAdditionalCostInputMissingSubPay && (
                             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200">
                               Pay to Sub needs input for one or more items.
+                            </div>
+                          )}
+                          {hasMiscAdditionalCostInputMissingBillAmount && (
+                            <div className="rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-900 dark:border-red-700 dark:bg-red-950/30 dark:text-red-100">
+                              Bill to Customer needs input for one or more subcontractor-submitted items before approval can be sent.
                             </div>
                           )}
                           {miscAdditionalCostItemsInput.length === 0 ? (
@@ -5161,6 +5180,7 @@ export function JobDetails() {
               const needsExtraChargesApproval =
                 isPendingWorkOrder && !effectiveApprovalDecision?.decision && hasExtraChargesForApproval;
               const hasActiveApprovalEmail = needsExtraChargesApproval && Boolean(pendingApproval);
+              const isApprovalMissingBillAmount = needsExtraChargesApproval && hasMiscAdditionalCostItemsMissingBillAmount;
               const showBlueVariant =
                 isPendingWorkOrder &&
                 !needsExtraChargesApproval &&
@@ -5179,7 +5199,9 @@ export function JobDetails() {
               const itemLabel = job.work_order?.has_sprinklers ? 'Sprinkler Paint' : 'Drywall Repairs';
               const message = needsExtraChargesApproval
                 ? (hasActiveApprovalEmail
-                    ? `An approval email was sent ${pendingApproval?.sentAt ? formatDate(pendingApproval.sentAt) : 'recently'}. A new approval can be sent in ${pendingApprovalCountdown || 'a moment'}.`
+                    ? `An approval email was sent ${pendingApproval?.sentAt ? formatDate(pendingApproval.sentAt) : 'recently'}. You can send another approval email now if needed.`
+                    : isApprovalMissingBillAmount
+                      ? 'Bill to Customer needs input for subcontractor-submitted miscellaneous additional costs before approval can be sent.'
                     : (job.work_order?.has_sprinklers
                         ? 'Extra charges need approval. The sprinkler update should be included in the approval email via template sections.'
                         : 'Extra charges need approval. Recommended: send approval email.'))
@@ -5196,11 +5218,19 @@ export function JobDetails() {
                       <div className="mt-3 flex flex-col md:flex-row md:items-center gap-3">
                         <button
                           onClick={() => {
+                            if (isApprovalMissingBillAmount) {
+                              toast.error('Enter Bill to Customer for miscellaneous additional costs before sending approval.');
+                              return;
+                            }
                             setNotificationType(recommended);
                             setShowEnhancedNotificationModal(true);
                           }}
-                          disabled={hasActiveApprovalEmail}
-                          title={hasActiveApprovalEmail ? 'An approval email is already active. Wait for it to expire to send a new one.' : undefined}
+                          disabled={isApprovalMissingBillAmount}
+                          title={
+                            isApprovalMissingBillAmount
+                                ? 'Enter Bill to Customer for miscellaneous additional costs before sending approval.'
+                                : undefined
+                          }
                           className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <Mail className="h-4 w-4 mr-2" />
@@ -5208,9 +5238,16 @@ export function JobDetails() {
                         </button>
                         {(needsExtraChargesApproval && (isAdmin || isJGManagement)) && (
                           <button
-                            onClick={handleApproveExtraCharges}
+                            onClick={() => {
+                              if (isApprovalMissingBillAmount) {
+                                toast.error('Enter Bill to Customer for miscellaneous additional costs before approving.');
+                                return;
+                              }
+                              handleApproveExtraCharges();
+                            }}
+                            disabled={isApprovalMissingBillAmount}
                             className="inline-flex items-center px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition-colors"
-                            title="Bypass email and approve directly"
+                            title={isApprovalMissingBillAmount ? 'Enter Bill to Customer for miscellaneous additional costs before approving.' : 'Bypass email and approve directly'}
                           >
                             <CheckCircle className="h-4 w-4 mr-2" />
                             Approve Manually

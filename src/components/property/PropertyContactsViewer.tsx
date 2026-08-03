@@ -91,7 +91,9 @@ interface PersonCard {
   email: string;
   phones: string[];
   roles: string[];            // display labels e.g. "Community Manager", "Accounts Payable"
-  isPrimary: boolean;
+  isPrimaryContact: boolean;
+  isPrimaryApproval: boolean;
+  isPrimaryNotification: boolean;
   receivesApproval: boolean;
   receivesNotifications: boolean;
 }
@@ -136,7 +138,9 @@ function buildCards(
     phone: string,
     additionalPhones: string[] | null | undefined,
     role: string,
-    isPrimary: boolean,
+    isPrimaryContact: boolean,
+    isPrimaryApproval: boolean,
+    isPrimaryNotification: boolean,
     receivesApproval: boolean,
     receivesNotifications: boolean,
   ) => {
@@ -146,7 +150,9 @@ function buildCards(
       const card = map.get(key)!;
       if (role && !card.roles.includes(role)) card.roles.push(role);
       card.phones = normalizePhoneList([...card.phones, phone, ...(additionalPhones || [])]);
-      card.isPrimary = card.isPrimary || isPrimary;
+      card.isPrimaryContact = card.isPrimaryContact || isPrimaryContact;
+      card.isPrimaryApproval = card.isPrimaryApproval || isPrimaryApproval;
+      card.isPrimaryNotification = card.isPrimaryNotification || isPrimaryNotification;
       card.receivesApproval = card.receivesApproval || receivesApproval;
       card.receivesNotifications = card.receivesNotifications || receivesNotifications;
     } else {
@@ -156,7 +162,9 @@ function buildCards(
         email: email || '',
         phones: normalizePhoneList([phone, ...(additionalPhones || [])]),
         roles: role ? [role] : [],
-        isPrimary,
+        isPrimaryContact,
+        isPrimaryApproval,
+        isPrimaryNotification,
         receivesApproval,
         receivesNotifications,
       });
@@ -170,6 +178,8 @@ function buildCards(
     sys.community_manager.name, sys.community_manager.email, sys.community_manager.phone, sys.community_manager.additional_phones,
     sys.community_manager.title || 'Community Manager',
     false,
+    !!sysRoles.community_manager?.primaryApproval,
+    !!sysRoles.community_manager?.primaryNotification,
     !!(sysRoles.community_manager?.approvalRecipient || sysRoles.community_manager?.primaryApproval),
     !!(sysRoles.community_manager?.notificationRecipient || sysRoles.community_manager?.primaryNotification),
   );
@@ -177,6 +187,8 @@ function buildCards(
     sys.maintenance_supervisor.name, sys.maintenance_supervisor.email, sys.maintenance_supervisor.phone, sys.maintenance_supervisor.additional_phones,
     sys.maintenance_supervisor.title || 'Maintenance Supervisor',
     false,
+    !!sysRoles.maintenance_supervisor?.primaryApproval,
+    !!sysRoles.maintenance_supervisor?.primaryNotification,
     !!(sysRoles.maintenance_supervisor?.approvalRecipient || sysRoles.maintenance_supervisor?.primaryApproval),
     !!(sysRoles.maintenance_supervisor?.notificationRecipient || sysRoles.maintenance_supervisor?.primaryNotification),
   );
@@ -185,6 +197,8 @@ function buildCards(
     sys.primary_contact.name, sys.primary_contact.email, sys.primary_contact.phone, sys.primary_contact.additional_phones,
     sys.primary_contact.title || 'Primary Contact',
     true,
+    !!sysRoles.primary_contact?.primaryApproval,
+    !!sysRoles.primary_contact?.primaryNotification,
     !!(sysRoles.primary_contact?.approvalRecipient || sysRoles.primary_contact?.primaryApproval),
     !!(sysRoles.primary_contact?.notificationRecipient || sysRoles.primary_contact?.primaryNotification),
   );
@@ -192,6 +206,8 @@ function buildCards(
     sys.ap.name, sys.ap.email, sys.ap.phone, sys.ap.additional_phones,
     sys.ap.title || 'Accounts Payable',
     false,
+    !!sysRoles.ap?.primaryApproval,
+    !!sysRoles.ap?.primaryNotification,
     !!(sysRoles.ap?.approvalRecipient || sysRoles.ap?.primaryApproval),
     !!(sysRoles.ap?.notificationRecipient || sysRoles.ap?.primaryNotification),
   );
@@ -203,6 +219,8 @@ function buildCards(
       c.name, c.email, c.phone, c.additional_phones,
       displayRole,
       c.is_primary_contact || false,
+      c.is_primary_approval_recipient || false,
+      c.is_primary_notification_recipient || false,
       c.receives_approval_emails ?? c.is_approval_recipient ?? false,
       c.receives_notification_emails ?? c.is_notification_recipient ?? false,
     );
@@ -269,9 +287,21 @@ const ContactCard: React.FC<{ card: PersonCard }> = ({ card }) => {
       {/* Status badges */}
       <div className="flex flex-wrap gap-1 pt-2 border-t border-gray-100 dark:border-[#2D3B4E]">
         <StatusBadge
-          active={card.isPrimary}
-          label="Primary"
+          active={card.isPrimaryContact}
+          label="Primary Contact"
           activeClass="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+          inactiveClass="bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"
+        />
+        <StatusBadge
+          active={card.isPrimaryApproval}
+          label="Primary Approval"
+          activeClass="bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+          inactiveClass="bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"
+        />
+        <StatusBadge
+          active={card.isPrimaryNotification}
+          label="Primary Notification"
+          activeClass="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
           inactiveClass="bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"
         />
         <StatusBadge

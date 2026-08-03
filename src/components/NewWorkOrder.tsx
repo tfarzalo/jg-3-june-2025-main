@@ -339,6 +339,25 @@ const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostIte
     .filter(item => item.description.trim() || item.price > 0 || item.subPay != null);
 };
 
+const normalizeSubcontractorMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostItem[] => {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item: unknown) => {
+      const source = item && typeof item === 'object'
+        ? item as Partial<MiscAdditionalCostItem>
+        : {};
+      const { billAmount, subPayAmount } = getMiscAdditionalCostAmounts(source);
+      const submittedAmount = subPayAmount ?? billAmount;
+      return {
+        id: typeof source.id === 'string' && source.id ? source.id : `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        description: typeof source.description === 'string' ? source.description : '',
+        price: 0,
+        subPay: submittedAmount
+      };
+    })
+    .filter(item => item.description.trim() || (Number(item.subPay) || 0) > 0);
+};
+
 // Utility functions for building and validating DB payloads
 const buildWorkOrderPayload = (
   formData: any, 
@@ -446,12 +465,13 @@ const buildWorkOrderPayload = (
     extra_charges_description: formData.extra_charges_description || '',
     extra_hours: toDbNumber(formData.extra_hours) || 0,
     extra_charges_line_items: formData.has_extra_charges ? extraChargesItems : [],
-    repair_cost: formData.misc_additional_cost_items.reduce((sum, item) => sum + (Number(item.price) || 0), 0),
+    repair_cost: normalizeSubcontractorMiscAdditionalCostItems(formData.misc_additional_cost_items)
+      .reduce((sum, item) => sum + (Number(item.subPay) || 0), 0),
     repair_description: formData.misc_additional_cost_items
       .filter(item => item.description.trim())
       .map(item => item.description.trim())
       .join('; '),
-    misc_additional_cost_items: normalizeMiscAdditionalCostItems(formData.misc_additional_cost_items),
+    misc_additional_cost_items: normalizeSubcontractorMiscAdditionalCostItems(formData.misc_additional_cost_items),
     additional_comments: formData.additional_comments || '',
     prepared_by: '', // Will be set during submission - this gets overridden
     ceiling_billing_detail_id: nilIfEmpty(ceilingBillingDetailId),
@@ -1765,7 +1785,8 @@ const NewWorkOrder = () => {
       // Build whitelisted payload (snake_case only; strip undefined)
       const dbPayload = buildWhitelistedPayload(workOrderPayload);
 
-      const miscAdditionalCostTotal = formData.misc_additional_cost_items.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+      const miscAdditionalCostTotal = normalizeSubcontractorMiscAdditionalCostItems(formData.misc_additional_cost_items)
+        .reduce((sum, item) => sum + (Number(item.subPay) || 0), 0);
       const requiresApproval =
         Boolean(
           formData.has_extra_charges ||
@@ -2721,7 +2742,7 @@ const NewWorkOrder = () => {
                 {/* Content */}
                 <div className="p-6 space-y-4">
                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                    If any miscellaneous additional costs apply to this job, add each item below with a description and price.
+                    If any miscellaneous additional costs apply to this job, add each item below with a description and amount.
                   </p>
 
                   {formData.misc_additional_cost_items.length === 0 ? (
@@ -2765,7 +2786,7 @@ const NewWorkOrder = () => {
                             </div>
                             <div>
                               <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                                Price
+                                Amount
                               </label>
                               <div className="relative">
                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 font-medium">$</span>
@@ -2773,11 +2794,11 @@ const NewWorkOrder = () => {
                                   type="number"
                                   min="0"
                                   step="0.01"
-                                  value={item.price === 0 ? '' : item.price}
+                                  value={(item.subPay ?? item.price) === 0 ? '' : (item.subPay ?? item.price)}
                                   onChange={(e) => setFormData(prev => ({
                                     ...prev,
                                     misc_additional_cost_items: prev.misc_additional_cost_items.map(existing =>
-                                      existing.id === item.id ? { ...existing, price: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 } : existing
+                                      existing.id === item.id ? { ...existing, price: 0, subPay: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 } : existing
                                     )
                                   }))}
                                   placeholder="0.00"
@@ -2790,7 +2811,7 @@ const NewWorkOrder = () => {
                       ))}
                       <div className="flex items-center justify-between text-sm font-semibold text-gray-700 dark:text-gray-200 border-t border-gray-200 dark:border-[#2D3B4E] pt-3">
                         <span>Total</span>
-                        <span>{formatCurrency(formData.misc_additional_cost_items.reduce((sum, item) => sum + (Number(item.price) || 0), 0))}</span>
+                        <span>{formatCurrency(formData.misc_additional_cost_items.reduce((sum, item) => sum + (Number(item.subPay ?? item.price) || 0), 0))}</span>
                       </div>
                     </div>
                   )}

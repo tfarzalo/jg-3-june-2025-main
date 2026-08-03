@@ -91,6 +91,8 @@ export async function getEmailRecipients(
       email: string | null;
       secondaryEmail: string | null;
       isPrimary: boolean;
+      source: 'system' | 'custom';
+      key?: string;
     }> = [];
 
     // System contacts - now using individual boolean columns
@@ -147,6 +149,8 @@ export async function getEmailRecipients(
           email: sysContact.email,
           secondaryEmail: sysContact.secondaryEmail || null,
           isPrimary: isPrimary || false,
+          source: 'system',
+          key: sysContact.key,
         });
       }
     }
@@ -162,6 +166,8 @@ export async function getEmailRecipients(
           email: contact.email,
           secondaryEmail: contact.secondary_email || null,
           isPrimary: isPrimary || false,
+          source: 'custom',
+          key: contact.id,
         });
       }
     }
@@ -177,7 +183,9 @@ export async function getEmailRecipients(
     }
 
     // Find primary, or use first recipient if none marked primary
-    let primary = allRecipients.find(r => r.isPrimary);
+    let primary =
+      allRecipients.find(r => r.isPrimary && r.source === 'custom') ||
+      allRecipients.find(r => r.isPrimary);
     if (!primary && allRecipients.length > 0) {
       // Fallback: use community manager if present, otherwise first
       primary = allRecipients.find(r => 

@@ -4,6 +4,7 @@ import { Job } from '../hooks/useJobDetails';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { fetchContactTemplateTokens, replaceTemplateTokens, type ContactTemplateTokens } from '../lib/emailTemplateVariables';
+import { getEmailRecipients } from '../lib/contacts/emailRecipientsAdapter';
 
 interface NotificationEmailModalProps {
   isOpen: boolean;
@@ -169,28 +170,17 @@ const NotificationEmailModal: React.FC<NotificationEmailModalProps> = ({
         setBccEmails('');
         return;
       }
-      const { data: prop, error } = await supabase
-        .from('properties')
-        .select(`
-          primary_contact_email,
-          ap_email,
-          community_manager_email,
-          maintenance_supervisor_email,
-          community_manager_secondary_email,
-          maintenance_supervisor_secondary_email,
-          ap_secondary_email,
-          primary_contact_secondary_email
-        `)
-        .eq('id', job.property.id)
-        .single();
-      const preferred = error
-        ? (job?.property?.primary_contact_email || job?.property?.ap_email || '')
-        : (prop?.primary_contact_email || prop?.ap_email || '');
-      const secondaryEmail = await resolveSecondaryEmail(job.property.id, preferred, prop);
+      const recipients = await getEmailRecipients(job.property.id, 'notification', {
+        fallbackToManager: true
+      });
       const contactTokens = await fetchContactTemplateTokens(job.property.id);
+      const preferred = recipients.to.join(', ') || job?.property?.primary_contact_email || job?.property?.ap_email || '';
+      const secondaryEmail = !recipients.cc.length && preferred && !preferred.includes(',')
+        ? await resolveSecondaryEmail(job.property.id, preferred)
+        : '';
       setRecipientEmail(preferred);
-      setCcEmails(secondaryEmail || '');
-      setBccEmails('');
+      setCcEmails(recipients.cc.join(', ') || secondaryEmail || '');
+      setBccEmails(recipients.bcc.join(', '));
       setContactTemplateTokens(contactTokens);
     } catch {
       const preferred =

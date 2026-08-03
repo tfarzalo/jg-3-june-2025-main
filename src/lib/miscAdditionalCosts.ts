@@ -17,13 +17,6 @@ export const getMiscAdditionalCostAmounts = (
   const parsedPrice = parseAmount(item.price);
   const parsedSubPay = parseAmount(item.subPay ?? item.sub_pay ?? item.sub_pay_amount);
 
-  if ((parsedPrice === null || parsedPrice <= 0) && parsedSubPay !== null && parsedSubPay > 0) {
-    return {
-      billAmount: parsedSubPay,
-      subPayAmount: null
-    };
-  }
-
   return {
     billAmount: parsedPrice ?? 0,
     subPayAmount: parsedSubPay

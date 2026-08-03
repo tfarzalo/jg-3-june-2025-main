@@ -165,7 +165,15 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
         'Miscellaneous Additional Cost',
         repairCost > 0 ? `Items total: ${formatCurrency(repairCost)}` : '',
         miscAdditionalCostItems.length > 0
-          ? miscAdditionalCostItems.map(item => `${item.description || 'Item'} (${formatCurrency(item.price)})`).join('; ')
+          ? miscAdditionalCostItems.map(item => {
+              const billAmount = Number(item.price) || 0;
+              const subPayAmount = Number(item.subPay) || 0;
+              const amounts = [
+                billAmount > 0 ? `Bill ${formatCurrency(billAmount)}` : '',
+                subPayAmount > 0 ? `Sub ${formatCurrency(subPayAmount)}` : ''
+              ].filter(Boolean).join(' / ');
+              return `${item.description || 'Item'}${amounts ? ` (${amounts})` : ''}`;
+            }).join('; ')
           : (repairDescription || '')
       ].filter(Boolean).join(' - '),
       unit_label: '—',

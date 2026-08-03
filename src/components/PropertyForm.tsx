@@ -34,6 +34,10 @@ interface PropertyContact {
   is_notification_recipient?: boolean;
   is_primary_approval_recipient?: boolean;
   is_primary_notification_recipient?: boolean;
+  is_primary_contact?: boolean;
+  receives_approval_emails?: boolean;
+  receives_notification_emails?: boolean;
+  custom_title?: string | null;
   is_new?: boolean;
 }
 
@@ -208,6 +212,9 @@ export function PropertyForm() {
         }
         if (field === 'is_accounts_receivable_contact' && value === true) {
           return { ...contact, is_accounts_receivable_contact: false };
+        }
+        if (field === 'is_primary_contact' && value === true) {
+          return { ...contact, is_primary_contact: false };
         }
         if (field === 'is_primary_approval_recipient' && value === true) {
           return { ...contact, is_primary_approval_recipient: false };
@@ -394,12 +401,21 @@ export function PropertyForm() {
         ap_is_primary_notification: systemContactRoles.ap?.primaryNotification || false,
       };
 
-      // Set primary contact fields based on which contact has the subcontractor role
+      // Set primary contact fields from the contact marked Primary Contact.
+      // Older data used the subcontractor contact for this slot, so keep that as a fallback.
       const subcontractorContact = Object.entries(systemContactRoles).find(
         ([_, roles]) => roles.subcontractor
       );
+      const customPrimaryContact = contacts.find(c => (c as any).is_primary_contact);
       
-      if (subcontractorContact) {
+      if (customPrimaryContact) {
+        cleanedFormData.primary_contact_name = customPrimaryContact.name;
+        cleanedFormData.primary_contact_role = customPrimaryContact.custom_title || customPrimaryContact.position;
+        cleanedFormData.primary_contact_email = customPrimaryContact.email;
+        cleanedFormData.primary_contact_phone = customPrimaryContact.phone;
+        cleanedFormData.primary_contact_additional_phones = normalizePhoneList(customPrimaryContact.additional_phones || []);
+        cleanedFormData.primary_contact_secondary_email = customPrimaryContact.secondary_email || null;
+      } else if (subcontractorContact) {
         const [key] = subcontractorContact;
         const contact = systemContacts[key as SystemContactKey];
         cleanedFormData.primary_contact_name = contact.name;
@@ -407,6 +423,7 @@ export function PropertyForm() {
         cleanedFormData.primary_contact_email = contact.email;
         cleanedFormData.primary_contact_phone = contact.phone;
         cleanedFormData.primary_contact_additional_phones = normalizePhoneList(contact.additional_phones || []);
+        cleanedFormData.primary_contact_secondary_email = contact.secondary_email || null;
       } else {
         // Check custom contacts
         const customSubContact = contacts.find(c => c.is_subcontractor_contact);
@@ -416,6 +433,7 @@ export function PropertyForm() {
           cleanedFormData.primary_contact_email = customSubContact.email;
           cleanedFormData.primary_contact_phone = customSubContact.phone;
           cleanedFormData.primary_contact_additional_phones = normalizePhoneList(customSubContact.additional_phones || []);
+          cleanedFormData.primary_contact_secondary_email = customSubContact.secondary_email || null;
         } else {
           // Fallback to community manager
           cleanedFormData.primary_contact_name = systemContacts.community_manager.name;
@@ -423,6 +441,7 @@ export function PropertyForm() {
           cleanedFormData.primary_contact_email = systemContacts.community_manager.email;
           cleanedFormData.primary_contact_phone = systemContacts.community_manager.phone;
           cleanedFormData.primary_contact_additional_phones = normalizePhoneList(systemContacts.community_manager.additional_phones || []);
+          cleanedFormData.primary_contact_secondary_email = systemContacts.community_manager.secondary_email || null;
         }
       }
 

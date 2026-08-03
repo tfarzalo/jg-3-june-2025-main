@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../utils/supabase';
 import { toast } from 'sonner';
 import { Loader2, Plus, Trash2, AlertTriangle, Lock, Pencil, Check, X } from 'lucide-react';
+import {
+  describeBillingCategoryDeleteBlockers,
+  describeJobCategoryDeleteBlockers
+} from '../../lib/deleteBlockers';
 
 interface JobCategory {
   id: string;
@@ -208,7 +212,14 @@ export function JobCategoryManager() {
             .delete()
             .in('category_id', billingCatIds);
           
-          if (bdError) console.error("Error deleting billing details:", bdError);
+          if (bdError) {
+            console.error("Error deleting billing details:", bdError);
+            if (bdError.code === '23503') {
+              const blockerMessage = await describeBillingCategoryDeleteBlockers(billingCatIds);
+              throw new Error(blockerMessage || `Cannot delete "${category.name}" because related billing details are associated with jobs or work orders.`);
+            }
+            throw bdError;
+          }
 
           // 3. Delete the billing categories themselves
           const { error: bcError } = await supabase
@@ -218,7 +229,11 @@ export function JobCategoryManager() {
             
           if (bcError) {
              console.error("Error deleting billing categories:", bcError);
-             // We continue even if this fails, as the main goal is to hide the category
+             if (bcError.code === '23503') {
+               const blockerMessage = await describeBillingCategoryDeleteBlockers(billingCatIds);
+               throw new Error(blockerMessage || `Cannot delete "${category.name}" because related billing categories are associated with jobs or work orders.`);
+             }
+             throw bcError;
           }
         }
 
@@ -231,6 +246,10 @@ export function JobCategoryManager() {
 
         if (error) {
              console.error("Supabase error hiding job category:", error);
+             if (error.code === '23503') {
+               const blockerMessage = await describeJobCategoryDeleteBlockers(category);
+               throw new Error(blockerMessage || `Cannot delete "${category.name}" because it is associated with jobs or work orders.`);
+             }
              throw error;
         }
 
@@ -242,7 +261,14 @@ export function JobCategoryManager() {
         fetchCategories();
         
         // Show more detailed error if possible
-        const errorMessage = err?.message || 'Failed to delete category.';
+        let errorMessage = err?.message || 'Failed to delete category.';
+        if (err?.code === '23503') {
+          try {
+            errorMessage = await describeJobCategoryDeleteBlockers(category) || errorMessage;
+          } catch (lookupErr) {
+            console.error('Error describing job category delete blockers:', lookupErr);
+          }
+        }
         toast.error(errorMessage);
       } finally {
         setProcessingId(null);

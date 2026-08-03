@@ -151,6 +151,13 @@ const NOTIFICATION_TYPE_LABELS: Record<EnhancedPropertyNotificationModalProps['n
   drywall_repairs: 'Drywall Repairs Notification',
   general_work_order: 'Work Order Email',
 };
+type SentEmailHistoryItem = {
+  id: string;
+  purpose: string;
+  recipient: string;
+  subject: string;
+  sentAt: string;
+};
 const BLANK_GENERAL_WORK_ORDER_TEMPLATE_ID = '__blank_general_work_order__';
 
 const formatCurrency = (value?: number | null) => {
@@ -244,10 +251,9 @@ export function EnhancedPropertyNotificationModal({
   const [sending, setSending] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [apContactName, setApContactName] = useState('');
+  const [primaryRecipientName, setPrimaryRecipientName] = useState('');
   const [contactTemplateTokens, setContactTemplateTokens] = useState<ContactTemplateTokens>({});
-  const [pendingApproval, setPendingApproval] = useState<{ tokenId: string; expiresAt: string; sentAt: string } | null>(null);
-  const [countdownTime, setCountdownTime] = useState('');
-  const isApprovalBlocked = notificationType === 'extra_charges' && Boolean(pendingApproval);
+  const [sentEmailHistory, setSentEmailHistory] = useState<SentEmailHistoryItem[]>([]);
   const isGeneralWorkOrderEmail = notificationType === 'general_work_order';
 
   const steps = useMemo(
@@ -394,6 +400,13 @@ export function EnhancedPropertyNotificationModal({
       const contactTokens = await fetchContactTemplateTokens(job.property.id);
       setContactTemplateTokens(contactTokens);
       setApContactName(contactTokens.ap_contact_name || job.property?.ap_name || '');
+      setPrimaryRecipientName(
+        contactTokens.recipient_name ||
+        recipients.primaryRecipientName ||
+        contactTokens.primary_approval_contact_name ||
+        contactTokens.primary_contact_name ||
+        ''
+      );
       
     } catch (error) {
       console.error(`❌ Error loading ${mode} recipients:`, error);
@@ -401,6 +414,7 @@ export function EnhancedPropertyNotificationModal({
       const fallback = job.property?.ap_email || '';
       setRecipientEmail(fallback);
       setApContactName(job.property?.ap_name || '');
+      setPrimaryRecipientName(job.property?.ap_name || '');
       setContactTemplateTokens({});
     }
   }, [job, notificationType]);
@@ -602,6 +616,7 @@ export function EnhancedPropertyNotificationModal({
       const completionDate = job.completed_date ? formatDate(job.completed_date) : '';
       const propertyAddress = formatAddress(job);
       const apName = apContactName || job.property?.ap_name || '';
+      const recipientName = primaryRecipientName || contactTemplateTokens.recipient_name || apName;
       const extraCharges = job.extra_charges_details;
 
       const replacements: Record<string, string> = {};
@@ -639,7 +654,7 @@ export function EnhancedPropertyNotificationModal({
       assignTokens(apName, ['ap_contact.name', 'ap_contact_name']);
 
       // Add common recipient name variations that might appear in templates
-      assignTokens(apName, [
+      assignTokens(recipientName, [
         'recipient_name',
         'contact_name', 
         'name',
@@ -687,7 +702,7 @@ export function EnhancedPropertyNotificationModal({
         
       return replaceTemplateTokens(processed, contactTemplateTokens);
     },
-    [job, apContactName, contactTemplateTokens]
+    [job, apContactName, primaryRecipientName, contactTemplateTokens]
   );
 
   const processTemplate = useCallback(
@@ -703,53 +718,65 @@ export function EnhancedPropertyNotificationModal({
     [job, applyEmailTokens]
   );
 
-  const checkPendingApproval = useCallback(async () => {
-    if (!job || notificationType !== 'extra_charges') {
-      setPendingApproval(null);
-      return null;
+  const fetchSentEmailHistory = useCallback(async () => {
+    if (!job?.id) {
+      setSentEmailHistory([]);
+      return;
     }
 
-    try {
-      const { data, error } = await supabase
-        .from('approval_tokens')
-        .select('id, expires_at, used_at, created_at')
-        .eq('job_id', job.id)
-        .eq('approval_type', 'extra_charges')
-        .is('used_at', null)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+    const { data, error } = await supabase
+      .from('activity_log')
+      .select('id, description, metadata, created_at')
+      .eq('entity_type', 'job')
+      .eq('entity_id', job.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
 
-      if (error || !data) {
-        setPendingApproval(null);
-        return null;
-      }
-
-      const expiresAt = new Date(data.expires_at);
-      if (expiresAt.getTime() <= Date.now()) {
-        setPendingApproval(null);
-        return null;
-      }
-
-      const pending = { tokenId: data.id, expiresAt: data.expires_at, sentAt: data.created_at };
-      setPendingApproval(pending);
-      return pending;
-    } catch (error) {
-      console.error('Error checking pending approval:', error);
-      setPendingApproval(null);
-      return null;
+    if (error) {
+      console.warn('Failed to load sent email history:', error);
+      setSentEmailHistory([]);
+      return;
     }
-  }, [job, notificationType]);
+
+    const history = (data || [])
+      .map((activity): SentEmailHistoryItem | null => {
+        const metadata = (activity.metadata || {}) as Record<string, unknown>;
+        const eventType = typeof metadata.event_type === 'string' ? metadata.event_type : '';
+        if (!eventType.endsWith('_email_sent')) return null;
+
+        const notificationTypeValue = typeof metadata.notification_type === 'string'
+          ? metadata.notification_type
+          : '';
+        const purpose = typeof metadata.email_purpose === 'string'
+          ? metadata.email_purpose
+          : NOTIFICATION_TYPE_LABELS[notificationTypeValue as EnhancedPropertyNotificationModalProps['notificationType']] || 'Email';
+        const recipient = typeof metadata.recipient_email === 'string'
+          ? metadata.recipient_email
+          : activity.description?.replace(/^.* sent to /i, '') || 'Unknown recipient';
+        const subject = typeof metadata.subject === 'string' ? metadata.subject : '';
+
+        return {
+          id: activity.id,
+          purpose,
+          recipient,
+          subject,
+          sentAt: activity.created_at,
+        };
+      })
+      .filter((item): item is SentEmailHistoryItem => Boolean(item));
+
+    setSentEmailHistory(history);
+  }, [job?.id]);
 
   useEffect(() => {
     if (isOpen && job) {
       initializeRecipient();
       fetchModalData();
-      checkPendingApproval();
+      fetchSentEmailHistory();
       setCurrentStep(1);
       setSelectedTemplate(null);
     }
-  }, [isOpen, job, fetchModalData, initializeRecipient, checkPendingApproval]);
+  }, [isOpen, job, fetchModalData, initializeRecipient, fetchSentEmailHistory]);
 
   useEffect(() => {
     if (selectedTemplate) {
@@ -778,28 +805,6 @@ export function EnhancedPropertyNotificationModal({
       .map((img) => img.id);
     setSelectedImageIds(ids);
   }, [selectedTemplate, jobImages]);
-
-  useEffect(() => {
-    if (!pendingApproval) {
-      setCountdownTime('');
-      return;
-    }
-
-    const interval = setInterval(() => {
-      const timeLeft = new Date(pendingApproval.expiresAt).getTime() - Date.now();
-      if (timeLeft <= 0) {
-        setPendingApproval(null);
-        setCountdownTime('');
-        clearInterval(interval);
-      } else {
-        const minutes = Math.floor(timeLeft / 60000);
-        const seconds = Math.floor((timeLeft % 60000) / 1000);
-        setCountdownTime(`${minutes}:${seconds.toString().padStart(2, '0')}`);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [pendingApproval]);
 
   // Auto-expand CC/BCC section when there are CC or BCC emails
   useEffect(() => {
@@ -948,7 +953,7 @@ export function EnhancedPropertyNotificationModal({
       miscItems.forEach((item) => {
         const { billAmount, subPayAmount } = getMiscAdditionalCostAmounts(item);
         const normalizedSubPay = subPayAmount ?? 0;
-        if (billAmount <= 0 && !item.description?.trim()) return;
+        if (billAmount <= 0 && normalizedSubPay <= 0 && !item.description?.trim()) return;
 
         items.push({
           description: item.description?.trim() || 'Miscellaneous additional cost',
@@ -1245,7 +1250,7 @@ export function EnhancedPropertyNotificationModal({
       token,
       approval_type: params.isPreview ? 'extra_charges_preview' : 'extra_charges',
       approver_email: recipientEmail,
-      approver_name: apContactName || null,
+      approver_name: primaryRecipientName || apContactName || null,
       expires_at: expiresAt,
       extra_charges_data: extraData,
     });
@@ -1324,15 +1329,8 @@ export function EnhancedPropertyNotificationModal({
       let approvalLink: string | undefined;
 
       if (notificationType === 'extra_charges') {
-        const activeApproval = await checkPendingApproval();
-        if (activeApproval) {
-          toast.error('An approval email is already active. Wait for it to expire before sending a new one.');
-          setSending(false);
-          return;
-        }
         const tokenRecord = await createApprovalToken({ isPreview: false });
         approvalLink = `${window.location.origin}/approval/${tokenRecord.token}`;
-        await checkPendingApproval();
       }
 
       // --- Inline image embedding ---
@@ -1421,6 +1419,7 @@ export function EnhancedPropertyNotificationModal({
         action: 'other',
         metadata: {
           notification_type: notificationType,
+          email_purpose: NOTIFICATION_TYPE_LABELS[notificationType],
           recipient_email: recipientEmail,
           cc_emails: ccEmails.split(',').map((email) => email.trim()).filter(Boolean),
           bcc_emails: allBcc.filter(Boolean),
@@ -1820,14 +1819,22 @@ export function EnhancedPropertyNotificationModal({
 
     return (
     <div className="space-y-6">
-      {pendingApproval && countdownTime && (
-        <div className="flex items-center space-x-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
+      {sentEmailHistory.length > 0 && (
+        <div className="flex items-start space-x-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
           <AlertCircle className="h-5 w-5" />
-          <div>
-            <p className="text-sm font-medium">Approval email already sent</p>
+          <div className="flex-1">
+            <p className="text-sm font-medium">Email already sent for this job</p>
             <p className="text-xs">
-              Sent {formatSentAt(pendingApproval.sentAt)}. A new approval can be sent in {countdownTime}.
+              You can send another email now. Recent sent emails are listed below for context.
             </p>
+            <div className="mt-3 space-y-2">
+              {sentEmailHistory.slice(0, 5).map((item) => (
+                <div key={item.id} className="rounded border border-amber-200 bg-white/70 px-3 py-2 text-xs dark:border-amber-700/70 dark:bg-amber-950/30">
+                  <div className="font-semibold">{item.purpose} to {item.recipient}</div>
+                  <div className="mt-0.5 opacity-90">Sent {formatSentAt(item.sentAt)}{item.subject ? ` • Subject: ${item.subject}` : ''}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -1972,8 +1979,7 @@ export function EnhancedPropertyNotificationModal({
               <button
                 type="button"
                 onClick={handleSendEmail}
-                disabled={sending || !selectedTemplate || !recipientEmail || isApprovalBlocked}
-                title={isApprovalBlocked ? 'An approval email is already active. Wait for it to expire to send a new one.' : undefined}
+                disabled={sending || !selectedTemplate || !recipientEmail}
                 className="inline-flex items-center rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-green-300"
               >
                 {sending ? <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <Send className="mr-2 h-4 w-4" />}

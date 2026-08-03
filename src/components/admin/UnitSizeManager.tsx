@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../utils/supabase';
 import { toast } from 'sonner';
 import { Loader2, Plus, Trash2, AlertTriangle, Ruler } from 'lucide-react';
+import { describeUnitSizeDeleteBlockers } from '../../lib/deleteBlockers';
 
 interface UnitSize {
   id: string;
@@ -129,7 +130,8 @@ export function UnitSizeManager() {
         .limit(1);
       if (refErr) throw refErr;
       if (refs && refs.length > 0) {
-        toast.error('Cannot delete: unit size is in use');
+        const blockerMessage = await describeUnitSizeDeleteBlockers(unitSize.id);
+        toast.error(blockerMessage || 'Cannot delete: unit size is in use');
         setProcessingId(null);
         setConfirm(prev => ({ ...prev, isOpen: false }));
         return;
@@ -143,7 +145,17 @@ export function UnitSizeManager() {
       toast.success('Unit size deleted');
     } catch (err) {
       console.error('Error deleting unit size:', err);
-      toast.error('Failed to delete unit size');
+      if ((err as any)?.code === '23503') {
+        try {
+          const blockerMessage = await describeUnitSizeDeleteBlockers(unitSize.id);
+          toast.error(blockerMessage || 'Cannot delete: unit size is in use');
+        } catch (lookupErr) {
+          console.error('Error describing unit size delete blockers:', lookupErr);
+          toast.error('Cannot delete: unit size is in use');
+        }
+      } else {
+        toast.error(err instanceof Error ? err.message : 'Failed to delete unit size');
+      }
     } finally {
       setProcessingId(null);
       setConfirm(prev => ({ ...prev, isOpen: false }));

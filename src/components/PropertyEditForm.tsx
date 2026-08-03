@@ -32,6 +32,10 @@ interface PropertyContact {
   is_notification_recipient?: boolean;
   is_primary_approval_recipient?: boolean;
   is_primary_notification_recipient?: boolean;
+  is_primary_contact?: boolean;
+  receives_approval_emails?: boolean;
+  receives_notification_emails?: boolean;
+  custom_title?: string | null;
   is_new?: boolean;
 }
 
@@ -207,6 +211,9 @@ export function PropertyEditForm() {
         }
         if (field === 'is_accounts_receivable_contact' && value === true) {
           return { ...contact, is_accounts_receivable_contact: false };
+        }
+        if (field === 'is_primary_contact' && value === true) {
+          return { ...contact, is_primary_contact: false };
         }
         if (field === 'is_primary_approval_recipient' && value === true) {
           return { ...contact, is_primary_approval_recipient: false };
@@ -609,12 +616,21 @@ export function PropertyEditForm() {
         updateData[field] = formData[field as keyof typeof formData] || null;
       });
 
-      // Set primary contact fields based on which contact has the subcontractor role
+      // Set primary contact fields from the contact marked Primary Contact.
+      // Older data used the subcontractor contact for this slot, so keep that as a fallback.
       const subcontractorContact = Object.entries(systemContactRoles).find(
         ([_, roles]) => roles.subcontractor
       );
+      const customPrimaryContact = contacts.find(c => c.is_primary_contact);
       
-      if (subcontractorContact) {
+      if (customPrimaryContact) {
+        updateData.primary_contact_name = customPrimaryContact.name;
+        updateData.primary_contact_role = customPrimaryContact.custom_title || customPrimaryContact.position;
+        updateData.primary_contact_email = customPrimaryContact.email;
+        updateData.primary_contact_phone = customPrimaryContact.phone;
+        updateData.primary_contact_additional_phones = normalizePhoneList(customPrimaryContact.additional_phones || []);
+        updateData.primary_contact_secondary_email = customPrimaryContact.secondary_email || null;
+      } else if (subcontractorContact) {
         const [key] = subcontractorContact;
         const contact = systemContacts[key as SystemContactKey];
         updateData.primary_contact_name = contact.name;

@@ -119,6 +119,44 @@ function actorFromProfile(id: string | null | undefined, profiles: ProfileMap) {
   };
 }
 
+function approvalDecisionActorFromChange(
+  change: PhaseChangeRow,
+  approvalTokens: ApprovalTokenRow[]
+) {
+  const reason = (change.change_reason || '').toLowerCase();
+  const decision = reason.includes('extra charges approved')
+    ? 'approved'
+    : reason.includes('extra charges declined') || reason.includes('extra charges rejected')
+      ? 'declined'
+      : null;
+
+  if (!decision) return null;
+
+  const changeTime = new Date(change.changed_at).getTime();
+  const matchingToken = approvalTokens.find((token) => {
+    if (token.decision !== decision || !token.decision_at) return false;
+    const decisionTime = new Date(token.decision_at).getTime();
+    return Number.isFinite(decisionTime) && Math.abs(decisionTime - changeTime) <= 5000;
+  });
+
+  if (matchingToken?.approver_name || matchingToken?.approver_email) {
+    return {
+      actorName: matchingToken.approver_name || matchingToken.approver_email || UNKNOWN_ACTOR,
+      actorEmail: matchingToken.approver_email || null,
+    };
+  }
+
+  const parsedName = change.change_reason?.match(/extra charges (?:approved|declined|rejected) by ([^.;-]+)/i)?.[1]?.trim();
+  if (parsedName) {
+    return {
+      actorName: parsedName,
+      actorEmail: null,
+    };
+  }
+
+  return null;
+}
+
 function getActivityCategory(eventType?: string, action?: string): JobActivityCategory {
   const normalized = `${eventType || ''} ${action || ''}`.toLowerCase();
   if (normalized.includes('email')) return 'email';
@@ -265,6 +303,7 @@ export function useJobActivityLog({
 
       phaseChanges.forEach((change) => {
         const actor = actorFromProfile(change.changed_by, profiles);
+        const approvalActor = approvalDecisionActorFromChange(change, approvalTokens);
         const fromPhase = change.from_phase_label ? formatJobPhaseLabel(change.from_phase_label) : 'None';
         const toPhase = formatJobPhaseLabel(change.to_phase_label);
         items.push({
@@ -273,8 +312,8 @@ export function useJobActivityLog({
           category: 'phase',
           title: `Phase changed to ${toPhase}`,
           description: change.change_reason || `Moved from ${fromPhase} to ${toPhase}`,
-          actorName: change.changed_by_name || actor.actorName,
-          actorEmail: change.changed_by_email || actor.actorEmail,
+          actorName: approvalActor?.actorName || change.changed_by_name || actor.actorName,
+          actorEmail: approvalActor?.actorEmail || change.changed_by_email || actor.actorEmail,
           timestamp: change.changed_at,
           metadata: {
             from_phase: fromPhase,
@@ -310,13 +349,16 @@ export function useJobActivityLog({
         const approvalAmount = Number(token.extra_charges_data?.total ?? token.extra_charges_data?.billing_total ?? 0);
         const amountText = approvalAmount > 0 ? ` for ${formatCurrency(approvalAmount)}` : '';
         const recipient = token.approver_name || token.approver_email || 'approval recipient';
+        const isPreviewToken = token.approval_type === 'extra_charges_preview';
 
         items.push({
           id: `approval-request-${token.id}`,
           source: 'approval_tokens',
           category: 'email',
-          title: 'Extra charge approval email prepared',
-          description: `Approval request sent to ${recipient}${amountText}`,
+          title: isPreviewToken ? 'Extra charge approval preview opened' : 'Extra charge approval link created',
+          description: isPreviewToken
+            ? `Preview approval link created for ${recipient}${amountText}`
+            : `Approval link created for ${recipient}${amountText}`,
           actorName: 'System',
           actorEmail: token.approver_email,
           timestamp: token.created_at,
@@ -427,7 +469,7 @@ export function useJobActivityLog({
         const subPay = subPayAmount ?? 0;
         if (!item.description && price <= 0 && subPay <= 0) return;
         items.push({
-          id: `misc-current-${item.id || item.description || price}`,
+          id: `misc-current-${item.id || item.description || price || subPay}`,
           source: 'work_order_snapshot',
           category: 'work_order',
           title: 'Miscellaneous additional cost item on work order',

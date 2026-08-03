@@ -40,6 +40,9 @@ interface ActivityItem {
   user_full_name: string | null;
 }
 
+const actorNameFromApprovalReason = (reason: string | null | undefined) =>
+  reason?.match(/extra charges (?:approved|declined|rejected) by ([^.;-]+)/i)?.[1]?.trim() || null;
+
 export function Activity() {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -213,7 +216,7 @@ export function Activity() {
           job_unit_number: job.unit_number,
           property_name: job.property_name,
           property_id: job.property_id,
-          user_full_name: userMap[change.changed_by] || 'Unknown User'
+          user_full_name: actorNameFromApprovalReason(change.change_reason) || userMap[change.changed_by] || 'Unknown User'
         };
       });
 
