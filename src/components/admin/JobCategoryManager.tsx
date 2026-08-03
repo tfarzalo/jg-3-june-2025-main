@@ -6,6 +6,7 @@ import {
   describeBillingCategoryDeleteBlockers,
   describeJobCategoryDeleteBlockers
 } from '../../lib/deleteBlockers';
+import { DeleteBlockerDetailsModal } from '../DeleteBlockerDetailsModal';
 
 interface JobCategory {
   id: string;
@@ -79,6 +80,7 @@ export function JobCategoryManager() {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState<string>('');
+  const [deleteBlockerMessage, setDeleteBlockerMessage] = useState('');
   
   const [modalConfig, setModalConfig] = useState<Omit<ConfirmationModalProps, 'onCancel'> & { onCancel?: () => void }>({
     isOpen: false,
@@ -269,7 +271,7 @@ export function JobCategoryManager() {
             console.error('Error describing job category delete blockers:', lookupErr);
           }
         }
-        toast.error(errorMessage);
+        setDeleteBlockerMessage(errorMessage);
       } finally {
         setProcessingId(null);
         closeModal();
@@ -630,6 +632,12 @@ export function JobCategoryManager() {
         }}
         isDangerous={modalConfig.isDangerous}
         confirmLabel={modalConfig.confirmLabel}
+      />
+      <DeleteBlockerDetailsModal
+        isOpen={Boolean(deleteBlockerMessage)}
+        title="Job Category Delete Blocked"
+        message={deleteBlockerMessage}
+        onClose={() => setDeleteBlockerMessage('')}
       />
     </div>
   );

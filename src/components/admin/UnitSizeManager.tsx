@@ -3,6 +3,7 @@ import { supabase } from '../../utils/supabase';
 import { toast } from 'sonner';
 import { Loader2, Plus, Trash2, AlertTriangle, Ruler } from 'lucide-react';
 import { describeUnitSizeDeleteBlockers } from '../../lib/deleteBlockers';
+import { DeleteBlockerDetailsModal } from '../DeleteBlockerDetailsModal';
 
 interface UnitSize {
   id: string;
@@ -53,6 +54,7 @@ export function UnitSizeManager() {
   const [isAdding, setIsAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [deleteBlockerMessage, setDeleteBlockerMessage] = useState('');
   const [confirm, setConfirm] = useState<ConfirmModalProps>({
     isOpen: false,
     title: '',
@@ -131,7 +133,7 @@ export function UnitSizeManager() {
       if (refErr) throw refErr;
       if (refs && refs.length > 0) {
         const blockerMessage = await describeUnitSizeDeleteBlockers(unitSize.id);
-        toast.error(blockerMessage || 'Cannot delete: unit size is in use');
+        setDeleteBlockerMessage(blockerMessage || 'Cannot delete: unit size is in use');
         setProcessingId(null);
         setConfirm(prev => ({ ...prev, isOpen: false }));
         return;
@@ -148,10 +150,10 @@ export function UnitSizeManager() {
       if ((err as any)?.code === '23503') {
         try {
           const blockerMessage = await describeUnitSizeDeleteBlockers(unitSize.id);
-          toast.error(blockerMessage || 'Cannot delete: unit size is in use');
+          setDeleteBlockerMessage(blockerMessage || 'Cannot delete: unit size is in use');
         } catch (lookupErr) {
           console.error('Error describing unit size delete blockers:', lookupErr);
-          toast.error('Cannot delete: unit size is in use');
+          setDeleteBlockerMessage('Cannot delete: unit size is in use');
         }
       } else {
         toast.error(err instanceof Error ? err.message : 'Failed to delete unit size');
@@ -282,6 +284,12 @@ export function UnitSizeManager() {
         message={confirm.message}
         onConfirm={confirm.onConfirm}
         onCancel={confirm.onCancel}
+      />
+      <DeleteBlockerDetailsModal
+        isOpen={Boolean(deleteBlockerMessage)}
+        title="Unit Size Delete Blocked"
+        message={deleteBlockerMessage}
+        onClose={() => setDeleteBlockerMessage('')}
       />
     </div>
   );

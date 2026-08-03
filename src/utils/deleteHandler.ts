@@ -10,6 +10,7 @@ export interface DeleteOptions {
   confirmMessage?: string;
   scope?: 'property' | 'application';
   skipConfirmation?: boolean;
+  suppressErrorToast?: boolean;
 }
 
 /**
@@ -36,7 +37,8 @@ export class DeleteHandler {
       onError,
       confirmMessage,
       scope = 'property',
-      skipConfirmation = false
+      skipConfirmation = false,
+      suppressErrorToast = false
     } = options;
 
     // Confirmation step (unless explicitly skipped)
@@ -70,11 +72,13 @@ export class DeleteHandler {
       console.error(`Delete ${entityType} failed:`, error);
       
       // Show error message to user
-      toast.error(
-        `Failed to remove ${entityType}. Please try again. ${
-          error instanceof Error ? error.message : ''
-        }`
-      );
+      if (!suppressErrorToast) {
+        toast.error(
+          `Failed to remove ${entityType}. Please try again. ${
+            error instanceof Error ? error.message : ''
+          }`
+        );
+      }
       
       // Execute error callback
       onError?.(error as Error);

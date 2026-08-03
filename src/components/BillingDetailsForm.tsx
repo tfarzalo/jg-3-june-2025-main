@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { supabase } from '../utils/supabase';
 import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
 import { DeleteHandler } from '../utils/deleteHandler';
+import { DeleteBlockerDetailsModal } from './DeleteBlockerDetailsModal';
 import {
   describeBillingCategoryDeleteBlockers,
   describeBillingDetailDeleteBlockers
@@ -88,6 +89,7 @@ export function BillingDetailsForm() {
   const [propertyName, setPropertyName] = useState<string>('');
   const [supportsDetailSortOrder, setSupportsDetailSortOrder] = useState<boolean>(false);
   const [autoSaveTimer, setAutoSaveTimer] = useState<number | null>(null);
+  const [deleteBlockerMessage, setDeleteBlockerMessage] = useState('');
   const { attemptNavigate } = useUnsavedChangesPrompt(hasChanges, async () => {
     await handleSaveAll();
   });
@@ -496,8 +498,12 @@ export function BillingDetailsForm() {
         },
         onError: (error) => {
           console.error('Category deletion failed:', error);
-          setError(error.message || 'Failed to delete billing category entry.');
-        }
+          const message = error.message || 'Failed to delete billing category entry.';
+          setError(message);
+          setDeleteBlockerMessage(message);
+          setShowDeleteConfirm(null);
+        },
+        suppressErrorToast: true
       }
     );
 
@@ -702,7 +708,11 @@ export function BillingDetailsForm() {
       console.error('Error saving billing details:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to save billing details.';
       setError(errorMessage);
-      toast.error(errorMessage);
+      if (/cannot (delete|remove)/i.test(errorMessage)) {
+        setDeleteBlockerMessage(errorMessage);
+      } else {
+        toast.error(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -1516,6 +1526,13 @@ export function BillingDetailsForm() {
             </div>
           </div>
         )}
+
+        <DeleteBlockerDetailsModal
+          isOpen={Boolean(deleteBlockerMessage)}
+          title="Billing Category Delete Blocked"
+          message={deleteBlockerMessage}
+          onClose={() => setDeleteBlockerMessage('')}
+        />
 
       </div>
     </div>
