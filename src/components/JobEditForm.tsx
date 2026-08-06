@@ -979,26 +979,6 @@ export function JobEditForm() {
                 />
               </div>
 
-              <div>
-                <label htmlFor="unit_size_id" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Unit Size
-                </label>
-                <select
-                  id="unit_size_id"
-                  name="unit_size_id"
-                  required
-                  value={formData.unit_size_id}
-                  onChange={handleChange}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select a unit size</option>
-                  {unitSizes.map(size => (
-                    <option key={size.id} value={size.id}>
-                      {size.unit_size_label}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
           </div>
 
@@ -1082,6 +1062,27 @@ export function JobEditForm() {
                   {jobTypes.map(jobType => (
                     <option key={jobType.id} value={jobType.id}>
                       {jobType.job_type_label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="unit_size_id" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                  Unit Size
+                </label>
+                <select
+                  id="unit_size_id"
+                  name="unit_size_id"
+                  required
+                  value={formData.unit_size_id}
+                  onChange={handleChange}
+                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select a unit size</option>
+                  {unitSizes.map(size => (
+                    <option key={size.id} value={size.id}>
+                      {size.unit_size_label}
                     </option>
                   ))}
                 </select>

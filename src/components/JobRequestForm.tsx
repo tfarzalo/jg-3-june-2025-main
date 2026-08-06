@@ -714,35 +714,6 @@ export function JobRequestForm() {
                 />
               </div>
 
-              <div>
-                <label htmlFor="unit_size_id" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Unit Size
-                </label>
-                <select
-                  id="unit_size_id"
-                  name="unit_size_id"
-                  required={!callbackJob}
-                  value={formData.unit_size_id}
-                  onChange={handleChange}
-                  disabled={!formData.property_id || callbackJob}
-                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <option value="">
-                    {!formData.property_id
-                      ? 'Select a property first'
-                      : callbackJob
-                      ? 'N/A auto-selected for Callback jobs'
-                      : unitSizes.length === 0
-                      ? 'No unit sizes configured for this property'
-                      : 'Select a unit size'}
-                  </option>
-                  {unitSizes.map(size => (
-                    <option key={size.id} value={size.id}>
-                      {size.unit_size_label}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
           </div>
 
@@ -842,6 +813,36 @@ export function JobRequestForm() {
                   {jobTypes.map(jobType => (
                     <option key={jobType.id} value={jobType.id}>
                       {jobType.job_type_label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="unit_size_id" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                  Unit Size
+                </label>
+                <select
+                  id="unit_size_id"
+                  name="unit_size_id"
+                  required={!callbackJob}
+                  value={formData.unit_size_id}
+                  onChange={handleChange}
+                  disabled={!formData.property_id || callbackJob}
+                  className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <option value="">
+                    {!formData.property_id
+                      ? 'Select a property first'
+                      : callbackJob
+                      ? 'N/A auto-selected for Callback jobs'
+                      : unitSizes.length === 0
+                      ? 'No unit sizes configured for this property'
+                      : 'Select a unit size'}
+                  </option>
+                  {unitSizes.map(size => (
+                    <option key={size.id} value={size.id}>
+                      {size.unit_size_label}
                     </option>
                   ))}
                 </select>
