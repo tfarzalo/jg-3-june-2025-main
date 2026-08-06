@@ -199,6 +199,26 @@ export function RichTextEditor({
         /* Ensure editor takes full height */
         .rich-text-editor-quill .ql-container {
           height: 100%;
+          font-family: inherit;
+          font-size: 1rem;
+          line-height: 1.5;
+        }
+
+        .rich-text-editor-quill .ql-editor {
+          min-height: 100%;
+          padding: 0.75rem 0.75rem;
+          font-family: inherit;
+          font-size: 1rem;
+          line-height: 1.5;
+          color: #111827;
+        }
+
+        .rich-text-editor-quill .ql-editor p {
+          margin: 0 0 0.75rem;
+        }
+
+        .rich-text-editor-quill .ql-editor p:last-child {
+          margin-bottom: 0;
         }
       `}</style>
     </div>
