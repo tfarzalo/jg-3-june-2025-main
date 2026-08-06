@@ -29,6 +29,8 @@ interface Job {
   unit_number?: string;
   scheduled_date?: string;
   completed_date?: string;
+  assigned_to_name?: string | null;
+  assigned_to_email?: string | null;
   property?: {
     id?: string;
     name?: string;
@@ -288,6 +290,8 @@ export function EnhancedPropertyNotificationModal({
       { variable: '{{property_name}}', description: 'Property name' },
       { variable: '{{property_address}}', description: 'Full property address' },
       { variable: '{{unit_number}}', description: 'Unit number' },
+      { variable: '{{subcontractor_name}}', description: 'Assigned subcontractor name' },
+      { variable: '{{subcontractor_email}}', description: 'Assigned subcontractor email' },
       { variable: '{{job_type}}', description: 'Job type' },
       { variable: '{{job_phase}}', description: 'Current job phase' },
       { variable: '{{scheduled_date}}', description: 'Scheduled date' },
@@ -617,6 +621,8 @@ export function EnhancedPropertyNotificationModal({
       const propertyAddress = formatAddress(job);
       const apName = apContactName || job.property?.ap_name || '';
       const recipientName = primaryRecipientName || contactTemplateTokens.recipient_name || apName;
+      const subcontractorName = job.assigned_to_name || '';
+      const subcontractorEmail = job.assigned_to_email || '';
       const extraCharges = job.extra_charges_details;
 
       const replacements: Record<string, string> = {};
@@ -646,6 +652,20 @@ export function EnhancedPropertyNotificationModal({
 
       assignTokens(job.unit_number, ['job.unit_number', 'unit_number']);
       assignTokens(workOrderCode, ['job.work_order_num', 'job_number', 'work_order_number']);
+      assignTokens(subcontractorName, [
+        'subcontractor_name',
+        'assigned_subcontractor_name',
+        'assigned_to_name',
+        'subcontractor.name',
+        'assigned_subcontractor.name',
+      ]);
+      assignTokens(subcontractorEmail, [
+        'subcontractor_email',
+        'assigned_subcontractor_email',
+        'assigned_to_email',
+        'subcontractor.email',
+        'assigned_subcontractor.email',
+      ]);
       assignTokens(job.job_type?.label, ['job.type', 'job_type']);
       assignTokens(job.job_phase?.label, ['job.phase', 'job_phase']);
       assignTokens(scheduledDate, ['job.scheduled_date', 'scheduled_date']);
