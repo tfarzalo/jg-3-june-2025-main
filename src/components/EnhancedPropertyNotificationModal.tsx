@@ -29,6 +29,7 @@ interface Job {
   unit_number?: string;
   scheduled_date?: string;
   completed_date?: string;
+  assigned_to?: string | null;
   assigned_to_name?: string | null;
   assigned_to_email?: string | null;
   property?: {
@@ -227,6 +228,24 @@ const formatAddress = (job: Job | null): string => {
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const looksLikeHtml = (value: string) => /<\/?[a-z][\s\S]*>/i.test(value);
+
+const plainTextTemplateToHtml = (value: string) => {
+  const normalized = value.replace(/\r\n/g, '\n').trim();
+  if (!normalized || looksLikeHtml(normalized)) return value;
+
+  return normalized
+    .split(/\n{2,}/)
+    .map((paragraph) => {
+      const lines = paragraph
+        .split('\n')
+        .map((line) => escapeHtml(line))
+        .join('<br />');
+      return `<p>${lines}</p>`;
+    })
+    .join('');
+};
+
 export function EnhancedPropertyNotificationModal({
   isOpen,
   onClose,
@@ -256,6 +275,8 @@ export function EnhancedPropertyNotificationModal({
   const [primaryRecipientName, setPrimaryRecipientName] = useState('');
   const [contactTemplateTokens, setContactTemplateTokens] = useState<ContactTemplateTokens>({});
   const [sentEmailHistory, setSentEmailHistory] = useState<SentEmailHistoryItem[]>([]);
+  const [assignedSubcontractorName, setAssignedSubcontractorName] = useState('');
+  const [assignedSubcontractorEmail, setAssignedSubcontractorEmail] = useState('');
   const isGeneralWorkOrderEmail = notificationType === 'general_work_order';
 
   const steps = useMemo(
@@ -422,6 +443,30 @@ export function EnhancedPropertyNotificationModal({
       setContactTemplateTokens({});
     }
   }, [job, notificationType]);
+
+  const fetchAssignedSubcontractor = useCallback(async () => {
+    const existingName = job?.assigned_to_name || '';
+    const existingEmail = job?.assigned_to_email || '';
+    setAssignedSubcontractorName(existingName);
+    setAssignedSubcontractorEmail(existingEmail);
+
+    if ((!job?.assigned_to || existingName) && existingEmail) return;
+    if (!job?.assigned_to) return;
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('full_name, email')
+      .eq('id', job.assigned_to)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Failed to load assigned subcontractor for email template tokens:', error);
+      return;
+    }
+
+    setAssignedSubcontractorName(data?.full_name || existingName);
+    setAssignedSubcontractorEmail(data?.email || existingEmail);
+  }, [job?.assigned_to, job?.assigned_to_name, job?.assigned_to_email]);
 
   const normalizeImageType = (image: JobImage): ImageBucket => {
     const category = normalizeCategory(image.category);
@@ -621,8 +666,8 @@ export function EnhancedPropertyNotificationModal({
       const propertyAddress = formatAddress(job);
       const apName = apContactName || job.property?.ap_name || '';
       const recipientName = primaryRecipientName || contactTemplateTokens.recipient_name || apName;
-      const subcontractorName = job.assigned_to_name || '';
-      const subcontractorEmail = job.assigned_to_email || '';
+      const subcontractorName = job.assigned_to_name || assignedSubcontractorName || '';
+      const subcontractorEmail = job.assigned_to_email || assignedSubcontractorEmail || '';
       const extraCharges = job.extra_charges_details;
 
       const replacements: Record<string, string> = {};
@@ -715,14 +760,9 @@ export function EnhancedPropertyNotificationModal({
         processed = processed.replace(single, value).replace(double, value);
       });
         
-      // Second pass: Clean up any remaining unmatched brackets with content
-      // This prevents {SomeName} or {SomeValue} from showing if they weren't in our token list
-      // But preserve the content inside the brackets
-      processed = processed.replace(/\{([^{}]+)\}/g, '$1');
-        
       return replaceTemplateTokens(processed, contactTemplateTokens);
     },
-    [job, apContactName, primaryRecipientName, contactTemplateTokens]
+    [job, apContactName, primaryRecipientName, contactTemplateTokens, assignedSubcontractorName, assignedSubcontractorEmail]
   );
 
   const processTemplate = useCallback(
@@ -731,11 +771,13 @@ export function EnhancedPropertyNotificationModal({
 
       return {
         subject: applyEmailTokens(template.subject),
-        body: applyEmailTokens(template.body),
+        body: isGeneralWorkOrderEmail
+          ? plainTextTemplateToHtml(applyEmailTokens(template.body))
+          : applyEmailTokens(template.body),
         signature: applyEmailTokens(template.signature),
       };
     },
-    [job, applyEmailTokens]
+    [job, applyEmailTokens, isGeneralWorkOrderEmail]
   );
 
   const fetchSentEmailHistory = useCallback(async () => {
@@ -791,12 +833,13 @@ export function EnhancedPropertyNotificationModal({
   useEffect(() => {
     if (isOpen && job) {
       initializeRecipient();
+      fetchAssignedSubcontractor();
       fetchModalData();
       fetchSentEmailHistory();
       setCurrentStep(1);
       setSelectedTemplate(null);
     }
-  }, [isOpen, job, fetchModalData, initializeRecipient, fetchSentEmailHistory]);
+  }, [isOpen, job, fetchModalData, initializeRecipient, fetchAssignedSubcontractor, fetchSentEmailHistory]);
 
   useEffect(() => {
     if (selectedTemplate) {
