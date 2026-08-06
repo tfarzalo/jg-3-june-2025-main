@@ -276,6 +276,37 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
     };
   };
 
+  const getNotificationActivityLabel = (notification: UserNotification) => {
+    const meta = notification.metadata || {};
+    const title = typeof (meta as any)?.title === 'string' ? (meta as any).title : notification.title;
+    if (title) return title;
+
+    switch (notification.type) {
+      case 'job_phase_change':
+        return 'Job Phase Changed';
+      case 'new_job_request':
+      case 'job':
+        return 'New Job Request';
+      case 'work_order':
+        return 'Work Order Submission';
+      case 'email':
+        return 'Email Activity';
+      case 'file':
+        return 'File Activity';
+      case 'note':
+        return 'Note Activity';
+      case 'callback':
+        return 'Callback';
+      case 'contact':
+        return 'Contact Activity';
+      case 'property':
+      case 'property_group':
+        return 'Property Activity';
+      default:
+        return 'Activity';
+    }
+  };
+
   return (
     <>
       <div className="h-16 bg-white dark:bg-[#0F172A] border-b border-gray-200 dark:border-[#1E293B] px-3 sm:px-4 lg:px-6 flex items-center justify-between">
@@ -444,6 +475,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                         const fromPhase = getPhaseMeta((meta as any)?.from_phase_id, (meta as any)?.from_phase_name);
                         const toPhase = getPhaseMeta((meta as any)?.to_phase_id, (meta as any)?.to_phase_name);
                         const actorName = notification.creator_name || 'System';
+                        const activityLabel = getNotificationActivityLabel(notification);
 
                         return (
                           <div
@@ -462,6 +494,11 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                                 <ActivityIcon className="h-4 w-4" />
                               </div>
                               <div className="flex-1 min-w-0 space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-[#0F172A] dark:text-gray-300">
+                                    {activityLabel}
+                                  </span>
+                                </div>
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="flex flex-wrap items-center gap-2 text-sm leading-snug">
                                     {workOrderLabel && (

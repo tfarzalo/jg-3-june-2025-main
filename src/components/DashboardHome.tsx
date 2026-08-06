@@ -38,10 +38,13 @@ interface Job {
 
 interface ActivityItem {
   id: string;
+  source: 'phase_change' | 'activity_log';
+  title?: string;
+  description?: string;
   job_id: string;
   changed_by: string;
   from_phase_id: string | null;
-  to_phase_id: string;
+  to_phase_id: string | null;
   change_reason: string | null;
   changed_at: string;
   from_phase_label: string | null;
@@ -236,6 +239,13 @@ export function DashboardHome() {
           fetchActivities();
         }
       )
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'activity_log' },
+        () => {
+          console.log('New activity log detected, refreshing activities...');
+          fetchActivities();
+        }
+      )
       .subscribe();
 
     const phaseSubscription = supabase
@@ -340,64 +350,89 @@ export function DashboardHome() {
 
   const fetchActivities = async () => {
     try {
-      // Get the job phase changes
-      const { data: phaseChanges, error: phaseChangesError } = await supabase
-        .from('job_phase_changes')
-        .select(`
-          id,
-          job_id,
-          changed_by,
-          from_phase_id,
-          to_phase_id,
-          change_reason,
-          changed_at
-        `)
-        .order('changed_at', { ascending: false })
-        .limit(4);
+      const [phaseChangesResult, activityRowsResult] = await Promise.all([
+        supabase
+          .from('job_phase_changes')
+          .select(`
+            id,
+            job_id,
+            changed_by,
+            from_phase_id,
+            to_phase_id,
+            change_reason,
+            changed_at
+          `)
+          .order('changed_at', { ascending: false })
+          .limit(8),
+        supabase
+          .from('activity_log')
+          .select('id, entity_type, entity_id, action, description, changed_by, metadata, created_at')
+          .neq('entity_type', 'job_phase_change')
+          .order('created_at', { ascending: false })
+          .limit(8)
+      ]);
 
+      const { data: phaseChanges, error: phaseChangesError } = phaseChangesResult;
+      const { data: activityRows, error: activityRowsError } = activityRowsResult;
       if (phaseChangesError) throw phaseChangesError;
-      if (!phaseChanges || phaseChanges.length === 0) {
+      if (activityRowsError) throw activityRowsError;
+
+      const phaseChangeRows = phaseChanges || [];
+      const activityLogRows = activityRows || [];
+      if (phaseChangeRows.length === 0 && activityLogRows.length === 0) {
         setActivities([]);
         return;
       }
 
       // Get all the phase IDs we need to fetch
-      const fromPhaseIds = phaseChanges.map(change => change.from_phase_id).filter(Boolean) as string[];
-      const toPhaseIds = phaseChanges.map(change => change.to_phase_id);
+      const fromPhaseIds = phaseChangeRows.map(change => change.from_phase_id).filter(Boolean) as string[];
+      const toPhaseIds = phaseChangeRows.map(change => change.to_phase_id);
       const allPhaseIds = [...new Set([...fromPhaseIds, ...toPhaseIds])];
 
       // Get all the job IDs we need to fetch
-      const jobIds = phaseChanges.map(change => change.job_id);
+      const activityJobIds = activityLogRows
+        .map(row => (row.metadata as any)?.job_id || (row.entity_type === 'job' ? row.entity_id : null))
+        .filter(Boolean) as string[];
+      const jobIds = [...new Set([...phaseChangeRows.map(change => change.job_id), ...activityJobIds])];
 
       // Get all the user IDs we need to fetch
-      const userIds = phaseChanges.map(change => change.changed_by);
+      const userIds = [...new Set([
+        ...phaseChangeRows.map(change => change.changed_by),
+        ...activityLogRows.map(row => row.changed_by).filter(Boolean)
+      ])];
 
       // Fetch phases
-      const { data: phasesData, error: phasesError } = await supabase
-        .from('job_phases')
-        .select('id, job_phase_label, color_dark_mode')
-        .in('id', allPhaseIds);
+      const { data: phasesData, error: phasesError } = allPhaseIds.length > 0
+        ? await supabase
+            .from('job_phases')
+            .select('id, job_phase_label, color_dark_mode')
+            .in('id', allPhaseIds)
+        : { data: [], error: null };
 
       if (phasesError) throw phasesError;
 
       // Fetch jobs
-      const { data: jobsData, error: jobsError } = await supabase
-        .from('jobs')
-        .select(`
-          id,
-          work_order_num,
-          unit_number,
-          property:properties(property_name)
-        `)
-        .in('id', jobIds) as { data: Job[] | null, error: any };
+      const { data: jobsData, error: jobsError } = jobIds.length > 0
+        ? await supabase
+            .from('jobs')
+            .select(`
+              id,
+              work_order_num,
+              unit_number,
+              property:properties(property_name)
+            `)
+            .in('id', jobIds) as { data: Job[] | null, error: any }
+        : { data: [], error: null };
 
       if (jobsError) throw jobsError;
 
       // Fetch users
-      const { data: usersData, error: usersError } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .in('id', userIds);
+      const { data: usersData, error: usersError } = userIds.length > 0
+        ? await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .in('id', userIds)
+        : { data: [], error: null };
 
       if (usersError) throw usersError;
 
@@ -407,7 +442,7 @@ export function DashboardHome() {
       const usersMap = new Map(usersData?.map(user => [user.id, user]) || []);
 
       // Combine all the data
-      const activitiesData = phaseChanges.map(change => {
+      const phaseActivities = phaseChangeRows.map(change => {
         const job = jobsMap.get(change.job_id);
         const fromPhase = change.from_phase_id ? phasesMap.get(change.from_phase_id) : null;
         const toPhase = phasesMap.get(change.to_phase_id);
@@ -415,6 +450,7 @@ export function DashboardHome() {
 
         return {
           id: change.id,
+          source: 'phase_change' as const,
           job_id: change.job_id,
           changed_by: change.changed_by,
           from_phase_id: change.from_phase_id,
@@ -432,7 +468,37 @@ export function DashboardHome() {
         } as ActivityItem;
       });
 
-      setActivities(activitiesData);
+      const logActivities = activityLogRows.map(row => {
+        const metadata = (row.metadata || {}) as Record<string, any>;
+        const jobId = metadata.job_id || (row.entity_type === 'job' ? row.entity_id : null);
+        const job = jobsMap.get(jobId);
+        const user = row.changed_by ? usersMap.get(row.changed_by) : null;
+
+        return {
+          id: row.id,
+          source: 'activity_log' as const,
+          title: metadata.title || row.description,
+          description: row.description,
+          job_id: jobId,
+          changed_by: row.changed_by,
+          from_phase_id: null,
+          to_phase_id: null,
+          change_reason: null,
+          changed_at: row.created_at,
+          from_phase_label: null,
+          from_phase_color: null,
+          to_phase_label: metadata.title || row.action || 'Activity',
+          to_phase_color: row.entity_type === 'email' ? '#2563EB' : '#4B5563',
+          job_work_order_num: job?.work_order_num || 0,
+          job_unit_number: job?.unit_number || metadata.unit_number || '',
+          property_name: job?.property?.property_name || metadata.property_name || '',
+          user_full_name: user?.full_name || (row.changed_by ? 'Unknown User' : 'System')
+        } as ActivityItem;
+      });
+
+      setActivities([...phaseActivities, ...logActivities]
+        .sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime())
+        .slice(0, 4));
     } catch (err) {
       console.error('Error fetching activities:', err);
     }

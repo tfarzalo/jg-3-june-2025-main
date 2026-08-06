@@ -23,10 +23,15 @@ import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 
 interface ActivityItem {
   id: string;
+  source: 'phase_change' | 'activity_log';
+  title?: string;
+  description?: string;
+  action?: string;
+  entity_type?: string;
   job_id: string;
   changed_by: string;
   from_phase_id: string | null;
-  to_phase_id: string;
+  to_phase_id: string | null;
   change_reason: string | null;
   changed_at: string;
   from_phase_label: string | null;
@@ -104,28 +109,62 @@ export function Activity() {
       const { data: phaseChanges, error: phaseChangesError } = await query;
 
       if (phaseChangesError) throw phaseChangesError;
-      if (!phaseChanges || phaseChanges.length === 0) {
-        setActivities([]);
-        setLoading(false);
-        return;
+      const phaseChangeRows = phaseChanges || [];
+
+      let activityLogQuery = supabase
+        .from('activity_log')
+        .select('id, entity_type, entity_id, action, description, changed_by, metadata, created_at')
+        .neq('entity_type', 'job_phase_change')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (dateFilter === 'today') {
+        const today = new Date();
+        const startOfToday = formatInTimeZone(
+          today,
+          'America/New_York',
+          "yyyy-MM-dd'T'00:00:00XXX"
+        );
+        activityLogQuery = activityLogQuery.gte('created_at', startOfToday);
+      } else if (dateFilter === 'week') {
+        const weekAgo = subDays(new Date(), 7);
+        activityLogQuery = activityLogQuery.gte('created_at', weekAgo.toISOString());
+      } else if (dateFilter === 'month') {
+        const monthAgo = subDays(new Date(), 30);
+        activityLogQuery = activityLogQuery.gte('created_at', monthAgo.toISOString());
       }
 
+      if (userFilter.length > 0) {
+        activityLogQuery = activityLogQuery.in('changed_by', userFilter);
+      }
+
+      const { data: activityRows, error: activityRowsError } = await activityLogQuery;
+      if (activityRowsError) throw activityRowsError;
+
       // Get all the phase IDs we need to fetch
-      const fromPhaseIds = phaseChanges.map(change => change.from_phase_id).filter(Boolean) as string[];
-      const toPhaseIds = phaseChanges.map(change => change.to_phase_id);
+      const fromPhaseIds = phaseChangeRows.map(change => change.from_phase_id).filter(Boolean) as string[];
+      const toPhaseIds = phaseChangeRows.map(change => change.to_phase_id);
       const allPhaseIds = [...new Set([...fromPhaseIds, ...toPhaseIds])];
 
       // Get all the job IDs we need to fetch
-      const jobIds = phaseChanges.map(change => change.job_id);
+      const activityJobIds = (activityRows || [])
+        .map(row => (row.metadata as any)?.job_id || (row.entity_type === 'job' ? row.entity_id : null))
+        .filter(Boolean) as string[];
+      const jobIds = [...new Set([...phaseChangeRows.map(change => change.job_id), ...activityJobIds])];
 
       // Get all the user IDs we need to fetch
-      const userIds = phaseChanges.map(change => change.changed_by);
+      const userIds = [...new Set([
+        ...phaseChangeRows.map(change => change.changed_by),
+        ...(activityRows || []).map(row => row.changed_by).filter(Boolean)
+      ])];
 
       // Fetch all phases
-      const { data: phasesData, error: phasesError } = await supabase
-        .from('job_phases')
-        .select('id, job_phase_label, color_dark_mode')
-        .in('id', allPhaseIds);
+      const { data: phasesData, error: phasesError } = allPhaseIds.length > 0
+        ? await supabase
+            .from('job_phases')
+            .select('id, job_phase_label, color_dark_mode')
+            .in('id', allPhaseIds)
+        : { data: [], error: null };
 
       if (phasesError) throw phasesError;
 
@@ -139,27 +178,29 @@ export function Activity() {
       }, {} as Record<string, { label: string, color: string }>);
 
       // Apply phase filter if needed
-      let filteredChanges = phaseChanges;
+      let filteredChanges = phaseChangeRows;
       if (phaseFilter.length > 0) {
-        filteredChanges = phaseChanges.filter(change => {
+        filteredChanges = phaseChangeRows.filter(change => {
           const toPhase = phaseMap[change.to_phase_id];
           return toPhase && phaseFilter.includes(toPhase.label);
         });
       }
 
       // Fetch all jobs
-      const { data: jobsData, error: jobsError } = await supabase
-        .from('jobs')
-        .select(`
-          id,
-          work_order_num,
-          unit_number,
-          property_id,
-          property:properties(
-            property_name
-          )
-        `)
-        .in('id', jobIds);
+      const { data: jobsData, error: jobsError } = jobIds.length > 0
+        ? await supabase
+            .from('jobs')
+            .select(`
+              id,
+              work_order_num,
+              unit_number,
+              property_id,
+              property:properties(
+                property_name
+              )
+            `)
+            .in('id', jobIds)
+        : { data: [], error: null };
 
       if (jobsError) throw jobsError;
 
@@ -175,10 +216,12 @@ export function Activity() {
       }, {} as Record<string, { work_order_num: number, unit_number: string, property_id: string, property_name: string }>);
 
       // Fetch all users
-      const { data: usersData, error: usersError } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .in('id', userIds);
+      const { data: usersData, error: usersError } = userIds.length > 0
+        ? await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .in('id', userIds)
+        : { data: [], error: null };
 
       if (usersError) throw usersError;
 
@@ -189,7 +232,7 @@ export function Activity() {
       }, {} as Record<string, string>);
 
       // Combine all the data
-      const transformedData = filteredChanges.map(change => {
+      const transformedPhaseData = filteredChanges.map(change => {
         const job = jobMap[change.job_id] || { 
           work_order_num: 0, 
           unit_number: 'Unknown', 
@@ -202,6 +245,7 @@ export function Activity() {
         
         return {
           id: change.id,
+          source: 'phase_change' as const,
           job_id: change.job_id,
           changed_by: change.changed_by,
           from_phase_id: change.from_phase_id,
@@ -220,7 +264,43 @@ export function Activity() {
         };
       });
 
-      setActivities(transformedData);
+      const transformedActivityData = (phaseFilter.length > 0 ? [] : (activityRows || []).map(row => {
+        const metadata = (row.metadata || {}) as Record<string, any>;
+        const jobId = metadata.job_id || (row.entity_type === 'job' ? row.entity_id : null);
+        const job = jobMap[jobId] || {
+          work_order_num: 0,
+          unit_number: metadata.unit_number || 'Unknown',
+          property_id: 'unknown',
+          property_name: metadata.property_name || 'Unknown Property'
+        };
+
+        return {
+          id: row.id,
+          source: 'activity_log' as const,
+          title: metadata.title || row.description,
+          description: row.description,
+          action: row.action,
+          entity_type: row.entity_type,
+          job_id: jobId,
+          changed_by: row.changed_by,
+          from_phase_id: null,
+          to_phase_id: null,
+          change_reason: null,
+          changed_at: row.created_at,
+          from_phase_label: null,
+          from_phase_color: null,
+          to_phase_label: metadata.title || row.action || 'Activity',
+          to_phase_color: row.entity_type === 'email' ? '#2563EB' : '#4B5563',
+          job_work_order_num: job.work_order_num,
+          job_unit_number: job.unit_number,
+          property_name: job.property_name,
+          property_id: job.property_id,
+          user_full_name: userMap[row.changed_by] || (row.changed_by ? 'Unknown User' : 'System')
+        };
+      }));
+
+      setActivities([...transformedPhaseData, ...transformedActivityData]
+        .sort((a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime()));
     } catch (err) {
       console.error('Error fetching activities:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch activities');

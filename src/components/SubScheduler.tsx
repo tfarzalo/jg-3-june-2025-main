@@ -562,6 +562,8 @@ JG Painting Pros Inc.`;
           },
         });
 
+        const { data: userData } = await supabase.auth.getUser();
+
         const logEntries = jobsForSub.map(job => ({
           job_id: job.id,
           recipient_email: subcontractor.email,
@@ -570,7 +572,8 @@ JG Painting Pros Inc.`;
           notification_type: 'sub_assignment',
           template_id: 'assignment_decision',
           cc_emails: null,
-          bcc_emails: null
+          bcc_emails: null,
+          sent_by: userData.user?.id ?? null
         }));
 
         const { error: logError } = await supabase

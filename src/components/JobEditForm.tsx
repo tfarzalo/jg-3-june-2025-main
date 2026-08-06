@@ -96,6 +96,7 @@ export function JobEditForm() {
   const [jobCategories, setJobCategories] = useState<JobCategory[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [job, setJob] = useState<Job | null>(null);
+  const [painterNoteId, setPainterNoteId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     property_id: '',
     unit_number: '',
@@ -104,7 +105,8 @@ export function JobEditForm() {
     job_type_id: '',
     description: '',
     scheduled_date: '',
-    purchase_order: ''
+    purchase_order: '',
+    painter_notes: ''
   });
   const [hasChanges, setHasChanges] = useState(false);
   const { attemptNavigate } = useUnsavedChangesPrompt(hasChanges, async () => {
@@ -197,6 +199,19 @@ export function JobEditForm() {
       // Store full job data for file upload
       setJob(data as any);
 
+      const { data: painterNoteData, error: painterNoteError } = await supabase
+        .from('job_painter_notes')
+        .select('id, topic, note_content')
+        .eq('job_id', jobId)
+        .order('created_at', { ascending: true })
+        .limit(10);
+
+      if (painterNoteError) throw painterNoteError;
+
+      const painterNote = painterNoteData?.find((note) => note.topic === 'Notes for Painter') || painterNoteData?.[0] || null;
+
+      setPainterNoteId(painterNote?.id || null);
+
       setFormData({
         property_id: data.property_id,
         unit_number: data.unit_number,
@@ -205,7 +220,8 @@ export function JobEditForm() {
         job_type_id: data.job_type_id,
         description: data.description || '',
         scheduled_date: formatDateForInput(data.scheduled_date),
-        purchase_order: data.purchase_order || ''
+        purchase_order: data.purchase_order || '',
+        painter_notes: painterNote?.note_content || ''
       });
 
       setLoadingJob(false);
@@ -532,6 +548,40 @@ export function JobEditForm() {
       }
       
       console.log('JobEditForm: Update result:', updateResult);
+
+      const painterNotes = formData.painter_notes.trim();
+      if (painterNoteId && painterNotes) {
+        const { error: painterNotesError } = await supabase
+          .from('job_painter_notes')
+          .update({
+            note_content: painterNotes,
+            topic: 'Notes for Painter'
+          })
+          .eq('id', painterNoteId);
+
+        if (painterNotesError) throw painterNotesError;
+      } else if (painterNoteId && !painterNotes) {
+        const { error: painterNotesError } = await supabase
+          .from('job_painter_notes')
+          .delete()
+          .eq('id', painterNoteId);
+
+        if (painterNotesError) throw painterNotesError;
+        setPainterNoteId(null);
+      } else if (!painterNoteId && painterNotes) {
+        if (!user?.id) throw new Error('User not found');
+
+        const { error: painterNotesError } = await supabase
+          .from('job_painter_notes')
+          .insert({
+            job_id: jobId,
+            topic: 'Notes for Painter',
+            note_content: painterNotes,
+            created_by: user.id
+          });
+
+        if (painterNotesError) throw painterNotesError;
+      }
 
       // Verify the data was actually saved by fetching it back
       console.log('JobEditForm: Verifying saved data...');
@@ -1049,6 +1099,21 @@ export function JobEditForm() {
                   onChange={handleChange}
                   className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Enter job request notes and additional information..."
+                />
+              </div>
+
+              <div>
+                <label htmlFor="painter_notes" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                  Notes for Painter
+                </label>
+                <textarea
+                  id="painter_notes"
+                  name="painter_notes"
+                  rows={4}
+                  value={formData.painter_notes}
+                  onChange={handleChange}
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter notes that should be visible to the assigned painter..."
                 />
               </div>
             </div>

@@ -298,6 +298,8 @@ const NotificationEmailModal: React.FC<NotificationEmailModalProps> = ({
 
       if (error) throw error;
 
+      const { data: userData } = await supabase.auth.getUser();
+
       // Log the notification
       await supabase.from('email_logs').insert({
         job_id: job?.id,
@@ -306,35 +308,9 @@ const NotificationEmailModal: React.FC<NotificationEmailModalProps> = ({
         bcc_emails: bccEmails || null,
         subject: emailSubject,
         template_type: notificationType,
-        sent_at: new Date().toISOString()
+        sent_at: new Date().toISOString(),
+        sent_by: userData.user?.id ?? null
       });
-
-      // If the job is in "Pending Work Order" phase, log this activity
-      if (job?.job_phase?.label === 'Pending Work Order') {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const currentUserId = sessionData?.session?.user?.id;
-
-        if (currentUserId) {
-          // Get the current phase ID
-          const { data: phaseData } = await supabase
-            .from('job_phases')
-            .select('id')
-            .eq('job_phase_label', 'Pending Work Order')
-            .single();
-
-          if (phaseData) {
-            // Log activity as a phase change (to same phase) to track the notification
-            await supabase.from('job_phase_changes').insert({
-              job_id: job.id,
-              from_phase_id: phaseData.id,
-              to_phase_id: phaseData.id,
-              changed_by: currentUserId,
-              changed_at: new Date().toISOString(),
-              notes: `${getNotificationTypeLabel()} notification email sent to ${recipientEmail}`
-            });
-          }
-        }
-      }
 
       toast.success('Notification sent successfully!');
       onSent?.();

@@ -1,5 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../utils/supabase';
+import {
+  getBellNotificationPreferenceKey,
+  normalizeBellNotificationSettings,
+  type BellNotificationSettings,
+} from '../lib/notificationPreferences';
 
 export interface Notification {
   id: string;
@@ -12,9 +17,23 @@ export interface Notification {
   is_read: boolean;
   metadata: Record<string, any>;
   created_at: string;
+  creator_id?: string | null;
   creator_name?: string;
   creator_email?: string;
+  activity_action?: string | null;
+  activity_metadata?: Record<string, any> | null;
 }
+
+const filterVisibleNotifications = (
+  notifications: Notification[],
+  currentUserId: string,
+  settings?: BellNotificationSettings
+) =>
+  notifications.filter((notification) => {
+    if (notification.activity_log_id && notification.creator_id === currentUserId) return false;
+    if (!settings) return true;
+    return settings[getBellNotificationPreferenceKey(notification)] !== false;
+  });
 
 export function useNotifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -37,16 +56,28 @@ export function useNotifications() {
       setNotifications([]);
       setUnreadCount(0);
 
-      const { data, error } = await supabase
-        .from('notifications_view')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      const [notificationsResult, profileResult] = await Promise.all([
+        supabase
+          .from('notifications_view')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .order('created_at', { ascending: false })
+          .limit(50),
+        supabase
+          .from('profiles')
+          .select('notification_settings')
+          .eq('id', session.user.id)
+          .maybeSingle()
+      ]);
 
-      if (error) throw error;
+      if (notificationsResult.error) throw notificationsResult.error;
 
-      const notificationsData = data || [];
+      const settings = normalizeBellNotificationSettings(profileResult.data?.notification_settings);
+      const notificationsData = filterVisibleNotifications(
+        (notificationsResult.data || []) as Notification[],
+        session.user.id,
+        settings
+      );
       setNotifications(notificationsData);
       setUnreadCount(notificationsData.filter(n => !n.is_read).length);
       setError(null);
@@ -167,8 +198,19 @@ export function useNotifications() {
               .eq('id', newNotification.id)
               .single();
 
+            const { data: profileData } = await supabase
+              .from('profiles')
+              .select('notification_settings')
+              .eq('id', session.user.id)
+              .maybeSingle();
+            const settings = normalizeBellNotificationSettings(profileData?.notification_settings);
+
+            if (data && !filterVisibleNotifications([data as Notification], session.user.id, settings).length) {
+              return;
+            }
+
             if (data) {
-              setNotifications(prev => [data, ...prev]);
+              setNotifications(prev => [data as Notification, ...prev]);
               setUnreadCount(prev => prev + 1);
             }
           }
@@ -184,7 +226,10 @@ export function useNotifications() {
         (payload) => {
           const updatedNotification = payload.new as any;
           setNotifications(prev => {
-            const next = prev.map(n => n.id === updatedNotification.id ? { ...n, ...updatedNotification } : n);
+            const next = filterVisibleNotifications(
+              prev.map(n => n.id === updatedNotification.id ? { ...n, ...updatedNotification } : n),
+              updatedNotification.user_id
+            );
             setUnreadCount(next.filter(n => !n.is_read).length);
             return next;
           });

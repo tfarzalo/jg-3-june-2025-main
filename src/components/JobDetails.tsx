@@ -571,6 +571,11 @@ export function JobDetails() {
     topic: '',
     note_content: '',
   });
+  const [editingPainterNoteId, setEditingPainterNoteId] = useState<string | null>(null);
+  const [painterNoteDraft, setPainterNoteDraft] = useState({
+    topic: '',
+    note_content: '',
+  });
   const [approvalTokenDecision, setApprovalTokenDecision] = useState<{
     decision: 'approved' | 'declined' | null;
     decision_at: string | null;
@@ -1787,6 +1792,65 @@ export function JobDetails() {
     } catch (err) {
       console.error('Error adding painter note:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to add painter note');
+    } finally {
+      setPainterNotesSaving(false);
+    }
+  };
+
+  const startEditPainterNote = (note: JobNote) => {
+    setEditingPainterNoteId(note.id);
+    setPainterNoteDraft({
+      topic: note.topic,
+      note_content: note.note_content,
+    });
+  };
+
+  const cancelEditPainterNote = () => {
+    setEditingPainterNoteId(null);
+    setPainterNoteDraft({ topic: '', note_content: '' });
+  };
+
+  const handleUpdatePainterNote = async (noteId: string) => {
+    if (!jobId || !canManagePainterNotes) return;
+
+    if (!painterNoteDraft.topic.trim() || !painterNoteDraft.note_content.trim()) {
+      toast.error('Topic and note content are required');
+      return;
+    }
+
+    try {
+      setPainterNotesSaving(true);
+
+      const { error } = await supabase
+        .from('job_painter_notes')
+        .update({
+          topic: painterNoteDraft.topic.trim(),
+          note_content: painterNoteDraft.note_content.trim(),
+        })
+        .eq('id', noteId);
+
+      if (error) throw error;
+
+      await logJobActivity({
+        jobId,
+        eventType: 'painter_note_updated',
+        title: 'Painter note updated',
+        description: `Updated painter note: ${painterNoteDraft.topic.trim()}`,
+        action: 'updated',
+        metadata: {
+          note_id: noteId,
+          topic: painterNoteDraft.topic.trim(),
+          note_preview: painterNoteDraft.note_content.trim().slice(0, 160),
+        },
+      });
+
+      cancelEditPainterNote();
+      await fetchPainterNotes();
+      await refetchActivityLog();
+      toast.success('Painter note updated');
+    } catch (err) {
+      console.error('Error updating painter note:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to update painter note');
     } finally {
       setPainterNotesSaving(false);
     }
@@ -5009,37 +5073,96 @@ export function JobDetails() {
                           key={note.id}
                           className="border-l-4 border-emerald-300 dark:border-emerald-700 bg-gray-50 dark:bg-[#0F172A] rounded-r-xl p-4"
                         >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:text-emerald-200">
-                                  {note.topic}
-                                </span>
+                          {editingPainterNoteId === note.id ? (
+                            <div className="space-y-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                  Note Topic
+                                </label>
+                                <input
+                                  type="text"
+                                  value={painterNoteDraft.topic}
+                                  onChange={(e) => setPainterNoteDraft((current) => ({ ...current, topic: e.target.value }))}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                  placeholder="Enter note topic"
+                                />
                               </div>
-                              <p className="text-gray-900 dark:text-white whitespace-pre-wrap mt-3">
-                                {note.note_content}
-                              </p>
-                              <div className="flex flex-wrap items-center gap-2 mt-3 text-sm text-gray-500 dark:text-gray-400">
-                                <span>Added by {note.created_by_name}</span>
-                                <span>•</span>
-                                <span>{formatDate(note.created_at)}</span>
-                                <span>•</span>
-                                <span>{formatTime(note.created_at)}</span>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                  Note
+                                </label>
+                                <textarea
+                                  value={painterNoteDraft.note_content}
+                                  onChange={(e) => setPainterNoteDraft((current) => ({ ...current, note_content: e.target.value }))}
+                                  rows={4}
+                                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                  placeholder="Add a note that the assigned painter should see..."
+                                />
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdatePainterNote(note.id)}
+                                  disabled={painterNotesSaving || !painterNoteDraft.topic.trim() || !painterNoteDraft.note_content.trim()}
+                                  className="inline-flex items-center px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+                                >
+                                  <Check className="h-4 w-4 mr-2" />
+                                  {painterNotesSaving ? 'Saving...' : 'Save Note'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelEditPainterNote}
+                                  disabled={painterNotesSaving}
+                                  className="inline-flex items-center px-3 py-2 bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-gray-700 rounded-lg transition-colors dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200"
+                                >
+                                  <X className="h-4 w-4 mr-2" />
+                                  Cancel
+                                </button>
                               </div>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (window.confirm('Delete this painter note?')) {
-                                  handleDeletePainterNote(note.id);
-                                }
-                              }}
-                              className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg text-red-600 dark:text-red-400 transition-colors"
-                              aria-label="Delete painter note"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
+                          ) : (
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-900/40 px-2.5 py-1 text-xs font-semibold text-emerald-800 dark:text-emerald-200">
+                                    {note.topic}
+                                  </span>
+                                </div>
+                                <p className="text-gray-900 dark:text-white whitespace-pre-wrap mt-3">
+                                  {note.note_content}
+                                </p>
+                                <div className="flex flex-wrap items-center gap-2 mt-3 text-sm text-gray-500 dark:text-gray-400">
+                                  <span>Added by {note.created_by_name}</span>
+                                  <span>•</span>
+                                  <span>{formatDate(note.created_at)}</span>
+                                  <span>•</span>
+                                  <span>{formatTime(note.created_at)}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => startEditPainterNote(note)}
+                                  className="p-2 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-lg text-emerald-700 dark:text-emerald-300 transition-colors"
+                                  aria-label="Edit painter note"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (window.confirm('Delete this painter note?')) {
+                                      handleDeletePainterNote(note.id);
+                                    }
+                                  }}
+                                  className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg text-red-600 dark:text-red-400 transition-colors"
+                                  aria-label="Delete painter note"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

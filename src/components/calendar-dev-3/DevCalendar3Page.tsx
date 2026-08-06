@@ -1043,6 +1043,8 @@ JG Painting Pros Inc.`,
           },
         });
 
+        const { data: userData } = await supabase.auth.getUser();
+
         const { error: logError } = await supabase.from('email_logs').insert(notification.jobs.map((job) => ({
           job_id: job.id,
           recipient_email: notification.subcontractor.email,
@@ -1052,6 +1054,7 @@ JG Painting Pros Inc.`,
           template_id: 'assignment_decision',
           cc_emails: null,
           bcc_emails: null,
+          sent_by: userData.user?.id ?? null,
         })));
         if (logError) console.error('Assignment email log failed:', logError);
       }

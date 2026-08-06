@@ -22,6 +22,11 @@ import { formatDisplayDate } from '../lib/dateUtils';
 import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 import { formatPhoneNumber, mapInputValueByField } from '../lib/utils/formatUtils';
 import { normalizeToE164US, isStorablePhone } from '../lib/utils/phoneE164';
+import {
+  BELL_NOTIFICATION_OPTIONS,
+  normalizeBellNotificationSettings,
+  type BellNotificationSettings,
+} from '../lib/notificationPreferences';
 
 interface UserProfileData {
   id: string;
@@ -38,7 +43,7 @@ interface UserProfileData {
   username: string | null;
   theme_preference: string | null;
   work_schedule: string[] | null;
-  notification_settings: string | null;
+  notification_settings: string | Record<string, unknown> | null;
   // New availability fields
   availability?: any;
   preferred_contact_method?: string;
@@ -58,13 +63,6 @@ interface UserProfileData {
   social_media?: any;
   notes?: string | null;
   last_profile_update?: string | null;
-}
-
-interface NotificationSettings {
-  job_phase_changes: boolean;
-  work_orders: boolean;
-  callbacks: boolean;
-  system_alerts: boolean;
 }
 
 interface JobHistoryItem {
@@ -121,12 +119,9 @@ export function UserProfile() {
     notification_settings: null
   });
 
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
-    job_phase_changes: true,
-    work_orders: true,
-    callbacks: true,
-    system_alerts: true
-  });
+  const [notificationSettings, setNotificationSettings] = useState<BellNotificationSettings>(
+    normalizeBellNotificationSettings(null)
+  );
 
   const [smsPhoneError, setSmsPhoneError] = useState<string | null>(null);
 
@@ -135,15 +130,7 @@ export function UserProfile() {
   }, [userId]);
 
   useEffect(() => {
-    // Parse notification settings when profile is loaded
-    if (profile.notification_settings) {
-      try {
-        const settings = JSON.parse(profile.notification_settings);
-        setNotificationSettings(settings);
-      } catch (e) {
-        console.error('Error parsing notification settings:', e);
-      }
-    }
+    setNotificationSettings(normalizeBellNotificationSettings(profile.notification_settings));
   }, [profile.notification_settings]);
 
   const fetchUserProfile = async (targetUserId?: string) => {
@@ -213,9 +200,17 @@ export function UserProfile() {
             theme_preference: 'dark',
             work_schedule: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
             notification_settings: JSON.stringify({
+              new_job_requests: true,
               job_phase_changes: true,
-              work_orders: true,
+              work_order_submissions: true,
+              approval_responses: true,
+              assignment_responses: true,
+              email_activity: true,
+              files: true,
+              notes: true,
               callbacks: true,
+              contacts: true,
+              properties: true,
               system_alerts: true
             })
           };
@@ -231,12 +226,7 @@ export function UserProfile() {
           
           console.log('New profile created successfully');
           setProfile(newProfile as UserProfileData);
-          setNotificationSettings({
-            job_phase_changes: true,
-            work_orders: true,
-            callbacks: true,
-            system_alerts: true
-          });
+          setNotificationSettings(normalizeBellNotificationSettings(newProfile.notification_settings));
         } else {
           throw error;
         }
@@ -261,30 +251,7 @@ export function UserProfile() {
           setAvatarUrl(publicUrl);
         }
 
-        // Parse notification settings
-        if (data.notification_settings) {
-          try {
-            const settings = JSON.parse(data.notification_settings);
-            setNotificationSettings(settings);
-          } catch (e) {
-            console.error('Error parsing notification settings:', e);
-            // Set default notification settings
-            setNotificationSettings({
-              job_phase_changes: true,
-              work_orders: true,
-              callbacks: true,
-              system_alerts: true
-            });
-          }
-        } else {
-          // Set default notification settings
-          setNotificationSettings({
-            job_phase_changes: true,
-            work_orders: true,
-            callbacks: true,
-            system_alerts: true
-          });
-        }
+        setNotificationSettings(normalizeBellNotificationSettings(data.notification_settings));
       }
       
       
@@ -418,7 +385,7 @@ export function UserProfile() {
     });
   };
 
-  const handleNotificationSettingChange = (setting: keyof NotificationSettings) => {
+  const handleNotificationSettingChange = (setting: keyof BellNotificationSettings) => {
     setNotificationSettings(prev => ({
       ...prev,
       [setting]: !prev[setting]
@@ -817,90 +784,32 @@ export function UserProfile() {
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Notification Settings</h2>
             </div>
             
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200">Job Phase Changes</h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Receive notifications when a job changes phase
-                  </p>
-                </div>
-                <div 
-                  className={`w-12 h-6 rounded-full flex items-center p-1 cursor-pointer transition-colors ${
-                    notificationSettings.job_phase_changes ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'
-                  }`}
-                  onClick={() => handleNotificationSettingChange('job_phase_changes')}
-                >
-                  <div 
-                    className={`w-4 h-4 rounded-full bg-white transform transition-transform ${
-                      notificationSettings.job_phase_changes ? 'translate-x-6' : 'translate-x-0'
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              {BELL_NOTIFICATION_OPTIONS.map((option) => (
+                <div key={option.key} className="flex items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200">{option.title}</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      {option.description}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className={`w-12 h-6 rounded-full flex items-center p-1 cursor-pointer transition-colors flex-shrink-0 ${
+                      notificationSettings[option.key] ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'
                     }`}
-                  ></div>
+                    onClick={() => handleNotificationSettingChange(option.key)}
+                    aria-pressed={notificationSettings[option.key]}
+                    aria-label={`Toggle ${option.title}`}
+                  >
+                    <span
+                      className={`w-4 h-4 rounded-full bg-white transform transition-transform ${
+                        notificationSettings[option.key] ? 'translate-x-6' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
                 </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200">Work Order Updates</h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Receive notifications about work order updates
-                  </p>
-                </div>
-                <div 
-                  className={`w-12 h-6 rounded-full flex items-center p-1 cursor-pointer transition-colors ${
-                    notificationSettings.work_orders ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'
-                  }`}
-                  onClick={() => handleNotificationSettingChange('work_orders')}
-                >
-                  <div 
-                    className={`w-4 h-4 rounded-full bg-white transform transition-transform ${
-                      notificationSettings.work_orders ? 'translate-x-6' : 'translate-x-0'
-                    }`}
-                  ></div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200">Callbacks</h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Receive notifications about property callbacks
-                  </p>
-                </div>
-                <div 
-                  className={`w-12 h-6 rounded-full flex items-center p-1 cursor-pointer transition-colors ${
-                    notificationSettings.callbacks ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'
-                  }`}
-                  onClick={() => handleNotificationSettingChange('callbacks')}
-                >
-                  <div 
-                    className={`w-4 h-4 rounded-full bg-white transform transition-transform ${
-                      notificationSettings.callbacks ? 'translate-x-6' : 'translate-x-0'
-                    }`}
-                  ></div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200">System Alerts</h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Receive important system notifications and alerts
-                  </p>
-                </div>
-                <div 
-                  className={`w-12 h-6 rounded-full flex items-center p-1 cursor-pointer transition-colors ${
-                    notificationSettings.system_alerts ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-700'
-                  }`}
-                  onClick={() => handleNotificationSettingChange('system_alerts')}
-                >
-                  <div 
-                    className={`w-4 h-4 rounded-full bg-white transform transition-transform ${
-                      notificationSettings.system_alerts ? 'translate-x-6' : 'translate-x-0'
-                    }`}
-                  ></div>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
 
