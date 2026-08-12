@@ -8,13 +8,7 @@ const corsHeaders = {
   "Access-Control-Max-Age": "86400",
 };
 
-const completedDeletePhaseLabels = new Set([
-  "Completed",
-  "Completed Jobs",
-  "Invoicing",
-  "Cancelled",
-  "Archived",
-]);
+const jobRequestPhaseLabels = new Set(["Job Request"]);
 
 const optionalSchemaErrorCodes = new Set([
   "42P01", // undefined_table
@@ -112,8 +106,8 @@ serve(async (req) => {
       currentUserRole = (user.app_metadata as any).role;
     }
 
-    // Admin, management, assistant managers, and super admins can delete users
-    const allowedRoles = ["admin", "jg_management", "assistant_manager", "is_super_admin"];
+    // Admin, management, assistant managers, managers, and super admins can delete users
+    const allowedRoles = ["admin", "jg_management", "assistant_manager", "manager", "is_super_admin"];
 
     if (!currentUserRole || !allowedRoles.includes(currentUserRole)) {
       console.warn("Delete-user denied: requester role not allowed", { requesterId: user.id, requesterRole: currentUserRole });
@@ -155,7 +149,7 @@ serve(async (req) => {
     // Get user profile to preserve historical labels and check for avatar
     const { data: userProfile, error: profileFetchError } = await supabase
       .from("profiles")
-      .select("avatar_url, full_name, email")
+      .select("avatar_url, full_name, email, role, archived_at")
       .eq("id", userId)
       .single();
 
@@ -166,6 +160,23 @@ serve(async (req) => {
     const deletedAt = new Date().toISOString();
     const historicalName = userProfile?.full_name || userProfile?.email || "Deleted user";
     const historicalEmail = userProfile?.email || null;
+
+    if (userProfile?.role === "subcontractor" && !userProfile?.archived_at) {
+      return new Response(
+        JSON.stringify({
+          code: "active_subcontractor_must_be_archived",
+          success: false,
+          message: "Active subcontractors must be archived before they can be permanently deleted.",
+        }),
+        {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+          status: 409,
+        },
+      );
+    }
 
     const { data: assignedJobs, error: assignedJobsError } = await supabase
       .from("jobs")
@@ -188,7 +199,7 @@ serve(async (req) => {
 
     const blockingJobs = (assignedJobs || []).filter((job: any) => {
       const phaseLabel = job?.phase?.job_phase_label || "";
-      return !completedDeletePhaseLabels.has(phaseLabel);
+      return jobRequestPhaseLabels.has(phaseLabel);
     });
 
     if (blockingJobs.length > 0) {
@@ -200,7 +211,7 @@ serve(async (req) => {
           code: "assigned_frozen_jobs_block",
           success: false,
           message:
-            `This user cannot be deleted yet because they are assigned to ${blockingJobs.length} non-completed job${blockingJobs.length === 1 ? "" : "s"}: ${jobLabels.join("; ")}${suffix}. Reassign or complete those jobs before deleting this user.`,
+            `This user cannot be deleted yet because they are assigned to ${blockingJobs.length} Job Request${blockingJobs.length === 1 ? "" : "s"}: ${jobLabels.join("; ")}${suffix}. Reassign or return those Job Requests to the unassigned pool before deleting this user.`,
           jobs: blockingJobs.map((job: any) => ({
             id: job.id,
             label: formatJobLabel(job),

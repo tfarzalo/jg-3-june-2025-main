@@ -49,6 +49,7 @@ import { formatDate, formatDisplayDate, formatTime, formatDateTime } from '../li
 import { formatAddress, formatCurrency } from '../lib/utils/formatUtils';
 import { getPreviewUrl } from '../utils/storagePreviews';
 import { buildStoragePath, sanitizeFilename } from '../utils/storagePaths';
+import { fetchActiveSubcontractors } from '../lib/users/activeSubcontractors';
 import { getAdditionalBillingLines } from '../lib/billing/additional';
 import {
   DEFAULT_CANCELLATION_TRIP_CHARGE,
@@ -1476,11 +1477,7 @@ export function JobDetails() {
 
   const fetchSubcontractors = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .eq('role', 'subcontractor')
-        .order('full_name');
+      const { data, error } = await fetchActiveSubcontractors('id, full_name');
         
       if (error) throw error;
       setSubcontractors(data || []);

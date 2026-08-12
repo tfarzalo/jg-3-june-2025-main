@@ -46,6 +46,7 @@ import { getRecurringEventsForDay } from '../../utils/recurringEvents';
 import { formatDisplayDate } from '../../lib/dateUtils';
 import { dispatchSmsNotification } from '../../lib/sms/dispatchSmsNotification';
 import { useUserRole } from '../../contexts/UserRoleContext';
+import { fetchActiveSubcontractors } from '../../lib/users/activeSubcontractors';
 import EventModal from '../calendar/EventModal';
 
 const TZ = 'America/New_York';
@@ -424,7 +425,7 @@ export default function DevCalendar3Page() {
           .lte('scheduled_date', rangeEnd)
           .order('scheduled_date', { ascending: true }),
         listCalendarEvents(rangeStart, rangeEnd),
-        supabase.from('profiles').select('id, full_name, email, phone').eq('role', 'subcontractor').order('full_name'),
+        fetchActiveSubcontractors('id, full_name, email, phone'),
       ]);
 
       if (phaseResult.error) throw phaseResult.error;

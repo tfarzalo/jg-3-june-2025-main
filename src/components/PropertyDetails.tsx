@@ -42,6 +42,7 @@ import { useUserRole } from '../contexts/UserRoleContext';
 import { getBackNavigationPath } from '../lib/utils';
 import { PropertyFilesPreview } from './properties/PropertyFilesPreview';
 import { PropertyContactsViewer } from './property/PropertyContactsViewer';
+import { fetchActiveSubcontractors } from '../lib/users/activeSubcontractors';
 
 interface Property {
   id: string;
@@ -696,11 +697,7 @@ export function PropertyDetails() {
         setExclusionNoteDraft(note);
 
         // Fetch all subcontractor users for the selector
-        const { data: subUsers } = await supabase
-          .from('profiles')
-          .select('id, full_name, email')
-          .eq('role', 'subcontractor')
-          .order('full_name');
+        const { data: subUsers } = await fetchActiveSubcontractors('id, full_name, email');
         setSubcontractorUsers(subUsers || []);
 
         // Fetch billing data

@@ -21,6 +21,7 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { isAvailableOnDate, WorkingDays } from '../lib/availabilityUtils';
 import { AssignmentCountdownTimer } from './AssignmentCountdownTimer';
 import { dispatchSmsNotification } from '../lib/sms/dispatchSmsNotification';
+import { fetchActiveSubcontractors } from '../lib/users/activeSubcontractors';
 
 interface Job {
   id: string;
@@ -267,11 +268,9 @@ export default function SubScheduler() {
 
   const fetchSubcontractors = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, full_name, email, avatar_url, work_schedule, working_days, phone, role')
-        .eq('role', 'subcontractor')
-        .order('full_name');
+      const { data, error } = await fetchActiveSubcontractors<Subcontractor & { role: string }>(
+        'id, full_name, email, avatar_url, work_schedule, working_days, phone, role'
+      );
 
       if (error) throw error;
       

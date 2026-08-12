@@ -36,6 +36,10 @@ export type Profile = {
   role: 'admin' | 'user' | 'editor' | 'is_super_admin' | 'jg_management' | 'subcontractor';
   created_at: string;
   updated_at: string;
+  archived_at: string | null;
+  archived_by: string | null;
+  restored_at: string | null;
+  restored_by: string | null;
   avatar_url: string | null;
   nickname: string | null;
   mobile_phone: string | null;

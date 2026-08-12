@@ -17,7 +17,10 @@ import {
   Mail,
   Send,
   CheckCircle,
-  ClipboardList
+  ClipboardList,
+  Archive,
+  ArchiveRestore,
+  AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
@@ -37,6 +40,8 @@ interface User {
   created_at: string;
   avatar_url: string | null;
   last_seen: string | null;
+  archived_at?: string | null;
+  archived_by?: string | null;
   working_days: {
     monday: boolean;
     tuesday: boolean;
@@ -46,6 +51,25 @@ interface User {
     saturday: boolean;
     sunday: boolean;
   } | null;
+}
+
+interface ArchiveCandidate {
+  id: string;
+  name: string;
+  email: string | null;
+  slot?: string;
+}
+
+interface ArchiveReassignmentJob {
+  id: string;
+  work_order_num: number | null;
+  label: string;
+  property_name: string | null;
+  unit_number: string | null;
+  assignment_status: string | null;
+  preferredCandidates: ArchiveCandidate[];
+  allCandidates: ArchiveCandidate[];
+  defaultReplacementSubcontractorId: string | null;
 }
 
 export function Users() {
@@ -64,6 +88,16 @@ export function Users() {
   const [showFilters, setShowFilters] = useState(false);
   const [roleFilter, setRoleFilter] = useState<string[]>([]);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [activeUsersTab, setActiveUsersTab] = useState<'active' | 'archived'>('active');
+  const [archivingUserId, setArchivingUserId] = useState<string | null>(null);
+  const [restoringUserId, setRestoringUserId] = useState<string | null>(null);
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [archiveJobs, setArchiveJobs] = useState<ArchiveReassignmentJob[]>([]);
+  const [archiveDecisions, setArchiveDecisions] = useState<Record<string, string>>({});
+  const [restoredCredentials, setRestoredCredentials] = useState<{
+    email: string;
+    temporaryPassword: string;
+  } | null>(null);
 
   // Welcome email prompt state (shown after subcontractor creation)
   const [showWelcomeEmailPrompt, setShowWelcomeEmailPrompt] = useState(false);
@@ -98,7 +132,7 @@ export function Users() {
   // Get current user role for access control
   const { role: currentUserRole, isAdmin } = useUserRole();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const canDeleteUsers = ['admin', 'jg_management', 'assistant_manager', 'is_super_admin'].includes(currentUserRole || '');
+  const canDeleteUsers = ['admin', 'jg_management', 'assistant_manager', 'manager', 'is_super_admin'].includes(currentUserRole || '');
   
   // Form state for adding/editing users
   const [formData, setFormData] = useState({
@@ -209,7 +243,11 @@ export function Users() {
 
   // Filter users based on search term and role filter
   useEffect(() => {
-    let filtered = users;
+    let filtered = users.filter(user => (
+      activeUsersTab === 'archived'
+        ? Boolean(user.archived_at)
+        : !user.archived_at
+    ));
 
     // Apply search filter
     if (searchTerm) {
@@ -234,7 +272,7 @@ export function Users() {
     });
 
     setFilteredUsers(filtered);
-  }, [users, searchTerm, roleFilter]);
+  }, [users, searchTerm, roleFilter, activeUsersTab]);
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -458,6 +496,124 @@ export function Users() {
         fullError: error
       });
       toast.error(error instanceof Error ? error.message : 'Failed to delete user');
+    }
+  };
+
+  const handleArchiveSubcontractor = async (decisions?: Record<string, string>) => {
+    if (!selectedUser) return;
+
+    try {
+      setArchivingUserId(selectedUser.id);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('You must be logged in to archive subcontractors');
+        return;
+      }
+
+      const decisionPayload = decisions
+        ? Object.entries(decisions).map(([jobId, value]) => (
+            value === '__unassign'
+              ? { jobId, action: 'unassign' }
+              : { jobId, action: 'reassign', replacementSubcontractorId: value }
+          ))
+        : undefined;
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/archive-subcontractor`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            userId: selectedUser.id,
+            decisions: decisionPayload,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (response.status === 409 && result.code === 'job_requests_require_decisions') {
+        const jobs = (result.jobs || []) as ArchiveReassignmentJob[];
+        setArchiveJobs(jobs);
+        setArchiveDecisions(
+          jobs.reduce<Record<string, string>>((acc, job) => {
+            if (job.defaultReplacementSubcontractorId) {
+              acc[job.id] = job.defaultReplacementSubcontractorId;
+            }
+            return acc;
+          }, {})
+        );
+        setShowArchiveConfirm(true);
+        return;
+      }
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || result.message || 'Failed to archive subcontractor');
+      }
+
+      toast.success('Subcontractor archived successfully');
+      setShowArchiveConfirm(false);
+      setArchiveJobs([]);
+      setArchiveDecisions({});
+      setSelectedUser(null);
+      await fetchUsers();
+    } catch (error) {
+      console.error('Error archiving subcontractor:', error);
+      const message = error instanceof TypeError && /fetch/i.test(error.message)
+        ? 'Archive function is not reachable. Apply the archive migration and serve/deploy the archive-subcontractor edge function before testing this action.'
+        : error instanceof Error ? error.message : 'Failed to archive subcontractor';
+      toast.error(message);
+    } finally {
+      setArchivingUserId(null);
+    }
+  };
+
+  const handleRestoreSubcontractor = async (user: User) => {
+    try {
+      setRestoringUserId(user.id);
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('You must be logged in to restore subcontractors');
+        return;
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/restore-subcontractor`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ userId: user.id }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || result.message || 'Failed to restore subcontractor');
+      }
+
+      setRestoredCredentials({
+        email: result.email || user.email,
+        temporaryPassword: result.temporaryPassword,
+      });
+      toast.success('Subcontractor restored with a new temporary password');
+      await fetchUsers();
+    } catch (error) {
+      console.error('Error restoring subcontractor:', error);
+      const message = error instanceof TypeError && /fetch/i.test(error.message)
+        ? 'Restore function is not reachable. Apply the archive migration and serve/deploy the restore-subcontractor edge function before testing this action.'
+        : error instanceof Error ? error.message : 'Failed to restore subcontractor';
+      toast.error(message);
+    } finally {
+      setRestoringUserId(null);
     }
   };
 
@@ -726,6 +882,37 @@ export function Users() {
   };
 
   const renderActionButtons = (user: User) => {
+    const isArchived = Boolean(user.archived_at);
+
+    if (isArchived) {
+      return (
+        <div className="flex justify-end space-x-3">
+          {canDeleteUsers && user.role === 'subcontractor' && (
+            <button
+              onClick={() => handleRestoreSubcontractor(user)}
+              disabled={restoringUserId === user.id}
+              className="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300 disabled:opacity-40"
+              title="Restore Subcontractor"
+            >
+              <ArchiveRestore className={`h-5 w-5 ${restoringUserId === user.id ? 'animate-pulse' : ''}`} />
+            </button>
+          )}
+          {canDeleteUsers && (
+            <button
+              onClick={() => {
+                setSelectedUser(user);
+                setShowDeleteConfirm(true);
+              }}
+              className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
+              title="Permanently Delete User"
+            >
+              <Trash2 className="h-5 w-5" />
+            </button>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div className="flex justify-end space-x-3">
         {/* View Profile - Only show for non-admins OR if viewing own profile */}
@@ -823,8 +1010,21 @@ export function Users() {
           </button>
         )}
         
-        {/* Delete User */}
-        {canDeleteUsers && (
+        {/* Archive active subcontractors before any permanent delete */}
+        {canDeleteUsers && user.role === 'subcontractor' ? (
+          <button
+            onClick={() => {
+              setSelectedUser(user);
+              setArchiveJobs([]);
+              setArchiveDecisions({});
+              setShowArchiveConfirm(true);
+            }}
+            className="text-amber-600 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300"
+            title="Archive Subcontractor"
+          >
+            <Archive className="h-5 w-5" />
+          </button>
+        ) : canDeleteUsers && (
           <button
             onClick={() => {
               setSelectedUser(user);
@@ -965,7 +1165,93 @@ export function Users() {
           )}
         </div>
 
+        <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-200 dark:border-[#2D3B4E]">
+          {[
+            { id: 'active' as const, label: 'Active Users', count: users.filter(user => !user.archived_at).length },
+            { id: 'archived' as const, label: 'Archived Users', count: users.filter(user => user.archived_at).length },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveUsersTab(tab.id)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeUsersTab === tab.id
+                  ? 'border-blue-600 text-blue-700 dark:text-blue-300'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+              }`}
+            >
+              {tab.label} ({tab.count})
+            </button>
+          ))}
+        </div>
+
         <div className="space-y-8">
+          {activeUsersTab === 'archived' ? (
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                <Archive className="h-5 w-5 mr-3 text-amber-600 dark:text-amber-400" />
+                Archived Users ({filteredUsers.length})
+              </h2>
+
+              {filteredUsers.length > 0 ? (
+                <div className="bg-white dark:bg-[#1E293B] rounded-lg overflow-hidden shadow">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-[#2D3B4E]">
+                      <thead>
+                        <tr>
+                          <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            User
+                          </th>
+                          <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Email
+                          </th>
+                          <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Role
+                          </th>
+                          <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Archived
+                          </th>
+                          <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-[#2D3B4E]">
+                        {filteredUsers.map((user) => (
+                          <tr key={user.id} className="hover:bg-gray-50 dark:hover:bg-[#2D3B4E] transition-colors">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <UserChip user={user} isOnline={false} size="lg" />
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-900 dark:text-white">{user.email}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-gray-700 dark:text-gray-300">
+                                {getRoleIcon(user.role)}
+                                {formatRoleLabel(user.role)}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                              {user.archived_at ? new Date(user.archived_at).toLocaleString() : 'Archived'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                              {renderActionButtons(user)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white dark:bg-[#1E293B] rounded-lg p-8 text-center">
+                  <Archive className="h-10 w-10 mx-auto mb-3 text-gray-400" />
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No archived users found</p>
+                </div>
+              )}
+            </div>
+          ) : (
+          <>
           {/* Currently Online Users */}
           {/* Note: Users are sorted by most recently active first (maintained from the main sorting) */}
           <div>
@@ -1150,6 +1436,8 @@ export function Users() {
               </div>
             )}
           </div>
+          </>
+          )}
         </div>
       </div>
 
@@ -1443,9 +1731,11 @@ export function Users() {
       {showDeleteConfirm && selectedUser && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full shadow-xl">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Delete User</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              {selectedUser.archived_at ? 'Permanently Delete User' : 'Delete User'}
+            </h3>
             <p className="text-gray-600 dark:text-gray-400 mb-6">
-              Are you sure you want to delete <strong>{selectedUser.full_name || selectedUser.email}</strong>? 
+              Are you sure you want to {selectedUser.archived_at ? 'permanently delete' : 'delete'} <strong>{selectedUser.full_name || selectedUser.email}</strong>? 
               This action cannot be undone.
             </p>
             <div className="flex justify-end space-x-3">
@@ -1459,7 +1749,160 @@ export function Users() {
                 onClick={handleDeleteUser}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
               >
-                Delete User
+                {selectedUser.archived_at ? 'Permanently Delete' : 'Delete User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Archive / Reassignment Modal */}
+      {showArchiveConfirm && selectedUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col">
+            <div className="px-6 py-5 border-b border-gray-200 dark:border-[#334155]">
+              <div className="flex items-center gap-3">
+                <Archive className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Archive Subcontractor</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{selectedUser.full_name || selectedUser.email}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-5 overflow-y-auto">
+              {archiveJobs.length === 0 ? (
+                <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
+                  <div className="flex gap-3">
+                    <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <div className="text-sm text-amber-900 dark:text-amber-200">
+                      This will remove the subcontractor from active use, disable login access, remove them from preferred subcontractor slots, and preserve historical job assignment data.
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4">
+                    <p className="text-sm text-blue-900 dark:text-blue-200">
+                      This subcontractor has assigned Job Requests. Choose a replacement subcontractor or return each job to the unassigned pool before archiving.
+                    </p>
+                  </div>
+
+                  {archiveJobs.map(job => (
+                    <div key={job.id} className="border border-gray-200 dark:border-[#334155] rounded-lg p-4">
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">
+                        <div>
+                          <h4 className="text-sm font-semibold text-gray-900 dark:text-white">{job.label}</h4>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Status: {job.assignment_status ? job.assignment_status.replace('_', ' ') : 'assigned'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">
+                        Reassignment decision
+                      </label>
+                      <select
+                        value={archiveDecisions[job.id] || ''}
+                        onChange={(e) => setArchiveDecisions(prev => ({ ...prev, [job.id]: e.target.value }))}
+                        className="w-full px-3 py-2 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="" disabled>Select an action</option>
+                        {job.preferredCandidates.length > 0 && (
+                          <optgroup label="Preferred Subcontractors">
+                            {job.preferredCandidates.map(candidate => (
+                              <option key={`preferred-${job.id}-${candidate.id}`} value={candidate.id}>
+                                {candidate.slot ? `${candidate.slot} - ` : ''}{candidate.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        <optgroup label="All Available Subcontractors">
+                          {job.allCandidates.map(candidate => (
+                            <option key={`all-${job.id}-${candidate.id}`} value={candidate.id}>
+                              {candidate.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                        <option value="__unassign">Return to unassigned Job Request pool</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 dark:border-[#334155] flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowArchiveConfirm(false);
+                  setArchiveJobs([]);
+                  setArchiveDecisions({});
+                }}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleArchiveSubcontractor(archiveJobs.length > 0 ? archiveDecisions : undefined)}
+                disabled={
+                  archivingUserId === selectedUser.id ||
+                  archiveJobs.some(job => !archiveDecisions[job.id])
+                }
+                className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:bg-amber-400 transition-colors"
+              >
+                {archivingUserId === selectedUser.id
+                  ? 'Archiving...'
+                  : archiveJobs.length > 0
+                    ? 'Reassign Jobs & Archive Subcontractor'
+                    : 'Archive Subcontractor'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restored Credentials Modal */}
+      {restoredCredentials && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Subcontractor Restored</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              The account was restored with a new temporary password. Share this with the subcontractor through your normal secure process.
+            </p>
+            <div className="space-y-3 mb-5">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Email</label>
+                <input
+                  readOnly
+                  value={restoredCredentials.email}
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Temporary Password</label>
+                <input
+                  readOnly
+                  value={restoredCredentials.temporaryPassword}
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white font-mono"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(restoredCredentials.temporaryPassword);
+                  toast.success('Temporary password copied');
+                }}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
+                Copy Password
+              </button>
+              <button
+                onClick={() => setRestoredCredentials(null)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Done
               </button>
             </div>
           </div>

@@ -11,6 +11,7 @@ import { Lightbox } from './Lightbox';
 import { UnitMapUpload } from './ui/UnitMapUpload';
 import { toast } from 'sonner';
 import { coercePhoneList, formatPhoneNumber, mapInputValueByField, normalizePhoneList } from '../lib/utils/formatUtils';
+import { fetchActiveSubcontractors } from '../lib/users/activeSubcontractors';
 
 interface PropertyManagementGroup {
   id: string;
@@ -323,7 +324,7 @@ export function PropertyEditForm() {
       fetchContacts()
     ]);
     // Load subcontractor users list
-    supabase.from('profiles').select('id, full_name').eq('role', 'subcontractor').order('full_name')
+    fetchActiveSubcontractors<{ id: string; full_name: string | null }>('id, full_name')
       .then(({ data }) => setSubcontractorUsers(data || []));
   }, [propertyId, navigate]);
 
