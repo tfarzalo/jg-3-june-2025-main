@@ -335,6 +335,7 @@ serve(async (req) => {
     const body = await req.json();
     const userId = body.userId || body.subcontractorId;
     const decisions = Array.isArray(body.decisions) ? body.decisions as ArchiveDecision[] : [];
+    const sendNotifications = body.sendNotifications !== false;
     if (!userId) {
       return jsonResponse({ success: false, error: "Missing userId" }, 400);
     }
@@ -520,14 +521,16 @@ serve(async (req) => {
       }
     }
 
-    await sendAssignmentNotifications(
-      supabase,
-      supabaseUrl,
-      serviceKey,
-      requester.user.id,
-      groupedNotifications,
-      activeSubsById,
-    );
+    if (sendNotifications) {
+      await sendAssignmentNotifications(
+        supabase,
+        supabaseUrl,
+        serviceKey,
+        requester.user.id,
+        groupedNotifications,
+        activeSubsById,
+      );
+    }
 
     const preferredSlotUpdates = [
       {
@@ -606,6 +609,7 @@ serve(async (req) => {
       reassignedJobCount: Array.from(groupedNotifications.values()).reduce((sum, jobs) => sum + jobs.length, 0),
       unassignedJobCount: decisions.filter((decision) => decision.action === "unassign").length,
       historicalJobCount: historicalJobs.length,
+      notificationsSent: sendNotifications,
       authDisabled: !authError,
     });
   } catch (error) {

@@ -92,6 +92,7 @@ export function Users() {
   const [archivingUserId, setArchivingUserId] = useState<string | null>(null);
   const [restoringUserId, setRestoringUserId] = useState<string | null>(null);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [showArchiveNotificationPrompt, setShowArchiveNotificationPrompt] = useState(false);
   const [archiveJobs, setArchiveJobs] = useState<ArchiveReassignmentJob[]>([]);
   const [archiveDecisions, setArchiveDecisions] = useState<Record<string, string>>({});
   const [restoredCredentials, setRestoredCredentials] = useState<{
@@ -499,7 +500,30 @@ export function Users() {
     }
   };
 
-  const handleArchiveSubcontractor = async (decisions?: Record<string, string>) => {
+  const getArchiveNotificationSummary = () => {
+    const grouped = new Map<string, { subcontractorName: string; jobs: ArchiveReassignmentJob[] }>();
+
+    archiveJobs.forEach(job => {
+      const selectedValue = archiveDecisions[job.id];
+      if (!selectedValue || selectedValue === '__unassign') return;
+
+      const candidate = [...job.preferredCandidates, ...job.allCandidates]
+        .find(sub => sub.id === selectedValue);
+      const subcontractorName = candidate?.name || 'Selected subcontractor';
+
+      if (!grouped.has(selectedValue)) {
+        grouped.set(selectedValue, { subcontractorName, jobs: [] });
+      }
+      grouped.get(selectedValue)!.jobs.push(job);
+    });
+
+    return Array.from(grouped.values());
+  };
+
+  const handleArchiveSubcontractor = async (
+    decisions?: Record<string, string>,
+    sendNotifications = true
+  ) => {
     if (!selectedUser) return;
 
     try {
@@ -530,6 +554,7 @@ export function Users() {
           body: JSON.stringify({
             userId: selectedUser.id,
             decisions: decisionPayload,
+            sendNotifications,
           }),
         }
       );
@@ -557,6 +582,7 @@ export function Users() {
 
       toast.success('Subcontractor archived successfully');
       setShowArchiveConfirm(false);
+      setShowArchiveNotificationPrompt(false);
       setArchiveJobs([]);
       setArchiveDecisions({});
       setSelectedUser(null);
@@ -1836,6 +1862,7 @@ export function Users() {
               <button
                 onClick={() => {
                   setShowArchiveConfirm(false);
+                  setShowArchiveNotificationPrompt(false);
                   setArchiveJobs([]);
                   setArchiveDecisions({});
                 }}
@@ -1844,7 +1871,19 @@ export function Users() {
                 Cancel
               </button>
               <button
-                onClick={() => handleArchiveSubcontractor(archiveJobs.length > 0 ? archiveDecisions : undefined)}
+                onClick={() => {
+                  const hasReassignments = archiveJobs.some(job => {
+                    const value = archiveDecisions[job.id];
+                    return value && value !== '__unassign';
+                  });
+
+                  if (archiveJobs.length > 0 && hasReassignments) {
+                    setShowArchiveNotificationPrompt(true);
+                    return;
+                  }
+
+                  handleArchiveSubcontractor(archiveJobs.length > 0 ? archiveDecisions : undefined, false);
+                }}
                 disabled={
                   archivingUserId === selectedUser.id ||
                   archiveJobs.some(job => !archiveDecisions[job.id])
@@ -1856,6 +1895,79 @@ export function Users() {
                   : archiveJobs.length > 0
                     ? 'Reassign Jobs & Archive Subcontractor'
                     : 'Archive Subcontractor'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Archive Assignment Notification Prompt */}
+      {showArchiveNotificationPrompt && selectedUser && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4 py-6 bg-black/60">
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow-2xl w-full max-w-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Send Assignment Notification Emails
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowArchiveNotificationPrompt(false)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              The following subcontractors will receive new Job Request assignments. Emails will only be sent if you confirm below.
+            </p>
+
+            <div className="max-h-80 overflow-y-auto space-y-4">
+              {getArchiveNotificationSummary().map(({ subcontractorName, jobs }) => (
+                <div
+                  key={subcontractorName}
+                  className="border border-gray-200 dark:border-[#2D3B4E] rounded-lg p-4"
+                >
+                  <div className="mb-2">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Subcontractor</p>
+                    <p className="text-base font-medium text-gray-900 dark:text-white">
+                      {subcontractorName}
+                    </p>
+                  </div>
+                  <ul className="space-y-3">
+                    {jobs.map(job => (
+                      <li
+                        key={job.id}
+                        className="text-sm text-gray-700 dark:text-gray-300 border-t border-gray-100 dark:border-[#2D3B4E] pt-3 first:border-t-0 first:pt-0"
+                      >
+                        <p className="font-medium text-gray-900 dark:text-white">
+                          {job.property_name || 'Property'}
+                        </p>
+                        <p>{job.label}</p>
+                        {job.unit_number && <p>Unit {job.unit_number}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => handleArchiveSubcontractor(archiveDecisions, false)}
+                disabled={archivingUserId === selectedUser.id}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-[#0F172A] rounded-lg hover:bg-gray-200 dark:hover:bg-[#243049] disabled:opacity-50"
+              >
+                Not Now
+              </button>
+              <button
+                type="button"
+                onClick={() => handleArchiveSubcontractor(archiveDecisions, true)}
+                disabled={archivingUserId === selectedUser.id}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              >
+                {archivingUserId === selectedUser.id ? 'Sending...' : 'Send Emails'}
               </button>
             </div>
           </div>
