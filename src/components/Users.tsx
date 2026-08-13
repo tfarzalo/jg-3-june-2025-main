@@ -1834,6 +1834,7 @@ export function Users() {
                         className="w-full px-3 py-2 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="" disabled>Select an action</option>
+                        <option value="__unassign">Return to unassigned Job Request pool</option>
                         {job.preferredCandidates.length > 0 && (
                           <optgroup label="Preferred Subcontractors">
                             {job.preferredCandidates.map(candidate => (
@@ -1850,7 +1851,6 @@ export function Users() {
                             </option>
                           ))}
                         </optgroup>
-                        <option value="__unassign">Return to unassigned Job Request pool</option>
                       </select>
                     </div>
                   ))}
