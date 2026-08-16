@@ -41,6 +41,51 @@ interface PropertyContact {
   is_new?: boolean;
 }
 
+type ContactIdentity = {
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+};
+
+const SYSTEM_CONTACT_DEFAULT_TITLES: Record<SystemContactKey, string> = {
+  community_manager: 'Community Manager',
+  maintenance_supervisor: 'Maintenance Supervisor',
+  primary_contact: 'Primary Contact',
+  ap: 'Accounts Payable',
+};
+
+function normalizeIdentityPart(value?: string | null) {
+  return (value || '').trim().toLowerCase();
+}
+
+function normalizePhoneIdentity(value?: string | null) {
+  return (value || '').replace(/\D/g, '');
+}
+
+function hasContactIdentity(contact: ContactIdentity) {
+  return Boolean(
+    normalizeIdentityPart(contact.email) ||
+    normalizeIdentityPart(contact.name) ||
+    normalizePhoneIdentity(contact.phone),
+  );
+}
+
+function contactsMatch(left: ContactIdentity, right: ContactIdentity) {
+  if (!hasContactIdentity(left) || !hasContactIdentity(right)) return false;
+
+  const leftEmail = normalizeIdentityPart(left.email);
+  const rightEmail = normalizeIdentityPart(right.email);
+  if (leftEmail && rightEmail) return leftEmail === rightEmail;
+
+  const leftPhone = normalizePhoneIdentity(left.phone);
+  const rightPhone = normalizePhoneIdentity(right.phone);
+  if (leftPhone && rightPhone) return leftPhone === rightPhone;
+
+  const leftName = normalizeIdentityPart(left.name);
+  const rightName = normalizeIdentityPart(right.name);
+  return Boolean(leftName && rightName && leftName === rightName);
+}
+
 export function PropertyForm() {
   const navigate = useNavigate();
   const { isAdmin, isJGManagement } = useUserRole();
@@ -122,19 +167,35 @@ export function PropertyForm() {
 
   // Handler functions for PropertyContactsEditor
   const handleSystemContactChange = (key: SystemContactKey, field: string, value: any) => {
-    setSystemContacts(prev => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        [field]: field === 'phone'
-          ? formatPhoneNumber(String(value))
-          : field === 'additional_phones'
-            // Keep raw array in state (including empty strings so the input fields render);
-            // normalization (dedup + format) happens at save time in handleSubmit.
-            ? (Array.isArray(value) ? value : [])
-            : value
-      }
-    }));
+    setSystemContacts(prev => {
+      const formattedValue = field === 'phone'
+        ? formatPhoneNumber(String(value))
+        : field === 'additional_phones'
+          // Keep raw array in state (including empty strings so the input fields render);
+          // normalization (dedup + format) happens at save time in handleSubmit.
+          ? (Array.isArray(value) ? value : [])
+          : value;
+      const shouldMirrorPrimary =
+        key !== 'primary_contact' &&
+        contactsMatch(prev.primary_contact, prev[key]) &&
+        ['name', 'email', 'secondary_email', 'phone', 'additional_phones', 'title'].includes(field);
+
+      return {
+        ...prev,
+        [key]: {
+          ...prev[key],
+          [field]: formattedValue
+        },
+        ...(shouldMirrorPrimary
+          ? {
+              primary_contact: {
+                ...prev.primary_contact,
+                [field]: formattedValue,
+              },
+            }
+          : {}),
+      };
+    });
   };
 
   const handleSystemContactRoleChange = (key: SystemContactKey, role: keyof ContactRoles, value: boolean) => {
@@ -401,11 +462,8 @@ export function PropertyForm() {
         ap_is_primary_notification: systemContactRoles.ap?.primaryNotification || false,
       };
 
-      // Set primary contact fields from the contact marked Primary Contact.
-      // Older data used the subcontractor contact for this slot, so keep that as a fallback.
-      const subcontractorContact = Object.entries(systemContactRoles).find(
-        ([_, roles]) => roles.subcontractor
-      );
+      // Preserve the explicit Primary Contact slot. Do not build a duplicate
+      // contact from subcontractor/community-manager fallbacks.
       const customPrimaryContact = contacts.find(c => (c as any).is_primary_contact);
       
       if (customPrimaryContact) {
@@ -415,34 +473,33 @@ export function PropertyForm() {
         cleanedFormData.primary_contact_phone = customPrimaryContact.phone;
         cleanedFormData.primary_contact_additional_phones = normalizePhoneList(customPrimaryContact.additional_phones || []);
         cleanedFormData.primary_contact_secondary_email = customPrimaryContact.secondary_email || null;
-      } else if (subcontractorContact) {
-        const [key] = subcontractorContact;
-        const contact = systemContacts[key as SystemContactKey];
+      } else if (hasContactIdentity(systemContacts.primary_contact)) {
+        const syncedSystemContact = (Object.keys(systemContacts) as SystemContactKey[])
+          .filter((key) => key !== 'primary_contact')
+          .find((key) => contactsMatch(systemContacts.primary_contact, systemContacts[key]));
+        const contact = syncedSystemContact
+          ? systemContacts[syncedSystemContact]
+          : systemContacts.primary_contact;
+
         cleanedFormData.primary_contact_name = contact.name;
-        cleanedFormData.primary_contact_role = contact.title;
+        cleanedFormData.primary_contact_role = contact.title || SYSTEM_CONTACT_DEFAULT_TITLES.primary_contact;
         cleanedFormData.primary_contact_email = contact.email;
         cleanedFormData.primary_contact_phone = contact.phone;
         cleanedFormData.primary_contact_additional_phones = normalizePhoneList(contact.additional_phones || []);
         cleanedFormData.primary_contact_secondary_email = contact.secondary_email || null;
       } else {
-        // Check custom contacts
-        const customSubContact = contacts.find(c => c.is_subcontractor_contact);
-        if (customSubContact) {
-          cleanedFormData.primary_contact_name = customSubContact.name;
-          cleanedFormData.primary_contact_role = customSubContact.position;
-          cleanedFormData.primary_contact_email = customSubContact.email;
-          cleanedFormData.primary_contact_phone = customSubContact.phone;
-          cleanedFormData.primary_contact_additional_phones = normalizePhoneList(customSubContact.additional_phones || []);
-          cleanedFormData.primary_contact_secondary_email = customSubContact.secondary_email || null;
-        } else {
-          // Fallback to community manager
-          cleanedFormData.primary_contact_name = systemContacts.community_manager.name;
-          cleanedFormData.primary_contact_role = systemContacts.community_manager.title;
-          cleanedFormData.primary_contact_email = systemContacts.community_manager.email;
-          cleanedFormData.primary_contact_phone = systemContacts.community_manager.phone;
-          cleanedFormData.primary_contact_additional_phones = normalizePhoneList(systemContacts.community_manager.additional_phones || []);
-          cleanedFormData.primary_contact_secondary_email = systemContacts.community_manager.secondary_email || null;
-        }
+        cleanedFormData.primary_contact_name = '';
+        cleanedFormData.primary_contact_role = SYSTEM_CONTACT_DEFAULT_TITLES.primary_contact;
+        cleanedFormData.primary_contact_email = '';
+        cleanedFormData.primary_contact_phone = '';
+        cleanedFormData.primary_contact_additional_phones = [];
+        cleanedFormData.primary_contact_secondary_email = null;
+        cleanedFormData.primary_contact_is_subcontractor = false;
+        cleanedFormData.primary_contact_is_ar = false;
+        cleanedFormData.primary_contact_is_approval_recipient = false;
+        cleanedFormData.primary_contact_is_notification_recipient = false;
+        cleanedFormData.primary_contact_is_primary_approval = false;
+        cleanedFormData.primary_contact_is_primary_notification = false;
       }
 
       // Remove unit_map_file_path from form data as it's handled by the file upload system

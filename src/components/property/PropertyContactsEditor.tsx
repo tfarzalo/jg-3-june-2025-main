@@ -161,6 +161,48 @@ const inputCls =
 
 const labelCls = 'block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1';
 
+const SYSTEM_CONTACT_LABELS: Record<SystemContactKey, string> = {
+  community_manager: 'Community Manager',
+  maintenance_supervisor: 'Maintenance Supervisor',
+  primary_contact: 'Primary Contact',
+  ap: 'Accounts Payable',
+};
+
+function normalizeIdentityPart(value?: string | null) {
+  return (value || '').trim().toLowerCase();
+}
+
+function normalizePhoneIdentity(value?: string | null) {
+  return (value || '').replace(/\D/g, '');
+}
+
+function hasContactIdentity(contact: Pick<SystemContactData, 'name' | 'email' | 'phone'>) {
+  return Boolean(
+    normalizeIdentityPart(contact.email) ||
+    normalizeIdentityPart(contact.name) ||
+    normalizePhoneIdentity(contact.phone),
+  );
+}
+
+function contactsMatch(
+  left: Pick<SystemContactData, 'name' | 'email' | 'phone'>,
+  right: Pick<SystemContactData, 'name' | 'email' | 'phone'>,
+) {
+  if (!hasContactIdentity(left) || !hasContactIdentity(right)) return false;
+
+  const leftEmail = normalizeIdentityPart(left.email);
+  const rightEmail = normalizeIdentityPart(right.email);
+  if (leftEmail && rightEmail) return leftEmail === rightEmail;
+
+  const leftPhone = normalizePhoneIdentity(left.phone);
+  const rightPhone = normalizePhoneIdentity(right.phone);
+  if (leftPhone && rightPhone) return leftPhone === rightPhone;
+
+  const leftName = normalizeIdentityPart(left.name);
+  const rightName = normalizeIdentityPart(right.name);
+  return Boolean(leftName && rightName && leftName === rightName);
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function PropertyContactsEditor({
@@ -195,6 +237,29 @@ export function PropertyContactsEditor({
 
     return associations;
   };
+
+  const primaryContact = systemContacts.primary_contact;
+  const primaryContactHasIdentity = hasContactIdentity(primaryContact);
+
+  const primarySystemMatch = (Object.keys(systemContacts) as SystemContactKey[])
+    .filter((key) => key !== 'primary_contact')
+    .find((key) => contactsMatch(primaryContact, systemContacts[key]));
+
+  const primaryCustomMatchIds = new Set(
+    customContacts
+      .filter((contact) => contactsMatch(primaryContact, contact))
+      .map((contact) => contact.id),
+  );
+
+  const shouldRenderPrimaryContact =
+    !primaryContactHasIdentity ||
+    (!primarySystemMatch && primaryCustomMatchIds.size === 0);
+
+  const hasVisibleSystemDuplicate = (contact: Pick<SystemContactData, 'name' | 'email' | 'phone'>) =>
+    (Object.keys(systemContacts) as SystemContactKey[]).some((key) => {
+      if (key === 'primary_contact' && !shouldRenderPrimaryContact) return false;
+      return contactsMatch(contact, systemContacts[key]);
+    });
 
   const handleDeleteSystemContact = (
     key: SystemContactKey,
@@ -237,6 +302,22 @@ export function PropertyContactsEditor({
     onSystemContactRoleChange(key, 'primaryApproval', false);
     onSystemContactRoleChange(key, 'notificationRecipient', false);
     onSystemContactRoleChange(key, 'primaryNotification', false);
+
+    if (key !== 'primary_contact' && contactsMatch(systemContacts.primary_contact, data)) {
+      onSystemContactChange('primary_contact', 'name', '');
+      onSystemContactChange('primary_contact', 'email', '');
+      onSystemContactChange('primary_contact', 'secondary_email', '');
+      onSystemContactChange('primary_contact', 'phone', '');
+      onSystemContactChange('primary_contact', 'additional_phones', []);
+      onSystemContactChange('primary_contact', 'title', SYSTEM_CONTACT_LABELS.primary_contact);
+
+      onSystemContactRoleChange('primary_contact', 'subcontractor', false);
+      onSystemContactRoleChange('primary_contact', 'accountsReceivable', false);
+      onSystemContactRoleChange('primary_contact', 'approvalRecipient', false);
+      onSystemContactRoleChange('primary_contact', 'primaryApproval', false);
+      onSystemContactRoleChange('primary_contact', 'notificationRecipient', false);
+      onSystemContactRoleChange('primary_contact', 'primaryNotification', false);
+    }
 
     setExpandedCards((prev) => ({ ...prev, [key]: false }));
     setShowSecondaryEmail((prev) => ({ ...prev, [key]: false }));
@@ -335,8 +416,11 @@ export function PropertyContactsEditor({
       (data.additional_phones && data.additional_phones.length > 0) ||
       getSystemContactAssociations(roles).length > 0
     );
+    const isMergedPrimary = key !== 'primary_contact' && primarySystemMatch === key;
+    const isPrimaryIdentity = (key === 'primary_contact' && primaryContactHasIdentity) || isMergedPrimary;
 
     const badges = [
+      isPrimaryIdentity && <Badge key="pc" color="indigo">Primary</Badge>,
       roles.subcontractor && <Badge key="sub" color="blue">Subcontractor</Badge>,
       roles.accountsReceivable && <Badge key="ar" color="purple">AR Contact</Badge>,
       roles.primaryApproval
@@ -489,13 +573,14 @@ export function PropertyContactsEditor({
 
     const nameTrimmed = (contact.name || '').trim().toLowerCase();
     const isDupe = nameTrimmed.length > 0 &&
-      customContacts.some((c) => c.id !== contact.id && (c.name || '').trim().toLowerCase() === nameTrimmed);
+      (customContacts.some((c) => c.id !== contact.id && (c.name || '').trim().toLowerCase() === nameTrimmed) ||
+        hasVisibleSystemDuplicate(contact));
 
     const approvalOn = !!(contact.receives_approval_emails ?? contact.is_approval_recipient);
     const notifOn = !!(contact.receives_notification_emails ?? contact.is_notification_recipient);
 
     const badges = [
-      contact.is_primary_contact && <Badge key="pc" color="indigo">Primary</Badge>,
+      (contact.is_primary_contact || primaryCustomMatchIds.has(contact.id)) && <Badge key="pc" color="indigo">Primary</Badge>,
       contact.is_subcontractor_contact && <Badge key="sub" color="blue">Subcontractor</Badge>,
       contact.is_accounts_receivable_contact && <Badge key="ar" color="purple">AR Contact</Badge>,
       contact.is_primary_approval_recipient
@@ -731,7 +816,7 @@ export function PropertyContactsEditor({
               'border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-900/10', 'bg-blue-600')}
             {renderSystemCard('maintenance_supervisor', 'Maintenance Supervisor', systemContacts.maintenance_supervisor,
               'border-green-200 dark:border-green-800 bg-green-50/30 dark:bg-green-900/10', 'bg-green-600')}
-            {renderSystemCard('primary_contact', 'Primary Contact', systemContacts.primary_contact,
+            {shouldRenderPrimaryContact && renderSystemCard('primary_contact', 'Primary Contact', systemContacts.primary_contact,
               'border-indigo-200 dark:border-indigo-800 bg-indigo-50/30 dark:bg-indigo-900/10', 'bg-indigo-600')}
             {renderSystemCard('ap', 'Accounts Payable', systemContacts.ap,
               'border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-900/10', 'bg-purple-600')}
