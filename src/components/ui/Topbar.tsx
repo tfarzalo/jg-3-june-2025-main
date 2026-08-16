@@ -191,10 +191,20 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
   const handleNotificationClick = (notification: UserNotification) => {
     const meta = notification.metadata || {};
     const jobIdFromMeta = (meta as any)?.job_id;
+    const propertyIdFromMeta = (meta as any)?.property_id;
+    const notificationRoute = typeof (meta as any)?.route === 'string' ? (meta as any).route : '';
     dismissNotification(notification.id);
     setNotificationOpen(false);
-    if (jobIdFromMeta) {
+    if (notificationRoute) {
+      navigate(notificationRoute);
+    } else if (jobIdFromMeta) {
       navigate(`/dashboard/jobs/${jobIdFromMeta}`);
+    } else if (propertyIdFromMeta) {
+      navigate(`/dashboard/properties/${propertyIdFromMeta}`);
+    } else if (notification.entity_id && notification.type === 'property') {
+      navigate(`/dashboard/properties/${notification.entity_id}`);
+    } else if (notification.entity_id && notification.type === 'property_group') {
+      navigate(`/dashboard/property-groups/${notification.entity_id}`);
     } else if (notification.entity_id && notification.type === 'job_phase_change') {
       navigate(`/dashboard/jobs/${notification.entity_id}`);
     } else if (notification.activity_log_id && notification.type === 'job_phase_change') {
@@ -521,8 +531,12 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
               >
                 <Bell className="h-5 w-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 h-4 w-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-medium">
-                    {unreadCount > 9 ? '9+' : unreadCount}
+                  <span
+                    className="absolute -top-1 -right-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white shadow-sm dark:border-[#0F172A]"
+                    title={`${unreadCount} unread notification${unreadCount === 1 ? '' : 's'}`}
+                    aria-label={`${unreadCount} unread notification${unreadCount === 1 ? '' : 's'}`}
+                  >
+                    {unreadCount}
                   </span>
                 )}
               </button>
@@ -558,7 +572,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                       notifications.map(notification => {
                         const meta = notification.metadata || {};
                         const workOrderLabel = (meta as any)?.work_order_label;
-                        const propertyName = (meta as any)?.property_name;
+                        const propertyName = (meta as any)?.property_name || (meta as any)?.name;
                         const unitNumber = (meta as any)?.unit_number;
                         const changeReason = (meta as any)?.change_reason;
                         const fromPhase = getPhaseMeta((meta as any)?.from_phase_id, (meta as any)?.from_phase_name);

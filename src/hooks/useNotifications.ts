@@ -56,13 +56,20 @@ export function useNotifications() {
       setNotifications([]);
       setUnreadCount(0);
 
-      const [notificationsResult, profileResult] = await Promise.all([
+      const [notificationsResult, unreadNotificationsResult, profileResult] = await Promise.all([
         supabase
           .from('notifications_view')
           .select('*')
           .eq('user_id', session.user.id)
           .order('created_at', { ascending: false })
           .limit(50),
+        supabase
+          .from('notifications_view')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .eq('is_read', false)
+          .order('created_at', { ascending: false })
+          .range(0, 999),
         supabase
           .from('profiles')
           .select('notification_settings')
@@ -71,6 +78,7 @@ export function useNotifications() {
       ]);
 
       if (notificationsResult.error) throw notificationsResult.error;
+      if (unreadNotificationsResult.error) throw unreadNotificationsResult.error;
 
       const settings = normalizeBellNotificationSettings(profileResult.data?.notification_settings);
       const notificationsData = filterVisibleNotifications(
@@ -78,8 +86,13 @@ export function useNotifications() {
         session.user.id,
         settings
       );
+      const unreadNotificationsData = filterVisibleNotifications(
+        (unreadNotificationsResult.data || []) as Notification[],
+        session.user.id,
+        settings
+      );
       setNotifications(notificationsData);
-      setUnreadCount(notificationsData.filter(n => !n.is_read).length);
+      setUnreadCount(unreadNotificationsData.length);
       setError(null);
     } catch (err) {
       console.error('Error fetching notifications:', err);
