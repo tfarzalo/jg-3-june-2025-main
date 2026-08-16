@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../utils/supabase';
 import { toast } from 'sonner';
-import { Loader2, Plus, Trash2, AlertTriangle, Ruler } from 'lucide-react';
+import { Loader2, Plus, Trash2, AlertTriangle, Ruler, Pencil, Check, X } from 'lucide-react';
 import { describeUnitSizeDeleteBlockers } from '../../lib/deleteBlockers';
 import { DeleteBlockerDetailsModal } from '../DeleteBlockerDetailsModal';
 
@@ -54,6 +54,8 @@ export function UnitSizeManager() {
   const [isAdding, setIsAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingLabel, setEditingLabel] = useState('');
   const [deleteBlockerMessage, setDeleteBlockerMessage] = useState('');
   const [confirm, setConfirm] = useState<ConfirmModalProps>({
     isOpen: false,
@@ -116,7 +118,7 @@ export function UnitSizeManager() {
     setConfirm({
       isOpen: true,
       title: 'Delete Unit Size',
-      message: `Are you sure you want to delete "${unitSize.unit_size_label}"?\n\nIf this unit size is used in property billing, it cannot be removed.`,
+      message: `Are you sure you want to delete "${unitSize.unit_size_label}"?\n\nIf this unit size is used by jobs or property billing, it cannot be removed.`,
       onConfirm: () => performDelete(unitSize),
       onCancel: () => setConfirm(prev => ({ ...prev, isOpen: false })),
     });
@@ -125,13 +127,23 @@ export function UnitSizeManager() {
   const performDelete = async (unitSize: UnitSize) => {
     try {
       setProcessingId(unitSize.id);
-      const { data: refs, error: refErr } = await supabase
-        .from('billing_details')
-        .select('id')
-        .eq('unit_size_id', unitSize.id)
-        .limit(1);
-      if (refErr) throw refErr;
-      if (refs && refs.length > 0) {
+      const [{ data: jobRefs, error: jobRefErr }, { data: billingRefs, error: billingRefErr }] = await Promise.all([
+        supabase
+          .from('jobs')
+          .select('id')
+          .eq('unit_size_id', unitSize.id)
+          .limit(1),
+        supabase
+          .from('billing_details')
+          .select('id')
+          .eq('unit_size_id', unitSize.id)
+          .limit(1)
+      ]);
+
+      if (jobRefErr) throw jobRefErr;
+      if (billingRefErr) throw billingRefErr;
+
+      if ((jobRefs && jobRefs.length > 0) || (billingRefs && billingRefs.length > 0)) {
         const blockerMessage = await describeUnitSizeDeleteBlockers(unitSize.id);
         setDeleteBlockerMessage(blockerMessage || 'Cannot delete: unit size is in use');
         setProcessingId(null);
@@ -161,6 +173,81 @@ export function UnitSizeManager() {
     } finally {
       setProcessingId(null);
       setConfirm(prev => ({ ...prev, isOpen: false }));
+    }
+  };
+
+  const startEditing = (unitSize: UnitSize) => {
+    setEditingId(unitSize.id);
+    setEditingLabel(unitSize.unit_size_label);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setEditingLabel('');
+  };
+
+  const handleRename = async (unitSize: UnitSize) => {
+    const trimmedLabel = editingLabel.trim();
+
+    if (!trimmedLabel) {
+      toast.error('Unit size label cannot be empty');
+      return;
+    }
+
+    if (trimmedLabel === unitSize.unit_size_label) {
+      cancelEditing();
+      return;
+    }
+
+    const duplicate = unitSizes.find(
+      size => size.id !== unitSize.id && size.unit_size_label.toLowerCase() === trimmedLabel.toLowerCase()
+    );
+    if (duplicate) {
+      toast.error('A unit size with that label already exists');
+      return;
+    }
+
+    try {
+      setProcessingId(unitSize.id);
+
+      const { error } = await supabase.rpc('rename_unit_size', {
+        p_unit_size_id: unitSize.id,
+        p_new_label: trimmedLabel
+      });
+
+      if (error) {
+        if (error.code === '42501') {
+          toast.error("You don't have permission to rename unit sizes");
+        } else if (error.code === '23505') {
+          toast.error('A unit size with that label already exists');
+        } else if (error.message.includes('not found')) {
+          toast.error('Unit size not found');
+        } else {
+          toast.error(error.message || 'Failed to rename unit size');
+        }
+        throw error;
+      }
+
+      setUnitSizes(prev => prev
+        .map(size => size.id === unitSize.id ? { ...size, unit_size_label: trimmedLabel } : size)
+        .sort((a, b) => a.unit_size_label.localeCompare(b.unit_size_label))
+      );
+      toast.success('Unit size renamed successfully');
+      cancelEditing();
+    } catch (err) {
+      console.error('Error renaming unit size:', err);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, unitSize: UnitSize) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleRename(unitSize);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEditing();
     }
   };
 
@@ -252,18 +339,69 @@ export function UnitSizeManager() {
             {unitSizes.map(size => (
               <tr key={size.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-gray-900 dark:text-white">
-                    {size.unit_size_label}
-                  </div>
+                  {editingId === size.id ? (
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        value={editingLabel}
+                        onChange={(e) => setEditingLabel(e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(e, size)}
+                        autoFocus
+                        onFocus={(e) => e.target.select()}
+                        disabled={processingId === size.id}
+                        className="text-sm font-medium px-2 py-1 border border-blue-500 dark:border-blue-400 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                        style={{ width: '200px' }}
+                      />
+                      <button
+                        onClick={() => handleRename(size)}
+                        disabled={processingId === size.id}
+                        className="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50"
+                        title="Save"
+                      >
+                        {processingId === size.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Check className="w-4 h-4" />
+                        )}
+                      </button>
+                      <button
+                        onClick={cancelEditing}
+                        disabled={processingId === size.id}
+                        className="text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 disabled:opacity-50"
+                        title="Cancel"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                      {size.unit_size_label}
+                    </div>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <button
-                    onClick={() => promptDelete(size)}
-                    disabled={!!processingId}
-                    className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center justify-end space-x-2">
+                    {editingId !== size.id && (
+                      <button
+                        onClick={() => startEditing(size)}
+                        disabled={!!processingId || !!editingId}
+                        className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 disabled:opacity-50"
+                        title="Rename unit size"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                    )}
+                    {editingId !== size.id && (
+                      <button
+                        onClick={() => promptDelete(size)}
+                        disabled={!!processingId || !!editingId}
+                        className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
+                        title="Delete unit size"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

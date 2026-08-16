@@ -12,6 +12,7 @@ import {
   Bell,
   X,
   Menu,
+  ChevronDown,
   ArrowRight,
   Activity as ActivityIcon,
   Clock,
@@ -58,6 +59,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const {
     notifications,
@@ -71,11 +73,17 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
   const notificationListRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const [phaseMap, setPhaseMap] = useState<Record<string, { label: string; color: string }>>({});
 
   const isSubcontractor = role === 'subcontractor';
+
+  const handleActionNavigate = (path: string) => {
+    navigate(path);
+    setActionsMenuOpen(false);
+  };
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -108,6 +116,9 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
       }
       if (mobileMenuRef.current && !mobileMenuRef.current.contains(event.target as Node)) {
         setMobileMenuOpen(false);
+      }
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(event.target as Node)) {
+        setActionsMenuOpen(false);
       }
     };
     
@@ -309,7 +320,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
 
   return (
     <>
-      <div className="h-16 bg-white dark:bg-[#0F172A] border-b border-gray-200 dark:border-[#1E293B] px-3 sm:px-4 lg:px-6 flex items-center justify-between">
+      <div className="h-16 bg-white dark:bg-[#0F172A] border-b border-gray-200 dark:border-[#1E293B] px-3 sm:px-4 lg:px-6 flex items-center justify-between gap-2">
         {/* Left side - Mobile menu button and logo */}
         <div className="flex items-center space-x-2 lg:space-x-4 min-w-0 flex-1">
           {/* Mobile menu button - only show on mobile for non-subcontractors */}
@@ -334,9 +345,57 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
             </div>
           )}
 
-          {/* Desktop action buttons - hidden on mobile */}
+          {/* Responsive admin actions - compact menu on tablet/narrow desktop */}
           {!isSubcontractor && !showOnlyProfile && (
-            <div className="hidden lg:flex items-center gap-2 xl:gap-3 flex-nowrap">
+            <div className="relative hidden lg:block 2xl:hidden flex-shrink-0" ref={actionsMenuRef}>
+              <button
+                onClick={() => setActionsMenuOpen(!actionsMenuOpen)}
+                className="h-10 px-3 rounded-lg bg-[#7C3AED] text-white hover:bg-[#6D28D9] transition-colors inline-flex items-center gap-2 whitespace-nowrap shadow-sm"
+                aria-label="Open admin actions"
+                aria-expanded={actionsMenuOpen}
+              >
+                <span className="text-sm font-medium">Actions</span>
+                <ChevronDown className={`h-4 w-4 flex-shrink-0 transition-transform ${actionsMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {actionsMenuOpen && (
+                <div className="absolute left-0 mt-2 w-64 bg-white dark:bg-[#1E293B] rounded-lg shadow-lg border border-gray-200 dark:border-[#2D3B4E] z-50 overflow-hidden">
+                  <button
+                    onClick={() => handleActionNavigate('/dashboard/sub-scheduler')}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D3B4E] transition-colors"
+                  >
+                    <Calendar className="h-4 w-4 flex-shrink-0 text-[#7C3AED]" />
+                    <span className="truncate">Schedule</span>
+                  </button>
+                  <button
+                    onClick={() => handleActionNavigate('/dashboard/jobs/new')}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D3B4E] transition-colors"
+                  >
+                    <Plus className="h-4 w-4 flex-shrink-0 text-blue-600" />
+                    <span className="truncate">New Job</span>
+                  </button>
+                  <button
+                    onClick={() => handleActionNavigate('/dashboard/jobs/quality-control')}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D3B4E] transition-colors"
+                  >
+                    <ClipboardCheck className="h-4 w-4 flex-shrink-0 text-emerald-700" />
+                    <span className="truncate">Quality Control</span>
+                  </button>
+                  <button
+                    onClick={() => handleActionNavigate('/dashboard/reports')}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D3B4E] transition-colors"
+                  >
+                    <FileText className="h-4 w-4 flex-shrink-0 text-[#9B111E]" />
+                    <span className="truncate">Reports</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Desktop action buttons - shown only when there is room for labels */}
+          {!isSubcontractor && !showOnlyProfile && (
+            <div className="hidden 2xl:flex items-center gap-2 xl:gap-3 flex-nowrap flex-shrink-0">
               {/* Hugh AI Assistant - left of search, admin/super admin only */}
               {isAdmin && (
                 <div className="relative" ref={hughRef}>
@@ -356,7 +415,6 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                       <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-white dark:border-[#0F172A]" />
                     )}
                   </button>
-                  <HughAssistant />
                 </div>
               )}
 
@@ -401,13 +459,44 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
         </div>
 
         {/* Right side - User info and controls */}
-        <div className="flex items-center space-x-1 sm:space-x-2 lg:space-x-4 flex-shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 lg:gap-3 flex-shrink-0 flex-nowrap">
+          {/* Icon actions stay aligned on the right when labeled buttons collapse */}
+          {!isSubcontractor && !showOnlyProfile && (
+            <>
+              {isAdmin && (
+                <button
+                  onClick={toggleHugh}
+                  className={`hidden lg:flex 2xl:hidden relative h-11 w-11 flex-shrink-0 items-center justify-center rounded-full transition-all ${
+                    hughOpen
+                      ? 'bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/30'
+                      : 'bg-gray-100 dark:bg-[#1E293B] text-gray-500 dark:text-gray-400 hover:bg-purple-100 dark:hover:bg-purple-900/30 hover:text-purple-600 dark:hover:text-purple-400'
+                  }`}
+                  title="Ask Hugh (AI Assistant)"
+                  aria-label="Hugh AI Assistant"
+                >
+                  <Palette className="h-5 w-5" />
+                  {hughOpen && (
+                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-white dark:border-[#0F172A]" />
+                  )}
+                </button>
+              )}
+
+              <button
+                onClick={() => setSearchOpen(true)}
+                className="hidden lg:flex 2xl:hidden relative h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 dark:bg-[#1E293B] text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-[#2D3B4E] transition-colors"
+                aria-label="Search"
+              >
+                <Search className="h-5 w-5" />
+              </button>
+            </>
+          )}
+
           {/* Theme toggle */}
           <Button
             variant="ghost"
             size="sm"
             onClick={toggleTheme}
-            className="text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white p-2 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+            className="text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white p-2 touch-manipulation h-11 w-11 flex-shrink-0 flex items-center justify-center"
             aria-label="Toggle theme"
           >
             {theme === 'dark' ? (
@@ -418,7 +507,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
           </Button>
 
           {/* Chat Menu - For all users including subcontractors */}
-          <div className="touch-manipulation">
+          <div className="touch-manipulation flex-shrink-0">
             <ChatMenuEnhanced />
           </div>
 
@@ -427,7 +516,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
             <div className="relative" ref={notificationRef}>
               <button
                 onClick={() => setNotificationOpen(!notificationOpen)}
-                className="relative text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors p-2 touch-manipulation min-h-[44px] min-w-[44px] flex items-center justify-center"
+                className="relative text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white transition-colors p-2 touch-manipulation h-11 w-11 flex-shrink-0 flex items-center justify-center"
                 aria-label="Notifications"
               >
                 <Bell className="h-5 w-5" />
@@ -606,8 +695,8 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
           )}
 
           {/* User info and dropdown */}
-          <div className="flex items-center space-x-1 sm:space-x-2 lg:space-x-4 text-gray-500 dark:text-gray-400">
-            <span className="text-sm hidden xl:block truncate max-w-[200px]">
+          <div className="flex items-center gap-1 sm:gap-2 lg:gap-3 text-gray-500 dark:text-gray-400 min-w-0">
+            <span className="text-sm hidden 2xl:block truncate max-w-[200px]">
               {new Date().toLocaleDateString('en-US', { 
                 weekday: 'long', 
                 year: 'numeric', 
@@ -618,10 +707,10 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
             
             <div className="relative" ref={dropdownRef}>
               <div 
-                className="flex items-center space-x-2 cursor-pointer touch-manipulation min-h-[44px] p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-[#1E293B] transition-colors"
+                className="flex items-center space-x-2 cursor-pointer touch-manipulation h-11 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-[#1E293B] transition-colors min-w-0"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
               >
-                <span className="text-gray-900 dark:text-white text-sm hidden sm:block truncate max-w-[120px]">
+                <span className="text-gray-900 dark:text-white text-sm hidden xl:block truncate max-w-[120px]">
                   {profile?.full_name || session?.user.user_metadata.email?.split('@')[0] || 'User'}
                 </span>
                 {(() => {
@@ -814,6 +903,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
       )}
 
       <SearchOverlay isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
+      {isAdmin && !isSubcontractor && !showOnlyProfile && <HughAssistant />}
     </>
   );
 }
