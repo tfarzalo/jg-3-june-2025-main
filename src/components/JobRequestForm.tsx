@@ -42,6 +42,7 @@ export function JobRequestForm() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [unitSizes, setUnitSizes] = useState<UnitSize[]>([]);
   const [naUnitSize, setNaUnitSize] = useState<UnitSize | null>(null);
+  const [tbdUnitSize, setTbdUnitSize] = useState<UnitSize | null>(null);
   const [jobTypes, setJobTypes] = useState<JobType[]>([]);
   const [jobCategories, setJobCategories] = useState<JobCategory[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -114,6 +115,7 @@ export function JobRequestForm() {
     Promise.all([
       fetchProperties(),
       fetchNaUnitSize(),
+      fetchTbdUnitSize(),
       fetchJobTypes(),
       fetchJobCategories()
     ]);
@@ -184,7 +186,13 @@ export function JobRequestForm() {
       uniqueSizes.sort((a, b) => a.unit_size_label.localeCompare(b.unit_size_label));
       const naSize = naUnitSize || await fetchNaUnitSize();
       if (naSize && !seen.has(naSize.id)) {
+        seen.add(naSize.id);
         uniqueSizes.push(naSize);
+      }
+      const tbdSize = tbdUnitSize || await fetchTbdUnitSize();
+      if (tbdSize && !seen.has(tbdSize.id)) {
+        seen.add(tbdSize.id);
+        uniqueSizes.push(tbdSize);
       }
 
       setUnitSizes(uniqueSizes);
@@ -211,6 +219,24 @@ export function JobRequestForm() {
       return size;
     } catch (err) {
       console.error('Error fetching N/A unit size:', err);
+      return null;
+    }
+  };
+
+  const fetchTbdUnitSize = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('unit_sizes')
+        .select('id, unit_size_label')
+        .ilike('unit_size_label', 'tbd')
+        .maybeSingle();
+
+      if (error) throw error;
+      const size = data as UnitSize | null;
+      setTbdUnitSize(size);
+      return size;
+    } catch (err) {
+      console.error('Error fetching TBD unit size:', err);
       return null;
     }
   };
