@@ -48,9 +48,8 @@ export function JobRequestForm() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
   const [hasChanges, setHasChanges] = useState(false);
-  const { attemptNavigate } = useUnsavedChangesPrompt(hasChanges, async () => {
-    const fakeEvent = { preventDefault() {} } as any;
-    await handleSubmit(fakeEvent);
+  const { attemptNavigate } = useUnsavedChangesPrompt(hasChanges, undefined, {
+    discardOnly: true,
   });
 
   // Property search/dropdown state

@@ -2,7 +2,10 @@ import { useEffect, useCallback } from 'react';
 
 export function useUnsavedChangesPrompt(
   hasChanges: boolean,
-  onSave?: () => Promise<void> | void
+  onSave?: () => Promise<void> | void,
+  options?: {
+    discardOnly?: boolean;
+  }
 ) {
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -20,6 +23,13 @@ export function useUnsavedChangesPrompt(
         proceed();
         return;
       }
+      if (options?.discardOnly) {
+        const discard = window.confirm('Discard unsaved changes?');
+        if (discard) {
+          proceed();
+        }
+        return;
+      }
       const save = window.confirm('You have unsaved changes. Save before leaving?');
       if (save) {
         try {
@@ -34,7 +44,7 @@ export function useUnsavedChangesPrompt(
         proceed();
       }
     },
-    [hasChanges, onSave]
+    [hasChanges, onSave, options?.discardOnly]
   );
 
   return { attemptNavigate };
