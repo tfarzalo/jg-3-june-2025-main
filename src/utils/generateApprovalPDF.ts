@@ -19,6 +19,8 @@ interface ExtraChargesData {
     description: string;
     cost: number;
     hours?: number;
+    bill_hours?: number;
+    sub_pay_hours?: number;
     quantity?: number;
     unit?: string;
   }>;
@@ -129,18 +131,23 @@ export async function generateApprovalPDF(options: GeneratePDFOptions): Promise<
   yPosition += 5;
 
   const tableData = extraChargesData.items.map(item => {
+    const hasBillHours = typeof item.bill_hours === 'number' && item.bill_hours > 0;
     const hasHours = typeof item.hours === 'number' && item.hours > 0;
     const hasQty = typeof item.quantity === 'number' && item.quantity > 0;
-    const rate = hasHours
+    const rate = hasBillHours
+      ? item.cost / (item.bill_hours as number)
+      : hasHours
       ? item.cost / (item.hours as number)
       : hasQty
       ? item.cost / (item.quantity as number)
       : undefined;
-    const qtyOrHrs = item.quantity
+    const qtyOrHrs = typeof item.bill_hours === 'number'
+      ? `${item.bill_hours} hrs`
+      : item.quantity
       ? `${item.quantity} (${item.unit || 'items'})`
       : (item.hours ? `${item.hours} hrs` : '-');
     const rateText = typeof rate === 'number'
-      ? `$${rate.toFixed(2)}${hasHours ? '/hr' : ` per ${item.unit || 'item'}`}`
+      ? `$${rate.toFixed(2)}${hasBillHours || hasHours ? '/hr' : ` per ${item.unit || 'item'}`}`
       : '-';
     return [
       item.description,

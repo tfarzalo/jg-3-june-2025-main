@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
-import { CONTACT_TEMPLATE_VARIABLES } from '../lib/emailTemplateVariables';
+import { CONTACT_TEMPLATE_VARIABLES, replaceTemplateTokens } from '../lib/emailTemplateVariables';
 
 interface EmailTemplate {
   id: string;
@@ -99,6 +99,7 @@ export function EmailTemplateManager() {
   const contentSections = [
     { value: 'job_details_table', label: 'Job Details Table' },
     { value: 'extra_charges_table', label: 'Extra Charges Table' },
+    { value: 'additional_comments', label: 'Additional Comments' },
     { value: 'before_images', label: 'Before Photos' },
     { value: 'sprinkler_images', label: 'Sprinkler Photos' },
     { value: 'other_images', label: 'Other Photos' }
@@ -106,11 +107,14 @@ export function EmailTemplateManager() {
 
   const templateVariables = [
     { variable: '{{job_number}}', description: 'Job number (e.g., WO-000123)' },
+    { variable: '{{work_order_number}}', description: 'Work order number' },
     { variable: '{{property_name}}', description: 'Property name' },
     { variable: '{{property_address}}', description: 'Full property address' },
     { variable: '{{unit_number}}', description: 'Unit number' },
     { variable: '{{subcontractor_name}}', description: 'Assigned subcontractor name' },
     { variable: '{{subcontractor_email}}', description: 'Assigned subcontractor email' },
+    { variable: '{{additional_comments}}', description: 'Work order additional comments' },
+    { variable: '{{work_order.additional_comments}}', description: 'Work order additional comments' },
     ...CONTACT_TEMPLATE_VARIABLES,
     { variable: '{{approval_link}}', description: 'Approval link URL (extra charges only)' },
     { variable: '{{approval_button}}', description: 'Approval button (extra charges only)' },
@@ -956,15 +960,35 @@ export function EmailTemplateManager() {
             property_name: 'Sunset Apartments',
             subcontractor_name: 'Carlos Rivera',
             subcontractor_email: 'carlos.rivera@example.com',
+            recipient_first_name: 'Maria',
+            recipient_last_name: 'Lopez',
+            recipient_full_name: 'Maria Lopez',
+            'recipient.first_name': 'Maria',
+            'recipient.last_name': 'Lopez',
+            'recipient.full_name': 'Maria Lopez',
+            'recipient.name': 'Maria Lopez',
+            'recipient.email': 'maria.lopez@example.com',
+            recipient_name: 'Maria Lopez',
+            recipient_email: 'maria.lopez@example.com',
             primary_contact_name: 'Maria Lopez',
+            primary_contact_email: 'maria.lopez@example.com',
+            primary_approval_contact_name: 'Maria Lopez',
+            primary_approval_contact_email: 'maria.lopez@example.com',
             community_manager_name: 'Samantha Reed',
+            community_manager_email: 'samantha.reed@example.com',
             maintenance_supervisor_name: 'David Chen',
+            maintenance_supervisor_email: 'david.chen@example.com',
             ap_contact_name: 'John Smith',
+            ap_contact_email: 'john.smith@example.com',
             additional_contact_names: 'Alex Morgan, Taylor Brooks',
             other_contact_names: 'Alex Morgan, Taylor Brooks',
             job_type: 'Unit Turn',
             scheduled_date: new Date().toLocaleDateString(),
             completion_date: new Date().toLocaleDateString(),
+            additional_comments: 'Please call the office before starting if access instructions have changed.',
+            work_order_additional_comments: 'Please call the office before starting if access instructions have changed.',
+            'work_order.additional_comments': 'Please call the office before starting if access instructions have changed.',
+            'job.additional_comments': 'Please call the office before starting if access instructions have changed.',
             extra_charges_description: 'Additional drywall repair work required',
             extra_hours: '3.5',
             estimated_cost: '175.00'
@@ -1062,20 +1086,10 @@ export function EmailTemplateManager() {
           };
 
           // Process subject
-          let processedSubject = template.subject;
-          Object.entries(sampleData).forEach(([key, value]) => {
-            const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-            processedSubject = processedSubject.replace(regex, value);
-          });
+          let processedSubject = replaceTemplateTokens(template.subject, sampleData);
 
           // Process body
-          let processedBody = template.body;
-          
-          // Replace simple variables
-          Object.entries(sampleData).forEach(([key, value]) => {
-            const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-            processedBody = processedBody.replace(regex, value);
-          });
+          let processedBody = replaceTemplateTokens(template.body, sampleData);
 
           // Add the review link
           processedBody += generateReviewLink();

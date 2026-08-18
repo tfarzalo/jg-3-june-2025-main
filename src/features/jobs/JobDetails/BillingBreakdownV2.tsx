@@ -1,6 +1,7 @@
 import React from 'react';
 import { formatCurrency, sum } from '../../../lib/money';
 import type { JobBillingPayload, AdditionalService } from '../../billing/types';
+import { getLineItemBillHours, getLineItemSubPayHours } from '../../../utils/extraChargesCalculations';
 
 type Props = { billing: JobBillingPayload };
 
@@ -74,8 +75,22 @@ const UnifiedChargesTable: React.FC<{ items: UnifiedChargeItem[] }> = ({ items }
               </td>
               <td className="px-6 py-4 text-zinc-600 dark:text-zinc-400 text-base">{s.unit_label ?? (s.is_hours ? 'Hours' : '—')}</td>
               <td className="px-6 py-4 text-center text-zinc-800 dark:text-zinc-100 font-bold text-lg">{s.quantity_or_hours == null ? '—' : s.quantity_or_hours}</td>
-              <td className="px-6 py-4 text-right font-bold text-zinc-900 dark:text-zinc-100 text-lg">{formatCurrency(s.bill_amount)}</td>
-              <td className="px-6 py-4 text-right font-bold text-zinc-900 dark:text-zinc-100 text-lg">{formatCurrency(s.sub_pay_amount)}</td>
+              <td className="px-6 py-4 text-right font-bold text-zinc-900 dark:text-zinc-100 text-lg">
+                {s.bill_hours !== undefined && (
+                  <span className="mb-1 block text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                    {s.bill_hours} bill hrs
+                  </span>
+                )}
+                {formatCurrency(s.bill_amount)}
+              </td>
+              <td className="px-6 py-4 text-right font-bold text-zinc-900 dark:text-zinc-100 text-lg">
+                {s.sub_pay_hours !== undefined && (
+                  <span className="mb-1 block text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                    {s.sub_pay_hours} sub hrs
+                  </span>
+                )}
+                {formatCurrency(s.sub_pay_amount)}
+              </td>
               <td className="px-6 py-4 text-right font-bold text-emerald-600 dark:text-emerald-400 text-lg">{formatCurrency(s.profit_amount)}</td>
             </tr>
           ))}
@@ -92,6 +107,8 @@ type UnifiedChargeItem = {
   quantity_or_hours: number;
   is_hours: boolean;
   rate?: number;
+  bill_hours?: number;
+  sub_pay_hours?: number;
   bill_amount: number;
   sub_pay_amount: number;
   profit_amount: number;
@@ -132,6 +149,8 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
       const quantity = Number(item.quantity) || 0;
       const billRate = Number(item.billRate) || 0;
       const subRate = Number(item.subRate) || 0;
+      const billHours = getLineItemBillHours(item);
+      const subPayHours = getLineItemSubPayHours(item);
       const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
       const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
       return {
@@ -141,6 +160,8 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
         quantity_or_hours: quantity,
         is_hours: item.isHourly,
         rate: billRate,
+        bill_hours: item.isHourly ? billHours : undefined,
+        sub_pay_hours: item.isHourly ? subPayHours : undefined,
         bill_amount: billAmount,
         sub_pay_amount: subAmount,
         profit_amount: billAmount - subAmount
@@ -154,6 +175,8 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
       quantity_or_hours: extra.hours || 0,
       is_hours: true,
       rate: extra.hourly_rate,
+      bill_hours: extra.hours || 0,
+      sub_pay_hours: extra.hours || 0,
       bill_amount: extra.bill_amount || 0,
       sub_pay_amount: extra.sub_pay_amount || 0,
       profit_amount: (extra.bill_amount || 0) - (extra.sub_pay_amount || 0)
@@ -193,6 +216,9 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
   const totalExtraBill = sum(unifiedItems.map(i => i.bill_amount));
   const totalExtraSub = sum(unifiedItems.map(i => i.sub_pay_amount));
   const totalExtraProfit = totalExtraBill - totalExtraSub;
+  const totalBillHours = sum(unifiedItems.map(i => i.bill_hours ?? 0));
+  const totalSubPayHours = sum(unifiedItems.map(i => i.sub_pay_hours ?? 0));
+  const hasHourlyExtraCharges = totalBillHours > 0 || totalSubPayHours > 0;
 
   // Repair is already included as a line item inside unifiedItems — no double-counting needed
   const totals = {
@@ -240,6 +266,18 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
         <SectionCard title="Extra Charges" accentColor="amber">
           <UnifiedChargesTable items={unifiedItems} />
           <div className="mt-6 bg-white/60 dark:bg-zinc-800/40 rounded-xl p-6 border border-zinc-200/60 dark:border-zinc-700/60">
+            {hasHourlyExtraCharges && (
+              <div className="mb-6 grid grid-cols-1 gap-4 rounded-lg border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-900/50 dark:bg-amber-900/20 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-200">Total Bill Hours</div>
+                  <div className="mt-1 text-2xl font-bold text-zinc-900 dark:text-zinc-100">{totalBillHours}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-200">Total Sub Pay Hours</div>
+                  <div className="mt-1 text-2xl font-bold text-zinc-900 dark:text-zinc-100">{totalSubPayHours}</div>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-8">
               <div className="text-left">
                 <div className="text-sm font-semibold text-zinc-600 dark:text-zinc-400 mb-2 uppercase tracking-wide">Total Bill to Customer</div>

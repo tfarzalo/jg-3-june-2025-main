@@ -10,6 +10,8 @@ import { useExtraCharges } from '../hooks/useExtraCharges';
 import {
   calculateLineItemAmounts,
   generateTempId,
+  getLineItemBillHours,
+  getLineItemSubPayHours,
 } from '../utils/extraChargesCalculations';
 import { validateExtraChargeLineItem } from '../utils/extraChargesValidation';
 
@@ -44,6 +46,10 @@ export default function ExtraChargesSection({
       qtyLabel: 'Quantity',
       hoursPlaceholder: 'Enter hours',
       qtyPlaceholder: 'Enter quantity',
+      customizeHoursLabel: 'Customize bill and sub pay hours',
+      billHoursLabel: 'Bill Hours',
+      subPayHoursLabel: 'Sub Pay Hours',
+      baseHours: 'Base Hours',
       notesLabel: 'Notes (Optional)',
       notesPlaceholder: 'Add any additional notes...',
       addButton: 'Add Charge',
@@ -75,6 +81,10 @@ export default function ExtraChargesSection({
       qtyLabel: 'Cantidad',
       hoursPlaceholder: 'Ingresar horas',
       qtyPlaceholder: 'Ingresar cantidad',
+      customizeHoursLabel: 'Personalizar horas de cobro y pago',
+      billHoursLabel: 'Horas a Cobrar',
+      subPayHoursLabel: 'Horas de Pago',
+      baseHours: 'Horas Base',
       notesLabel: 'Notas (Opcional)',
       notesPlaceholder: 'Agregue notas adicionales...',
       addButton: 'Agregar Cargo',
@@ -101,19 +111,27 @@ export default function ExtraChargesSection({
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
   const [selectedDetailId, setSelectedDetailId] = useState<string>('');
   const [quantity, setQuantity] = useState<string>('1');
+  const [customizeHours, setCustomizeHours] = useState(false);
+  const [billHours, setBillHours] = useState<string>('1');
+  const [subPayHours, setSubPayHours] = useState<string>('1');
   const [notes, setNotes] = useState<string>('');
   const [formErrors, setFormErrors] = useState<string[]>([]);
 
   // Get selected category and detail
   const selectedCategory = categories.find((cat) => cat.categoryId === selectedCategoryId);
   const selectedDetail = selectedCategory?.lineItems.find((item) => item.id === selectedDetailId);
+  const parsedQuantity = parseFloat(quantity) || 0;
+  const parsedBillHours = customizeHours ? parseFloat(billHours) || 0 : parsedQuantity;
+  const parsedSubPayHours = customizeHours ? parseFloat(subPayHours) || 0 : parsedQuantity;
 
   // Calculate amounts in real-time
   const calculatedAmounts = selectedDetail
     ? calculateLineItemAmounts(
-        parseFloat(quantity) || 0,
+        parsedQuantity,
         selectedDetail.billAmount,
-        selectedDetail.subAmount
+        selectedDetail.subAmount,
+        selectedDetail.isHourly ? parsedBillHours : parsedQuantity,
+        selectedDetail.isHourly ? parsedSubPayHours : parsedQuantity
       )
     : { billAmount: 0, subAmount: 0 };
 
@@ -130,10 +148,13 @@ export default function ExtraChargesSection({
       categoryName: selectedCategory.categoryName,
       detailId: selectedDetail.id,
       detailName: selectedDetail.name,
-      quantity: parseFloat(quantity) || 0,
+      quantity: parsedQuantity,
       billRate: selectedDetail.billAmount,
       subRate: selectedDetail.subAmount,
       isHourly: selectedDetail.isHourly,
+      customizeHours: selectedDetail.isHourly ? customizeHours : false,
+      billHours: selectedDetail.isHourly && customizeHours ? parsedBillHours : undefined,
+      subPayHours: selectedDetail.isHourly && customizeHours ? parsedSubPayHours : undefined,
       jobBillingCategory: 'owner',
       notes: notes.trim(),
       calculatedBillAmount: calculatedAmounts.billAmount,
@@ -154,6 +175,9 @@ export default function ExtraChargesSection({
     setSelectedCategoryId('');
     setSelectedDetailId('');
     setQuantity('1');
+    setCustomizeHours(false);
+    setBillHours('1');
+    setSubPayHours('1');
     setNotes('');
     setFormErrors([]);
     setIsAddingNew(false);
@@ -235,6 +259,12 @@ export default function ExtraChargesSection({
                   <span>
                     {text.quantity}: {item.quantity} {item.isHourly ? text.hours : text.units}
                   </span>
+                  {item.isHourly && item.customizeHours && (
+                    <>
+                      <span>{text.billHoursLabel}: {getLineItemBillHours(item)} {text.hours}</span>
+                      <span>{text.subPayHoursLabel}: {getLineItemSubPayHours(item)} {text.hours}</span>
+                    </>
+                  )}
                 </div>
                 {item.notes && (
                   <p className="text-xs text-gray-500 dark:text-gray-400 italic">{text.notes}: {item.notes}</p>
@@ -281,6 +311,9 @@ export default function ExtraChargesSection({
               onChange={(e) => {
                 setSelectedCategoryId(e.target.value);
                 setSelectedDetailId(''); // Reset detail when category changes
+                setCustomizeHours(false);
+                setBillHours(quantity);
+                setSubPayHours(quantity);
               }}
               disabled={disabled}
               className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -302,7 +335,12 @@ export default function ExtraChargesSection({
               </label>
               <select
                 value={selectedDetailId}
-                onChange={(e) => setSelectedDetailId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedDetailId(e.target.value);
+                  setCustomizeHours(false);
+                  setBillHours(quantity);
+                  setSubPayHours(quantity);
+                }}
                 disabled={disabled}
                 className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
@@ -326,7 +364,13 @@ export default function ExtraChargesSection({
                 <input
                   type="number"
                   value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
+                  onChange={(e) => {
+                    setQuantity(e.target.value);
+                    if (!customizeHours) {
+                      setBillHours(e.target.value);
+                      setSubPayHours(e.target.value);
+                    }
+                  }}
                   min={selectedDetail.isHourly ? '0.25' : '0.01'}
                   step={selectedDetail.isHourly ? '0.25' : '1'}
                   disabled={disabled}
@@ -335,6 +379,63 @@ export default function ExtraChargesSection({
                   placeholder={selectedDetail.isHourly ? text.hoursPlaceholder : text.qtyPlaceholder}
                 />
               </div>
+
+              {selectedDetail.isHourly && (
+                <div className="rounded-lg border border-blue-100 dark:border-blue-900/50 bg-blue-50/70 dark:bg-blue-900/20 p-3 space-y-3">
+                  <label className="flex items-center gap-2 text-sm font-medium text-blue-900 dark:text-blue-100">
+                    <input
+                      type="checkbox"
+                      checked={customizeHours}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setCustomizeHours(checked);
+                        if (checked) {
+                          setBillHours(quantity);
+                          setSubPayHours(quantity);
+                        }
+                      }}
+                      disabled={disabled}
+                      className="h-4 w-4 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    {text.customizeHoursLabel}
+                  </label>
+
+                  {customizeHours && (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-blue-800 dark:text-blue-200 mb-1">
+                          {text.billHoursLabel}
+                        </label>
+                        <input
+                          type="number"
+                          value={billHours}
+                          onChange={(e) => setBillHours(e.target.value)}
+                          min="0.25"
+                          step="0.25"
+                          disabled={disabled}
+                          inputMode="decimal"
+                          className="w-full rounded-md border border-blue-200 dark:border-blue-800 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-blue-800 dark:text-blue-200 mb-1">
+                          {text.subPayHoursLabel}
+                        </label>
+                        <input
+                          type="number"
+                          value={subPayHours}
+                          onChange={(e) => setSubPayHours(e.target.value)}
+                          min="0.25"
+                          step="0.25"
+                          disabled={disabled}
+                          inputMode="decimal"
+                          className="w-full rounded-md border border-blue-200 dark:border-blue-800 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
             </>
           )}
@@ -374,6 +475,9 @@ export default function ExtraChargesSection({
                 setSelectedCategoryId('');
                 setSelectedDetailId('');
                 setQuantity('1');
+                setCustomizeHours(false);
+                setBillHours('1');
+                setSubPayHours('1');
                 setNotes('');
               }}
               disabled={disabled}

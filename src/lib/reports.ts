@@ -153,7 +153,10 @@ const formatExtraChargeReportItemText = (item?: ExtraChargeReportItem) => {
   if (!item) return '';
   const name = item.name?.trim();
   const description = item.description?.trim();
-  const detail = [name, description && description !== name ? description : ''].filter(Boolean).join(' - ');
+  const isMiscAdditionalCost = name?.toLowerCase() === 'miscellaneous additional cost';
+  const detail = isMiscAdditionalCost
+    ? (description || name || '')
+    : [name, description && description !== name ? description : ''].filter(Boolean).join(' - ');
   return `${formatCurrency(item.bill)}${detail ? ` - ${detail}` : ''}`;
 };
 
@@ -1010,7 +1013,7 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
       nonBaseSub += subAmount;
       if (billAmount > 0 || subAmount > 0 || description) {
         extraItems.push({
-          name: 'Miscellaneous Additional Cost',
+          name: description ? undefined : 'Miscellaneous Additional Cost',
           description,
           bill: Number(billAmount.toFixed(2)),
           sub: Number(subAmount.toFixed(2)),
@@ -1024,9 +1027,10 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
     nonBaseBill += repairBill;
     nonBaseSub += repairSub;
     if (repairBill > 0 || repairSub > 0) {
+      const description = String(workOrder?.repair_description ?? '').trim() || 'Miscellaneous additional cost';
       extraItems.push({
-        name: 'Miscellaneous Additional Cost',
-        description: String(workOrder?.repair_description ?? '').trim() || 'Miscellaneous additional cost',
+        name: description ? undefined : 'Miscellaneous Additional Cost',
+        description,
         bill: Number(repairBill.toFixed(2)),
         sub: Number(repairSub.toFixed(2)),
         profit: Number((repairBill - repairSub).toFixed(2)),

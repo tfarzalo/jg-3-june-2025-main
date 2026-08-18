@@ -146,7 +146,7 @@ function approvalDecisionActorFromChange(
     };
   }
 
-  const parsedName = change.change_reason?.match(/extra charges (?:approved|declined|rejected) by ([^.;-]+)/i)?.[1]?.trim();
+  const parsedName = change.change_reason?.match(/extra charges (?:approved|declined|rejected)(?: manually)? by ([^.;-]+)/i)?.[1]?.trim();
   if (parsedName) {
     return {
       actorName: parsedName,

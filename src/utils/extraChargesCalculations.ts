@@ -10,11 +10,13 @@ import { ExtraChargeLineItem, ExtraChargesTotals } from '../types/extraCharges';
 export function calculateLineItemAmounts(
   quantity: number,
   billRate: number,
-  subRate: number
+  subRate: number,
+  billQuantity = quantity,
+  subPayQuantity = quantity
 ): { billAmount: number; subAmount: number } {
   // Round to 2 decimal places to avoid floating point issues
-  const billAmount = Math.round(quantity * billRate * 100) / 100;
-  const subAmount = Math.round(quantity * subRate * 100) / 100;
+  const billAmount = Math.round(billQuantity * billRate * 100) / 100;
+  const subAmount = Math.round(subPayQuantity * subRate * 100) / 100;
   
   return {
     billAmount,
@@ -38,6 +40,18 @@ export function calculateTotals(lineItems: ExtraChargeLineItem[]): ExtraChargesT
     ...totals,
     profitAmount: totals.billAmount - totals.subAmount,
   };
+}
+
+export function getLineItemBillHours(item: ExtraChargeLineItem): number {
+  if (!item.isHourly) return Number(item.quantity) || 0;
+  if (item.customizeHours) return Number(item.billHours ?? item.quantity) || 0;
+  return Number(item.quantity) || 0;
+}
+
+export function getLineItemSubPayHours(item: ExtraChargeLineItem): number {
+  if (!item.isHourly) return Number(item.quantity) || 0;
+  if (item.customizeHours) return Number(item.subPayHours ?? item.quantity) || 0;
+  return Number(item.quantity) || 0;
 }
 
 /**

@@ -142,6 +142,7 @@ export function PropertyEditForm() {
     occupied_regular_paint_fees: '',
     quickbooks_number: '',
     unit_map_file_path: '',
+    unit_map_note: '',
 
     // Paint Colors - will be handled by PaintColorsEditor
     paint_location: '',
@@ -527,6 +528,7 @@ export function PropertyEditForm() {
         occupied_regular_paint_fees: data.occupied_regular_paint_fees || '',
         quickbooks_number: data.quickbooks_number || '',
         unit_map_file_path: data.unit_map_file_path || '',
+        unit_map_note: data.unit_map_note || '',
         paint_location: data.paint_location || '',
         is_active: data.is_active !== false,
         compliance_bid_approved: data.compliance_bid_approved || '',
@@ -1160,6 +1162,24 @@ export function PropertyEditForm() {
                 <p className="text-sm text-gray-500 dark:text-gray-400">Loading property data...</p>
               </div>
             )}
+
+            <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-5">
+              <label htmlFor="unit_map_note" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                Unit Map Note
+              </label>
+              <textarea
+                id="unit_map_note"
+                name="unit_map_note"
+                rows={4}
+                value={formData.unit_map_note}
+                onChange={handleChange}
+                className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 resize-y"
+                placeholder="Add unit-specific notes, building/unit layout instructions, or map context..."
+              />
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                This note can be used with or without an uploaded unit map graphic.
+              </p>
+            </div>
           </div>
 
           {/* Manage Billing Details */}

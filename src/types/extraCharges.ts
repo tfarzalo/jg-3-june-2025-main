@@ -38,6 +38,9 @@ export interface ExtraChargeLineItem {
   billRate: number; // Rate per unit
   subRate: number; // Sub pay rate per unit
   isHourly: boolean;
+  customizeHours?: boolean; // Allows different customer bill hours and subcontractor pay hours
+  billHours?: number; // Customer-facing hours used for billRate when customizeHours is true
+  subPayHours?: number; // Subcontractor pay hours used for subRate when customizeHours is true
   jobBillingCategory: 'owner' | 'warranty' | 'tenant';
   notes: string; // Optional description
   calculatedBillAmount: number; // quantity * billRate

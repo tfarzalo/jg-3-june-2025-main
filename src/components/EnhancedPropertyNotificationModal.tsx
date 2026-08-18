@@ -14,8 +14,16 @@ import { toast } from 'sonner';
 import { supabase } from '../utils/supabase';
 import { formatDisplayDate } from '../lib/dateUtils';
 import { ExtraChargeLineItem } from '../types/extraCharges';
+import { getLineItemBillHours, getLineItemSubPayHours } from '../utils/extraChargesCalculations';
 import { getEmailRecipients } from '../lib/contacts/emailRecipientsAdapter';
-import { CONTACT_TEMPLATE_VARIABLES, fetchContactTemplateTokens, replaceTemplateTokens, type ContactTemplateTokens } from '../lib/emailTemplateVariables';
+import {
+  CONTACT_TEMPLATE_VARIABLES,
+  fetchContactTemplateTokens,
+  replaceTemplateTokenValue,
+  replaceTemplateTokens,
+  splitFullName,
+  type ContactTemplateTokens,
+} from '../lib/emailTemplateVariables';
 import { getPreviewUrl } from '../utils/storagePreviews';
 import { FOLDER_KEY_TO_CATEGORY, LEGACY_CATEGORY_ALIASES, normalizeCategory } from '../utils/fileCategories';
 import { RichTextEditor } from './RichTextEditor';
@@ -67,6 +75,7 @@ interface Job {
     extra_charges_line_items?: ExtraChargeLineItem[];
     repair_cost?: number | null;
     repair_description?: string | null;
+    additional_comments?: string | null;
     misc_additional_cost_items?: Array<{
       id?: string;
       description?: string | null;
@@ -132,7 +141,10 @@ const TEXTAREA_CLASSES =
   'mt-1 block w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-base text-gray-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/60 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100';
 const SECTION_LABELS: Record<string, string> = {
   job_details: 'Job Details',
+  job_details_table: 'Job Details',
   billing_details: 'Billing Details',
+  extra_charges_table: 'Billing Details',
+  additional_comments: 'Additional Comments',
   before_images: 'Before Images',
   after_images: 'After Images',
   sprinkler_images: 'Sprinkler Images',
@@ -289,9 +301,17 @@ export function EnhancedPropertyNotificationModal({
   );
 
   const safeSections = useMemo(() => selectedTemplate?.included_sections ?? [], [selectedTemplate]);
+  const hasSection = useCallback(
+    (...keys: string[]) => keys.some((key) => safeSections.includes(key)),
+    [safeSections]
+  );
   const selectedImages = useMemo(
     () => jobImages.filter((img) => selectedImageIds.includes(img.id)),
     [jobImages, selectedImageIds]
+  );
+  const additionalComments = useMemo(
+    () => (job?.work_order?.additional_comments || '').trim(),
+    [job?.work_order?.additional_comments]
   );
 
   const jobDetailsData = useMemo(() => ({
@@ -317,8 +337,9 @@ export function EnhancedPropertyNotificationModal({
       { variable: '{{job_phase}}', description: 'Current job phase' },
       { variable: '{{scheduled_date}}', description: 'Scheduled date' },
       { variable: '{{completion_date}}', description: 'Completed date' },
+      { variable: '{{additional_comments}}', description: 'Work order additional comments' },
+      { variable: '{{work_order.additional_comments}}', description: 'Work order additional comments' },
       ...CONTACT_TEMPLATE_VARIABLES,
-      { variable: '{{recipient_name}}', description: 'Recipient/contact name' },
       { variable: '{{extra_charges_description}}', description: 'Extra charges description' },
       { variable: '{{estimated_cost}}', description: 'Estimated extra charges amount (plain number)' },
       { variable: '{{extra_charges.bill_amount}}', description: 'Extra charges amount (formatted)' },
@@ -666,6 +687,7 @@ export function EnhancedPropertyNotificationModal({
       const propertyAddress = formatAddress(job);
       const apName = apContactName || job.property?.ap_name || '';
       const recipientName = primaryRecipientName || contactTemplateTokens.recipient_name || apName;
+      const recipientNameParts = splitFullName(recipientName);
       const subcontractorName = job.assigned_to_name || assignedSubcontractorName || '';
       const subcontractorEmail = job.assigned_to_email || assignedSubcontractorEmail || '';
       const extraCharges = job.extra_charges_details;
@@ -715,12 +737,20 @@ export function EnhancedPropertyNotificationModal({
       assignTokens(job.job_phase?.label, ['job.phase', 'job_phase']);
       assignTokens(scheduledDate, ['job.scheduled_date', 'scheduled_date']);
       assignTokens(completionDate, ['job.completed_date', 'completion_date']);
+      assignTokens(additionalComments, [
+        'additional_comments',
+        'work_order.additional_comments',
+        'work_order_additional_comments',
+        'job.additional_comments',
+      ]);
 
       assignTokens(apName, ['ap_contact.name', 'ap_contact_name']);
 
       // Add common recipient name variations that might appear in templates
       assignTokens(recipientName, [
         'recipient_name',
+        'recipient_full_name',
+        'recipient.full_name',
         'contact_name', 
         'name',
         'property_owner',
@@ -728,6 +758,9 @@ export function EnhancedPropertyNotificationModal({
         'manager_name',
         'recipient'
       ]);
+      assignTokens(recipientNameParts.firstName, ['recipient_first_name', 'recipient.first_name']);
+      assignTokens(recipientNameParts.lastName, ['recipient_last_name', 'recipient.last_name']);
+      assignTokens(recipientEmail, ['recipient_email', 'recipient.email']);
 
       assignTokens(extraCharges?.description, ['extra_charges.description', 'extra_charges_description']);
       assignTokens(
@@ -755,14 +788,12 @@ export function EnhancedPropertyNotificationModal({
         
       // First pass: Replace all known tokens
       Object.entries(replacements).forEach(([token, value]) => {
-        const single = new RegExp(`\\{\\s*${escapeRegExp(token)}\\s*\\}`, 'gi');
-        const double = new RegExp(`\\{\\{\\s*${escapeRegExp(token)}\\s*\\}\\}`, 'gi');
-        processed = processed.replace(single, value).replace(double, value);
+        processed = replaceTemplateTokenValue(processed, token, value);
       });
         
       return replaceTemplateTokens(processed, contactTemplateTokens);
     },
-    [job, apContactName, primaryRecipientName, contactTemplateTokens, assignedSubcontractorName, assignedSubcontractorEmail]
+    [job, apContactName, primaryRecipientName, contactTemplateTokens, assignedSubcontractorName, assignedSubcontractorEmail, recipientEmail, additionalComments]
   );
 
   const processTemplate = useCallback(
@@ -955,6 +986,8 @@ export function EnhancedPropertyNotificationModal({
     const items: Array<{
       description: string;
       hours?: number;
+      bill_hours?: number;
+      sub_pay_hours?: number;
       quantity?: number;
       unit?: string;
       bill_amount: number;
@@ -981,12 +1014,16 @@ export function EnhancedPropertyNotificationModal({
         ...extraChargeLineItems.map((item) => {
           const quantity = Number(item.quantity) || 0;
           const billRate = Number(item.billRate) || 0;
+          const billHours = getLineItemBillHours(item);
+          const subPayHours = getLineItemSubPayHours(item);
           const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
           const descriptionBase = item.description?.trim() || `${item.categoryName || 'Extra Charges'} - ${item.detailName || 'Item'}`;
           const description = item.notes ? `${descriptionBase} (${item.notes})` : descriptionBase;
           return {
             description,
             hours: item.isHourly ? quantity : undefined,
+            bill_hours: item.isHourly ? billHours : undefined,
+            sub_pay_hours: item.isHourly ? subPayHours : undefined,
             quantity: item.isHourly ? undefined : quantity,
             unit: item.isHourly ? 'hrs' : 'units',
             bill_amount: billAmount,
@@ -1046,7 +1083,7 @@ export function EnhancedPropertyNotificationModal({
   };
 
   const renderJobDetailsPreview = () => {
-    if (!safeSections.includes('job_details') || !job) return null;
+    if (!hasSection('job_details', 'job_details_table') || !job) return null;
     const rows = buildJobDetailsRows();
     return (
       <div className="space-y-3">
@@ -1064,7 +1101,7 @@ export function EnhancedPropertyNotificationModal({
   };
 
   const renderBillingPreview = () => {
-    if (!safeSections.includes('billing_details')) return null;
+    if (!hasSection('billing_details', 'extra_charges_table')) return null;
     const items = buildBillingItems();
     if (!items.length) {
       return (
@@ -1077,7 +1114,10 @@ export function EnhancedPropertyNotificationModal({
 
     const total = items.reduce((sum, item) => sum + (item.bill_amount || 0), 0);
 
-    const formatQty = (item: { hours?: number; quantity?: number; unit?: string }) => {
+    const formatQty = (item: { hours?: number; bill_hours?: number; quantity?: number; unit?: string }) => {
+      if (typeof item.bill_hours === 'number') {
+        return `${item.bill_hours} hrs`;
+      }
       if (typeof item.hours === 'number') return `${item.hours} hrs`;
       if (typeof item.quantity === 'number') {
         return item.unit ? `${item.quantity} ${item.unit}` : `${item.quantity}`;
@@ -1116,6 +1156,19 @@ export function EnhancedPropertyNotificationModal({
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    );
+  };
+
+  const renderAdditionalCommentsPreview = () => {
+    if (!hasSection('additional_comments') || !additionalComments) return null;
+
+    return (
+      <div>
+        <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-2">Additional Comments</h4>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm leading-relaxed text-gray-800 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 whitespace-pre-wrap">
+          {additionalComments}
         </div>
       </div>
     );
@@ -1173,7 +1226,10 @@ export function EnhancedPropertyNotificationModal({
   const buildSectionHtml = (cidMap?: Record<string, string>) => {
     const sections: string[] = [];
     const rows = buildJobDetailsRows();
-    const formatQty = (item: { hours?: number; quantity?: number; unit?: string }) => {
+    const formatQty = (item: { hours?: number; bill_hours?: number; quantity?: number; unit?: string }) => {
+      if (typeof item.bill_hours === 'number') {
+        return `${item.bill_hours} hrs`;
+      }
       if (typeof item.hours === 'number') return `${item.hours} hrs`;
       if (typeof item.quantity === 'number') {
         return item.unit ? `${item.quantity} ${item.unit}` : `${item.quantity}`;
@@ -1181,7 +1237,7 @@ export function EnhancedPropertyNotificationModal({
       return '';
     };
 
-    if (safeSections.includes('job_details') && rows.length) {
+    if (hasSection('job_details', 'job_details_table') && rows.length) {
       const rowsHtml = rows
         .map((row) => `
           <tr>
@@ -1198,7 +1254,7 @@ export function EnhancedPropertyNotificationModal({
       `);
     }
 
-    if (safeSections.includes('billing_details')) {
+    if (hasSection('billing_details', 'extra_charges_table')) {
       const items = buildBillingItems();
       if (items.length) {
         const rowsHtml = items
@@ -1234,6 +1290,13 @@ export function EnhancedPropertyNotificationModal({
           </table>
         `);
       }
+    }
+
+    if (hasSection('additional_comments') && additionalComments) {
+      sections.push(`
+        <h3 style="margin:24px 0 8px;font-size:16px;color:#111827;">Additional Comments</h3>
+        <div style="padding:14px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;white-space:pre-wrap;">${escapeHtml(additionalComments)}</div>
+      `);
     }
 
     const imageSection = (bucket: ImageBucket, key: string) => {
@@ -1275,6 +1338,7 @@ export function EnhancedPropertyNotificationModal({
       description: item.description || '',
       cost: item.bill_amount || 0,
       hours: item.hours,
+      bill_hours: item.bill_hours,
       quantity: item.quantity,
       unit: item.unit,
     }));
@@ -1285,6 +1349,7 @@ export function EnhancedPropertyNotificationModal({
     items: billingItems,
     total,
     job_details: jobDetailsData,
+    additional_comments: additionalComments,
     selected_images: selectedImageIds,
     selected_image_types: selectedImages.map((img) => img.normalizedType),
     selected_image_entries: selectedImages.map((img) => ({
@@ -1336,8 +1401,8 @@ export function EnhancedPropertyNotificationModal({
     const hasApprovalButtonToken = /{{\s*approval_button\s*}}/i.test(composedBody);
     if (approvalLink) {
       composedBody = composedBody
-        .replace(/{{\s*approval_link\s*}}/gi, approvalLink)
-        .replace(/{{\s*approval_button\s*}}/gi, buildApprovalLinkHtml(approvalLink));
+        .replace(/\{+\s*(?:\{+\s*)?approval_link\s*(?:\}+\s*)?\}+/gi, approvalLink)
+        .replace(/\{+\s*(?:\{+\s*)?approval_button\s*(?:\}+\s*)?\}+/gi, buildApprovalLinkHtml(approvalLink));
     }
 
     const sectionHtml = buildSectionHtml(cidMap);
@@ -1925,6 +1990,7 @@ export function EnhancedPropertyNotificationModal({
         <div className="prose prose-sm max-w-none text-gray-900 dark:text-gray-100 dark:prose-invert" dangerouslySetInnerHTML={{ __html: previewEmailContent.replace(/\n/g, '<br/>') }} />
         {renderJobDetailsPreview()}
         {renderBillingPreview()}
+        {renderAdditionalCommentsPreview()}
         {(() => {
           const bucketCounts: { bucket: ImageBucket; label: string; count: number }[] = [
             { bucket: 'before', label: IMAGE_TYPE_LABELS.before, count: selectedImages.filter((img) => img.normalizedType === 'before').length },

@@ -137,6 +137,7 @@ interface Property {
   paint_location: string;
   unit_map_file_id: string | null;
   unit_map_file_path: string | null;
+  unit_map_note?: string | null;
   updated_at?: string | null;
   // System contact roles
   community_manager_is_subcontractor?: boolean;
@@ -1820,6 +1821,24 @@ export function PropertyDetails() {
                     page
                   </p>
                 )}
+              </div>
+            )}
+
+            {property.unit_map_note?.trim() ? (
+              <div className="mt-5 rounded-lg border border-orange-200 bg-orange-50/70 p-4 dark:border-orange-900/50 dark:bg-orange-900/20">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-orange-700 dark:text-orange-200">
+                  Unit Map Note
+                </div>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800 dark:text-gray-100">
+                  {property.unit_map_note.trim()}
+                </p>
+              </div>
+            ) : (
+              <div className="mt-5 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Unit Map Note
+                </div>
+                <p className="text-sm italic text-gray-400 dark:text-gray-500">No unit map note set.</p>
               </div>
             )}
           </div>

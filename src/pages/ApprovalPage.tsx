@@ -44,6 +44,8 @@ interface ApprovalData {
       description: string;
       cost: number;
       hours?: number;
+      bill_hours?: number;
+      sub_pay_hours?: number;
       quantity?: number;
       unit?: string;
     }>;
@@ -110,6 +112,26 @@ const ApprovalPage: React.FC = () => {
   const [approverFormError, setApproverFormError] = useState('');
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+
+  const getChargeHoursText = (charge: ApprovalData['extra_charges_data']['items'][number]) => {
+    if (typeof charge.bill_hours === 'number') {
+      return `${charge.bill_hours} hour${charge.bill_hours !== 1 ? 's' : ''}`;
+    }
+    if (typeof charge.hours === 'number') {
+      return `${charge.hours} hour${charge.hours !== 1 ? 's' : ''}`;
+    }
+    return null;
+  };
+
+  const getChargeRateText = (charge: ApprovalData['extra_charges_data']['items'][number]) => {
+    const hasBillHours = typeof charge.bill_hours === 'number' && charge.bill_hours > 0;
+    const hasHours = typeof charge.hours === 'number' && charge.hours > 0;
+    const hasQty = typeof charge.quantity === 'number' && charge.quantity > 0;
+    const divisor = hasBillHours ? charge.bill_hours : hasHours ? charge.hours : hasQty ? charge.quantity : undefined;
+    if (!divisor) return null;
+    const rate = charge.cost / divisor;
+    return `Rate: $${rate.toFixed(2)}${hasBillHours || hasHours ? '/hr' : ` per ${charge.unit || 'item'}`}`;
+  };
 
   console.log('ApprovalPage component mounted with token:', token);
 
@@ -221,6 +243,8 @@ const ApprovalPage: React.FC = () => {
 
   const handleApproval = async () => {
     if (!approvalData || approvalLocked) return;
+    const submittedApproverName = approverName.trim();
+    const submittedApproverEmail = approverEmail.trim();
 
     console.log('Starting approval process for:', approvalData);
     setProcessing(true);
@@ -237,8 +261,8 @@ const ApprovalPage: React.FC = () => {
       // Create approval promise
       const approvalPromise = supabase.rpc('process_approval_token', {
         p_token: token,
-        p_approver_name: approverName || null,
-        p_approver_email: approverEmail || null
+        p_approver_name: submittedApproverName || null,
+        p_approver_email: submittedApproverEmail || null
       });
 
       // Race between approval and timeout
@@ -262,8 +286,8 @@ const ApprovalPage: React.FC = () => {
       console.log('Approval processed successfully');
       setApprovalData(prev => prev ? {
         ...prev,
-        approver_name: approverName || prev.approver_name,
-        approver_email: approverEmail || prev.approver_email,
+        approver_name: submittedApproverName || prev.approver_name,
+        approver_email: submittedApproverEmail || prev.approver_email,
         decision: 'approved',
         decision_at: new Date().toISOString(),
         used_at: new Date().toISOString(),
@@ -314,8 +338,8 @@ const ApprovalPage: React.FC = () => {
           unitNumber: approvalData.job.unit_number,
           propertyAddress,
           extraChargesAmount: approvalData.extra_charges_data.total,
-          approverName: approverName || approvalData.approver_name,
-          approverEmail: approverEmail || approvalData.approver_email,
+          approverName: submittedApproverName || approvalData.approver_name,
+          approverEmail: submittedApproverEmail || approvalData.approver_email,
         });
       } catch (emailError) {
         console.warn('Failed to send internal notification email:', emailError);
@@ -362,6 +386,8 @@ const ApprovalPage: React.FC = () => {
 
   const handleDecline = async () => {
     if (!approvalData || approvalLocked) return;
+    const submittedApproverName = approverName.trim();
+    const submittedApproverEmail = approverEmail.trim();
 
     // Confirm decline action
     const confirmMessage = `Are you sure you want to decline these extra charges of $${approvalData.extra_charges_data.total.toFixed(2)}?\n\nThe job will remain in "Pending Work Order" status.`;
@@ -385,8 +411,8 @@ const ApprovalPage: React.FC = () => {
       const declinePromise = supabase.rpc('process_decline_token', {
         p_token: token,
         p_decline_reason: null,
-        p_approver_name: approverName || null,
-        p_approver_email: approverEmail || null
+        p_approver_name: submittedApproverName || null,
+        p_approver_email: submittedApproverEmail || null
       });
 
       // Race between decline and timeout
@@ -410,8 +436,8 @@ const ApprovalPage: React.FC = () => {
       console.log('Decline processed successfully');
       setApprovalData(prev => prev ? {
         ...prev,
-        approver_name: approverName || prev.approver_name,
-        approver_email: approverEmail || prev.approver_email,
+        approver_name: submittedApproverName || prev.approver_name,
+        approver_email: submittedApproverEmail || prev.approver_email,
         decision: 'declined',
         decision_at: new Date().toISOString(),
         used_at: new Date().toISOString(),
@@ -434,8 +460,8 @@ const ApprovalPage: React.FC = () => {
           unitNumber: approvalData.job.unit_number,
           propertyAddress,
           extraChargesAmount: approvalData.extra_charges_data.total,
-          approverName: approverName || approvalData.approver_name,
-          approverEmail: approverEmail || approvalData.approver_email,
+          approverName: submittedApproverName || approvalData.approver_name,
+          approverEmail: submittedApproverEmail || approvalData.approver_email,
         });
       } catch (emailError) {
         console.warn('Failed to send internal notification email:', emailError);
@@ -507,8 +533,8 @@ const ApprovalPage: React.FC = () => {
       body: {
         token,
         decision,
-        approverName: approverName || approvalData.approver_name,
-        approverEmail: approverEmail || approvalData.approver_email,
+        approverName: approverName.trim() || approvalData.approver_name,
+        approverEmail: approverEmail.trim() || approvalData.approver_email,
         reviewUrl: window.location.href,
       },
     });
@@ -526,8 +552,8 @@ const ApprovalPage: React.FC = () => {
       await generateApprovalPDF({
         job: approvalData.job,
         extraChargesData: approvalData.extra_charges_data,
-        approverName: approvalData.approver_name,
-        approverEmail: approvalData.approver_email,
+        approverName: approverName.trim() || approvalData.approver_name,
+        approverEmail: approverEmail.trim() || approvalData.approver_email,
         images: jobImages,
         supabaseUrl,
         approvedAt: approved || approvalData.decision === 'approved' ? (approvalData.decision_at || new Date().toISOString()) : undefined,
@@ -619,27 +645,14 @@ const ApprovalPage: React.FC = () => {
                             {charge.quantity} ({charge.unit || 'items'})
                           </p>
                         )}
-                        {charge.hours !== undefined && (
+                        {getChargeHoursText(charge) && (
                           <p className="text-xs text-gray-500">
-                            {charge.hours} hour{charge.hours !== 1 ? 's' : ''}
+                            {getChargeHoursText(charge)}
                           </p>
                         )}
-                        {(() => {
-                          const hasHours = typeof charge.hours === 'number' && charge.hours > 0;
-                          const hasQty = typeof charge.quantity === 'number' && charge.quantity > 0;
-                          const rate = hasHours
-                            ? charge.cost / (charge.hours as number)
-                            : hasQty
-                            ? charge.cost / (charge.quantity as number)
-                            : undefined;
-                          if (typeof rate !== 'number') return null;
-                          return (
-                            <p className="text-xs text-gray-500">
-                              Rate: ${rate.toFixed(2)}
-                              {hasHours ? '/hr' : ` per ${charge.unit || 'item'}`}
-                            </p>
-                          );
-                        })()}
+                        {getChargeRateText(charge) && (
+                          <p className="text-xs text-gray-500">{getChargeRateText(charge)}</p>
+                        )}
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="font-semibold text-gray-900">
@@ -679,7 +692,7 @@ const ApprovalPage: React.FC = () => {
           </button>
 
           <div className="text-xs text-gray-400 border-t pt-4">
-            Approved by: {approvalData?.approver_name || approvalData?.approver_email}<br/>
+            Approved by: {approverName.trim() || approvalData?.approver_name || approvalData?.approver_email}<br/>
             Date: {new Date().toLocaleString()}
           </div>
         </div>
@@ -739,27 +752,14 @@ const ApprovalPage: React.FC = () => {
                             {charge.quantity} ({charge.unit || 'items'})
                           </p>
                         )}
-                        {charge.hours !== undefined && (
+                        {getChargeHoursText(charge) && (
                           <p className="text-xs text-gray-500">
-                            {charge.hours} hour{charge.hours !== 1 ? 's' : ''}
+                            {getChargeHoursText(charge)}
                           </p>
                         )}
-                        {(() => {
-                          const hasHours = typeof charge.hours === 'number' && charge.hours > 0;
-                          const hasQty = typeof charge.quantity === 'number' && charge.quantity > 0;
-                          const rate = hasHours
-                            ? charge.cost / (charge.hours as number)
-                            : hasQty
-                            ? charge.cost / (charge.quantity as number)
-                            : undefined;
-                          if (typeof rate !== 'number') return null;
-                          return (
-                            <p className="text-xs text-gray-500">
-                              Rate: ${rate.toFixed(2)}
-                              {hasHours ? '/hr' : ` per ${charge.unit || 'item'}`}
-                            </p>
-                          );
-                        })()}
+                        {getChargeRateText(charge) && (
+                          <p className="text-xs text-gray-500">{getChargeRateText(charge)}</p>
+                        )}
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="font-semibold text-gray-900">
@@ -780,7 +780,7 @@ const ApprovalPage: React.FC = () => {
           ) : null}
 
           <div className="text-xs text-gray-400 border-t pt-4">
-            Declined by: {approvalData?.approver_name || approvalData?.approver_email}<br/>
+            Declined by: {approverName.trim() || approvalData?.approver_name || approvalData?.approver_email}<br/>
             Date: {new Date().toLocaleString()}
           </div>
         </div>

@@ -1,6 +1,10 @@
 import { supabase } from '../utils/supabase';
 
 export const CONTACT_TEMPLATE_VARIABLES = [
+  { variable: '{{recipient_first_name}}', description: 'Email recipient first name' },
+  { variable: '{{recipient_last_name}}', description: 'Email recipient last name' },
+  { variable: '{{recipient_full_name}}', description: 'Email recipient full name' },
+  { variable: '{{recipient_name}}', description: 'Email recipient full name (legacy)' },
   { variable: '{{primary_contact_name}}', description: 'Primary contact name' },
   { variable: '{{primary_contact_email}}', description: 'Primary contact email' },
   { variable: '{{primary_approval_contact_name}}', description: 'Primary approval contact name' },
@@ -19,6 +23,39 @@ export type ContactTemplateTokens = Record<string, string>;
 
 const joinNames = (names: Array<string | null | undefined>) =>
   names.map((name) => name?.trim()).filter(Boolean).join(', ');
+
+export function splitFullName(fullName?: string | null) {
+  const normalized = (fullName || '').trim().replace(/\s+/g, ' ');
+  if (!normalized) {
+    return { firstName: '', lastName: '', fullName: '' };
+  }
+
+  const parts = normalized.split(' ');
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.length > 1 ? parts[parts.length - 1] : '',
+    fullName: normalized,
+  };
+}
+
+export function assignRecipientNameTokens(
+  replacements: ContactTemplateTokens,
+  fullName?: string | null,
+  prefix = 'recipient'
+) {
+  const { firstName, lastName, fullName: normalizedFullName } = splitFullName(fullName);
+  replacements[`${prefix}_first_name`] = firstName;
+  replacements[`${prefix}.first_name`] = firstName;
+  replacements[`${prefix}_last_name`] = lastName;
+  replacements[`${prefix}.last_name`] = lastName;
+  replacements[`${prefix}_full_name`] = normalizedFullName;
+  replacements[`${prefix}.full_name`] = normalizedFullName;
+
+  if (prefix === 'recipient') {
+    replacements.recipient_name = normalizedFullName;
+    replacements['recipient.name'] = normalizedFullName;
+  }
+}
 
 type ContactTokenPerson = {
   key?: string;
@@ -194,6 +231,7 @@ export async function fetchContactTemplateTokens(propertyId?: string | null): Pr
   replacements.approval_contact_email = primaryApprovalEmail;
   replacements['approval_contact.email'] = primaryApprovalEmail;
   replacements.recipient_name = primaryApprovalName;
+  assignRecipientNameTokens(replacements, primaryApprovalName);
   replacements.recipient_email = primaryApprovalEmail;
   replacements.contact_name = primaryApprovalName;
   replacements.contact_email = primaryApprovalEmail;
@@ -218,11 +256,18 @@ export async function fetchContactTemplateTokens(propertyId?: string | null): Pr
 export function replaceTemplateTokens(template: string, replacements: ContactTemplateTokens): string {
   let processed = template;
   Object.entries(replacements).forEach(([token, value]) => {
-    const single = new RegExp(`\\{\\s*${escapeRegExp(token)}\\s*\\}`, 'gi');
-    const double = new RegExp(`\\{\\{\\s*${escapeRegExp(token)}\\s*\\}\\}`, 'gi');
-    processed = processed.replace(single, value).replace(double, value);
+    processed = replaceTemplateTokenValue(processed, token, value);
   });
   return processed;
+}
+
+export function replaceTemplateTokenValue(template: string, token: string, value: string): string {
+  const escapedToken = escapeRegExp(token);
+  const wrappedToken = new RegExp(
+    `\\{+\\s*(?:\\{+\\s*)?${escapedToken}\\s*(?:\\}+\\s*)?\\}+`,
+    'gi'
+  );
+  return template.replace(wrappedToken, value);
 }
 
 function escapeRegExp(value: string) {

@@ -67,6 +67,7 @@ import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import { ExtraChargeLineItem } from '../types/extraCharges';
+import { getLineItemBillHours, getLineItemSubPayHours } from '../utils/extraChargesCalculations';
 import ImageUpload from './ImageUpload';
 import { PropertyMap } from './PropertyMap';
 import { ImageGallery } from './ImageGallery';
@@ -590,6 +591,9 @@ export function JobDetails() {
     sentAt: string;
   } | null>(null);
   const [reactivatedFromDecline, setReactivatedFromDecline] = useState(false);
+  const parseExtraChargeApproverFromReason = useCallback((reason?: string | null) => {
+    return reason?.match(/extra charges (?:approved|declined|rejected)(?: manually)? by ([^.;-]+)/i)?.[1]?.trim() || null;
+  }, []);
   const effectiveApprovalDecision = useMemo(() => {
     if (reactivatedFromDecline) return null;
     // Prefer explicit approval_tokens decision
@@ -605,26 +609,28 @@ export function JobDetails() {
       if (!reason.includes('extra charges')) continue;
       if (reason.includes('declin')) {
         const declineReasonMatch = change.change_reason?.match(/reason:\s*(.+)$/i);
+        const approverName = parseExtraChargeApproverFromReason(change.change_reason);
         return {
           decision: 'declined',
           decision_at: change.changed_at,
-          approver_name: change.changed_by_name || null,
-          approver_email: change.changed_by_email || null,
+          approver_name: approverName || change.changed_by_name || null,
+          approver_email: approverName ? null : change.changed_by_email || null,
           decline_reason: declineReasonMatch ? declineReasonMatch[1] : null
         };
       }
       if (reason.includes('approv')) {
+        const approverName = parseExtraChargeApproverFromReason(change.change_reason);
         return {
           decision: 'approved',
           decision_at: change.changed_at,
-          approver_name: change.changed_by_name || null,
-          approver_email: change.changed_by_email || null,
+          approver_name: approverName || change.changed_by_name || null,
+          approver_email: approverName ? null : change.changed_by_email || null,
           decline_reason: null
         };
       }
     }
     return null;
-  }, [approvalTokenDecision, phaseChanges, reactivatedFromDecline]);
+  }, [approvalTokenDecision, parseExtraChargeApproverFromReason, phaseChanges, reactivatedFromDecline]);
 
   const hasDrywallSignal = useMemo(() => {
     const text = `${job?.work_order?.additional_comments ?? ''} ${job?.work_order?.extra_charges_description ?? ''}`.toLowerCase();
@@ -2108,7 +2114,7 @@ export function JobDetails() {
             const quantity = Number(item.quantity) || 0;
             const billRate = Number(item.billRate) || 0;
             const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
-            const lineText = `${getExtraChargeItemDescription(item)} (${quantity} ${item.isHourly ? 'hrs' : 'units'}) = ${formatCurrency(billAmount)}`;
+            const lineText = `${getExtraChargeItemDescription(item)} (${getExtraChargeHoursLabel(item)}) = ${formatCurrency(billAmount)}`;
             const splitLine = doc.splitTextToSize(lineText, 170);
             doc.text(splitLine, margin, y);
             y += splitLine.length * 7;
@@ -2213,8 +2219,10 @@ export function JobDetails() {
           const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
           const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
           return {
-            description: getExtraChargeItemDescription(item),
-            qty_or_hours: quantity,
+            description: item.isHourly && item.customizeHours
+              ? `${getExtraChargeItemDescription(item)} (${getExtraChargeHoursLabel(item)})`
+              : getExtraChargeItemDescription(item),
+            qty_or_hours: item.isHourly ? getLineItemBillHours(item) : quantity,
             unit: item.isHourly ? 'hrs' : 'units',
             rate: billRate,
             amount: billAmount,
@@ -2908,8 +2916,10 @@ export function JobDetails() {
           const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
           const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
           return {
-            description: getExtraChargeItemDescription(item),
-            qty_or_hours: quantity,
+            description: item.isHourly && item.customizeHours
+              ? `${getExtraChargeItemDescription(item)} (${getExtraChargeHoursLabel(item)})`
+              : getExtraChargeItemDescription(item),
+            qty_or_hours: item.isHourly ? getLineItemBillHours(item) : quantity,
             unit: item.isHourly ? 'hrs' : 'units',
             rate: billRate,
             amount: billAmount,
@@ -3333,6 +3343,13 @@ export function JobDetails() {
   const getExtraChargeItemDescription = (item: ExtraChargeLineItem) => (
     item.description?.trim() || `Extra Charges - ${item.categoryName}: ${item.detailName}`
   );
+  const getExtraChargeHoursLabel = (item: ExtraChargeLineItem) => {
+    if (!item.isHourly || !item.customizeHours) {
+      return `${Number(item.quantity) || 0} ${item.isHourly ? 'hrs' : 'units'}`;
+    }
+
+    return `Bill ${getLineItemBillHours(item)} hrs / Sub ${getLineItemSubPayHours(item)} hrs`;
+  };
   const derivedExtraCharges = extraChargesFromItems
     ? {
         description: 'Itemized Extra Charges',
@@ -3365,6 +3382,9 @@ export function JobDetails() {
       quantity: number;
       unit: string;
       rate?: number;
+      subRate?: number;
+      billHours?: number;
+      subPayHours?: number;
       billAmount: number;
       subAmount: number;
       notes?: string;
@@ -3388,6 +3408,8 @@ export function JobDetails() {
       const quantity = Number(item.quantity) || 0;
       const billRate = Number(item.billRate) || 0;
       const subRate = Number(item.subRate) || 0;
+      const billHours = getLineItemBillHours(item);
+      const subPayHours = getLineItemSubPayHours(item);
       const billAmount = Number(item.calculatedBillAmount ?? quantity * billRate) || 0;
       const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
       lines.push({
@@ -3396,6 +3418,9 @@ export function JobDetails() {
         quantity,
         unit: item.isHourly ? 'hrs' : 'units',
         rate: billRate,
+        subRate,
+        billHours: item.isHourly ? billHours : undefined,
+        subPayHours: item.isHourly ? subPayHours : undefined,
         billAmount,
         subAmount,
         notes: item.notes ?? undefined
@@ -3416,6 +3441,9 @@ export function JobDetails() {
         quantity: extraHours || 0,
         unit: 'hrs',
         rate: extraHourlyRate || 0,
+        subRate: extraSubPayRate || 0,
+        billHours: extraHours || 0,
+        subPayHours: extraHours || 0,
         billAmount: legacyExtraChargesAmount,
         subAmount: legacyExtraChargesSubPay
       });
@@ -3468,6 +3496,16 @@ export function JobDetails() {
     job?.repair_amount,
     job?.repair_sub_pay
   ]);
+  const unifiedExtraHourTotals = useMemo(() => (
+    unifiedExtraLines.reduce(
+      (acc, line) => {
+        acc.bill += Number(line.billHours ?? 0) || 0;
+        acc.sub += Number(line.subPayHours ?? 0) || 0;
+        return acc;
+      },
+      { bill: 0, sub: 0 }
+    )
+  ), [unifiedExtraLines]);
 
   const hasExtraChargesForApproval = Boolean(
     job?.work_order?.has_extra_charges ||
@@ -5557,6 +5595,7 @@ export function JobDetails() {
                         <div className="space-y-3">
                           {unifiedExtraLines.map(line => {
                             const rate = Number(line.rate ?? (line.quantity ? line.billAmount / line.quantity : line.billAmount)) || 0;
+                            const subRate = Number(line.subRate ?? 0) || 0;
                             return (
                               <div key={line.id} className="p-4 rounded-lg border border-green-500/50 bg-green-50 dark:bg-green-900/30">
                                 <div className="flex justify-between items-start gap-4">
@@ -5568,6 +5607,16 @@ export function JobDetails() {
                                     <div className="text-sm text-gray-600 dark:text-gray-400">
                                       {line.quantity} {line.unit} × {formatCurrency(rate)}
                                     </div>
+                                    {line.billHours !== undefined && (
+                                      <div className="text-xs text-gray-600 dark:text-gray-400">
+                                        Bill: {line.billHours} hrs × {formatCurrency(rate)}
+                                      </div>
+                                    )}
+                                    {line.subPayHours !== undefined && (
+                                      <div className="text-xs text-gray-600 dark:text-gray-400">
+                                        Sub Hours: {line.subPayHours} hrs{subRate > 0 ? ` × ${formatCurrency(subRate)}` : ''}
+                                      </div>
+                                    )}
                                     <div className="text-sm text-gray-600 dark:text-gray-400">Sub: {formatCurrency(line.subAmount)}</div>
                                     <div className="text-lg font-bold text-green-800 dark:text-green-200 mt-1">{formatCurrency(line.billAmount)}</div>
                                   </div>
@@ -5843,6 +5892,7 @@ export function JobDetails() {
                     <div className="space-y-3">
                       {unifiedExtraLines.map((line) => {
                         const rate = Number(line.rate ?? (line.quantity ? line.billAmount / line.quantity : line.billAmount)) || 0;
+                        const subRate = Number(line.subRate ?? 0) || 0;
                         return (
                           <div key={line.id} className="flex justify-between items-start p-3 bg-gray-50 dark:bg-[#0F172A] rounded-lg">
                             <div className="flex-1">
@@ -5850,6 +5900,16 @@ export function JobDetails() {
                               <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                                 {line.quantity} {line.unit} × {formatCurrency(rate)}
                               </div>
+                              {line.billHours !== undefined && (
+                                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                  Bill: {line.billHours} hrs × {formatCurrency(rate)}
+                                </div>
+                              )}
+                              {line.subPayHours !== undefined && (
+                                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                  Sub Hours: {line.subPayHours} hrs{subRate > 0 ? ` × ${formatCurrency(subRate)}` : ''}
+                                </div>
+                              )}
                               {renderExtraChargeLineNotes(line)}
                             </div>
                             <div className="text-right">
@@ -5864,6 +5924,22 @@ export function JobDetails() {
                         );
                       })}
                     </div>
+                    {(unifiedExtraHourTotals.bill > 0 || unifiedExtraHourTotals.sub > 0) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg mt-4 border border-amber-200 dark:border-amber-900/50">
+                        <div className="p-3 rounded-lg border border-amber-500/50">
+                          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Bill Hours</span>
+                          <p className="text-lg font-semibold text-amber-700 dark:text-amber-300 mt-1">
+                            {unifiedExtraHourTotals.bill}
+                          </p>
+                        </div>
+                        <div className="p-3 rounded-lg border border-amber-500/50">
+                          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Sub Pay Hours</span>
+                          <p className="text-lg font-semibold text-amber-700 dark:text-amber-300 mt-1">
+                            {unifiedExtraHourTotals.sub}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg mt-4">
                       <div className="p-3 rounded-lg border border-green-500/50">
                         <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Bill</span>

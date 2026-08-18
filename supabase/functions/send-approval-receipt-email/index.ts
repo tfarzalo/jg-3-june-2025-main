@@ -26,6 +26,7 @@ interface ExtraChargeReceiptItem {
   cost?: number;
   quantity?: number;
   hours?: number;
+  bill_hours?: number;
   unit?: string;
 }
 
@@ -98,7 +99,10 @@ serve(async (req) => {
     const rows = items.map((item: ExtraChargeReceiptItem) => {
       const quantity = item.quantity ? `${escapeHtml(item.quantity)} ${escapeHtml(item.unit || "items")}` : "";
       const hours = item.hours ? `${escapeHtml(item.hours)} hour${Number(item.hours) === 1 ? "" : "s"}` : "";
-      const qtyText = quantity || hours || "-";
+      const customHours = typeof item.bill_hours === "number"
+        ? `${escapeHtml(item.bill_hours)} hrs`
+        : "";
+      const qtyText = customHours || quantity || hours || "-";
       return `
         <tr>
           <td style="padding:10px;border-bottom:1px solid #e5e7eb;">${escapeHtml(item.description)}</td>

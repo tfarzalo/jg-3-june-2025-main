@@ -30,6 +30,20 @@ export function validateExtraChargeLineItem(
     errors.push(`Extra Charge #${itemNumber}: Quantity seems unusually high (${item.quantity}). Please verify.`);
   }
 
+  if (item.isHourly && item.customizeHours) {
+    if (!item.billHours || item.billHours <= 0) {
+      errors.push(`Extra Charge #${itemNumber}: Customer bill hours must be greater than 0`);
+    }
+
+    if (!item.subPayHours || item.subPayHours <= 0) {
+      errors.push(`Extra Charge #${itemNumber}: Subcontractor pay hours must be greater than 0`);
+    }
+
+    if ((item.billHours ?? 0) > 1000 || (item.subPayHours ?? 0) > 1000) {
+      errors.push(`Extra Charge #${itemNumber}: Customized hours seem unusually high. Please verify.`);
+    }
+  }
+
   if (!item.jobBillingCategory) {
     errors.push(`Extra Charge #${itemNumber}: "Bill To" selection is required (Owner/Warranty/Tenant)`);
   }

@@ -18,6 +18,8 @@ interface ExtraChargesData {
     description: string;
     cost: number;
     hours?: number;
+    bill_hours?: number;
+    sub_pay_hours?: number;
     quantity?: number;
     unit?: string;
   }>;
@@ -41,6 +43,26 @@ export function ApprovalDetailsCard({
   const propertyAddress = `${job.property.address}${
     job.property.address_2 ? `, ${job.property.address_2}` : ''
   }, ${job.property.city}, ${job.property.state} ${job.property.zip}`;
+
+  const getChargeHoursText = (charge: ExtraChargesData['items'][number]) => {
+    if (typeof charge.bill_hours === 'number') {
+      return `${charge.bill_hours} hour${charge.bill_hours !== 1 ? 's' : ''}`;
+    }
+    if (typeof charge.hours === 'number') {
+      return `${charge.hours} hour${charge.hours !== 1 ? 's' : ''}`;
+    }
+    return null;
+  };
+
+  const getChargeRateText = (charge: ExtraChargesData['items'][number]) => {
+    const hasBillHours = typeof charge.bill_hours === 'number' && charge.bill_hours > 0;
+    const hasHours = typeof charge.hours === 'number' && charge.hours > 0;
+    const hasQty = typeof charge.quantity === 'number' && charge.quantity > 0;
+    const divisor = hasBillHours ? charge.bill_hours : hasHours ? charge.hours : hasQty ? charge.quantity : undefined;
+    if (!divisor) return null;
+    const rate = charge.cost / divisor;
+    return `Rate: $${rate.toFixed(2)}${hasBillHours || hasHours ? '/hr' : ` per ${charge.unit || 'item'}`}`;
+  };
 
   return (
     <>
@@ -97,29 +119,15 @@ export function ApprovalDetailsCard({
                       {charge.quantity} ({charge.unit || 'items'})
                     </p>
                   )}
-                  {charge.hours !== undefined && (
+                  {getChargeHoursText(charge) && (
                     <p className="text-sm text-gray-500 flex items-center">
                       <span className="mr-1">⏱️</span>
-                      {charge.hours} hour{charge.hours !== 1 ? 's' : ''}
+                      {getChargeHoursText(charge)}
                     </p>
                   )}
-                  {(() => {
-                    const hasHours = typeof charge.hours === 'number' && charge.hours > 0;
-                    const hasQty = typeof charge.quantity === 'number' && charge.quantity > 0;
-                    const rate = hasHours
-                      ? charge.cost / (charge.hours as number)
-                      : hasQty
-                      ? charge.cost / (charge.quantity as number)
-                      : undefined;
-                    if (typeof rate !== 'number') return null;
-                    return (
-                      <p className="text-xs text-gray-500">
-                        Rate: $
-                        {rate.toFixed(2)}
-                        {hasHours ? '/hr' : ` per ${charge.unit || 'item'}`}
-                      </p>
-                    );
-                  })()}
+                  {getChargeRateText(charge) && (
+                    <p className="text-xs text-gray-500">{getChargeRateText(charge)}</p>
+                  )}
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className="font-bold text-lg text-gray-900">
