@@ -8,6 +8,9 @@ export const CONTACT_TEMPLATE_VARIABLES = [
   { variable: '{{primary_contact_name}}', description: 'Primary contact name' },
   { variable: '{{primary_contact_email}}', description: 'Primary contact email' },
   { variable: '{{primary_approval_contact_name}}', description: 'Primary approval contact name' },
+  { variable: '{{primary_approval_contact_first_name}}', description: 'Primary approval contact first name' },
+  { variable: '{{primary_approval_contact_last_name}}', description: 'Primary approval contact last name' },
+  { variable: '{{primary_approval_contact_full_name}}', description: 'Primary approval contact full name' },
   { variable: '{{primary_approval_contact_email}}', description: 'Primary approval contact email' },
   { variable: '{{community_manager_name}}', description: 'Community manager name' },
   { variable: '{{community_manager_email}}', description: 'Community manager email' },
@@ -222,6 +225,9 @@ export async function fetchContactTemplateTokens(propertyId?: string | null): Pr
   replacements['primary_contact.name'] = primaryContactName;
   replacements.primary_contact_email = primaryContactEmail;
   replacements['primary_contact.email'] = primaryContactEmail;
+  replacements.primary_approval_contact_name = primaryApprovalName;
+  replacements['primary_approval_contact.name'] = primaryApprovalName;
+  assignRecipientNameTokens(replacements, primaryApprovalName, 'primary_approval_contact');
   replacements.primary_approval_contact_name = primaryApprovalName;
   replacements['primary_approval_contact.name'] = primaryApprovalName;
   replacements.primary_approval_contact_email = primaryApprovalEmail;
