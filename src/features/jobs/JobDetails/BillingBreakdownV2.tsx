@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { formatCurrency, sum } from '../../../lib/money';
 import type { JobBillingPayload, AdditionalService } from '../../billing/types';
 import { getLineItemBillHours, getLineItemSubPayHours } from '../../../utils/extraChargesCalculations';
@@ -100,12 +100,108 @@ const UnifiedChargesTable: React.FC<{ items: UnifiedChargeItem[] }> = ({ items }
   );
 };
 
+const ExtraChargeHoursEditor: React.FC<{
+  lineItem: UnifiedChargeItem & { source_item_id: string };
+  saving?: boolean;
+  onSave?: JobBillingPayload['on_extra_charge_hours_save'];
+}> = ({ lineItem, saving = false, onSave }) => {
+  const [customizeHours, setCustomizeHours] = useState(lineItem.customize_hours);
+  const [billHours, setBillHours] = useState(String(lineItem.bill_hours ?? lineItem.quantity_or_hours ?? 0));
+  const [subPayHours, setSubPayHours] = useState(String(lineItem.sub_pay_hours ?? lineItem.quantity_or_hours ?? 0));
+
+  useEffect(() => {
+    setCustomizeHours(lineItem.customize_hours);
+    setBillHours(String(lineItem.bill_hours ?? lineItem.quantity_or_hours ?? 0));
+    setSubPayHours(String(lineItem.sub_pay_hours ?? lineItem.quantity_or_hours ?? 0));
+  }, [lineItem.customize_hours, lineItem.bill_hours, lineItem.sub_pay_hours, lineItem.quantity_or_hours]);
+
+  const parsedBillHours = Number(billHours);
+  const parsedSubPayHours = Number(subPayHours);
+  const isValid = !customizeHours || (
+    Number.isFinite(parsedBillHours) &&
+    Number.isFinite(parsedSubPayHours) &&
+    parsedBillHours >= 0 &&
+    parsedSubPayHours >= 0
+  );
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-white/80 p-4 dark:border-amber-900/50 dark:bg-zinc-900/40">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-3">
+          <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+            {lineItem.label}
+          </div>
+          <label className="flex items-center gap-2 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+            <input
+              type="checkbox"
+              checked={customizeHours}
+              onChange={(event) => setCustomizeHours(event.target.checked)}
+              disabled={saving}
+              className="h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+            />
+            Customize Hour Totals
+          </label>
+          {customizeHours && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-200">
+                  Bill Hours
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.25"
+                  value={billHours}
+                  onChange={(event) => setBillHours(event.target.value)}
+                  disabled={saving}
+                  inputMode="decimal"
+                  className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-60 dark:border-amber-800 dark:bg-zinc-800 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-200">
+                  Sub Pay Hours
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.25"
+                  value={subPayHours}
+                  onChange={(event) => setSubPayHours(event.target.value)}
+                  disabled={saving}
+                  inputMode="decimal"
+                  className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-60 dark:border-amber-800 dark:bg-zinc-800 dark:text-white"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => onSave?.({
+            itemId: lineItem.source_item_id,
+            customizeHours,
+            billHours: customizeHours ? parsedBillHours : lineItem.quantity_or_hours,
+            subPayHours: customizeHours ? parsedSubPayHours : lineItem.quantity_or_hours,
+          })}
+          disabled={saving || !isValid}
+          className="inline-flex items-center justify-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {saving ? 'Updating...' : 'Update'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 type UnifiedChargeItem = {
   id: string;
   label: string;
   unit_label?: string;
   quantity_or_hours: number;
   is_hours: boolean;
+  source_item_id?: string;
+  customize_hours?: boolean;
   rate?: number;
   bill_hours?: number;
   sub_pay_hours?: number;
@@ -155,10 +251,12 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
       const subAmount = Number(item.calculatedSubAmount ?? quantity * subRate) || 0;
       return {
         id: `extra-${item.id}`,
+        source_item_id: item.id,
         label: item.description?.trim() || `Extra Charges - ${item.categoryName}: ${item.detailName}`,
         unit_label: item.isHourly ? 'Hours' : 'Units',
         quantity_or_hours: quantity,
         is_hours: item.isHourly,
+        customize_hours: Boolean(item.customizeHours),
         rate: billRate,
         bill_hours: item.isHourly ? billHours : undefined,
         sub_pay_hours: item.isHourly ? subPayHours : undefined,
@@ -219,6 +317,10 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
   const totalBillHours = sum(unifiedItems.map(i => i.bill_hours ?? 0));
   const totalSubPayHours = sum(unifiedItems.map(i => i.sub_pay_hours ?? 0));
   const hasHourlyExtraCharges = totalBillHours > 0 || totalSubPayHours > 0;
+  const editableHourlyLineItems = useMemo(
+    () => unifiedItems.filter(item => item.is_hours && Boolean(item.source_item_id)),
+    [unifiedItems]
+  );
 
   // Repair is already included as a line item inside unifiedItems — no double-counting needed
   const totals = {
@@ -276,6 +378,18 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
                   <div className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-200">Total Sub Pay Hours</div>
                   <div className="mt-1 text-2xl font-bold text-zinc-900 dark:text-zinc-100">{totalSubPayHours}</div>
                 </div>
+              </div>
+            )}
+            {billing.can_customize_extra_charge_hours && editableHourlyLineItems.length > 0 && (
+              <div className="mb-6 space-y-3">
+                {editableHourlyLineItems.map(item => (
+                  <ExtraChargeHoursEditor
+                    key={item.id}
+                    lineItem={item}
+                    saving={billing.saving_extra_charge_hours}
+                    onSave={billing.on_extra_charge_hours_save}
+                  />
+                ))}
               </div>
             )}
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-8">

@@ -67,7 +67,7 @@ import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
 import { ExtraChargeLineItem } from '../types/extraCharges';
-import { getLineItemBillHours, getLineItemSubPayHours } from '../utils/extraChargesCalculations';
+import { calculateLineItemAmounts, getLineItemBillHours, getLineItemSubPayHours } from '../utils/extraChargesCalculations';
 import ImageUpload from './ImageUpload';
 import { PropertyMap } from './PropertyMap';
 import { ImageGallery } from './ImageGallery';
@@ -489,6 +489,7 @@ export function JobDetails() {
   const [editingExtraChargeDescriptionId, setEditingExtraChargeDescriptionId] = useState<string | null>(null);
   const [extraChargeDescriptionDraft, setExtraChargeDescriptionDraft] = useState('');
   const [savingExtraChargeDescription, setSavingExtraChargeDescription] = useState(false);
+  const [savingExtraChargeHours, setSavingExtraChargeHours] = useState(false);
 
   const resetCancelJobFlow = () => {
     setShowCancelJobConfirm(false);
@@ -3711,6 +3712,85 @@ export function JobDetails() {
     }
   };
 
+  const handleSaveExtraChargeHours = async ({
+    itemId,
+    customizeHours,
+    billHours,
+    subPayHours,
+  }: {
+    itemId: string;
+    customizeHours: boolean;
+    billHours: number;
+    subPayHours: number;
+  }) => {
+    if (!workOrderId) return;
+
+    const existingItem = extraChargeLineItems.find((item) => item.id === itemId);
+    if (!existingItem) {
+      toast.error('Extra charge line item was not found');
+      return;
+    }
+
+    if (!existingItem.isHourly) {
+      toast.error('Only hourly extra charge items can customize hour totals');
+      return;
+    }
+
+    const quantity = Number(existingItem.quantity) || 0;
+    const nextBillHours = customizeHours ? Number(billHours) : quantity;
+    const nextSubPayHours = customizeHours ? Number(subPayHours) : quantity;
+    if (
+      !Number.isFinite(nextBillHours) ||
+      !Number.isFinite(nextSubPayHours) ||
+      nextBillHours < 0 ||
+      nextSubPayHours < 0
+    ) {
+      toast.error('Enter valid bill and sub pay hours');
+      return;
+    }
+
+    const billRate = Number(existingItem.billRate) || 0;
+    const subRate = Number(existingItem.subRate) || 0;
+    const { billAmount, subAmount } = calculateLineItemAmounts(
+      quantity,
+      billRate,
+      subRate,
+      nextBillHours,
+      nextSubPayHours
+    );
+
+    const updatedItems = extraChargeLineItems.map((item) => (
+      item.id === itemId
+        ? {
+            ...item,
+            customizeHours,
+            billHours: nextBillHours,
+            subPayHours: nextSubPayHours,
+            calculatedBillAmount: billAmount,
+            calculatedSubAmount: subAmount,
+          }
+        : item
+    ));
+
+    setSavingExtraChargeHours(true);
+    try {
+      const { error } = await supabase
+        .from('work_orders')
+        .update({ extra_charges_line_items: updatedItems })
+        .eq('id', workOrderId);
+
+      if (error) throw error;
+
+      await refetchJob(true);
+      toast.success('Extra charge hour totals updated');
+    } catch (error) {
+      console.error('Error updating extra charge hour totals:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to update extra charge hour totals');
+    } finally {
+      setSavingExtraChargeHours(false);
+    }
+  };
+
   const renderExtraChargeLineDescription = (
     line: { id: string; label: string },
     titleClassName = 'text-base font-bold mt-1.5 text-green-800 dark:text-green-200'
@@ -5843,6 +5923,9 @@ export function JobDetails() {
                   },
                   on_repair_input_change: (val: string) => setRepairAmountInput(val),
                   on_repair_sub_pay_change: (val: string) => setRepairSubPayInput(val),
+                  can_customize_extra_charge_hours: canEditExtraChargeNotes,
+                  saving_extra_charge_hours: savingExtraChargeHours,
+                  on_extra_charge_hours_save: handleSaveExtraChargeHours,
                 }} 
               />
             ) : (

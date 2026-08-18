@@ -53,4 +53,12 @@ export type JobBillingPayload = {
   on_repair_cancel?: () => void;
   on_repair_input_change?: (val: string) => void;
   on_repair_sub_pay_change?: (val: string) => void;
+  can_customize_extra_charge_hours?: boolean;
+  saving_extra_charge_hours?: boolean;
+  on_extra_charge_hours_save?: (params: {
+    itemId: string;
+    customizeHours: boolean;
+    billHours: number;
+    subPayHours: number;
+  }) => Promise<void> | void;
 };
