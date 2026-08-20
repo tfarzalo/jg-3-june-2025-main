@@ -11,6 +11,7 @@ import { optimizeImage } from '../lib/utils/imageOptimization';
 import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
 import { buildStoragePath } from '../utils/storagePaths';
 import { FILE_CATEGORY_PATHS } from '../utils/fileCategories';
+import { fetchRegularPaintUnitSizes } from '../lib/propertyUnitSizes';
 
 interface Property {
   id: string;
@@ -164,39 +165,10 @@ export function JobRequestForm() {
 
   const fetchPropertyUnitSizes = async (propertyId: string) => {
     try {
-      // Get only unit sizes that have been configured for this property in billing_details
-      const { data, error } = await supabase
-        .from('billing_details')
-        .select('unit_size_id, unit_sizes!inner(id, unit_size_label)')
-        .eq('property_id', propertyId);
-
-      if (error) throw error;
-
-      // Deduplicate by unit_size_id and extract the unit size objects
-      const seen = new Set<string>();
-      const uniqueSizes: UnitSize[] = [];
-      for (const row of (data || [])) {
-        const sizeData = row.unit_sizes as unknown as UnitSize;
-        if (sizeData && !seen.has(sizeData.id)) {
-          seen.add(sizeData.id);
-          uniqueSizes.push(sizeData);
-        }
-      }
-      uniqueSizes.sort((a, b) => a.unit_size_label.localeCompare(b.unit_size_label));
-      const naSize = naUnitSize || await fetchNaUnitSize();
-      if (naSize && !seen.has(naSize.id)) {
-        seen.add(naSize.id);
-        uniqueSizes.push(naSize);
-      }
-      const tbdSize = tbdUnitSize || await fetchTbdUnitSize();
-      if (tbdSize && !seen.has(tbdSize.id)) {
-        seen.add(tbdSize.id);
-        uniqueSizes.push(tbdSize);
-      }
-
-      setUnitSizes(uniqueSizes);
+      const sizes = await fetchRegularPaintUnitSizes(propertyId);
+      setUnitSizes(sizes);
       setDebugInfo(prev => ({ ...prev, unitSizesLoaded: true }));
-      // Reset unit size selection when property changes
+      const naSize = naUnitSize || await fetchNaUnitSize();
       setFormData(prev => ({ ...prev, unit_size_id: isCallbackJob(prev) && naSize ? naSize.id : '' }));
     } catch (err) {
       console.error('Error fetching property unit sizes:', err);

@@ -20,6 +20,7 @@ import {
   ADMIN_JOB_CANCELLATION_REASONS,
   resolveAdminJobCancellationReason,
 } from '../lib/jobs/cancellationReasons';
+import { fetchRegularPaintUnitSizes } from '../lib/propertyUnitSizes';
 
 interface Property {
   id: string;
@@ -249,6 +250,13 @@ export function JobEditForm() {
 
   const fetchUnitSizes = async () => {
     try {
+      // If job/property known, fetch Regular Paint unit sizes for that property.
+      if (job?.property_id) {
+        const sizes = await fetchRegularPaintUnitSizes(job.property_id);
+        setUnitSizes(sizes);
+        return;
+      }
+      // Fallback to global list
       const { data, error } = await supabase
         .from('unit_sizes')
         .select('*')
