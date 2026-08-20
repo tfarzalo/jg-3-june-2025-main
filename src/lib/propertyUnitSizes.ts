@@ -17,31 +17,51 @@ export async function fetchPropertyUnitSizesForCategory(propertyId: string, cate
     if (categoryName) {
       const nameTrimmed = String(categoryName).trim();
 
-      // Try exact case-insensitive match first
-      let { data: categories, error: catErr } = await supabase
-        .from('billing_categories')
-        .select('id, name')
-        .eq('property_id', propertyId)
-        .ilike('name', nameTrimmed);
+      // Try exact case-insensitive match first, but handle 'Extra Charges' as a special prefix case
+      const nameLower = nameTrimmed.toLowerCase();
+      let categories: any[] | null = null;
+      let catErr: any = null;
 
-      if (catErr) {
-        throw catErr;
-      }
-
-      // If no exact-ish matches, try a wildcard match so closely-named categories still match
-      if (!Array.isArray(categories) || categories.length === 0) {
-        const wildcard = `%${nameTrimmed}%`;
-        const { data: wcCats, error: wcErr } = await supabase
+      if (nameLower === 'extra charges') {
+        const { data: ecCats, error: ecErr } = await supabase
           .from('billing_categories')
           .select('id, name')
           .eq('property_id', propertyId)
-          .ilike('name', wildcard);
+          .ilike('name', 'extra charges%');
+        categories = ecCats || [];
+        catErr = ecErr;
+      } else {
+        const result = await supabase
+          .from('billing_categories')
+          .select('id, name')
+          .eq('property_id', propertyId)
+          .ilike('name', nameTrimmed);
+        categories = result.data as any[] | null;
+        catErr = result.error;
 
-        if (wcErr) {
-          throw wcErr;
+        if (catErr) {
+          throw catErr;
         }
 
-        categories = wcCats || [];
+        // If no exact-ish matches, try a wildcard match so closely-named categories still match
+        if (!Array.isArray(categories) || categories.length === 0) {
+          const wildcard = `%${nameTrimmed}%`;
+          const { data: wcCats, error: wcErr } = await supabase
+            .from('billing_categories')
+            .select('id, name')
+            .eq('property_id', propertyId)
+            .ilike('name', wildcard);
+
+          if (wcErr) {
+            throw wcErr;
+          }
+
+          categories = wcCats || [];
+        }
+      }
+
+      if (catErr) {
+        throw catErr;
       }
 
       if (Array.isArray(categories) && categories.length > 0) {

@@ -591,11 +591,15 @@ export function JobRequestForm() {
   }, []);
 
   const filteredProperties = properties.filter(p => {
-    const q = propertySearch.toLowerCase();
+    const q = propertySearch.toLowerCase().trim();
+    if (!q) return true;
     return (
-      p.property_name.toLowerCase().includes(q) ||
-      p.address.toLowerCase().includes(q) ||
-      p.city.toLowerCase().includes(q)
+      p.property_name?.toLowerCase().includes(q) ||
+      p.address?.toLowerCase().includes(q) ||
+      (p.address_2 || '')?.toLowerCase().includes(q) ||
+      p.city?.toLowerCase().includes(q) ||
+      (p.state || '')?.toLowerCase().includes(q) ||
+      (p.zip || '')?.toLowerCase().includes(q)
     );
   });
 
