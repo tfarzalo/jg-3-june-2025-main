@@ -20,7 +20,7 @@ import {
   ADMIN_JOB_CANCELLATION_REASONS,
   resolveAdminJobCancellationReason,
 } from '../lib/jobs/cancellationReasons';
-import { fetchRegularPaintUnitSizes } from '../lib/propertyUnitSizes';
+import { fetchRegularPaintUnitSizes, fetchPropertyUnitSizesForCategory } from '../lib/propertyUnitSizes';
 
 interface Property {
   id: string;
@@ -252,7 +252,14 @@ export function JobEditForm() {
     try {
       // If job/property known, fetch Regular Paint unit sizes for that property.
       if (job?.property_id) {
-        const sizes = await fetchRegularPaintUnitSizes(job.property_id);
+        // Derive the selected job category id/name for this job. Prefer job.job_category_id, then formData.
+        const categoryId = (job as any).job_category_id || formData.job_category_id || '';
+        let categoryName: string | undefined = undefined;
+        if (categoryId) {
+          const found = jobCategories.find(c => c.id === String(categoryId));
+          if (found) categoryName = found.name;
+        }
+        const sizes = await fetchPropertyUnitSizesForCategory(job.property_id, categoryName);
         setUnitSizes(sizes);
         return;
       }

@@ -11,7 +11,7 @@ import { optimizeImage } from '../lib/utils/imageOptimization';
 import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
 import { buildStoragePath } from '../utils/storagePaths';
 import { FILE_CATEGORY_PATHS } from '../utils/fileCategories';
-import { fetchRegularPaintUnitSizes } from '../lib/propertyUnitSizes';
+import { fetchRegularPaintUnitSizes, fetchPropertyUnitSizesForCategory } from '../lib/propertyUnitSizes';
 
 interface Property {
   id: string;
@@ -165,7 +165,10 @@ export function JobRequestForm() {
 
   const fetchPropertyUnitSizes = async (propertyId: string) => {
     try {
-      const sizes = await fetchRegularPaintUnitSizes(propertyId);
+      // If a job category is selected, pass its name to filter unit sizes to that billing category
+      const selectedCategory = jobCategories.find(c => c.id === formData.job_category_id);
+      const categoryName = selectedCategory ? selectedCategory.name : undefined;
+      const sizes = await fetchPropertyUnitSizesForCategory(propertyId, categoryName);
       setUnitSizes(sizes);
       setDebugInfo(prev => ({ ...prev, unitSizesLoaded: true }));
       const naSize = naUnitSize || await fetchNaUnitSize();
