@@ -15,14 +15,33 @@ export async function fetchPropertyUnitSizesForCategory(propertyId: string, cate
 
     // If a categoryName is provided, try to resolve billing_categories for that name
     if (categoryName) {
-      const { data: categories, error: catErr } = await supabase
+      const nameTrimmed = String(categoryName).trim();
+
+      // Try exact case-insensitive match first
+      let { data: categories, error: catErr } = await supabase
         .from('billing_categories')
         .select('id, name')
         .eq('property_id', propertyId)
-        .ilike('name', categoryName);
+        .ilike('name', nameTrimmed);
 
       if (catErr) {
         throw catErr;
+      }
+
+      // If no exact-ish matches, try a wildcard match so closely-named categories still match
+      if (!Array.isArray(categories) || categories.length === 0) {
+        const wildcard = `%${nameTrimmed}%`;
+        const { data: wcCats, error: wcErr } = await supabase
+          .from('billing_categories')
+          .select('id, name')
+          .eq('property_id', propertyId)
+          .ilike('name', wildcard);
+
+        if (wcErr) {
+          throw wcErr;
+        }
+
+        categories = wcCats || [];
       }
 
       if (Array.isArray(categories) && categories.length > 0) {
@@ -43,14 +62,19 @@ export async function fetchPropertyUnitSizesForCategory(propertyId: string, cate
           }
         }
 
-        // If we found category-specific sizes, return them (after appending NA/TBD below)
+        // If we found category-specific sizes, sort them and proceed to append N/A/TBD below and return.
         if (unitSizes.length > 0) {
           unitSizes.sort((a, b) => a.unit_size_label.localeCompare(b.unit_size_label));
         }
 
-        // append N/A and TBD below and return
+        // Note: intentionally do not fall back to other categories or global sizes when a specific
+        // categoryName is provided. If none are found for the requested billing category, the
+        // returned list will contain only N/A and TBD (appended below) which preserves the
+        // expectation that switching to a different Job Category limits the dropdown to that
+        // category's unit sizes.
       } else {
-        // No matching billing category for this property; intentionally return empty (except NA/TBD)
+        // No matching billing category for this property; intentionally leave unitSizes empty
+        // so that only N/A/TBD (if present) will be appended below.
       }
 
     } else {

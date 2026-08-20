@@ -138,6 +138,36 @@ export function JobRequestForm() {
     setUnitSizes(prev => prev.some(size => size.id === naUnitSize.id) ? prev : [...prev, naUnitSize]);
   }, [naUnitSize, formData.job_type_id, formData.job_category_id]);
 
+  // When the selected job category or property changes, reload unit sizes to reflect the
+  // billing details associated with that job category for this property.
+  // This keeps the Unit Size dropdown in sync as the user picks a Job Category.
+  useEffect(() => {
+    const reloadSizes = async () => {
+      if (!formData.property_id) return;
+      try {
+        const selectedCategory = jobCategories.find(c => c.id === formData.job_category_id);
+        const categoryName = selectedCategory ? selectedCategory.name : undefined;
+        const sizes = await fetchPropertyUnitSizesForCategory(formData.property_id, categoryName);
+        setUnitSizes(sizes);
+        // If callback job and N/A exists, set N/A as default
+        const naSize = naUnitSize || await fetchNaUnitSize();
+        if (isCallbackJob() && naSize) {
+          setFormData(prev => ({ ...prev, unit_size_id: naSize.id }));
+        } else {
+          // If current selection is no longer valid, clear it to force user to select
+          if (formData.unit_size_id && !sizes.some(s => s.id === formData.unit_size_id)) {
+            setFormData(prev => ({ ...prev, unit_size_id: '' }));
+          }
+        }
+      } catch (err) {
+        console.error('Error reloading unit sizes for selected category:', err);
+      }
+    };
+
+    reloadSizes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.job_category_id, formData.property_id, jobCategories]);
+
   function isCallbackJob(draft = formData) {
     const selectedJobType = jobTypes.find(jobType => jobType.id === draft.job_type_id);
     const selectedJobCategory = jobCategories.find(category => category.id === draft.job_category_id);
