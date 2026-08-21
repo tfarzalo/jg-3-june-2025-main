@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   Building2, 
@@ -252,6 +252,14 @@ export function PropertyDetails() {
   const [categoryDetails, setCategoryDetails] = useState<{[key: string]: BillingDetail[]}>({});
   const [unitSizes, setUnitSizes] = useState<{[key: string]: string}>({});
   const [callbacks, setCallbacks] = useState<PropertyCallback[]>([]);
+  const callbackItems = useMemo(
+    () => callbacks.filter((callback) => Boolean(callback.unit_number?.trim())),
+    [callbacks]
+  );
+  const propertyNoteItems = useMemo(
+    () => callbacks.filter((callback) => canUseInHouseNotes ? !callback.unit_number?.trim() : true),
+    [callbacks, canUseInHouseNotes]
+  );
   const [updates, setUpdates] = useState<PropertyUpdate[]>([]);
   const [generalNotes, setGeneralNotes] = useState<PropertyGeneralNote[]>([]);
   const [paintSchemes, setPaintSchemes] = useState<PaintScheme[]>([]);
@@ -2093,7 +2101,7 @@ export function PropertyDetails() {
           {/* Content */}
           <div className="p-6">
 
-            {callbacks.length === 0 ? (
+            {callbackItems.length === 0 ? (
               <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                 <Clipboard className="h-12 w-12 mx-auto mb-3 text-gray-400" />
                 <p className="font-medium">No callbacks recorded for this property</p>
@@ -2113,7 +2121,7 @@ export function PropertyDetails() {
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-[#1E293B] divide-y divide-gray-200 dark:divide-gray-700">
-                    {callbacks.map((callback) => (
+                    {callbackItems.map((callback) => (
                       <tr key={callback.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                           {formatDate(callback.callback_date)}
@@ -2287,7 +2295,7 @@ export function PropertyDetails() {
 
             {/* If admin or subcontractor, render callbacks-style notes (Painter Notes / In-House Notes) */}
             {(canUseInHouseNotes || isSubcontractor) ? (
-              callbacks.length === 0 ? (
+              propertyNoteItems.length === 0 ? (
                 <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                   <Clipboard className="h-12 w-12 mx-auto mb-3 text-gray-400" />
                   <p className="font-medium">No notes recorded for this property</p>
@@ -2295,7 +2303,7 @@ export function PropertyDetails() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {callbacks.map((callback) => (
+                  {propertyNoteItems.map((callback) => (
                     <div
                       key={callback.id}
                       className="border-l-4 border-slate-300 dark:border-slate-700 bg-gray-50 dark:bg-[#0F172A] rounded-r-xl p-4"
