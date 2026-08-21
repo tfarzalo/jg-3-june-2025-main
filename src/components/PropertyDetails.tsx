@@ -987,6 +987,11 @@ export function PropertyDetails() {
   const handleAddCallback = async (isPropertyNote = false) => {
     if (!propertyId) return;
 
+    if (!isPropertyNote && !newCallback.unit_number.trim()) {
+      toast.error('Unit # is required for callbacks');
+      return;
+    }
+
     try {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error('Not authenticated');
@@ -996,9 +1001,9 @@ export function PropertyDetails() {
         .insert({
           property_id: propertyId,
           callback_date: newCallback.callback_date,
-          painter: newCallback.painter,
-          unit_number: isPropertyNote ? '' : newCallback.unit_number,
-          reason: newCallback.reason,
+          painter: newCallback.painter.trim(),
+          unit_number: isPropertyNote ? '' : newCallback.unit_number.trim(),
+          reason: newCallback.reason.trim(),
           posted_by: userData.user.id
         });
 
@@ -2309,7 +2314,7 @@ export function PropertyDetails() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Unit #
+                      Unit # <span className="text-red-600">*</span>
                     </label>
                     <input
                       type="text"
