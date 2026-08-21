@@ -83,6 +83,8 @@ const POSITION_OPTIONS = [
   'Maintenance Supervisor',
   'Accounts Payable',
   'Accounts Receivable',
+  'General Manager',
+  'Supervisor',
   'Property Manager',
   'Regional Manager',
   'Leasing Agent',
@@ -478,11 +480,11 @@ export function PropertyContactsEditor({
               <div className="flex flex-wrap gap-2">
                 <PillToggle active={!!roles.subcontractor} color="blue"
                   onClick={() => onSystemContactRoleChange(key, 'subcontractor', !roles.subcontractor)}>
-                  Subcontractor
+                  Subcontractor Contact
                 </PillToggle>
                 <PillToggle active={!!roles.accountsReceivable} color="purple"
                   onClick={() => onSystemContactRoleChange(key, 'accountsReceivable', !roles.accountsReceivable)}>
-                  AR Contact
+                  Accounts Receivable
                 </PillToggle>
                 <PillToggle active={!!roles.approvalRecipient} color="green"
                   onClick={() => onSystemContactRoleChange(key, 'approvalRecipient', !roles.approvalRecipient)}>
@@ -652,11 +654,11 @@ export function PropertyContactsEditor({
                 </PillToggle>
                 <PillToggle active={!!contact.is_subcontractor_contact} color="blue"
                   onClick={() => onCustomContactChange(contact.id, 'is_subcontractor_contact', !contact.is_subcontractor_contact)}>
-                  Subcontractor
+                  Subcontractor Contact
                 </PillToggle>
                 <PillToggle active={!!contact.is_accounts_receivable_contact} color="purple"
                   onClick={() => onCustomContactChange(contact.id, 'is_accounts_receivable_contact', !contact.is_accounts_receivable_contact)}>
-                  AR Contact
+                  Accounts Receivable
                 </PillToggle>
                 <PillToggle active={approvalOn} color="green"
                   onClick={() => {

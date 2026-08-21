@@ -115,14 +115,14 @@ function buildPersonKey(
     .filter(Boolean);
 
   if (normalizedEmail) {
-    return `${normalizedName}|email:${normalizedEmail}`;
+    return `email:${normalizedEmail}`;
   }
 
-  if (normalizedName && normalizedPhones[0]) {
-    return `${normalizedName}|phone:${normalizedPhones[0]}`;
+  if (normalizedPhones[0]) {
+    return `phone:${normalizedPhones[0]}`;
   }
 
-  return `${normalizedName}|${normalizedPhones[0] || ''}`;
+  return `name:${normalizedName}`;
 }
 
 function buildCards(

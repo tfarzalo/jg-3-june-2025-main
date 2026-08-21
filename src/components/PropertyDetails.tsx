@@ -23,6 +23,8 @@ import {
   Users,
   HardHat,
   Clock,
+  AlertTriangle,
+  Pin,
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { PropertyMap } from './PropertyMap';
@@ -43,6 +45,7 @@ import { getBackNavigationPath } from '../lib/utils';
 import { PropertyFilesPreview } from './properties/PropertyFilesPreview';
 import { PropertyContactsViewer } from './property/PropertyContactsViewer';
 import { fetchActiveSubcontractors } from '../lib/users/activeSubcontractors';
+import { usePinnedWorkspace } from '../contexts/PinnedWorkspaceContext';
 
 interface Property {
   id: string;
@@ -164,6 +167,7 @@ interface Property {
   primary_contact_is_primary_approval?: boolean;
   primary_contact_is_notification_recipient?: boolean;
   primary_contact_is_primary_notification?: boolean;
+  contact_role_config?: Record<string, unknown> | null;
 }
 
 interface BillingCategory {
@@ -264,6 +268,7 @@ export function PropertyDetails() {
   const { propertyId } = useParams<{ propertyId: string }>();
   const navigate = useNavigate();
   const { role, isSubcontractor, isAdmin } = useUserRole();
+  const { canUsePinnedWorkspace, pinSummary, isPinned } = usePinnedWorkspace();
   const canUseInHouseNotes = role !== null && role !== 'subcontractor';
   const [property, setProperty] = useState<Property | null>(null);
   const [loading, setLoading] = useState(true);
@@ -335,6 +340,11 @@ export function PropertyDetails() {
   const [unitMapImages, setUnitMapImages] = useState<Array<{ url: string; alt: string; label: string }>>([]);
   const [notificationContactSource, setNotificationContactSource] = useState<string>('community_manager');
   const [lastEditedBy, setLastEditedBy] = useState<string | null>(null);
+  const shouldReviewContactSettings = useMemo(() => {
+    if (!property || isSubcontractor) return false;
+    const config = property.contact_role_config;
+    return !config || Object.keys(config).length === 0;
+  }, [property, isSubcontractor]);
 
   // Preferred subcontractors
   interface SubcontractorUser { id: string; full_name: string; email: string | null; }
@@ -590,6 +600,18 @@ export function PropertyDetails() {
     const parsed = new Date(value);
     if (isNaN(parsed.getTime())) return 'Invalid date';
     return format(parsed, 'MM/dd/yyyy');
+  };
+
+  const handlePinPropertySummary = () => {
+    if (!property) return;
+
+    pinSummary({
+      id: property.id,
+      type: 'property',
+      title: property.property_name,
+      subtitle: formattedAddress,
+      route: `/dashboard/properties/${property.id}`,
+    });
   };
 
   const updateNotificationEmail = async (email: string | null) => {
@@ -1503,6 +1525,16 @@ export function PropertyDetails() {
           </div>
         </div>
         <div className="flex space-x-3">
+          {canUsePinnedWorkspace && (
+            <button
+              type="button"
+              onClick={handlePinPropertySummary}
+              className="inline-flex items-center px-4 py-2 bg-white dark:bg-[#1E293B] border border-blue-200 dark:border-blue-500/40 text-blue-700 dark:text-blue-200 text-sm font-medium rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+            >
+              <Pin className="h-4 w-4 mr-2" />
+              {isPinned(`property:${property.id}`) ? 'Pinned Property Summary' : 'Pin Property Summary'}
+            </button>
+          )}
           {!isSubcontractor && (
             <>
               <button
@@ -1767,6 +1799,25 @@ export function PropertyDetails() {
 
         {/* Second Row: Contact Information — Full Width */}
         <div id="contacts">
+          {shouldReviewContactSettings && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-100">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <p className="text-sm">
+                    Review this property's contact titles, positions, notification recipients, and approval recipients. Contact options have been updated and existing contact records were preserved.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/dashboard/properties/${property.id}/edit`)}
+                  className="inline-flex items-center justify-center rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-700"
+                >
+                  Review Contacts
+                </button>
+              </div>
+            </div>
+          )}
           <PropertyContactsViewer
             systemContacts={{
               community_manager: {

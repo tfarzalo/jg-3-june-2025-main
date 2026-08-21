@@ -93,6 +93,7 @@ export function PropertyEditForm() {
   const [previewAddress, setPreviewAddress] = useState('');
   const [paintSchemes, setPaintSchemes] = useState<PaintScheme[]>([]);
   const [contacts, setContacts] = useState<PropertyContact[]>([]);
+  const [originalContactIds, setOriginalContactIds] = useState<Set<string>>(new Set());
   
   // New contact management state
   const [systemContacts, setSystemContacts] = useState({
@@ -103,10 +104,10 @@ export function PropertyEditForm() {
   });
   
   const [systemContactRoles, setSystemContactRoles] = useState<Record<string, Partial<ContactRoles>>>({
-    community_manager: { subcontractor: true },
+    community_manager: {},
     maintenance_supervisor: {},
     primary_contact: {},
-    ap: { accountsReceivable: true }
+    ap: {}
   });
   
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -216,9 +217,9 @@ export function PropertyEditForm() {
       }
     }));
     
-    // If setting a role to true, clear it from other contacts
+    // Primary recipients are exclusive. Job/department associations can be shared.
     if (value) {
-      if (role === 'subcontractor' || role === 'accountsReceivable' || role === 'primaryApproval' || role === 'primaryNotification') {
+      if (role === 'primaryApproval' || role === 'primaryNotification') {
         // Clear this role from all other system contacts
         setSystemContactRoles(prev => {
           const updated = { ...prev };
@@ -232,8 +233,6 @@ export function PropertyEditForm() {
         
         // Also clear from custom contacts
         setContacts(prev => prev.map(contact => {
-          if (role === 'subcontractor') return { ...contact, is_subcontractor_contact: false };
-          if (role === 'accountsReceivable') return { ...contact, is_accounts_receivable_contact: false };
           if (role === 'primaryApproval') return { ...contact, is_primary_approval_recipient: false };
           if (role === 'primaryNotification') return { ...contact, is_primary_notification_recipient: false };
           return contact;
@@ -268,13 +267,7 @@ export function PropertyEditForm() {
     console.log('🔄 handleCustomContactChange called:', { id, field, value });
     setContacts(prev => prev.map(contact => {
       if (contact.id !== id) {
-        // Handle exclusive roles
-        if (field === 'is_subcontractor_contact' && value === true) {
-          return { ...contact, is_subcontractor_contact: false };
-        }
-        if (field === 'is_accounts_receivable_contact' && value === true) {
-          return { ...contact, is_accounts_receivable_contact: false };
-        }
+        // Handle exclusive primary roles
         if (field === 'is_primary_contact' && value === true) {
           return { ...contact, is_primary_contact: false };
         }
@@ -310,27 +303,6 @@ export function PropertyEditForm() {
       
       return updated;
     }));
-    
-    // Also clear from system contacts if needed
-    if (field === 'is_subcontractor_contact' && value === true) {
-      setSystemContactRoles(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(k => {
-          if (updated[k]) updated[k] = { ...updated[k], subcontractor: false };
-        });
-        return updated;
-      });
-    }
-    
-    if (field === 'is_accounts_receivable_contact' && value === true) {
-      setSystemContactRoles(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(k => {
-          if (updated[k]) updated[k] = { ...updated[k], accountsReceivable: false };
-        });
-        return updated;
-      });
-    }
     
     if (field === 'is_primary_approval_recipient' && value === true) {
       setSystemContactRoles(prev => {
@@ -589,7 +561,9 @@ export function PropertyEditForm() {
         .eq('property_id', propertyId);
 
       if (error) throw error;
-      setContacts((data || []).map((contact) => ({
+      const loadedContacts = data || [];
+      setOriginalContactIds(new Set(loadedContacts.map((contact) => contact.id)));
+      setContacts(loadedContacts.map((contact) => ({
         ...contact,
         phone: formatPhoneNumber(contact.phone),
         additional_phones: coercePhoneList((contact as any).additional_phones),
@@ -668,6 +642,7 @@ export function PropertyEditForm() {
         ap_is_notification_recipient: systemContactRoles.ap?.notificationRecipient || false,
         ap_is_primary_approval: systemContactRoles.ap?.primaryApproval || false,
         ap_is_primary_notification: systemContactRoles.ap?.primaryNotification || false,
+        contact_role_config: systemContactRoles,
         // Preferred subcontractors
         preferred_subcontractor_a_id: preferredSubA || null,
         preferred_subcontractor_b_id: preferredSubB || null,
@@ -758,56 +733,61 @@ export function PropertyEditForm() {
           const { savePaintSchemes } = await import('../lib/paintColors');
           await savePaintSchemes(propertyId, paintSchemes);
           console.log('Paint schemes saved successfully');
+        } catch (paintError) {
+          console.error('Error saving paint schemes:', paintError);
+          // Continue with contact save/navigation even if paint schemes fail to save.
+        }
 
-          // Save property contacts
-          // 1. Delete existing contacts
+        const contactPayload = (c: PropertyContact) => ({
+          property_id: propertyId,
+          position: c.position,
+          name: c.name,
+          email: c.email,
+          secondary_email: c.secondary_email || null,
+          phone: c.phone,
+          additional_phones: normalizePhoneList(c.additional_phones || []),
+          is_subcontractor_contact: c.is_subcontractor_contact || false,
+          is_accounts_receivable_contact: c.is_accounts_receivable_contact || false,
+          is_approval_recipient: c.is_approval_recipient || false,
+          is_notification_recipient: c.is_notification_recipient || false,
+          is_primary_approval_recipient: c.is_primary_approval_recipient || false,
+          is_primary_notification_recipient: c.is_primary_notification_recipient || false,
+          is_primary_contact: (c as any).is_primary_contact || false,
+          receives_approval_emails: (c as any).receives_approval_emails || false,
+          receives_notification_emails: (c as any).receives_notification_emails || false,
+          custom_title: (c as any).custom_title || null,
+        });
+
+        const existingContacts = contacts.filter(c => originalContactIds.has(c.id));
+        const newContacts = contacts.filter(c => !originalContactIds.has(c.id));
+        const deletedContactIds = Array.from(originalContactIds).filter(
+          id => !contacts.some(contact => contact.id === id)
+        );
+
+        if (existingContacts.length > 0) {
+          const { error: upsertError } = await supabase
+            .from('property_contacts')
+            .upsert(existingContacts.map(c => ({ id: c.id, ...contactPayload(c) })), { onConflict: 'id' });
+
+          if (upsertError) throw upsertError;
+        }
+
+        if (newContacts.length > 0) {
+          const { error: insertError } = await supabase
+            .from('property_contacts')
+            .insert(newContacts.map(contactPayload));
+
+          if (insertError) throw insertError;
+        }
+
+        if (deletedContactIds.length > 0) {
           const { error: deleteError } = await supabase
             .from('property_contacts')
             .delete()
-            .eq('property_id', propertyId);
-          
+            .eq('property_id', propertyId)
+            .in('id', deletedContactIds);
+
           if (deleteError) throw deleteError;
-
-          // 2. Insert current contacts
-          if (contacts.length > 0) {
-            console.log('💾 Saving contacts with roles:', contacts);
-            const contactsToInsert = contacts.map(c => ({
-              property_id: propertyId,
-              position: c.position,
-              name: c.name,
-              email: c.email,
-              secondary_email: c.secondary_email || null,
-              phone: c.phone,
-              additional_phones: normalizePhoneList(c.additional_phones || []),
-              is_subcontractor_contact: c.is_subcontractor_contact || false,
-              is_accounts_receivable_contact: c.is_accounts_receivable_contact || false,
-              is_approval_recipient: c.is_approval_recipient || false,
-              is_notification_recipient: c.is_notification_recipient || false,
-              is_primary_approval_recipient: c.is_primary_approval_recipient || false,
-              is_primary_notification_recipient: c.is_primary_notification_recipient || false,
-              // New display fields
-              is_primary_contact: (c as any).is_primary_contact || false,
-              receives_approval_emails: (c as any).receives_approval_emails || false,
-              receives_notification_emails: (c as any).receives_notification_emails || false,
-              custom_title: (c as any).custom_title || null,
-            }));
-            console.log('💾 Contacts to insert:', contactsToInsert);
-
-            const { error: insertError } = await supabase
-              .from('property_contacts')
-              .insert(contactsToInsert);
-            
-            if (insertError) {
-              console.error('❌ Error inserting contacts:', insertError);
-              throw insertError;
-            } else {
-              console.log('✅ Contacts saved successfully');
-            }
-          }
-
-        } catch (paintError) {
-          console.error('Error saving additional data:', paintError);
-          // Continue with navigation even if paint schemes/contacts fail to save
         }
       }
 

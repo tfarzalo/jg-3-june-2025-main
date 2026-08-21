@@ -4,25 +4,30 @@ import Topbar from './ui/Topbar';
 import { Sidebar } from './Sidebar';
 import { useUserRole } from '../contexts/UserRoleContext';
 import { WhatsNewModal } from './whats-new/WhatsNewModal';
+import { PinnedWorkspaceProvider } from '../contexts/PinnedWorkspaceContext';
+import { PinnedWorkspaceDock } from './pinned/PinnedWorkspaceDock';
 
 export function PersistentLayout() {
   const { isSubcontractor } = useUserRole();
   
   return (
-    <div className="flex h-screen">
-      {/* Desktop Sidebar - Hidden on mobile */}
-      {!isSubcontractor && (
-        <div className="hidden lg:block">
-          <Sidebar />
+    <PinnedWorkspaceProvider>
+      <div className="flex h-screen">
+        {/* Desktop Sidebar - Hidden on mobile */}
+        {!isSubcontractor && (
+          <div className="hidden lg:block">
+            <Sidebar />
+          </div>
+        )}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <Topbar showOnlyProfile={isSubcontractor} />
+          {!isSubcontractor && <WhatsNewModal />}
+          <main className="flex-1 overflow-auto bg-gray-100 dark:bg-[#0F172A]">
+            <Outlet />
+          </main>
         </div>
-      )}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Topbar showOnlyProfile={isSubcontractor} />
-        {!isSubcontractor && <WhatsNewModal />}
-        <main className="flex-1 overflow-auto bg-gray-100 dark:bg-[#0F172A]">
-          <Outlet />
-        </main>
+        <PinnedWorkspaceDock />
       </div>
-    </div>
+    </PinnedWorkspaceProvider>
   );
 }

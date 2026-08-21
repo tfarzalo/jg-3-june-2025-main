@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardList, ArrowLeft, Upload, X, Image, FileText, Search, ChevronDown } from 'lucide-react';
+import { ClipboardList, ArrowLeft, Upload, X, Image, FileText, Search, ChevronDown, Pin } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { getCurrentDateInEastern, formatDateForInput } from '../lib/dateUtils';
 import { JobType } from '../lib/types';
@@ -13,6 +13,7 @@ import { buildStoragePath } from '../utils/storagePaths';
 import { FILE_CATEGORY_PATHS } from '../utils/fileCategories';
 import { fetchPropertyUnitSizesForBillingCategory } from '../lib/propertyUnitSizes';
 import { fetchPropertyJobCategoryOptions } from '../lib/propertyJobCategoryOptions';
+import { usePinnedWorkspace } from '../contexts/PinnedWorkspaceContext';
 
 interface Property {
   id: string;
@@ -42,6 +43,7 @@ interface JobCategory {
 export function JobRequestForm() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { canUsePinnedWorkspace, pinSummary, isPinned } = usePinnedWorkspace();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -604,6 +606,18 @@ export function JobRequestForm() {
     setHasChanges(true);
   };
 
+  const handlePinSelectedProperty = () => {
+    if (!selectedProperty) return;
+
+    pinSummary({
+      id: selectedProperty.id,
+      type: 'property',
+      title: selectedProperty.property_name,
+      subtitle: formatPropertyAddress(selectedProperty),
+      route: `/dashboard/properties/${selectedProperty.id}`,
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-[#0F172A] p-6">
       <div className="max-w-7xl mx-auto">
@@ -715,6 +729,18 @@ export function JobRequestForm() {
                   aria-hidden="true"
                   tabIndex={-1}
                 />
+                {selectedProperty && canUsePinnedWorkspace && (
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handlePinSelectedProperty}
+                      className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-900/30 dark:text-blue-200 dark:hover:bg-blue-900/50"
+                    >
+                      <Pin className="mr-2 h-4 w-4" />
+                      {isPinned(`property:${selectedProperty.id}`) ? 'Pinned Property Summary' : 'Pin Property Summary'}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>

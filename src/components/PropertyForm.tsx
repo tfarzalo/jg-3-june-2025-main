@@ -106,10 +106,10 @@ export function PropertyForm() {
   });
   
   const [systemContactRoles, setSystemContactRoles] = useState<Record<string, Partial<ContactRoles>>>({
-    community_manager: { subcontractor: true },
+    community_manager: {},
     maintenance_supervisor: {},
     primary_contact: {},
-    ap: { accountsReceivable: true }
+    ap: {}
   });
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [pendingUnitMapFile, setPendingUnitMapFile] = useState<File | null>(null);
@@ -203,25 +203,6 @@ export function PropertyForm() {
     setSystemContactRoles(prev => {
       const updated = { ...prev };
       
-      // Handle exclusive roles (only one can be true at a time)
-      if (role === 'subcontractor' && value) {
-        // Clear subcontractor from all other contacts
-        Object.keys(updated).forEach(k => {
-          if (k !== key && updated[k]) {
-            updated[k] = { ...updated[k], subcontractor: false };
-          }
-        });
-      }
-      
-      if (role === 'accountsReceivable' && value) {
-        // Clear AR from all other contacts
-        Object.keys(updated).forEach(k => {
-          if (k !== key && updated[k]) {
-            updated[k] = { ...updated[k], accountsReceivable: false };
-          }
-        });
-      }
-      
       if (role === 'primaryApproval' && value) {
         // Clear primary approval from all other contacts
         Object.keys(updated).forEach(k => {
@@ -268,13 +249,7 @@ export function PropertyForm() {
     console.log('🔄 handleCustomContactChange called:', { id, field, value });
     setContacts(prev => prev.map(contact => {
       if (contact.id !== id) {
-        // Handle exclusive roles
-        if (field === 'is_subcontractor_contact' && value === true) {
-          return { ...contact, is_subcontractor_contact: false };
-        }
-        if (field === 'is_accounts_receivable_contact' && value === true) {
-          return { ...contact, is_accounts_receivable_contact: false };
-        }
+        // Handle exclusive primary roles
         if (field === 'is_primary_contact' && value === true) {
           return { ...contact, is_primary_contact: false };
         }
@@ -310,27 +285,6 @@ export function PropertyForm() {
       
       return updated;
     }));
-    
-    // Also clear from system contacts if needed
-    if (field === 'is_subcontractor_contact' && value === true) {
-      setSystemContactRoles(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(k => {
-          if (updated[k]) updated[k] = { ...updated[k], subcontractor: false };
-        });
-        return updated;
-      });
-    }
-    
-    if (field === 'is_accounts_receivable_contact' && value === true) {
-      setSystemContactRoles(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(k => {
-          if (updated[k]) updated[k] = { ...updated[k], accountsReceivable: false };
-        });
-        return updated;
-      });
-    }
     
     if (field === 'is_primary_approval_recipient' && value === true) {
       setSystemContactRoles(prev => {
@@ -461,6 +415,7 @@ export function PropertyForm() {
         ap_is_notification_recipient: systemContactRoles.ap?.notificationRecipient || false,
         ap_is_primary_approval: systemContactRoles.ap?.primaryApproval || false,
         ap_is_primary_notification: systemContactRoles.ap?.primaryNotification || false,
+        contact_role_config: systemContactRoles,
       };
 
       // Preserve the explicit Primary Contact slot. Do not build a duplicate
