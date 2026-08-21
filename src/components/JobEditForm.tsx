@@ -20,7 +20,8 @@ import {
   ADMIN_JOB_CANCELLATION_REASONS,
   resolveAdminJobCancellationReason,
 } from '../lib/jobs/cancellationReasons';
-import { fetchRegularPaintUnitSizes, fetchPropertyUnitSizesForCategory } from '../lib/propertyUnitSizes';
+import { fetchPropertyUnitSizesForBillingCategory } from '../lib/propertyUnitSizes';
+import { fetchPropertyJobCategoryOptions } from '../lib/propertyJobCategoryOptions';
 
 interface Property {
   id: string;
@@ -52,6 +53,9 @@ interface JobCategory {
   name: string;
   description: string | null;
   sort_order: number;
+  billing_category_id?: string | null;
+  display_name?: string;
+  is_legacy_current_only?: boolean;
 }
 
 interface Job {
@@ -144,7 +148,6 @@ export function JobEditForm() {
     Promise.all([
       fetchJob(),
       fetchProperties(),
-      fetchUnitSizes(),
       fetchJobTypes(),
       fetchJobPhases()
     ]);
@@ -156,8 +159,52 @@ export function JobEditForm() {
       fetchPropertyJobCategories(formData.property_id);
     } else {
       setJobCategories([]);
+      setUnitSizes([]);
     }
-  }, [formData.property_id]);
+  }, [formData.property_id, job?.property_id, job?.job_category_id]);
+
+  useEffect(() => {
+    const reloadUnitSizes = async () => {
+      if (!formData.property_id || !formData.job_category_id || jobCategories.length === 0) {
+        setUnitSizes([]);
+        return;
+      }
+
+      try {
+        const selectedCategory = jobCategories.find(category => category.id === formData.job_category_id);
+        if (!selectedCategory) {
+          setUnitSizes([]);
+          return;
+        }
+
+        let sizes = await fetchPropertyUnitSizesForBillingCategory(
+          formData.property_id,
+          selectedCategory.billing_category_id
+        );
+
+        if (job?.unit_size_id && formData.unit_size_id === job.unit_size_id && !sizes.some(size => size.id === job.unit_size_id)) {
+          const { data: currentSize } = await supabase
+            .from('unit_sizes')
+            .select('id, unit_size_label')
+            .eq('id', job.unit_size_id)
+            .maybeSingle();
+
+          if (currentSize) {
+            sizes = [...sizes, currentSize as UnitSize];
+          }
+        }
+
+        setUnitSizes(sizes);
+        if (formData.unit_size_id && !sizes.some(size => size.id === formData.unit_size_id)) {
+          setFormData(prev => ({ ...prev, unit_size_id: '' }));
+        }
+      } catch (err) {
+        console.error('Error reloading unit sizes for selected category:', err);
+      }
+    };
+
+    reloadUnitSizes();
+  }, [formData.property_id, formData.job_category_id, formData.unit_size_id, jobCategories, job?.unit_size_id]);
 
   const fetchJob = async () => {
     try {
@@ -248,34 +295,6 @@ export function JobEditForm() {
     }
   };
 
-  const fetchUnitSizes = async () => {
-    try {
-      // If job/property known, fetch Regular Paint unit sizes for that property.
-      if (job?.property_id) {
-        // Derive the selected job category id/name for this job. Prefer job.job_category_id, then formData.
-        const categoryId = (job as any).job_category_id || formData.job_category_id || '';
-        let categoryName: string | undefined = undefined;
-        if (categoryId) {
-          const found = jobCategories.find(c => c.id === String(categoryId));
-          if (found) categoryName = found.name;
-        }
-        const sizes = await fetchPropertyUnitSizesForCategory(job.property_id, categoryName);
-        setUnitSizes(sizes);
-        return;
-      }
-      // Fallback to global list
-      const { data, error } = await supabase
-        .from('unit_sizes')
-        .select('*')
-        .order('unit_size_label');
-
-      if (error) throw error;
-      setUnitSizes(data || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch unit sizes');
-    }
-  };
-
   const fetchJobTypes = async () => {
     try {
       const { data, error } = await supabase
@@ -321,70 +340,13 @@ export function JobEditForm() {
 
   const fetchPropertyJobCategories = async (propertyId: string) => {
     try {
-      // Get the job categories that exist in the property's billing categories
-      const { data, error } = await supabase
-        .from('billing_categories')
-        .select(`
-          name,
-          description,
-          sort_order
-        `)
-        .eq('property_id', propertyId)
-        .order('sort_order, name');
-
-      if (error) throw error;
-      
-      // Get the corresponding job_categories IDs for these names
-      if (data && data.length > 0) {
-        const categoryNames = data.map(cat => cat.name);
-        
-        const { data: jobCategoriesData, error: jobCategoriesError } = await supabase
-          .from('job_categories')
-          .select('id, name, description, sort_order')
-          .in('name', categoryNames)
-          .order('sort_order, name');
-          
-        if (jobCategoriesError) throw jobCategoriesError;
-        
-        // Non-destructive UX: if the property's billing categories include
-        // 'Extra Charges - ...' subcategories, hide the bare 'Extra Charges'
-        // option for new selections. However, if we're editing an existing job
-        // that already has 'Extra Charges' selected, ensure that job category
-        // remains available so existing jobs are not impacted.
-        try {
-          const lowerBilling = (data || []).map((bc: any) => String(bc.name || '').trim().toLowerCase());
-          const hasBareExtra = lowerBilling.includes('extra charges');
-          const hasSubExtras = lowerBilling.some((n: string) => n.startsWith('extra charges -'));
-          let filtered = jobCategoriesData || [];
-          if (hasBareExtra && hasSubExtras) {
-            filtered = filtered.filter((jc: any) => String(jc.name || '').trim().toLowerCase() !== 'extra charges');
-          }
-  
-          // If the job being edited already uses a category that was filtered out,
-          // fetch and re-include it so existing selections remain valid.
-          const currentJobCategoryId = job?.job_category_id || formData.job_category_id || '';
-          if (currentJobCategoryId && !filtered.some((jc: any) => jc.id === currentJobCategoryId)) {
-            try {
-              const { data: currentCat } = await supabase
-                .from('job_categories')
-                .select('id, name, description, sort_order')
-                .eq('id', currentJobCategoryId)
-                .maybeSingle();
-              if (currentCat) {
-                filtered = [...filtered, currentCat];
-              }
-            } catch (e) {
-              // ignore and proceed without adding
-            }
-          }
-  
-          setJobCategories(filtered);
-        } catch (e) {
-          setJobCategories(jobCategoriesData || []);
-        }
-      } else {
-        setJobCategories([]);
-      }
+      const options = await fetchPropertyJobCategoryOptions(
+        propertyId,
+        job?.property_id === propertyId
+          ? job.job_category_id
+          : formData.job_category_id || null
+      );
+      setJobCategories(options);
     } catch (err) {
       console.error('Error fetching property job categories:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch property job categories');
@@ -576,6 +538,14 @@ export function JobEditForm() {
       // No conversion, no normalization - just the raw string from the date input
       const scheduledDate = formData.scheduled_date;
       console.log('JobEditForm: Sending EXACT string to database:', scheduledDate);
+
+      const selectedCategory = jobCategories.find(category => category.id === formData.job_category_id);
+      if (!selectedCategory) {
+        throw new Error('Please select a job category configured in this property billing setup.');
+      }
+      if (!unitSizes.some(size => size.id === formData.unit_size_id)) {
+        throw new Error('Please select a unit size configured for the selected property billing category.');
+      }
 
       const { error, data: updateResult } = await supabase
         .from('jobs')
@@ -951,6 +921,12 @@ export function JobEditForm() {
     console.log(`JobEditForm: Field changed - ${name}:`, value);
     setFormData(prev => {
       const updated = { ...prev, [name]: value };
+      if (name === 'property_id' && value !== prev.property_id) {
+        updated.job_category_id = '';
+        updated.unit_size_id = '';
+      } else if (name === 'job_category_id' && value !== prev.job_category_id) {
+        updated.unit_size_id = '';
+      }
       console.log('JobEditForm: Updated formData:', updated);
       return updated;
     });
@@ -1075,7 +1051,7 @@ export function JobEditForm() {
                   <option value="">Select a job category</option>
                   {jobCategories.map(category => (
                     <option key={category.id} value={category.id}>
-                      {category.name}
+                      {category.display_name || category.name}
                     </option>
                   ))}
                 </select>

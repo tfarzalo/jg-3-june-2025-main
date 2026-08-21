@@ -11,7 +11,8 @@ import { optimizeImage } from '../lib/utils/imageOptimization';
 import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
 import { buildStoragePath } from '../utils/storagePaths';
 import { FILE_CATEGORY_PATHS } from '../utils/fileCategories';
-import { fetchRegularPaintUnitSizes, fetchPropertyUnitSizesForCategory } from '../lib/propertyUnitSizes';
+import { fetchPropertyUnitSizesForBillingCategory } from '../lib/propertyUnitSizes';
+import { fetchPropertyJobCategoryOptions } from '../lib/propertyJobCategoryOptions';
 
 interface Property {
   id: string;
@@ -33,6 +34,9 @@ interface JobCategory {
   name: string;
   description: string | null;
   sort_order: number;
+  billing_category_id?: string | null;
+  display_name?: string;
+  is_legacy_current_only?: boolean;
 }
 
 export function JobRequestForm() {
@@ -125,7 +129,8 @@ export function JobRequestForm() {
   useEffect(() => {
     if (formData.property_id) {
       fetchPropertyJobCategories(formData.property_id);
-      fetchPropertyUnitSizes(formData.property_id);
+      setUnitSizes([]);
+      setFormData(prev => ({ ...prev, job_category_id: '', unit_size_id: '' }));
     } else {
       setJobCategories([]);
       setUnitSizes([]);
@@ -146,8 +151,16 @@ export function JobRequestForm() {
       if (!formData.property_id) return;
       try {
         const selectedCategory = jobCategories.find(c => c.id === formData.job_category_id);
-        const categoryName = selectedCategory ? selectedCategory.name : undefined;
-        const sizes = await fetchPropertyUnitSizesForCategory(formData.property_id, categoryName);
+        if (!selectedCategory) {
+          setUnitSizes([]);
+          setFormData(prev => prev.unit_size_id ? { ...prev, unit_size_id: '' } : prev);
+          return;
+        }
+
+        const sizes = await fetchPropertyUnitSizesForBillingCategory(
+          formData.property_id,
+          selectedCategory.billing_category_id
+        );
         setUnitSizes(sizes);
         // If callback job and N/A exists, set N/A as default
         const naSize = naUnitSize || await fetchNaUnitSize();
@@ -195,10 +208,10 @@ export function JobRequestForm() {
 
   const fetchPropertyUnitSizes = async (propertyId: string) => {
     try {
-      // If a job category is selected, pass its name to filter unit sizes to that billing category
       const selectedCategory = jobCategories.find(c => c.id === formData.job_category_id);
-      const categoryName = selectedCategory ? selectedCategory.name : undefined;
-      const sizes = await fetchPropertyUnitSizesForCategory(propertyId, categoryName);
+      const sizes = selectedCategory
+        ? await fetchPropertyUnitSizesForBillingCategory(propertyId, selectedCategory.billing_category_id)
+        : [];
       setUnitSizes(sizes);
       setDebugInfo(prev => ({ ...prev, unitSizesLoaded: true }));
       const naSize = naUnitSize || await fetchNaUnitSize();
@@ -279,86 +292,8 @@ export function JobRequestForm() {
 
   const fetchPropertyJobCategories = async (propertyId: string) => {
     try {
-      // Get the job categories that exist in the property's billing categories
-      const { data, error } = await supabase
-        .from('billing_categories')
-        .select(`
-          name,
-          description,
-          sort_order
-        `)
-        .eq('property_id', propertyId)
-        .order('sort_order, name');
-
-      if (error) throw error;
-
-      // Also fetch all default job categories so they always appear even if
-      // the property's billing setup hasn't been opened yet to auto-insert them.
-      const { data: defaultCatsData, error: defaultCatsError } = await supabase
-        .from('job_categories')
-        .select('id, name, description, sort_order')
-        .eq('is_default', true)
-        .order('sort_order, name');
-
-      if (defaultCatsError) throw defaultCatsError;
-
-      // Build the combined name list: billing_categories names + default category names
-      const billingCategoryNames = (data || []).map(cat => cat.name);
-      // If the property's billing includes both a bare 'Extra Charges' row and
-      // one or more 'Extra Charges - ...' subcategories, prefer the prefixed
-      // subcategories and exclude the bare 'Extra Charges' from the job
-      // category list so users don't see the generic option.
-      const lowerNames = billingCategoryNames.map(n => String(n || '').trim().toLowerCase());
-      const hasBareExtra = lowerNames.includes('extra charges');
-      const hasSubExtras = lowerNames.some(n => n.startsWith('extra charges -'));
-      const effectiveBillingNames = (hasBareExtra && hasSubExtras)
-        ? billingCategoryNames.filter(n => String(n || '').trim().toLowerCase() !== 'extra charges')
-        : billingCategoryNames;
-
-      const defaultCategoryNames = (defaultCatsData || []).map(cat => cat.name);
-      // Don't include the default 'Extra Charges' globally unless the property
-      // actually has a billing category for it (either bare 'Extra Charges' or
-      // 'Extra Charges - ...' subcategories). This prevents showing a confusing
-      // standalone 'Extra Charges' option on properties that don't configure it.
-      const defaultFiltered = defaultCategoryNames.filter(n => {
-        try {
-          if (String(n || '').trim().toLowerCase() !== 'extra charges') return true;
-          // it's the default 'Extra Charges' category; include only if billing has it
-          const lowerBilling = billingCategoryNames.map(x => String(x || '').trim().toLowerCase());
-          return lowerBilling.includes('extra charges') || lowerBilling.some(x => x.startsWith('extra charges -'));
-        } catch (e) {
-          return true;
-        }
-      });
-      const allNames = Array.from(new Set([...effectiveBillingNames, ...defaultFiltered]));
-
-      if (allNames.length > 0) {
-        const { data: jobCategoriesData, error: jobCategoriesError } = await supabase
-          .from('job_categories')
-          .select('id, name, description, sort_order')
-          .in('name', allNames)
-          .order('sort_order, name');
-          
-        if (jobCategoriesError) throw jobCategoriesError;
-        
-        // Non-destructive UX fix: if the property's billing categories include
-        // specific Extra Charges subcategories (e.g. 'Painted Ceilings'), hide the
-        // standalone 'Extra Charges' option from the Job Category dropdown for
-        // new job requests to avoid confusion. Do not change DB rows.
-        try {
-          const hasExtraSubs = (data || []).some((bc: any) => String(bc.name || '').trim().toLowerCase().startsWith('extra charges -'));
-          let filtered = jobCategoriesData || [];
-          if (hasExtraSubs) {
-            filtered = filtered.filter((jc: any) => String(jc.name || '').trim().toLowerCase() !== 'extra charges');
-          }
-          setJobCategories(filtered);
-        } catch (e) {
-          // Fallback to original list on error
-          setJobCategories(jobCategoriesData || []);
-        }
-       } else {
-         setJobCategories([]);
-       }
+      const options = await fetchPropertyJobCategoryOptions(propertyId);
+      setJobCategories(options);
     } catch (err) {
       console.error('Error fetching property job categories:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch property job categories');
@@ -558,6 +493,13 @@ export function JobRequestForm() {
         unitSizeId = naSize.id;
       }
       console.log('JobRequestForm: Sending EXACT string to database:', scheduledDate);
+      const selectedCategory = jobCategories.find(category => category.id === formData.job_category_id);
+      if (!selectedCategory) {
+        throw new Error('Please select a job category configured in this property billing setup.');
+      }
+      if (!callbackJob && !unitSizes.some(size => size.id === unitSizeId)) {
+        throw new Error('Please select a unit size configured for the selected property billing category.');
+      }
 
       const { data, error } = await supabase.rpc('create_job', {
         p_property_id: formData.property_id,
@@ -612,6 +554,8 @@ export function JobRequestForm() {
       const next = { ...prev, [name]: value };
       if ((name === 'job_type_id' || name === 'job_category_id') && isCallbackJob(next) && naUnitSize) {
         next.unit_size_id = naUnitSize.id;
+      } else if (name === 'job_category_id') {
+        next.unit_size_id = '';
       }
       return next;
     });
@@ -835,7 +779,7 @@ export function JobRequestForm() {
                   <option value="">Select a job category</option>
                   {jobCategories.map(category => (
                     <option key={category.id} value={category.id}>
-                      {category.name}
+                      {category.display_name || category.name}
                     </option>
                   ))}
                 </select>

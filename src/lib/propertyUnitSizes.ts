@@ -2,6 +2,44 @@ import { supabase } from '../utils/supabase';
 
 export type UnitSize = { id: string; unit_size_label: string };
 
+async function fetchConfiguredUnitSizes(propertyId: string, categoryIds: string[]): Promise<UnitSize[]> {
+  if (!propertyId || categoryIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from('billing_details')
+    .select('unit_size_id, unit_sizes!inner(id, unit_size_label)')
+    .in('category_id', categoryIds)
+    .eq('property_id', propertyId);
+
+  if (error) throw error;
+
+  const seen = new Set<string>();
+  const unitSizes: UnitSize[] = [];
+  for (const row of data || []) {
+    const size = row.unit_sizes as any;
+    if (size?.id && !seen.has(size.id)) {
+      seen.add(size.id);
+      unitSizes.push({ id: size.id, unit_size_label: String(size.unit_size_label) });
+    }
+  }
+
+  return unitSizes.sort((a, b) => a.unit_size_label.localeCompare(b.unit_size_label));
+}
+
+export async function fetchPropertyUnitSizesForBillingCategory(
+  propertyId: string,
+  billingCategoryId?: string | null
+): Promise<UnitSize[]> {
+  if (!propertyId || !billingCategoryId) return [];
+
+  try {
+    return await fetchConfiguredUnitSizes(propertyId, [billingCategoryId]);
+  } catch (err) {
+    console.error('fetchPropertyUnitSizesForBillingCategory error:', err);
+    return [];
+  }
+}
+
 // Helper to fetch unit sizes for a property's billing category.
 // If categoryName is provided, the helper will try to load unit sizes only for that billing category name
 // (case-insensitive). If categoryName is not provided, it will attempt to use the "Regular Paint" category
