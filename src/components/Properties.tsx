@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Search, Plus, ArrowUpDown, Building2, Archive } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Search, Plus, ArrowUpDown, Building2, Archive, Pin } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
+import { usePinnedWorkspace } from '../contexts/PinnedWorkspaceContext';
 
 type Property = {
   id: string;
@@ -33,6 +34,8 @@ export function Properties() {
   const [processing, setProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState<'active' | 'inactive'>('active');
   const navigate = useNavigate();
+  const location = useLocation();
+  const { canUsePinnedWorkspace, pinSummary, isPinned } = usePinnedWorkspace();
 
   useEffect(() => {
     fetchProperties();
@@ -74,6 +77,32 @@ export function Properties() {
       property.zip
     ].filter(Boolean);
     return parts.join(', ');
+  };
+
+  const handlePinPropertyListSummary = () => {
+    pinSummary({
+      id: `${location.pathname}:${activeTab}`,
+      type: 'list',
+      title: `Properties: ${activeTab === 'active' ? 'Active' : 'Inactive'}`,
+      subtitle: `Showing ${filteredProperties.length} of ${properties.length} properties`,
+      route: location.pathname,
+      metadata: {
+        content_type: 'Property List',
+        tab: activeTab,
+        search: searchTerm || 'None',
+        sort: `property_name ${sortOrder}`,
+      },
+    });
+  };
+
+  const handlePinPropertySummary = (property: Property) => {
+    pinSummary({
+      id: property.id,
+      type: 'property',
+      title: property.property_name,
+      subtitle: formatAddress(property),
+      route: `/dashboard/properties/${property.id}`,
+    });
   };
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -146,6 +175,16 @@ export function Properties() {
           <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Properties</h1>
         </div>
         <div className="flex space-x-3">
+          {canUsePinnedWorkspace && (
+            <button
+              type="button"
+              onClick={handlePinPropertyListSummary}
+              className="inline-flex items-center px-4 py-2 bg-white dark:bg-[#1E293B] border border-blue-200 dark:border-blue-500/40 text-blue-700 dark:text-blue-200 text-sm font-medium rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+            >
+              <Pin className="h-4 w-4 mr-2" />
+              {isPinned(`list:${location.pathname}:${activeTab}`) ? 'Pinned List Summary' : 'Pin List Summary'}
+            </button>
+          )}
           {selectedProperties.length > 0 && (
             <button
               onClick={() => setShowArchiveConfirm(true)}
@@ -268,13 +307,24 @@ export function Properties() {
                   onClick={() => handlePropertyClick(property.id)}
                 >
                   <td className="px-3 py-4" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center">
+                    <div className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={selectedProperties.includes(property.id)}
                         onChange={() => handleSelectProperty(property.id)}
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                       />
+                      {canUsePinnedWorkspace && (
+                        <button
+                          type="button"
+                          onClick={() => handlePinPropertySummary(property)}
+                          className="rounded p-1 text-gray-400 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-300"
+                          title={isPinned(`property:${property.id}`) ? 'Pinned property summary' : 'Pin property summary'}
+                          aria-label={isPinned(`property:${property.id}`) ? 'Pinned property summary' : 'Pin property summary'}
+                        >
+                          <Pin className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-4">

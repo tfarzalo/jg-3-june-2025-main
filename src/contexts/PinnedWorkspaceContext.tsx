@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useUserRole } from './UserRoleContext';
 
-export type PinnedWorkspaceItemType = 'property';
+export type PinnedWorkspaceItemType = 'property' | 'job' | 'list';
 
 export interface PinnedWorkspaceItem {
   id: string;
@@ -9,6 +9,7 @@ export interface PinnedWorkspaceItem {
   title: string;
   subtitle?: string;
   route: string;
+  metadata?: Record<string, string | number | boolean | null | undefined>;
   minimized: boolean;
   pinnedAt: number;
 }
@@ -19,6 +20,7 @@ interface PinSummaryInput {
   title: string;
   subtitle?: string;
   route: string;
+  metadata?: Record<string, string | number | boolean | null | undefined>;
 }
 
 interface PinnedWorkspaceContextValue {
@@ -50,7 +52,7 @@ const readStoredItems = (): PinnedWorkspaceItem[] => {
     return parsed.filter((item): item is PinnedWorkspaceItem => (
       item &&
       typeof item.id === 'string' &&
-      item.type === 'property' &&
+      ['property', 'job', 'list'].includes(item.type) &&
       typeof item.title === 'string' &&
       typeof item.route === 'string'
     ));
@@ -89,6 +91,7 @@ export function PinnedWorkspaceProvider({ children }: { children: React.ReactNod
               title: item.title,
               subtitle: item.subtitle,
               route: item.route,
+              metadata: item.metadata,
               minimized: false,
             }
           : pinnedItem

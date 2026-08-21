@@ -42,7 +42,8 @@ import {
   FileImage,
   FolderOpen,
   Bell,
-  Mailbox
+  Mailbox,
+  Pin
 } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { formatDate, formatDisplayDate, formatTime, formatDateTime } from '../lib/dateUtils';
@@ -96,6 +97,7 @@ import {
   getQualityControlSectionTotal,
   type QualityControlScoreKey,
 } from '../lib/qualityControl';
+import { usePinnedWorkspace } from '../contexts/PinnedWorkspaceContext';
 
 type Property = {
   id: string;
@@ -360,6 +362,7 @@ export function JobDetails() {
   const { phaseChanges, refetch: refetchPhaseChanges } = useJobPhaseChanges(jobId);
   const { phases, loading: phasesLoading } = usePhases();
   const { role, isAdmin, isJGManagement, isSubcontractor, isSuperAdmin } = useUserRole();
+  const { canUsePinnedWorkspace, pinSummary, isPinned } = usePinnedWorkspace();
   const canInternalEdit = role !== null && role !== 'subcontractor';
   
   // Get job phase color (same approach as all jobs pages)
@@ -3976,6 +3979,18 @@ export function JobDetails() {
   const isCompleted = phaseLabel === 'Completed';
   const isQualityControl = phaseLabel === 'Quality Control';
 
+  const handlePinJobSummary = () => {
+    if (!job || !jobId) return;
+
+    pinSummary({
+      id: jobId,
+      type: 'job',
+      title: formatWorkOrderNumber(job.work_order_num ?? 0),
+      subtitle: `${propertyName} | Unit ${job.unit_number || '—'} | ${phaseLabel}`,
+      route: `/dashboard/jobs/${jobId}`,
+    });
+  };
+
   // Calculate profit if billing details are available
   const profitAmount = (job.billing_details?.bill_amount !== null && job.billing_details?.sub_pay_amount !== null && job.billing_details?.bill_amount !== undefined && job.billing_details?.sub_pay_amount !== undefined)
     ? job.billing_details.bill_amount - job.billing_details.sub_pay_amount
@@ -4136,6 +4151,16 @@ export function JobDetails() {
             </div>
           </div>
           <div className="flex space-x-3">
+            {canUsePinnedWorkspace && (
+              <button
+                type="button"
+                onClick={handlePinJobSummary}
+                className="inline-flex items-center px-4 py-2 bg-white dark:bg-[#1E293B] border border-blue-200 dark:border-blue-500/40 text-blue-700 dark:text-blue-200 text-sm font-medium rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+              >
+                <Pin className="h-4 w-4 mr-2" />
+                {isPinned(`job:${jobId}`) ? 'Pinned Job Summary' : 'Pin Job Summary'}
+              </button>
+            )}
             {canUseQualityControl && (isCompleted || isQualityControl) && (
               <button
                 onClick={openQualityControlModal}

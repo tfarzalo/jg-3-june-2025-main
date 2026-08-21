@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Search, 
   ArrowUpDown,
@@ -14,7 +14,8 @@ import {
   X,
   Mailbox,
   CheckCircle,
-  ClipboardCheck
+  ClipboardCheck,
+  Pin
 } from 'lucide-react';
 import { parseISO, format, subMonths } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
@@ -24,6 +25,7 @@ import { supabase } from '@/utils/supabase';
 import { toast } from 'sonner';
 import { JobDataModeIndicator } from '@/components/jobs/JobDataModeIndicator';
 import { formatJobPhaseLabel } from '@/lib/jobPhaseLabels';
+import { usePinnedWorkspace } from '@/contexts/PinnedWorkspaceContext';
 
 export interface Job {
   id: string;
@@ -430,6 +432,8 @@ export function JobListingPage({
   initialSortConfig
 }: JobListingPageProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { canUsePinnedWorkspace, pinSummary, isPinned } = usePinnedWorkspace();
   const [searchTerm, setSearchTerm] = useState('');
   const [propertyFilter, setPropertyFilter] = useState('all');
   const [subcontractorFilter, setSubcontractorFilter] = useState('all');
@@ -1774,6 +1778,35 @@ export function JobListingPage({
     })
   );
 
+  const handlePinJobListSummary = () => {
+    pinSummary({
+      id: location.pathname,
+      type: 'list',
+      title,
+      subtitle: `Showing ${sortedAndFilteredJobs.length} of ${jobs.length} jobs`,
+      route: location.pathname,
+      metadata: {
+        content_type: 'Job List',
+        search: searchTerm || 'None',
+        property_filter: propertyFilter === 'all' ? 'All Properties' : propertyFilter,
+        subcontractor_filter: subcontractorFilter === 'all' ? 'All Subcontractors' : subcontractorFilter,
+        scheduled_from: scheduledStartDate || 'Any',
+        scheduled_to: scheduledEndDate || 'Any',
+        sort: `${sortConfig.field} ${sortConfig.direction}`,
+      },
+    });
+  };
+
+  const handlePinJobSummary = (job: Job) => {
+    pinSummary({
+      id: job.id,
+      type: 'job',
+      title: formatWorkOrderNumber(job.work_order_num),
+      subtitle: `${job.property.property_name} | Unit ${job.unit_number || '—'} | ${formatJobPhaseLabel(job.job_phase?.job_phase_label) || 'No phase'}`,
+      route: `/dashboard/jobs/${job.id}`,
+    });
+  };
+
   useEffect(() => {
     const visibleJobIds = new Set(sortedAndFilteredJobs.map((job) => job.id));
 
@@ -1817,6 +1850,17 @@ export function JobListingPage({
             >
               <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">Refresh</span>
+            </button>
+          )}
+          {canUsePinnedWorkspace && (
+            <button
+              type="button"
+              onClick={handlePinJobListSummary}
+              className="inline-flex items-center px-3 py-2 sm:px-4 bg-white dark:bg-[#1E293B] border border-blue-200 dark:border-blue-500/40 text-blue-700 dark:text-blue-200 text-sm font-medium rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+            >
+              <Pin className="h-4 w-4 mr-2" />
+              <span className="hidden sm:inline">{isPinned(`list:${location.pathname}`) ? 'Pinned List Summary' : 'Pin List Summary'}</span>
+              <span className="sm:hidden">Pin</span>
             </button>
           )}
           {selectedJobs.length > 0 && (
@@ -2108,13 +2152,24 @@ export function JobListingPage({
               {sortedAndFilteredJobs.map((job) => (
                 <tr key={job.id} className="hover:bg-gray-50/50 dark:hover:bg-[#2D3B4E]/30 transition-colors">
                   <td className="px-3 py-4">
-                    <div className="flex items-center">
+                    <div className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={selectedJobs.includes(job.id)}
                         onChange={() => handleSelectJob(job.id)}
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                       />
+                      {canUsePinnedWorkspace && (
+                        <button
+                          type="button"
+                          onClick={() => handlePinJobSummary(job)}
+                          className="rounded p-1 text-gray-400 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-300"
+                          title={isPinned(`job:${job.id}`) ? 'Pinned job summary' : 'Pin job summary'}
+                          aria-label={isPinned(`job:${job.id}`) ? 'Pinned job summary' : 'Pin job summary'}
+                        >
+                          <Pin className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-4 w-24 sm:w-auto">

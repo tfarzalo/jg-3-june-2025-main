@@ -52,6 +52,35 @@ interface PropertySummary {
   } | null;
 }
 
+interface JobSummary {
+  id: string;
+  work_order_num: number | null;
+  unit_number: string | null;
+  description: string | null;
+  scheduled_date: string | null;
+  purchase_order: string | null;
+  total_billing_amount: number | null;
+  property: {
+    id: string;
+    property_name: string | null;
+    address: string | null;
+    city: string | null;
+    state: string | null;
+  } | null;
+  unit_size: {
+    unit_size_label: string | null;
+  } | null;
+  job_type: {
+    job_type_label: string | null;
+  } | null;
+  job_phase: {
+    job_phase_label: string | null;
+  } | null;
+  assigned_to_profile?: {
+    full_name: string | null;
+  } | null;
+}
+
 const formatAddress = (property: PropertySummary) => [
   property.address,
   property.address_2,
@@ -81,6 +110,8 @@ function SummarySection({ title, children }: { title: string; children: React.Re
 }
 
 const joinValues = (values: Array<string | null | undefined>) => values.filter(Boolean).join(' | ');
+const formatMoney = (amount?: number | null) => amount == null ? null : `$${amount.toFixed(2)}`;
+const formatWorkOrderNumber = (num?: number | null) => num ? `WO-${String(num).padStart(6, '0')}` : null;
 
 function PropertySummaryPanel({ item }: { item: PinnedWorkspaceItem }) {
   const [property, setProperty] = useState<PropertySummary | null>(null);
@@ -251,6 +282,137 @@ function PropertySummaryPanel({ item }: { item: PinnedWorkspaceItem }) {
   );
 }
 
+function JobSummaryPanel({ item }: { item: PinnedWorkspaceItem }) {
+  const [job, setJob] = useState<JobSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const jobId = useMemo(() => item.id.replace(/^job:/, ''), [item.id]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchJob = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const { data, error: fetchError } = await supabase
+          .from('jobs')
+          .select(`
+            id,
+            work_order_num,
+            unit_number,
+            description,
+            scheduled_date,
+            purchase_order,
+            total_billing_amount,
+            property:properties(id, property_name, address, city, state),
+            unit_size:unit_sizes(unit_size_label),
+            job_type:job_types(job_type_label),
+            job_phase:current_phase_id(job_phase_label),
+            assigned_to_profile:assigned_to(full_name)
+          `)
+          .eq('id', jobId)
+          .single();
+
+        if (fetchError) throw fetchError;
+        if (mounted) setJob(data as unknown as JobSummary);
+      } catch (err) {
+        console.error('Error loading pinned job summary:', err);
+        if (mounted) setError(err instanceof Error ? err.message : 'Unable to load job summary');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    fetchJob();
+
+    return () => {
+      mounted = false;
+    };
+  }, [jobId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+
+  if (error || !job) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-900/30 dark:text-red-200">
+        {error || 'Job summary not found'}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-[#2D3B4E] dark:bg-[#0F172A]">
+        <div className="text-sm font-medium text-gray-900 dark:text-white">
+          {formatWorkOrderNumber(job.work_order_num) || item.title}
+        </div>
+        <div className="mt-0.5 text-xs text-gray-600 dark:text-gray-300">
+          {joinValues([job.property?.property_name, job.unit_number ? `Unit ${job.unit_number}` : null]) || 'No property/unit on file'}
+        </div>
+      </div>
+
+      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <SummaryRow label="Phase" value={job.job_phase?.job_phase_label} />
+        <SummaryRow label="Scheduled" value={job.scheduled_date} />
+        <SummaryRow label="Job Type" value={job.job_type?.job_type_label} />
+        <SummaryRow label="Unit Size" value={job.unit_size?.unit_size_label} />
+        <SummaryRow label="PO #" value={job.purchase_order} />
+        <SummaryRow label="Assigned To" value={job.assigned_to_profile?.full_name} />
+        <SummaryRow label="Amount" value={formatMoney(job.total_billing_amount)} />
+      </dl>
+
+      <SummarySection title="Property">
+        <dl className="grid grid-cols-1 gap-3">
+          <SummaryRow label="Property" value={job.property?.property_name} />
+          <SummaryRow label="Address" value={joinValues([job.property?.address, job.property?.city, job.property?.state])} />
+        </dl>
+      </SummarySection>
+
+      {job.description && (
+        <SummarySection title="Description">
+          <p className="max-h-32 overflow-auto whitespace-pre-wrap text-sm text-gray-800 dark:text-gray-100">
+            {job.description}
+          </p>
+        </SummarySection>
+      )}
+    </div>
+  );
+}
+
+function ListSummaryPanel({ item }: { item: PinnedWorkspaceItem }) {
+  const metadataEntries = Object.entries(item.metadata || {}).filter(([, value]) => value !== null && value !== undefined && value !== '');
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-[#2D3B4E] dark:bg-[#0F172A]">
+        <div className="text-sm font-medium text-gray-900 dark:text-white">{item.title}</div>
+        {item.subtitle && (
+          <div className="mt-0.5 text-xs text-gray-600 dark:text-gray-300">{item.subtitle}</div>
+        )}
+      </div>
+      {metadataEntries.length > 0 && (
+        <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {metadataEntries.map(([key, value]) => (
+            <SummaryRow
+              key={key}
+              label={key.replace(/_/g, ' ')}
+              value={String(value)}
+            />
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
 const openRouteInNewTab = (route: string) => {
   const url = new URL(route, window.location.origin);
   window.open(url.toString(), '_blank', 'noopener,noreferrer');
@@ -316,6 +478,8 @@ export function PinnedWorkspaceDock() {
           </header>
           <div className="max-h-[60vh] overflow-auto p-4">
             {expandedItem.type === 'property' && <PropertySummaryPanel item={expandedItem} />}
+            {expandedItem.type === 'job' && <JobSummaryPanel item={expandedItem} />}
+            {expandedItem.type === 'list' && <ListSummaryPanel item={expandedItem} />}
           </div>
         </section>
       )}
