@@ -264,9 +264,19 @@ export function PropertyContactsEditor({
     !primaryContactHasIdentity ||
     (!primarySystemMatch && primaryCustomMatchIds.size === 0);
 
+  const apCustomMatchIds = new Set(
+    customContacts
+      .filter((contact) => contactsMatch(systemContacts.ap, contact))
+      .map((contact) => contact.id),
+  );
+
+  const shouldRenderAccountsPayableContact =
+    hasContactIdentity(systemContacts.ap) && apCustomMatchIds.size === 0;
+
   const hasVisibleSystemDuplicate = (contact: Pick<SystemContactData, 'name' | 'email' | 'phone'>) =>
     (Object.keys(systemContacts) as SystemContactKey[]).some((key) => {
       if (key === 'primary_contact' && !shouldRenderPrimaryContact) return false;
+      if (key === 'ap' && !shouldRenderAccountsPayableContact) return false;
       return contactsMatch(contact, systemContacts[key]);
     });
 
@@ -277,6 +287,7 @@ export function PropertyContactsEditor({
     SYSTEM_CONTACT_ORDER.forEach((key) => {
       if (assigned.has(key)) return;
       if (key === 'primary_contact' && !shouldRenderPrimaryContact) return;
+      if (key === 'ap' && !shouldRenderAccountsPayableContact) return;
 
       const baseContact = systemContacts[key];
       const keys = SYSTEM_CONTACT_ORDER.filter((candidateKey) => {
@@ -294,6 +305,32 @@ export function PropertyContactsEditor({
 
     return groups;
   })();
+
+  const assignAccountsPayableFromContact = (contact: SystemContactData | PropertyContact) => {
+    onSystemContactChange('ap', 'name', contact.name || '');
+    onSystemContactChange('ap', 'email', contact.email || '');
+    onSystemContactChange('ap', 'secondary_email', contact.secondary_email || '');
+    onSystemContactChange('ap', 'phone', contact.phone || '');
+    onSystemContactChange('ap', 'additional_phones', contact.additional_phones || []);
+    onSystemContactChange('ap', 'title', SYSTEM_CONTACT_LABELS.ap);
+  };
+
+  const clearAccountsPayableIfSameContact = (contact: Pick<SystemContactData, 'name' | 'email' | 'phone'>) => {
+    if (!contactsMatch(systemContacts.ap, contact)) return;
+
+    onSystemContactChange('ap', 'name', '');
+    onSystemContactChange('ap', 'email', '');
+    onSystemContactChange('ap', 'secondary_email', '');
+    onSystemContactChange('ap', 'phone', '');
+    onSystemContactChange('ap', 'additional_phones', []);
+    onSystemContactChange('ap', 'title', SYSTEM_CONTACT_LABELS.ap);
+    onSystemContactRoleChange('ap', 'subcontractor', false);
+    onSystemContactRoleChange('ap', 'accountsReceivable', false);
+    onSystemContactRoleChange('ap', 'approvalRecipient', false);
+    onSystemContactRoleChange('ap', 'primaryApproval', false);
+    onSystemContactRoleChange('ap', 'notificationRecipient', false);
+    onSystemContactRoleChange('ap', 'primaryNotification', false);
+  };
 
   const handleDeleteSystemContact = (
     key: SystemContactKey,
@@ -480,10 +517,12 @@ export function PropertyContactsEditor({
       groupedKeys.includes('primary_contact') ||
       (key === 'primary_contact' && primaryContactHasIdentity) ||
       (key !== 'primary_contact' && primarySystemMatch === key);
+    const isAccountsPayableIdentity = groupedKeys.includes('ap') || contactsMatch(systemContacts.ap, data);
 
     const badges = [
       isPrimaryIdentity && <Badge key="pc" color="indigo">Primary</Badge>,
       roles.subcontractor && <Badge key="sub" color="blue">Subcontractor</Badge>,
+      isAccountsPayableIdentity && <Badge key="ap" color="purple">Accounts Payable</Badge>,
       roles.accountsReceivable && <Badge key="ar" color="purple">AR Contact</Badge>,
       roles.primaryApproval
         ? <Badge key="pa" color="green">Primary Approval</Badge>
@@ -545,6 +584,16 @@ export function PropertyContactsEditor({
                 <PillToggle active={!!roles.accountsReceivable} color="purple"
                   onClick={() => setGroupedRole('accountsReceivable', !roles.accountsReceivable)}>
                   Accounts Receivable
+                </PillToggle>
+                <PillToggle active={isAccountsPayableIdentity} color="purple"
+                  onClick={() => {
+                    if (isAccountsPayableIdentity) {
+                      clearAccountsPayableIfSameContact(data);
+                    } else {
+                      assignAccountsPayableFromContact(data);
+                    }
+                  }}>
+                  Accounts Payable
                 </PillToggle>
                 <PillToggle active={!!roles.approvalRecipient} color="green"
                   onClick={() => setGroupedRole('approvalRecipient', !roles.approvalRecipient)}>
@@ -653,10 +702,12 @@ export function PropertyContactsEditor({
 
     const approvalOn = !!(contact.receives_approval_emails ?? contact.is_approval_recipient);
     const notifOn = !!(contact.receives_notification_emails ?? contact.is_notification_recipient);
+    const isAccountsPayableContact = contactsMatch(systemContacts.ap, contact);
 
     const badges = [
       (contact.is_primary_contact || primaryCustomMatchIds.has(contact.id)) && <Badge key="pc" color="indigo">Primary</Badge>,
       contact.is_subcontractor_contact && <Badge key="sub" color="blue">Subcontractor</Badge>,
+      isAccountsPayableContact && <Badge key="ap" color="purple">Accounts Payable</Badge>,
       contact.is_accounts_receivable_contact && <Badge key="ar" color="purple">AR Contact</Badge>,
       contact.is_primary_approval_recipient
         ? <Badge key="pa" color="green">Primary Approval</Badge>
@@ -732,6 +783,19 @@ export function PropertyContactsEditor({
                 <PillToggle active={!!contact.is_accounts_receivable_contact} color="purple"
                   onClick={() => onCustomContactChange(contact.id, 'is_accounts_receivable_contact', !contact.is_accounts_receivable_contact)}>
                   Accounts Receivable
+                </PillToggle>
+                <PillToggle active={isAccountsPayableContact} color="purple"
+                  onClick={() => {
+                    if (isAccountsPayableContact) {
+                      clearAccountsPayableIfSameContact(contact);
+                    } else {
+                      assignAccountsPayableFromContact(contact);
+                      if (!contact.position) {
+                        onCustomContactChange(contact.id, 'position', SYSTEM_CONTACT_LABELS.ap);
+                      }
+                    }
+                  }}>
+                  Accounts Payable
                 </PillToggle>
                 <PillToggle active={approvalOn} color="green"
                   onClick={() => {
