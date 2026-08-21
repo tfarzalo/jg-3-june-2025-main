@@ -910,7 +910,7 @@ export function PropertyDetails() {
     fetchData();
   }, [propertyId, navigate]);
 
-  const handleAddCallback = async (omitUnitNumber = false) => {
+  const handleAddCallback = async (isPropertyNote = false) => {
     if (!propertyId) return;
 
     try {
@@ -923,7 +923,7 @@ export function PropertyDetails() {
           property_id: propertyId,
           callback_date: newCallback.callback_date,
           painter: newCallback.painter,
-          unit_number: omitUnitNumber ? null : newCallback.unit_number,
+          unit_number: isPropertyNote ? '' : newCallback.unit_number,
           reason: newCallback.reason,
           posted_by: userData.user.id
         });
@@ -953,10 +953,10 @@ export function PropertyDetails() {
       if (callbackError) throw callbackError;
       setCallbacks(callbackData || []);
       
-      toast.success('Callback added successfully');
+      toast.success(isPropertyNote ? 'Note added successfully' : 'Callback added successfully');
     } catch (err) {
-      console.error('Error adding callback:', err);
-      toast.error('Failed to add callback');
+      console.error(isPropertyNote ? 'Error adding note:' : 'Error adding callback:', err);
+      toast.error(isPropertyNote ? 'Failed to add note' : 'Failed to add callback');
     }
   };
 
