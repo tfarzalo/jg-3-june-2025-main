@@ -513,23 +513,18 @@ export function PropertyContactsEditor({
       (data.additional_phones && data.additional_phones.length > 0) ||
       getSystemContactAssociations(roles).length > 0
     );
-    const isPrimaryIdentity =
-      groupedKeys.includes('primary_contact') ||
-      (key === 'primary_contact' && primaryContactHasIdentity) ||
-      (key !== 'primary_contact' && primarySystemMatch === key);
     const isAccountsPayableIdentity = groupedKeys.includes('ap') || contactsMatch(systemContacts.ap, data);
 
     const badges = [
-      isPrimaryIdentity && <Badge key="pc" color="indigo">Primary</Badge>,
-      roles.subcontractor && <Badge key="sub" color="blue">Subcontractor</Badge>,
+      roles.subcontractor && <Badge key="sub" color="blue">Subcontractor Contact</Badge>,
       isAccountsPayableIdentity && <Badge key="ap" color="purple">Accounts Payable</Badge>,
-      roles.accountsReceivable && <Badge key="ar" color="purple">AR Contact</Badge>,
+      roles.accountsReceivable && <Badge key="ar" color="purple">Accounts Receivable</Badge>,
       roles.primaryApproval
         ? <Badge key="pa" color="green">Primary Approval</Badge>
-        : roles.approvalRecipient && <Badge key="a" color="green">Approval Emails</Badge>,
+      : roles.approvalRecipient && <Badge key="a" color="green">Approval Emails</Badge>,
       roles.primaryNotification
         ? <Badge key="pn" color="amber">Primary Notif.</Badge>
-        : roles.notificationRecipient && <Badge key="n" color="amber">Notifications</Badge>,
+        : roles.notificationRecipient && <Badge key="n" color="amber">Notification Emails</Badge>,
     ].filter(Boolean);
 
     return (
@@ -705,16 +700,16 @@ export function PropertyContactsEditor({
     const isAccountsPayableContact = contactsMatch(systemContacts.ap, contact);
 
     const badges = [
-      (contact.is_primary_contact || primaryCustomMatchIds.has(contact.id)) && <Badge key="pc" color="indigo">Primary</Badge>,
-      contact.is_subcontractor_contact && <Badge key="sub" color="blue">Subcontractor</Badge>,
+      contact.is_primary_contact && <Badge key="pc" color="indigo">Primary Contact</Badge>,
+      contact.is_subcontractor_contact && <Badge key="sub" color="blue">Subcontractor Contact</Badge>,
       isAccountsPayableContact && <Badge key="ap" color="purple">Accounts Payable</Badge>,
-      contact.is_accounts_receivable_contact && <Badge key="ar" color="purple">AR Contact</Badge>,
+      contact.is_accounts_receivable_contact && <Badge key="ar" color="purple">Accounts Receivable</Badge>,
       contact.is_primary_approval_recipient
         ? <Badge key="pa" color="green">Primary Approval</Badge>
         : approvalOn && <Badge key="a" color="green">Approval Emails</Badge>,
       contact.is_primary_notification_recipient
         ? <Badge key="pn" color="amber">Primary Notif.</Badge>
-        : notifOn && <Badge key="n" color="amber">Notifications</Badge>,
+        : notifOn && <Badge key="n" color="amber">Notification Emails</Badge>,
     ].filter(Boolean);
 
     return (
