@@ -142,18 +142,24 @@ const ExtraChargeHoursEditor: React.FC<{
   saving?: boolean;
   onSave?: JobBillingPayload['on_extra_charge_hours_save'];
 }> = ({ lineItem, saving = false, onSave }) => {
+  const getInitialBillHours = () => lineItem.customize_hours && lineItem.bill_hours !== undefined
+    ? String(lineItem.bill_hours)
+    : '';
+  const getInitialSubPayHours = () => lineItem.customize_hours && lineItem.sub_pay_hours !== undefined
+    ? String(lineItem.sub_pay_hours)
+    : '';
   const [customizeHours, setCustomizeHours] = useState(lineItem.customize_hours);
-  const [billHours, setBillHours] = useState(String(lineItem.bill_hours ?? lineItem.quantity_or_hours ?? 0));
-  const [subPayHours, setSubPayHours] = useState(String(lineItem.sub_pay_hours ?? lineItem.quantity_or_hours ?? 0));
+  const [billHours, setBillHours] = useState(getInitialBillHours);
+  const [subPayHours, setSubPayHours] = useState(getInitialSubPayHours);
 
   useEffect(() => {
     setCustomizeHours(lineItem.customize_hours);
-    setBillHours(String(lineItem.bill_hours ?? lineItem.quantity_or_hours ?? 0));
-    setSubPayHours(String(lineItem.sub_pay_hours ?? lineItem.quantity_or_hours ?? 0));
+    setBillHours(getInitialBillHours());
+    setSubPayHours(getInitialSubPayHours());
   }, [lineItem.customize_hours, lineItem.bill_hours, lineItem.sub_pay_hours, lineItem.quantity_or_hours]);
 
-  const parsedBillHours = Number(billHours);
-  const parsedSubPayHours = Number(subPayHours);
+  const parsedBillHours = billHours.trim() === '' ? Number.NaN : Number(billHours);
+  const parsedSubPayHours = subPayHours.trim() === '' ? Number.NaN : Number(subPayHours);
   const isValid = !customizeHours || (
     Number.isFinite(parsedBillHours) &&
     Number.isFinite(parsedSubPayHours) &&
@@ -190,6 +196,7 @@ const ExtraChargeHoursEditor: React.FC<{
                   step="0.25"
                   value={billHours}
                   onChange={(event) => setBillHours(event.target.value)}
+                  placeholder="-"
                   disabled={saving}
                   inputMode="decimal"
                   className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-60 dark:border-amber-800 dark:bg-zinc-800 dark:text-white"
@@ -205,6 +212,7 @@ const ExtraChargeHoursEditor: React.FC<{
                   step="0.25"
                   value={subPayHours}
                   onChange={(event) => setSubPayHours(event.target.value)}
+                  placeholder="-"
                   disabled={saving}
                   inputMode="decimal"
                   className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-60 dark:border-amber-800 dark:bg-zinc-800 dark:text-white"

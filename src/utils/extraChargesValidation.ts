@@ -35,8 +35,8 @@ export function validateExtraChargeLineItem(
       errors.push(`Extra Charge #${itemNumber}: Customer bill hours must be greater than 0`);
     }
 
-    if (!item.subPayHours || item.subPayHours <= 0) {
-      errors.push(`Extra Charge #${itemNumber}: Subcontractor pay hours must be greater than 0`);
+    if (item.subPayHours === undefined || !Number.isFinite(item.subPayHours) || item.subPayHours < 0) {
+      errors.push(`Extra Charge #${itemNumber}: Subcontractor pay hours cannot be negative`);
     }
 
     if ((item.billHours ?? 0) > 1000 || (item.subPayHours ?? 0) > 1000) {

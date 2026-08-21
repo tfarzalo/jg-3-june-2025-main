@@ -112,8 +112,8 @@ export default function ExtraChargesSection({
   const [selectedDetailId, setSelectedDetailId] = useState<string>('');
   const [quantity, setQuantity] = useState<string>('1');
   const [customizeHours, setCustomizeHours] = useState(false);
-  const [billHours, setBillHours] = useState<string>('1');
-  const [subPayHours, setSubPayHours] = useState<string>('1');
+  const [billHours, setBillHours] = useState<string>('');
+  const [subPayHours, setSubPayHours] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [formErrors, setFormErrors] = useState<string[]>([]);
 
@@ -121,8 +121,8 @@ export default function ExtraChargesSection({
   const selectedCategory = categories.find((cat) => cat.categoryId === selectedCategoryId);
   const selectedDetail = selectedCategory?.lineItems.find((item) => item.id === selectedDetailId);
   const parsedQuantity = parseFloat(quantity) || 0;
-  const parsedBillHours = customizeHours ? parseFloat(billHours) || 0 : parsedQuantity;
-  const parsedSubPayHours = customizeHours ? parseFloat(subPayHours) || 0 : parsedQuantity;
+  const parsedBillHours = customizeHours && billHours.trim() !== '' ? parseFloat(billHours) : parsedQuantity;
+  const parsedSubPayHours = customizeHours && subPayHours.trim() !== '' ? parseFloat(subPayHours) : parsedQuantity;
 
   // Calculate amounts in real-time
   const calculatedAmounts = selectedDetail
@@ -390,8 +390,8 @@ export default function ExtraChargesSection({
                         const checked = e.target.checked;
                         setCustomizeHours(checked);
                         if (checked) {
-                          setBillHours(quantity);
-                          setSubPayHours(quantity);
+                          setBillHours('');
+                          setSubPayHours('');
                         }
                       }}
                       disabled={disabled}
@@ -410,8 +410,9 @@ export default function ExtraChargesSection({
                           type="number"
                           value={billHours}
                           onChange={(e) => setBillHours(e.target.value)}
-                          min="0.25"
+                          min="0"
                           step="0.25"
+                          placeholder="-"
                           disabled={disabled}
                           inputMode="decimal"
                           className="w-full rounded-md border border-blue-200 dark:border-blue-800 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -425,8 +426,9 @@ export default function ExtraChargesSection({
                           type="number"
                           value={subPayHours}
                           onChange={(e) => setSubPayHours(e.target.value)}
-                          min="0.25"
+                          min="0"
                           step="0.25"
+                          placeholder="-"
                           disabled={disabled}
                           inputMode="decimal"
                           className="w-full rounded-md border border-blue-200 dark:border-blue-800 bg-white dark:bg-gray-700 text-gray-900 dark:text-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
