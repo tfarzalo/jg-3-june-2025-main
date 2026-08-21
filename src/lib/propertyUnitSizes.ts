@@ -16,56 +16,40 @@ export async function fetchPropertyUnitSizesForCategory(propertyId: string, cate
     // If a categoryName is provided, try to resolve billing_categories for that name
     if (categoryName) {
       const nameTrimmed = String(categoryName).trim();
-
-      // Try exact case-insensitive match first, but handle 'Extra Charges' as a special prefix case
       const nameLower = nameTrimmed.toLowerCase();
-      let categories: any[] | null = null;
-      let catErr: any = null;
 
-      if (nameLower === 'extra charges') {
-        const { data: ecCats, error: ecErr } = await supabase
-          .from('billing_categories')
-          .select('id, name')
-          .eq('property_id', propertyId)
-          .ilike('name', 'extra charges%');
-        categories = ecCats || [];
-        catErr = ecErr;
-      } else {
-        const result = await supabase
-          .from('billing_categories')
-          .select('id, name')
-          .eq('property_id', propertyId)
-          .ilike('name', nameTrimmed);
-        categories = result.data as any[] | null;
-        catErr = result.error;
+      // Fetch all billing categories for the property and then filter in JS to avoid
+      // accidental wide SQL matches. This lets us strictly match either:
+      // - exact name
+      // - names that end with ' - <categoryName>' (e.g. 'Extra Charges - Painted Ceilings')
+      // - special-case: when categoryName is 'Extra Charges' treat as prefix 'Extra Charges%'
+      const { data: allCats, error: allCatsErr } = await supabase
+        .from('billing_categories')
+        .select('id, name')
+        .eq('property_id', propertyId);
 
-        if (catErr) {
-          throw catErr;
+      if (allCatsErr) throw allCatsErr;
+
+      const billingCats = (allCats || []).filter((c: any) => {
+        const cName = String(c.name || '').trim().toLowerCase();
+        if (!cName) return false;
+        if (nameLower === 'extra charges') {
+          // include any billing category that begins with 'extra charges'
+          return cName.startsWith('extra charges');
         }
+        // exact match
+        if (cName === nameLower) return true;
+        // ends with ' - <categoryName>'
+        if (cName.endsWith(`- ${nameLower}`) || cName.endsWith(` - ${nameLower}`)) return true;
+        // starts with '<categoryName> -'
+        if (cName.startsWith(`${nameLower} -`)) return true;
+        // contains ' <categoryName>' as a separate chunk
+        if (cName.includes(` ${nameLower} `)) return true;
+        return false;
+      });
 
-        // If no exact-ish matches, try a wildcard match so closely-named categories still match
-        if (!Array.isArray(categories) || categories.length === 0) {
-          const wildcard = `%${nameTrimmed}%`;
-          const { data: wcCats, error: wcErr } = await supabase
-            .from('billing_categories')
-            .select('id, name')
-            .eq('property_id', propertyId)
-            .ilike('name', wildcard);
-
-          if (wcErr) {
-            throw wcErr;
-          }
-
-          categories = wcCats || [];
-        }
-      }
-
-      if (catErr) {
-        throw catErr;
-      }
-
-      if (Array.isArray(categories) && categories.length > 0) {
-        const categoryIds = categories.map((c: any) => c.id);
+      if (billingCats.length > 0) {
+        const categoryIds = billingCats.map((c: any) => c.id);
         const { data: details, error: detErr } = await supabase
           .from('billing_details')
           .select('unit_size_id, unit_sizes!inner(id, unit_size_label)')
@@ -82,16 +66,12 @@ export async function fetchPropertyUnitSizesForCategory(propertyId: string, cate
           }
         }
 
-        // If we found category-specific sizes, sort them and proceed to append N/A/TBD below and return.
         if (unitSizes.length > 0) {
           unitSizes.sort((a, b) => a.unit_size_label.localeCompare(b.unit_size_label));
         }
 
-        // Note: intentionally do not fall back to other categories or global sizes when a specific
-        // categoryName is provided. If none are found for the requested billing category, the
-        // returned list will contain only N/A and TBD (appended below) which preserves the
-        // expectation that switching to a different Job Category limits the dropdown to that
-        // category's unit sizes.
+        // Intentionally DO NOT fall back to other categories, billing_details, or global sizes
+        // when a specific categoryName is provided. If none are found, only N/A/TBD will be appended.
       } else {
         // No matching billing category for this property; intentionally leave unitSizes empty
         // so that only N/A/TBD (if present) will be appended below.
@@ -113,7 +93,7 @@ export async function fetchPropertyUnitSizesForCategory(propertyId: string, cate
           .from('billing_details')
           .select('unit_size_id, unit_sizes!inner(id, unit_size_label)')
           .in('category_id', categoryIds)
-          .eq('property_id', propertyId);
+          .eq('propertyId', propertyId);
 
         if (!detErr && Array.isArray(details)) {
           for (const row of details) {
