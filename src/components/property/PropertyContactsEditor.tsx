@@ -170,6 +170,13 @@ const SYSTEM_CONTACT_LABELS: Record<SystemContactKey, string> = {
   ap: 'Accounts Payable',
 };
 
+const SYSTEM_CONTACT_ORDER: SystemContactKey[] = [
+  'community_manager',
+  'maintenance_supervisor',
+  'primary_contact',
+  'ap',
+];
+
 function normalizeIdentityPart(value?: string | null) {
   return (value || '').trim().toLowerCase();
 }
@@ -262,6 +269,31 @@ export function PropertyContactsEditor({
       if (key === 'primary_contact' && !shouldRenderPrimaryContact) return false;
       return contactsMatch(contact, systemContacts[key]);
     });
+
+  const systemContactGroups = (() => {
+    const assigned = new Set<SystemContactKey>();
+    const groups: Array<{ key: SystemContactKey; keys: SystemContactKey[] }> = [];
+
+    SYSTEM_CONTACT_ORDER.forEach((key) => {
+      if (assigned.has(key)) return;
+      if (key === 'primary_contact' && !shouldRenderPrimaryContact) return;
+
+      const baseContact = systemContacts[key];
+      const keys = SYSTEM_CONTACT_ORDER.filter((candidateKey) => {
+        if (candidateKey === key) return true;
+        if (candidateKey === 'primary_contact' && !shouldRenderPrimaryContact) {
+          return contactsMatch(baseContact, systemContacts[candidateKey]);
+        }
+        if (assigned.has(candidateKey)) return false;
+        return contactsMatch(baseContact, systemContacts[candidateKey]);
+      });
+
+      keys.forEach((groupKey) => assigned.add(groupKey));
+      groups.push({ key, keys });
+    });
+
+    return groups;
+  })();
 
   const handleDeleteSystemContact = (
     key: SystemContactKey,
@@ -404,12 +436,38 @@ export function PropertyContactsEditor({
     defaultLabel: string,
     data: SystemContactData,
     accentCls: string,
-    avatarBg: string
+    avatarBg: string,
+    groupedKeys: SystemContactKey[] = [key],
   ) => {
-    const roles = systemContactRoles[key] || {};
-    const label = data.title || defaultLabel;
+    const roles = groupedKeys.reduce<Partial<ContactRoles>>((merged, groupKey) => {
+      const groupRoles = systemContactRoles[groupKey] || {};
+      return {
+        subcontractor: !!merged.subcontractor || !!groupRoles.subcontractor,
+        accountsReceivable: !!merged.accountsReceivable || !!groupRoles.accountsReceivable,
+        approvalRecipient: !!merged.approvalRecipient || !!groupRoles.approvalRecipient,
+        notificationRecipient: !!merged.notificationRecipient || !!groupRoles.notificationRecipient,
+        primaryApproval: !!merged.primaryApproval || !!groupRoles.primaryApproval,
+        primaryNotification: !!merged.primaryNotification || !!groupRoles.primaryNotification,
+      };
+    }, {});
+    const labels = groupedKeys
+      .map((groupKey) => systemContacts[groupKey].title || SYSTEM_CONTACT_LABELS[groupKey])
+      .filter((title, index, all) => title && all.indexOf(title) === index);
+    const label = labels.join(' · ') || data.title || defaultLabel;
     const isExpanded = expandedCards[key] ?? false;
     const showSec = showSecondaryEmail[key] || !!data.secondary_email;
+    const updateGroupedContactField = (field: string, value: any) => {
+      groupedKeys.forEach((groupKey) => {
+        onSystemContactChange(groupKey, field, value);
+      });
+    };
+    const setGroupedRole = (role: keyof ContactRoles, active: boolean, targetKey: SystemContactKey = key) => {
+      if (!active) {
+        groupedKeys.forEach((groupKey) => onSystemContactRoleChange(groupKey, role, false));
+        return;
+      }
+      onSystemContactRoleChange(targetKey, role, true);
+    };
     const canDeleteSystemContact = isAdmin && Boolean(
       data.name ||
       data.email ||
@@ -418,8 +476,10 @@ export function PropertyContactsEditor({
       (data.additional_phones && data.additional_phones.length > 0) ||
       getSystemContactAssociations(roles).length > 0
     );
-    const isMergedPrimary = key !== 'primary_contact' && primarySystemMatch === key;
-    const isPrimaryIdentity = (key === 'primary_contact' && primaryContactHasIdentity) || isMergedPrimary;
+    const isPrimaryIdentity =
+      groupedKeys.includes('primary_contact') ||
+      (key === 'primary_contact' && primaryContactHasIdentity) ||
+      (key !== 'primary_contact' && primarySystemMatch === key);
 
     const badges = [
       isPrimaryIdentity && <Badge key="pc" color="indigo">Primary</Badge>,
@@ -479,35 +539,48 @@ export function PropertyContactsEditor({
               </p>
               <div className="flex flex-wrap gap-2">
                 <PillToggle active={!!roles.subcontractor} color="blue"
-                  onClick={() => onSystemContactRoleChange(key, 'subcontractor', !roles.subcontractor)}>
+                  onClick={() => setGroupedRole('subcontractor', !roles.subcontractor)}>
                   Subcontractor Contact
                 </PillToggle>
                 <PillToggle active={!!roles.accountsReceivable} color="purple"
-                  onClick={() => onSystemContactRoleChange(key, 'accountsReceivable', !roles.accountsReceivable)}>
+                  onClick={() => setGroupedRole('accountsReceivable', !roles.accountsReceivable)}>
                   Accounts Receivable
                 </PillToggle>
                 <PillToggle active={!!roles.approvalRecipient} color="green"
-                  onClick={() => onSystemContactRoleChange(key, 'approvalRecipient', !roles.approvalRecipient)}>
+                  onClick={() => setGroupedRole('approvalRecipient', !roles.approvalRecipient)}>
                   Approval Emails
                 </PillToggle>
                 {roles.approvalRecipient && (
                   <PillToggle active={!!roles.primaryApproval} color="green"
-                    onClick={() => onSystemContactRoleChange(key, 'primaryApproval', !roles.primaryApproval)}>
+                    onClick={() => setGroupedRole('primaryApproval', !roles.primaryApproval)}>
                     ★ Primary Approval
                   </PillToggle>
                 )}
                 <PillToggle active={!!roles.notificationRecipient} color="amber"
-                  onClick={() => onSystemContactRoleChange(key, 'notificationRecipient', !roles.notificationRecipient)}>
+                  onClick={() => setGroupedRole('notificationRecipient', !roles.notificationRecipient)}>
                   Notification Emails
                 </PillToggle>
                 {roles.notificationRecipient && (
                   <PillToggle active={!!roles.primaryNotification} color="amber"
-                    onClick={() => onSystemContactRoleChange(key, 'primaryNotification', !roles.primaryNotification)}>
+                    onClick={() => setGroupedRole('primaryNotification', !roles.primaryNotification)}>
                     ★ Primary Notif.
                   </PillToggle>
                 )}
               </div>
             </div>
+
+            {groupedKeys.length > 1 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                  Positions Associated With This Contact
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {labels.map((title) => (
+                    <Badge key={title} color="gray">{title}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Fields grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -519,17 +592,17 @@ export function PropertyContactsEditor({
               <div>
                 <label className={labelCls}>Name</label>
                 <input type="text" value={data.name} placeholder="Full name" className={inputCls}
-                  onChange={(e) => onSystemContactChange(key, 'name', e.target.value)} />
+                  onChange={(e) => updateGroupedContactField('name', e.target.value)} />
               </div>
               <div>
                 <label className={labelCls}><Mail className="inline h-3 w-3 mr-1" />Email</label>
                 <input type="email" value={data.email} placeholder="email@example.com" className={inputCls}
-                  onChange={(e) => onSystemContactChange(key, 'email', e.target.value)} />
+                  onChange={(e) => updateGroupedContactField('email', e.target.value)} />
               </div>
               <div>
                 <label className={labelCls}><Phone className="inline h-3 w-3 mr-1" />Phone</label>
                 <input type="tel" value={data.phone} placeholder="123-456-7890" className={inputCls}
-                  onChange={(e) => onSystemContactChange(key, 'phone', e.target.value)} />
+                  onChange={(e) => updateGroupedContactField('phone', e.target.value)} />
               </div>
             </div>
 
@@ -538,7 +611,7 @@ export function PropertyContactsEditor({
               {renderAdditionalPhones(
                 key,
                 data.additional_phones,
-                (phones) => onSystemContactChange(key, 'additional_phones', phones as any),
+                (phones) => updateGroupedContactField('additional_phones', phones as any),
               )}
             </div>
 
@@ -553,7 +626,7 @@ export function PropertyContactsEditor({
                 <div className="mt-2">
                   <label className={labelCls}>Secondary Email</label>
                   <input type="email" value={data.secondary_email} placeholder="secondary@example.com" className={inputCls}
-                    onChange={(e) => onSystemContactChange(key, 'secondary_email', e.target.value)} />
+                    onChange={(e) => updateGroupedContactField('secondary_email', e.target.value)} />
                 </div>
               )}
             </div>
@@ -814,14 +887,34 @@ export function PropertyContactsEditor({
             System Contacts
           </p>
           <div className="space-y-2">
-            {renderSystemCard('community_manager', 'Community Manager', systemContacts.community_manager,
-              'border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-900/10', 'bg-blue-600')}
-            {renderSystemCard('maintenance_supervisor', 'Maintenance Supervisor', systemContacts.maintenance_supervisor,
-              'border-green-200 dark:border-green-800 bg-green-50/30 dark:bg-green-900/10', 'bg-green-600')}
-            {shouldRenderPrimaryContact && renderSystemCard('primary_contact', 'Primary Contact', systemContacts.primary_contact,
-              'border-indigo-200 dark:border-indigo-800 bg-indigo-50/30 dark:bg-indigo-900/10', 'bg-indigo-600')}
-            {renderSystemCard('ap', 'Accounts Payable', systemContacts.ap,
-              'border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-900/10', 'bg-purple-600')}
+            {systemContactGroups.map(({ key, keys }) => {
+              const styles: Record<SystemContactKey, { accent: string; avatar: string }> = {
+                community_manager: {
+                  accent: 'border-blue-200 dark:border-blue-800 bg-blue-50/30 dark:bg-blue-900/10',
+                  avatar: 'bg-blue-600',
+                },
+                maintenance_supervisor: {
+                  accent: 'border-green-200 dark:border-green-800 bg-green-50/30 dark:bg-green-900/10',
+                  avatar: 'bg-green-600',
+                },
+                primary_contact: {
+                  accent: 'border-indigo-200 dark:border-indigo-800 bg-indigo-50/30 dark:bg-indigo-900/10',
+                  avatar: 'bg-indigo-600',
+                },
+                ap: {
+                  accent: 'border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-900/10',
+                  avatar: 'bg-purple-600',
+                },
+              };
+              return renderSystemCard(
+                key,
+                SYSTEM_CONTACT_LABELS[key],
+                systemContacts[key],
+                styles[key].accent,
+                styles[key].avatar,
+                keys,
+              );
+            })}
           </div>
         </div>
 
