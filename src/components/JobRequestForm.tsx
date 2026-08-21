@@ -591,15 +591,23 @@ export function JobRequestForm() {
   }, []);
 
   const filteredProperties = properties.filter(p => {
-    const q = propertySearch.toLowerCase().trim();
+    const q = String(propertySearch || '').toLowerCase().trim();
     if (!q) return true;
+
+    const name = String(p.property_name || '').toLowerCase();
+    const address = String(p.address || '').toLowerCase();
+    const address2 = String(p.address_2 || '').toLowerCase();
+    const city = String(p.city || '').toLowerCase();
+    const state = String(p.state || '').toLowerCase();
+    const zip = String(p.zip || '').toLowerCase();
+
     return (
-      p.property_name?.toLowerCase().includes(q) ||
-      p.address?.toLowerCase().includes(q) ||
-      (p.address_2 || '')?.toLowerCase().includes(q) ||
-      p.city?.toLowerCase().includes(q) ||
-      (p.state || '')?.toLowerCase().includes(q) ||
-      (p.zip || '')?.toLowerCase().includes(q)
+      name.includes(q) ||
+      address.includes(q) ||
+      address2.includes(q) ||
+      city.includes(q) ||
+      state.includes(q) ||
+      zip.includes(q)
     );
   });
 
