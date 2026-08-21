@@ -397,6 +397,10 @@ export function JobDetails() {
     includePainterNotes: canManagePainterNotes,
   });
 
+  const subcontractorUnitSizeChange = useMemo(() => {
+    return activityItems.find((item) => item.metadata?.event_type === 'subcontractor_unit_size_changed') || null;
+  }, [activityItems]);
+
 
   
   const [showPhaseChangeModal, setShowPhaseChangeModal] = useState(false);
@@ -5881,6 +5885,19 @@ export function JobDetails() {
                   <div>
                     <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Unit Size</span>
                     <p className="text-base font-semibold text-gray-900 dark:text-white mt-1">{job.unit_size.label}</p>
+                    {subcontractorUnitSizeChange && (
+                      <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-100">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                          <span>
+                            Subcontractor changed unit size from{' '}
+                            <strong>{String(subcontractorUnitSizeChange.metadata?.old_unit_size_label || 'Unassigned')}</strong>
+                            {' '}to{' '}
+                            <strong>{String(subcontractorUnitSizeChange.metadata?.new_unit_size_label || job.unit_size.label || 'Unassigned')}</strong>.
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Job Category</span>

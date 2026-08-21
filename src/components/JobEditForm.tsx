@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ClipboardList, ArrowLeft, Trash2, XCircle, Upload, X, Image, FileText } from 'lucide-react';
+import { ClipboardList, ArrowLeft, Trash2, XCircle, Upload, X, Image, FileText, AlertTriangle } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { formatDateForInput } from '../lib/dateUtils';
 import { JobType } from '../lib/types';
@@ -75,6 +75,11 @@ interface Job {
   };
 }
 
+interface SubcontractorUnitSizeChange {
+  oldLabel: string;
+  newLabel: string;
+}
+
 export function JobEditForm() {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
@@ -101,6 +106,7 @@ export function JobEditForm() {
   const [jobCategories, setJobCategories] = useState<JobCategory[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [job, setJob] = useState<Job | null>(null);
+  const [subcontractorUnitSizeChange, setSubcontractorUnitSizeChange] = useState<SubcontractorUnitSizeChange | null>(null);
   const [painterNoteId, setPainterNoteId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     property_id: '',
@@ -246,6 +252,24 @@ export function JobEditForm() {
 
       // Store full job data for file upload
       setJob(data as any);
+
+      const { data: unitSizeChangeData } = await supabase
+        .from('activity_log')
+        .select('metadata')
+        .eq('entity_type', 'job')
+        .eq('entity_id', jobId)
+        .contains('metadata', { event_type: 'subcontractor_unit_size_changed' })
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      const unitSizeChangeMetadata = unitSizeChangeData?.[0]?.metadata as Record<string, unknown> | undefined;
+      setSubcontractorUnitSizeChange(unitSizeChangeMetadata
+        ? {
+            oldLabel: String(unitSizeChangeMetadata.old_unit_size_label || 'Unassigned'),
+            newLabel: String(unitSizeChangeMetadata.new_unit_size_label || 'Unassigned'),
+          }
+        : null
+      );
 
       const { data: painterNoteData, error: painterNoteError } = await supabase
         .from('job_painter_notes')
@@ -1112,6 +1136,19 @@ export function JobEditForm() {
                     </option>
                   ))}
                 </select>
+                {subcontractorUnitSizeChange && (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-100">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                      <span>
+                        Subcontractor changed unit size from{' '}
+                        <strong>{subcontractorUnitSizeChange.oldLabel}</strong>
+                        {' '}to{' '}
+                        <strong>{subcontractorUnitSizeChange.newLabel}</strong>.
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>

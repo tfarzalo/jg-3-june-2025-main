@@ -36,6 +36,47 @@ const KeyValue: React.FC<{ k: string; v: React.ReactNode }> = ({ k, v }) => (
   </div>
 );
 
+type UnifiedChargeItem = {
+  id: string;
+  label: string;
+  unit_label?: string;
+  quantity_or_hours: number;
+  is_hours: boolean;
+  source_item_id?: string;
+  customize_hours?: boolean;
+  rate?: number;
+  sub_rate?: number;
+  bill_hours?: number;
+  sub_pay_hours?: number;
+  bill_amount: number;
+  sub_pay_amount: number;
+  profit_amount: number;
+};
+
+const ChargeRateDetails: React.FC<{ item: UnifiedChargeItem }> = ({ item }) => {
+  const hasCustomerRate = item.rate !== undefined;
+  const hasSubpayRate = item.sub_rate !== undefined;
+
+  if (!hasCustomerRate && !hasSubpayRate) return null;
+
+  const rateUnit = item.is_hours ? 'hr' : 'unit';
+
+  return (
+    <div className="mt-1 space-y-0.5 text-xs font-normal leading-snug text-zinc-500 dark:text-zinc-400">
+      {hasCustomerRate && (
+        <div>
+          Customer Rate: {formatCurrency(item.rate ?? 0)}/{rateUnit}
+        </div>
+      )}
+      {hasSubpayRate && (
+        <div>
+          Subpay Rate: {formatCurrency(item.sub_rate ?? 0)}/{rateUnit}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const UnifiedChargesTable: React.FC<{ items: UnifiedChargeItem[] }> = ({ items }) => {
   if (!items?.length) return (
     <div className="text-center py-8 text-zinc-500 dark:text-zinc-400 bg-zinc-50/50 dark:bg-zinc-800/30 rounded-xl">
@@ -67,11 +108,7 @@ const UnifiedChargesTable: React.FC<{ items: UnifiedChargeItem[] }> = ({ items }
             >
               <td className="px-6 py-4 text-zinc-800 dark:text-zinc-100 font-semibold text-base">
                 {s.label}
-                {s.rate !== undefined && (
-                   <span className="block text-xs font-normal text-zinc-500 mt-1">
-                     Rate: {formatCurrency(s.rate)}
-                   </span>
-                )}
+                <ChargeRateDetails item={s} />
               </td>
               <td className="px-6 py-4 text-zinc-600 dark:text-zinc-400 text-base">{s.unit_label ?? (s.is_hours ? 'Hours' : '—')}</td>
               <td className="px-6 py-4 text-center text-zinc-800 dark:text-zinc-100 font-bold text-lg">{s.quantity_or_hours == null ? '—' : s.quantity_or_hours}</td>
@@ -194,22 +231,6 @@ const ExtraChargeHoursEditor: React.FC<{
   );
 };
 
-type UnifiedChargeItem = {
-  id: string;
-  label: string;
-  unit_label?: string;
-  quantity_or_hours: number;
-  is_hours: boolean;
-  source_item_id?: string;
-  customize_hours?: boolean;
-  rate?: number;
-  bill_hours?: number;
-  sub_pay_hours?: number;
-  bill_amount: number;
-  sub_pay_amount: number;
-  profit_amount: number;
-};
-
 export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
   const base = billing.billing_details;
   const extra = billing.extra_charges_details ?? null;
@@ -236,6 +257,8 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
       unit_label: i.unit_label,
       quantity_or_hours: i.quantity,
       is_hours: false,
+      rate: i.quantity > 0 ? i.bill_amount / i.quantity : undefined,
+      sub_rate: i.quantity > 0 ? i.sub_pay_amount / i.quantity : undefined,
       bill_amount: i.bill_amount,
       sub_pay_amount: i.sub_pay_amount,
       profit_amount: i.profit_amount
@@ -258,6 +281,7 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
         is_hours: item.isHourly,
         customize_hours: Boolean(item.customizeHours),
         rate: billRate,
+        sub_rate: subRate,
         bill_hours: item.isHourly ? billHours : undefined,
         sub_pay_hours: item.isHourly ? subPayHours : undefined,
         bill_amount: billAmount,
@@ -273,6 +297,7 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
       quantity_or_hours: extra.hours || 0,
       is_hours: true,
       rate: extra.hourly_rate,
+      sub_rate: extra.sub_pay_rate,
       bill_hours: extra.hours || 0,
       sub_pay_hours: extra.hours || 0,
       bill_amount: extra.bill_amount || 0,
