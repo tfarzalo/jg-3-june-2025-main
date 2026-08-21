@@ -18,47 +18,79 @@ export async function fetchPropertyUnitSizesForCategory(propertyId: string, cate
       const nameTrimmed = String(categoryName).trim();
       const nameLower = nameTrimmed.toLowerCase();
 
-      // Fetch all billing categories for the property and then filter in JS. We use a
-      // strict matching strategy to avoid returning unit sizes that are not explicitly
-      // associated with the selected Job Category for this property:
-      // - exact name match
-      // - name starts with '<categoryName> -' (e.g. 'Extra Charges - Painted Ceilings')
-      // - special-case: when categoryName is 'Extra Charges' include any billing category
-      //   that begins with 'Extra Charges' so subcategories are included
-      const { data: allCats, error: allCatsErr } = await supabase
-        .from('billing_categories')
-        .select('id, name')
-        .eq('property_id', propertyId);
+      // Debug: log inputs so we can trace production behavior if needed
+      console.debug('[fetchPropertyUnitSizesForCategory] inputs:', { propertyId, categoryName: nameTrimmed });
 
-      if (allCatsErr) throw allCatsErr;
+      // Perform strict DB-level matching to avoid JS-side fuzzy matches that returned unrelated categories.
+      // We'll run up to three targeted queries: exact (case-insensitive), prefix '<name> -%', and if the
+      // category is 'Extra Charges' include any billing_categories starting with 'Extra Charges'.
+      const billingCatIds = new Set<string>();
 
-      const billingCats = (allCats || []).filter((c: any) => {
-        const raw = String(c.name || '').trim();
-        if (!raw) return false;
-        const cName = raw.toLowerCase();
+      // 1) Exact (case-insensitive) match
+      try {
+        const { data: exactCats, error: exactErr } = await supabase
+          .from('billing_categories')
+          .select('id, name')
+          .eq('property_id', propertyId)
+          .ilike('name', nameTrimmed);
 
-        if (nameLower === 'extra charges') {
-          return cName.startsWith('extra charges');
+        if (exactErr) throw exactErr;
+        if (Array.isArray(exactCats)) {
+          for (const c of exactCats) billingCatIds.add(String((c as any).id));
         }
+      } catch (e) {
+        console.debug('[fetchPropertyUnitSizesForCategory] exact category query failed', e);
+      }
 
-        // exact match
-        if (cName === nameLower) return true;
+      // 2) Prefix match '<categoryName> -%'
+      try {
+        const prefixPattern = `${nameTrimmed} -%`;
+        const { data: prefixCats, error: prefixErr } = await supabase
+          .from('billing_categories')
+          .select('id, name')
+          .eq('property_id', propertyId)
+          .ilike('name', prefixPattern);
 
-        // starts with '<categoryName> -' (common pattern for property billing subcategories)
-        if (cName.startsWith(`${nameLower} -`)) return true;
+        if (prefixErr) throw prefixErr;
+        if (Array.isArray(prefixCats)) {
+          for (const c of prefixCats) billingCatIds.add(String((c as any).id));
+        }
+      } catch (e) {
+        console.debug('[fetchPropertyUnitSizesForCategory] prefix category query failed', e);
+      }
 
-        return false;
-      });
+      // 3) Special-case: when categoryName is 'Extra Charges' include any billing category that begins with 'Extra Charges'
+      if (nameLower === 'extra charges') {
+        try {
+          const { data: extraCats, error: extraErr } = await supabase
+            .from('billing_categories')
+            .select('id, name')
+            .eq('property_id', propertyId)
+            .ilike('name', 'Extra Charges%');
+
+          if (extraErr) throw extraErr;
+          if (Array.isArray(extraCats)) {
+            for (const c of extraCats) billingCatIds.add(String((c as any).id));
+          }
+        } catch (e) {
+          console.debug('[fetchPropertyUnitSizesForCategory] extra charges category query failed', e);
+        }
+      }
+
+      const billingCats = Array.from(billingCatIds);
+      console.debug('[fetchPropertyUnitSizesForCategory] matched billing category ids count:', billingCats.length);
 
       if (billingCats.length > 0) {
-        const categoryIds = billingCats.map((c: any) => c.id);
         const { data: details, error: detErr } = await supabase
           .from('billing_details')
           .select('unit_size_id, unit_sizes!inner(id, unit_size_label)')
-          .in('category_id', categoryIds)
+          .in('category_id', billingCats)
           .eq('property_id', propertyId);
 
-        if (!detErr && Array.isArray(details)) {
+        if (detErr) throw detErr;
+
+        if (Array.isArray(details)) {
+          console.debug('[fetchPropertyUnitSizesForCategory] billing_details count:', details.length);
           for (const row of details) {
             const size = row.unit_sizes as any;
             if (size && !seen.has(size.id)) {
