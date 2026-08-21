@@ -346,7 +346,42 @@ export function JobEditForm() {
           
         if (jobCategoriesError) throw jobCategoriesError;
         
-        setJobCategories(jobCategoriesData || []);
+        // Non-destructive UX: if the property's billing categories include
+        // 'Extra Charges - ...' subcategories, hide the bare 'Extra Charges'
+        // option for new selections. However, if we're editing an existing job
+        // that already has 'Extra Charges' selected, ensure that job category
+        // remains available so existing jobs are not impacted.
+        try {
+          const lowerBilling = (data || []).map((bc: any) => String(bc.name || '').trim().toLowerCase());
+          const hasBareExtra = lowerBilling.includes('extra charges');
+          const hasSubExtras = lowerBilling.some((n: string) => n.startsWith('extra charges -'));
+          let filtered = jobCategoriesData || [];
+          if (hasBareExtra && hasSubExtras) {
+            filtered = filtered.filter((jc: any) => String(jc.name || '').trim().toLowerCase() !== 'extra charges');
+          }
+  
+          // If the job being edited already uses a category that was filtered out,
+          // fetch and re-include it so existing selections remain valid.
+          const currentJobCategoryId = job?.job_category_id || formData.job_category_id || '';
+          if (currentJobCategoryId && !filtered.some((jc: any) => jc.id === currentJobCategoryId)) {
+            try {
+              const { data: currentCat } = await supabase
+                .from('job_categories')
+                .select('id, name, description, sort_order')
+                .eq('id', currentJobCategoryId)
+                .maybeSingle();
+              if (currentCat) {
+                filtered = [...filtered, currentCat];
+              }
+            } catch (e) {
+              // ignore and proceed without adding
+            }
+          }
+  
+          setJobCategories(filtered);
+        } catch (e) {
+          setJobCategories(jobCategoriesData || []);
+        }
       } else {
         setJobCategories([]);
       }

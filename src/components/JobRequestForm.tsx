@@ -304,8 +304,19 @@ export function JobRequestForm() {
 
       // Build the combined name list: billing_categories names + default category names
       const billingCategoryNames = (data || []).map(cat => cat.name);
+      // If the property's billing includes both a bare 'Extra Charges' row and
+      // one or more 'Extra Charges - ...' subcategories, prefer the prefixed
+      // subcategories and exclude the bare 'Extra Charges' from the job
+      // category list so users don't see the generic option.
+      const lowerNames = billingCategoryNames.map(n => String(n || '').trim().toLowerCase());
+      const hasBareExtra = lowerNames.includes('extra charges');
+      const hasSubExtras = lowerNames.some(n => n.startsWith('extra charges -'));
+      const effectiveBillingNames = (hasBareExtra && hasSubExtras)
+        ? billingCategoryNames.filter(n => String(n || '').trim().toLowerCase() !== 'extra charges')
+        : billingCategoryNames;
+
       const defaultCategoryNames = (defaultCatsData || []).map(cat => cat.name);
-      const allNames = Array.from(new Set([...billingCategoryNames, ...defaultCategoryNames]));
+      const allNames = Array.from(new Set([...effectiveBillingNames, ...defaultCategoryNames]));
 
       if (allNames.length > 0) {
         const { data: jobCategoriesData, error: jobCategoriesError } = await supabase
@@ -316,10 +327,24 @@ export function JobRequestForm() {
           
         if (jobCategoriesError) throw jobCategoriesError;
         
-        setJobCategories(jobCategoriesData || []);
-      } else {
-        setJobCategories([]);
-      }
+        // Non-destructive UX fix: if the property's billing categories include
+        // specific Extra Charges subcategories (e.g. 'Painted Ceilings'), hide the
+        // standalone 'Extra Charges' option from the Job Category dropdown for
+        // new job requests to avoid confusion. Do not change DB rows.
+        try {
+          const hasExtraSubs = (data || []).some((bc: any) => String(bc.name || '').trim().toLowerCase().startsWith('extra charges -'));
+          let filtered = jobCategoriesData || [];
+          if (hasExtraSubs) {
+            filtered = filtered.filter((jc: any) => String(jc.name || '').trim().toLowerCase() !== 'extra charges');
+          }
+          setJobCategories(filtered);
+        } catch (e) {
+          // Fallback to original list on error
+          setJobCategories(jobCategoriesData || []);
+        }
+       } else {
+         setJobCategories([]);
+       }
     } catch (err) {
       console.error('Error fetching property job categories:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch property job categories');
@@ -635,12 +660,6 @@ export function JobRequestForm() {
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Add Job Request</h1>
           </div>
         </div>
-
-        {error && (
-          <div className="mb-6 bg-red-50 dark:bg-red-900/50 border border-red-200 dark:border-red-500/50 text-red-700 dark:text-red-200 px-4 py-3 rounded-lg">
-            {error}
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Property Information */}
