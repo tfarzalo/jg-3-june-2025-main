@@ -24,7 +24,8 @@ export async function fetchPropertyUnitSizesForCategory(propertyId: string, cate
       // Perform strict DB-level matching to avoid JS-side fuzzy matches that returned unrelated categories.
       // We'll run up to three targeted queries: exact (case-insensitive), prefix '<name> -%', and if the
       // category is 'Extra Charges' include any billing_categories starting with 'Extra Charges'.
-      const billingCatIds = new Set<string>();
+      // Collect full matched category objects so we can log ids + names for debugging.
+      const matchedCats: Array<{ id: string; name: string }> = [];
 
       // 1) Exact (case-insensitive) match
       try {
@@ -36,7 +37,7 @@ export async function fetchPropertyUnitSizesForCategory(propertyId: string, cate
 
         if (exactErr) throw exactErr;
         if (Array.isArray(exactCats)) {
-          for (const c of exactCats) billingCatIds.add(String((c as any).id));
+          for (const c of exactCats) matchedCats.push({ id: String((c as any).id), name: String((c as any).name) });
         }
       } catch (e) {
         console.debug('[fetchPropertyUnitSizesForCategory] exact category query failed', e);
@@ -53,7 +54,7 @@ export async function fetchPropertyUnitSizesForCategory(propertyId: string, cate
 
         if (prefixErr) throw prefixErr;
         if (Array.isArray(prefixCats)) {
-          for (const c of prefixCats) billingCatIds.add(String((c as any).id));
+          for (const c of prefixCats) matchedCats.push({ id: String((c as any).id), name: String((c as any).name) });
         }
       } catch (e) {
         console.debug('[fetchPropertyUnitSizesForCategory] prefix category query failed', e);
@@ -70,15 +71,21 @@ export async function fetchPropertyUnitSizesForCategory(propertyId: string, cate
 
           if (extraErr) throw extraErr;
           if (Array.isArray(extraCats)) {
-            for (const c of extraCats) billingCatIds.add(String((c as any).id));
+            for (const c of extraCats) matchedCats.push({ id: String((c as any).id), name: String((c as any).name) });
           }
         } catch (e) {
           console.debug('[fetchPropertyUnitSizesForCategory] extra charges category query failed', e);
         }
       }
 
-      const billingCats = Array.from(billingCatIds);
-      console.debug('[fetchPropertyUnitSizesForCategory] matched billing category ids count:', billingCats.length);
+      // Deduplicate matchedCats by id
+      const dedupMap = new Map<string, { id: string; name: string }>();
+      for (const c of matchedCats) {
+        if (!dedupMap.has(c.id)) dedupMap.set(c.id, c);
+      }
+      const finalMatchedCats = Array.from(dedupMap.values());
+      const billingCats = finalMatchedCats.map(c => c.id);
+      console.debug('[fetchPropertyUnitSizesForCategory] matched billing categories:', finalMatchedCats);
 
       if (billingCats.length > 0) {
         const { data: details, error: detErr } = await supabase
@@ -91,18 +98,25 @@ export async function fetchPropertyUnitSizesForCategory(propertyId: string, cate
 
         if (Array.isArray(details)) {
           console.debug('[fetchPropertyUnitSizesForCategory] billing_details count:', details.length);
+          const sizesAdded: Array<{id: string; label: string}> = [];
           for (const row of details) {
             const size = row.unit_sizes as any;
             if (size && !seen.has(size.id)) {
               seen.add(size.id);
-              unitSizes.push({ id: size.id, unit_size_label: String(size.unit_size_label) });
+              const entry = { id: size.id, unit_size_label: String(size.unit_size_label) };
+              unitSizes.push(entry);
+              sizesAdded.push({ id: String(size.id), label: String(size.unit_size_label) });
             }
           }
+          console.debug('[fetchPropertyUnitSizesForCategory] sizes added from billing_details:', sizesAdded);
         }
 
         if (unitSizes.length > 0) {
           unitSizes.sort((a, b) => a.unit_size_label.localeCompare(b.unit_size_label));
         }
+
+        // Additional debug: show final unitSizes before append of N/A/TBD
+        console.debug('[fetchPropertyUnitSizesForCategory] unitSizes before N/A/TBD append:', unitSizes);
 
         // Intentionally do not fall back to other categories or global sizes when an explicit
         // categoryName is provided. If the selected Job Category has no billing entries for
@@ -195,6 +209,9 @@ export async function fetchPropertyUnitSizesForCategory(propertyId: string, cate
     } catch (e) {
       // ignore
     }
+
+    // Final debug: what we will return
+    console.debug('[fetchPropertyUnitSizesForCategory] final returned unitSizes (post N/A/TBD):', unitSizes);
 
     return unitSizes;
   } catch (err) {
