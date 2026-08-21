@@ -316,7 +316,21 @@ export function JobRequestForm() {
         : billingCategoryNames;
 
       const defaultCategoryNames = (defaultCatsData || []).map(cat => cat.name);
-      const allNames = Array.from(new Set([...effectiveBillingNames, ...defaultCategoryNames]));
+      // Don't include the default 'Extra Charges' globally unless the property
+      // actually has a billing category for it (either bare 'Extra Charges' or
+      // 'Extra Charges - ...' subcategories). This prevents showing a confusing
+      // standalone 'Extra Charges' option on properties that don't configure it.
+      const defaultFiltered = defaultCategoryNames.filter(n => {
+        try {
+          if (String(n || '').trim().toLowerCase() !== 'extra charges') return true;
+          // it's the default 'Extra Charges' category; include only if billing has it
+          const lowerBilling = billingCategoryNames.map(x => String(x || '').trim().toLowerCase());
+          return lowerBilling.includes('extra charges') || lowerBilling.some(x => x.startsWith('extra charges -'));
+        } catch (e) {
+          return true;
+        }
+      });
+      const allNames = Array.from(new Set([...effectiveBillingNames, ...defaultFiltered]));
 
       if (allNames.length > 0) {
         const { data: jobCategoriesData, error: jobCategoriesError } = await supabase
