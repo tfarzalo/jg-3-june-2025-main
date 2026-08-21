@@ -194,6 +194,7 @@ interface PropertyCallback {
   created_at: string;
   poster: {
     full_name: string;
+    role?: string;
   };
 }
 
@@ -238,6 +239,10 @@ interface PropertyInHouseNote {
   } | null;
 }
 
+type PropertyNoteItem = PropertyCallback & {
+  noteSource: 'in_house_note' | 'legacy_callback_note' | 'subcontractor_callback_note';
+};
+
 interface PropertyContact {
   id: string;
   property_id: string;
@@ -267,24 +272,54 @@ export function PropertyDetails() {
   const [categoryDetails, setCategoryDetails] = useState<{[key: string]: BillingDetail[]}>({});
   const [unitSizes, setUnitSizes] = useState<{[key: string]: string}>({});
   const [callbacks, setCallbacks] = useState<PropertyCallback[]>([]);
+  const [inHouseSourceCallbackIds, setInHouseSourceCallbackIds] = useState<Set<string>>(new Set());
+  const [inHouseNotesTableAvailable, setInHouseNotesTableAvailable] = useState(true);
+  const legacyInHouseCallbackItems = useMemo(
+    () => callbacks.filter((callback) =>
+      canUseInHouseNotes
+      && !inHouseSourceCallbackIds.has(callback.id)
+      && !callback.unit_number?.trim()
+      && callback.poster?.role !== 'subcontractor'
+    ),
+    [callbacks, canUseInHouseNotes, inHouseSourceCallbackIds]
+  );
+  const callbackItems = useMemo(
+    () => canUseInHouseNotes
+      ? callbacks.filter((callback) =>
+          !inHouseSourceCallbackIds.has(callback.id)
+          && Boolean(callback.unit_number?.trim())
+        )
+      : callbacks,
+    [callbacks, canUseInHouseNotes, inHouseSourceCallbackIds]
+  );
   const [updates, setUpdates] = useState<PropertyUpdate[]>([]);
   const [generalNotes, setGeneralNotes] = useState<PropertyGeneralNote[]>([]);
   const [inHouseNotes, setInHouseNotes] = useState<PropertyInHouseNote[]>([]);
-  const propertyNoteItems = useMemo(
+  const propertyNoteItems = useMemo<PropertyNoteItem[]>(
     () => canUseInHouseNotes
-      ? inHouseNotes.map((note) => ({
-          id: note.id,
-          property_id: note.property_id,
-          callback_date: note.note_date,
-          painter: note.painter || '',
-          unit_number: '',
-          reason: note.note,
-          posted_by: note.created_by,
-          created_at: note.created_at,
-          poster: note.creator ? { full_name: note.creator.full_name } : { full_name: 'Unknown' }
-        }))
-      : callbacks,
-    [callbacks, canUseInHouseNotes, inHouseNotes]
+      ? [
+          ...inHouseNotes.map((note) => ({
+            id: note.id,
+            property_id: note.property_id,
+            callback_date: note.note_date,
+            painter: note.painter || '',
+            unit_number: '',
+            reason: note.note,
+            posted_by: note.created_by,
+            created_at: note.created_at,
+            poster: note.creator ? { full_name: note.creator.full_name } : { full_name: 'Unknown' },
+            noteSource: 'in_house_note' as const
+          })),
+          ...legacyInHouseCallbackItems.map((callback) => ({
+            ...callback,
+            noteSource: 'legacy_callback_note' as const
+          }))
+        ]
+      : callbacks.map((callback) => ({
+          ...callback,
+          noteSource: 'subcontractor_callback_note' as const
+        })),
+    [callbacks, canUseInHouseNotes, inHouseNotes, legacyInHouseCallbackItems]
   );
   const [paintSchemes, setPaintSchemes] = useState<PaintScheme[]>([]);
   const [contacts, setContacts] = useState<PropertyContact[]>([]);
@@ -428,7 +463,14 @@ export function PropertyDetails() {
   // State for delete confirmation
   const [showDeleteCallbackConfirm, setShowDeleteCallbackConfirm] = useState<string | null>(null);
   const [showDeleteInHouseNoteConfirm, setShowDeleteInHouseNoteConfirm] = useState<string | null>(null);
+  const [showDeleteLegacyInHouseCallbackConfirm, setShowDeleteLegacyInHouseCallbackConfirm] = useState<string | null>(null);
   const [showDeleteUpdateConfirm, setShowDeleteUpdateConfirm] = useState<string | null>(null);
+
+  const isMissingInHouseNotesTableError = (error: unknown) => {
+    const err = error as { code?: string; message?: string };
+    return err?.code === '42P01'
+      || String(err?.message || '').toLowerCase().includes('property_in_house_notes');
+  };
 
   const fetchPropertyGeneralNotes = async () => {
     if (!propertyId) return;
@@ -482,8 +524,7 @@ export function PropertyDetails() {
           created_by,
           created_at,
           updated_at,
-          source_callback_id,
-          creator:profiles!property_in_house_notes_created_by_fkey(full_name)
+          source_callback_id
         `)
         .eq('property_id', propertyId)
         .order('note_date', { ascending: false })
@@ -491,18 +532,49 @@ export function PropertyDetails() {
 
       if (error) {
         console.error('Error fetching property in-house notes:', error);
+        if (isMissingInHouseNotesTableError(error)) {
+          setInHouseNotesTableAvailable(false);
+        }
         setInHouseNotes([]);
+        setInHouseSourceCallbackIds(new Set());
         return;
+      }
+
+      setInHouseNotesTableAvailable(true);
+      const creatorIds = Array.from(new Set((data || []).map((item: any) => item.created_by).filter(Boolean)));
+      const creatorsById = new Map<string, { full_name: string }>();
+      if (creatorIds.length > 0) {
+        const { data: creatorData, error: creatorError } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('id', creatorIds);
+
+        if (creatorError) {
+          console.error('Error fetching in-house note creators:', creatorError);
+        } else {
+          (creatorData || []).forEach((creator: any) => {
+            creatorsById.set(creator.id, { full_name: creator.full_name || 'Unknown' });
+          });
+        }
       }
 
       const normalized = (data || []).map((item: any) => ({
         ...item,
-        creator: Array.isArray(item.creator) ? (item.creator[0] || null) : (item.creator || null),
+        creator: creatorsById.get(item.created_by) || null,
       }));
       setInHouseNotes(normalized);
+      setInHouseSourceCallbackIds(new Set(
+        normalized
+          .map((item: PropertyInHouseNote) => item.source_callback_id)
+          .filter((id: string | null | undefined): id is string => Boolean(id))
+      ));
     } catch (error) {
       console.error('Error fetching property in-house notes:', error);
+      if (isMissingInHouseNotesTableError(error)) {
+        setInHouseNotesTableAvailable(false);
+      }
       setInHouseNotes([]);
+      setInHouseSourceCallbackIds(new Set());
     }
   };
 
@@ -832,7 +904,7 @@ export function PropertyDetails() {
           .from('property_callbacks')
           .select(`
             *,
-            poster:profiles(full_name)
+            poster:profiles(full_name, role)
           `)
           .eq('property_id', propertyId)
           .order('callback_date', { ascending: false });
@@ -1024,7 +1096,7 @@ export function PropertyDetails() {
         .from('property_callbacks')
         .select(`
           *,
-          poster:profiles(full_name)
+          poster:profiles(full_name, role)
         `)
         .eq('property_id', propertyId)
         .order('callback_date', { ascending: false });
@@ -1047,6 +1119,30 @@ export function PropertyDetails() {
       return;
     }
 
+    const resetInHouseNoteForm = () => {
+      setNewCallback({
+        callback_date: format(new Date(), 'yyyy-MM-dd'),
+        painter: '',
+        unit_number: '',
+        reason: ''
+      });
+      setShowPropertyNoteForm(false);
+    };
+
+    const refreshCallbacks = async () => {
+      const { data: callbackData, error: callbackError } = await supabase
+        .from('property_callbacks')
+        .select(`
+          *,
+          poster:profiles(full_name, role)
+        `)
+        .eq('property_id', propertyId)
+        .order('callback_date', { ascending: false });
+
+      if (callbackError) throw callbackError;
+      setCallbacks(callbackData || []);
+    };
+
     try {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error('Not authenticated');
@@ -1063,16 +1159,37 @@ export function PropertyDetails() {
 
       if (error) throw error;
 
-      setNewCallback({
-        callback_date: format(new Date(), 'yyyy-MM-dd'),
-        painter: '',
-        unit_number: '',
-        reason: ''
-      });
-      setShowPropertyNoteForm(false);
+      resetInHouseNoteForm();
       await fetchPropertyInHouseNotes();
       toast.success('Note added successfully');
     } catch (err) {
+      if (isMissingInHouseNotesTableError(err) || !inHouseNotesTableAvailable) {
+        try {
+          const { data: userData } = await supabase.auth.getUser();
+          if (!userData.user) throw new Error('Not authenticated');
+
+          const { error } = await supabase
+            .from('property_callbacks')
+            .insert({
+              property_id: propertyId,
+              callback_date: newCallback.callback_date,
+              painter: newCallback.painter.trim(),
+              unit_number: '',
+              reason: newCallback.reason.trim(),
+              posted_by: userData.user.id
+            });
+
+          if (error) throw error;
+
+          resetInHouseNoteForm();
+          await refreshCallbacks();
+          toast.success('Note added successfully');
+          return;
+        } catch (fallbackErr) {
+          console.error('Error adding legacy in-house note:', fallbackErr);
+        }
+      }
+
       console.error('Error adding in-house note:', err);
       toast.error('Failed to add note');
     }
@@ -1135,13 +1252,14 @@ export function PropertyDetails() {
       if (error) throw error;
       
       setShowDeleteCallbackConfirm(null);
+      setShowDeleteLegacyInHouseCallbackConfirm(null);
 
       // Fetch updated callbacks
       const { data: callbackData, error: callbackError } = await supabase
         .from('property_callbacks')
         .select(`
           *,
-          poster:profiles(full_name)
+          poster:profiles(full_name, role)
         `)
         .eq('property_id', propertyId)
         .order('callback_date', { ascending: false });
@@ -2229,7 +2347,7 @@ export function PropertyDetails() {
           {/* Content */}
           <div className="p-6">
 
-            {callbacks.length === 0 ? (
+            {callbackItems.length === 0 ? (
               <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                 <Clipboard className="h-12 w-12 mx-auto mb-3 text-gray-400" />
                 <p className="font-medium">No callbacks recorded for this property</p>
@@ -2249,7 +2367,7 @@ export function PropertyDetails() {
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-[#1E293B] divide-y divide-gray-200 dark:divide-gray-700">
-                    {callbacks.map((callback) => (
+                    {callbackItems.map((callback) => (
                       <tr key={callback.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                           {formatDate(callback.callback_date)}
@@ -2462,7 +2580,15 @@ export function PropertyDetails() {
                         <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => canUseInHouseNotes ? setShowDeleteInHouseNoteConfirm(callback.id) : setShowDeleteCallbackConfirm(callback.id)}
+                              onClick={() => {
+                                if (!canUseInHouseNotes) {
+                                  setShowDeleteCallbackConfirm(callback.id);
+                                } else if (callback.noteSource === 'legacy_callback_note') {
+                                  setShowDeleteLegacyInHouseCallbackConfirm(callback.id);
+                                } else {
+                                  setShowDeleteInHouseNoteConfirm(callback.id);
+                                }
+                              }}
                               className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg text-red-600 dark:text-red-400 transition-colors"
                               aria-label="Delete note"
                             >
@@ -2597,7 +2723,7 @@ export function PropertyDetails() {
           )}
 
           {/* Delete Callback Confirmation (reused) */}
-          {((canUseInHouseNotes && showDeleteInHouseNoteConfirm) || (!canUseInHouseNotes && showDeleteCallbackConfirm && isSubcontractor)) && (
+          {((canUseInHouseNotes && (showDeleteInHouseNoteConfirm || showDeleteLegacyInHouseCallbackConfirm)) || (!canUseInHouseNotes && showDeleteCallbackConfirm && isSubcontractor)) && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
               <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Delete Note</h3>
@@ -2605,7 +2731,14 @@ export function PropertyDetails() {
                 <div className="flex justify-end space-x-3">
                   <button
                     type="button"
-                    onClick={() => canUseInHouseNotes ? setShowDeleteInHouseNoteConfirm(null) : setShowDeleteCallbackConfirm(null)}
+                    onClick={() => {
+                      if (canUseInHouseNotes) {
+                        setShowDeleteInHouseNoteConfirm(null);
+                        setShowDeleteLegacyInHouseCallbackConfirm(null);
+                      } else {
+                        setShowDeleteCallbackConfirm(null);
+                      }
+                    }}
                     className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
                   >
                     Cancel
@@ -2613,7 +2746,9 @@ export function PropertyDetails() {
                   <button
                     type="button"
                     onClick={() => canUseInHouseNotes
-                      ? handleDeleteInHouseNote(showDeleteInHouseNoteConfirm!)
+                      ? showDeleteLegacyInHouseCallbackConfirm
+                        ? handleDeleteCallback(showDeleteLegacyInHouseCallbackConfirm)
+                        : handleDeleteInHouseNote(showDeleteInHouseNoteConfirm!)
                       : handleDeleteCallback(showDeleteCallbackConfirm!)
                     }
                     className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
