@@ -92,6 +92,9 @@ interface PersonCard {
   phones: string[];
   roles: string[];            // display labels e.g. "Community Manager", "Accounts Payable"
   isPrimaryContact: boolean;
+  isSubcontractorContact: boolean;
+  isAccountsReceivable: boolean;
+  isAccountsPayable: boolean;
   isPrimaryApproval: boolean;
   isPrimaryNotification: boolean;
   receivesApproval: boolean;
@@ -139,6 +142,9 @@ function buildCards(
     additionalPhones: string[] | null | undefined,
     role: string,
     isPrimaryContact: boolean,
+    isSubcontractorContact: boolean,
+    isAccountsReceivable: boolean,
+    isAccountsPayable: boolean,
     isPrimaryApproval: boolean,
     isPrimaryNotification: boolean,
     receivesApproval: boolean,
@@ -151,6 +157,9 @@ function buildCards(
       if (role && !card.roles.includes(role)) card.roles.push(role);
       card.phones = normalizePhoneList([...card.phones, phone, ...(additionalPhones || [])]);
       card.isPrimaryContact = card.isPrimaryContact || isPrimaryContact;
+      card.isSubcontractorContact = card.isSubcontractorContact || isSubcontractorContact;
+      card.isAccountsReceivable = card.isAccountsReceivable || isAccountsReceivable;
+      card.isAccountsPayable = card.isAccountsPayable || isAccountsPayable;
       card.isPrimaryApproval = card.isPrimaryApproval || isPrimaryApproval;
       card.isPrimaryNotification = card.isPrimaryNotification || isPrimaryNotification;
       card.receivesApproval = card.receivesApproval || receivesApproval;
@@ -163,6 +172,9 @@ function buildCards(
         phones: normalizePhoneList([phone, ...(additionalPhones || [])]),
         roles: role ? [role] : [],
         isPrimaryContact,
+        isSubcontractorContact,
+        isAccountsReceivable,
+        isAccountsPayable,
         isPrimaryApproval,
         isPrimaryNotification,
         receivesApproval,
@@ -178,6 +190,9 @@ function buildCards(
     sys.community_manager.name, sys.community_manager.email, sys.community_manager.phone, sys.community_manager.additional_phones,
     sys.community_manager.title || 'Community Manager',
     false,
+    !!sysRoles.community_manager?.subcontractor,
+    !!sysRoles.community_manager?.accountsReceivable,
+    false,
     !!sysRoles.community_manager?.primaryApproval,
     !!sysRoles.community_manager?.primaryNotification,
     !!(sysRoles.community_manager?.approvalRecipient || sysRoles.community_manager?.primaryApproval),
@@ -186,6 +201,9 @@ function buildCards(
   addPerson(
     sys.maintenance_supervisor.name, sys.maintenance_supervisor.email, sys.maintenance_supervisor.phone, sys.maintenance_supervisor.additional_phones,
     sys.maintenance_supervisor.title || 'Maintenance Supervisor',
+    false,
+    !!sysRoles.maintenance_supervisor?.subcontractor,
+    !!sysRoles.maintenance_supervisor?.accountsReceivable,
     false,
     !!sysRoles.maintenance_supervisor?.primaryApproval,
     !!sysRoles.maintenance_supervisor?.primaryNotification,
@@ -197,6 +215,9 @@ function buildCards(
     sys.primary_contact.name, sys.primary_contact.email, sys.primary_contact.phone, sys.primary_contact.additional_phones,
     sys.primary_contact.title || 'Primary Contact',
     true,
+    !!sysRoles.primary_contact?.subcontractor,
+    !!sysRoles.primary_contact?.accountsReceivable,
+    false,
     !!sysRoles.primary_contact?.primaryApproval,
     !!sysRoles.primary_contact?.primaryNotification,
     !!(sysRoles.primary_contact?.approvalRecipient || sysRoles.primary_contact?.primaryApproval),
@@ -206,6 +227,9 @@ function buildCards(
     sys.ap.name, sys.ap.email, sys.ap.phone, sys.ap.additional_phones,
     sys.ap.title || 'Accounts Payable',
     false,
+    !!sysRoles.ap?.subcontractor,
+    !!sysRoles.ap?.accountsReceivable,
+    true,
     !!sysRoles.ap?.primaryApproval,
     !!sysRoles.ap?.primaryNotification,
     !!(sysRoles.ap?.approvalRecipient || sysRoles.ap?.primaryApproval),
@@ -215,10 +239,18 @@ function buildCards(
   // Custom contacts
   customContacts.forEach(c => {
     const displayRole = c.custom_title || c.position || '';
+    const normalizedDisplayRole = normalizeKeyText(displayRole);
+    const isAccountsPayableContact =
+      normalizedDisplayRole === 'accounts payable' ||
+      buildPersonKey(c.name, c.email, c.phone, c.additional_phones) ===
+        buildPersonKey(sys.ap.name, sys.ap.email, sys.ap.phone, sys.ap.additional_phones);
     addPerson(
       c.name, c.email, c.phone, c.additional_phones,
       displayRole,
       c.is_primary_contact || false,
+      c.is_subcontractor_contact || false,
+      c.is_accounts_receivable_contact || false,
+      isAccountsPayableContact,
       c.is_primary_approval_recipient || false,
       c.is_primary_notification_recipient || false,
       c.receives_approval_emails ?? c.is_approval_recipient ?? false,
@@ -249,6 +281,9 @@ const ContactCard: React.FC<{ card: PersonCard }> = ({ card }) => {
   const roleText = card.roles.filter(Boolean).join(' · ');
   const hasActiveStatus =
     card.isPrimaryContact ||
+    card.isSubcontractorContact ||
+    card.isAccountsReceivable ||
+    card.isAccountsPayable ||
     card.isPrimaryApproval ||
     card.isPrimaryNotification ||
     card.receivesApproval ||
@@ -301,6 +336,21 @@ const ContactCard: React.FC<{ card: PersonCard }> = ({ card }) => {
             active={card.isPrimaryContact}
             label="Primary Contact"
             activeClass="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+          />
+          <StatusBadge
+            active={card.isSubcontractorContact}
+            label="Subcontractor Contact"
+            activeClass="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+          />
+          <StatusBadge
+            active={card.isAccountsReceivable}
+            label="Accounts Receivable"
+            activeClass="bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"
+          />
+          <StatusBadge
+            active={card.isAccountsPayable}
+            label="Accounts Payable"
+            activeClass="bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300"
           />
           <StatusBadge
             active={card.isPrimaryApproval}
