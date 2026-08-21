@@ -231,18 +231,28 @@ function buildCards(
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-const StatusBadge: React.FC<{ active: boolean; label: string; activeClass: string; inactiveClass: string }> = ({
-  active, label, activeClass, inactiveClass,
-}) => (
-  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide whitespace-nowrap ${active ? activeClass : inactiveClass}`}>
-    {label}
-  </span>
-);
+const StatusBadge: React.FC<{ active: boolean; label: string; activeClass: string }> = ({
+  active, label, activeClass,
+}) => {
+  if (!active) return null;
+
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide whitespace-nowrap ${activeClass}`}>
+      {label}
+    </span>
+  );
+};
 
 const ContactCard: React.FC<{ card: PersonCard }> = ({ card }) => {
   const color = avatarColor(card.name || card.email);
   const initials = getInitials(card.name || card.email || '?');
   const roleText = card.roles.filter(Boolean).join(' · ');
+  const hasActiveStatus =
+    card.isPrimaryContact ||
+    card.isPrimaryApproval ||
+    card.isPrimaryNotification ||
+    card.receivesApproval ||
+    card.receivesNotifications;
 
   return (
     <div className="flex h-full flex-col bg-white dark:bg-[#0F172A] border border-gray-200 dark:border-[#2D3B4E] rounded-xl p-4 shadow-sm min-w-0">
@@ -285,38 +295,35 @@ const ContactCard: React.FC<{ card: PersonCard }> = ({ card }) => {
       </div>
 
       {/* Status badges */}
-      <div className="flex flex-wrap gap-1 pt-2 border-t border-gray-100 dark:border-[#2D3B4E]">
-        <StatusBadge
-          active={card.isPrimaryContact}
-          label="Primary Contact"
-          activeClass="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-          inactiveClass="bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"
-        />
-        <StatusBadge
-          active={card.isPrimaryApproval}
-          label="Primary Approval"
-          activeClass="bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
-          inactiveClass="bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"
-        />
-        <StatusBadge
-          active={card.isPrimaryNotification}
-          label="Primary Notification"
-          activeClass="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-          inactiveClass="bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"
-        />
-        <StatusBadge
-          active={card.receivesApproval}
-          label="Approval Emails"
-          activeClass="bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
-          inactiveClass="bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"
-        />
-        <StatusBadge
-          active={card.receivesNotifications}
-          label="Notification Emails"
-          activeClass="bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
-          inactiveClass="bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500"
-        />
-      </div>
+      {hasActiveStatus && (
+        <div className="flex flex-wrap gap-1 pt-2 border-t border-gray-100 dark:border-[#2D3B4E]">
+          <StatusBadge
+            active={card.isPrimaryContact}
+            label="Primary Contact"
+            activeClass="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+          />
+          <StatusBadge
+            active={card.isPrimaryApproval}
+            label="Primary Approval"
+            activeClass="bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+          />
+          <StatusBadge
+            active={card.isPrimaryNotification}
+            label="Primary Notification"
+            activeClass="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+          />
+          <StatusBadge
+            active={card.receivesApproval}
+            label="Approval Emails"
+            activeClass="bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+          />
+          <StatusBadge
+            active={card.receivesNotifications}
+            label="Notification Emails"
+            activeClass="bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+          />
+        </div>
+      )}
     </div>
   );
 };
