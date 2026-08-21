@@ -223,6 +223,21 @@ interface PropertyGeneralNote {
   } | null;
 }
 
+interface PropertyInHouseNote {
+  id: string;
+  property_id: string;
+  note_date: string;
+  painter: string | null;
+  note: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  source_callback_id?: string | null;
+  creator?: {
+    full_name: string;
+  } | null;
+}
+
 interface PropertyContact {
   id: string;
   property_id: string;
@@ -252,16 +267,25 @@ export function PropertyDetails() {
   const [categoryDetails, setCategoryDetails] = useState<{[key: string]: BillingDetail[]}>({});
   const [unitSizes, setUnitSizes] = useState<{[key: string]: string}>({});
   const [callbacks, setCallbacks] = useState<PropertyCallback[]>([]);
-  const callbackItems = useMemo(
-    () => callbacks.filter((callback) => Boolean(callback.unit_number?.trim())),
-    [callbacks]
-  );
-  const propertyNoteItems = useMemo(
-    () => callbacks.filter((callback) => canUseInHouseNotes ? !callback.unit_number?.trim() : true),
-    [callbacks, canUseInHouseNotes]
-  );
   const [updates, setUpdates] = useState<PropertyUpdate[]>([]);
   const [generalNotes, setGeneralNotes] = useState<PropertyGeneralNote[]>([]);
+  const [inHouseNotes, setInHouseNotes] = useState<PropertyInHouseNote[]>([]);
+  const propertyNoteItems = useMemo(
+    () => canUseInHouseNotes
+      ? inHouseNotes.map((note) => ({
+          id: note.id,
+          property_id: note.property_id,
+          callback_date: note.note_date,
+          painter: note.painter || '',
+          unit_number: '',
+          reason: note.note,
+          posted_by: note.created_by,
+          created_at: note.created_at,
+          poster: note.creator ? { full_name: note.creator.full_name } : { full_name: 'Unknown' }
+        }))
+      : callbacks,
+    [callbacks, canUseInHouseNotes, inHouseNotes]
+  );
   const [paintSchemes, setPaintSchemes] = useState<PaintScheme[]>([]);
   const [contacts, setContacts] = useState<PropertyContact[]>([]);
   const [editingSecondaryEmailContactId, setEditingSecondaryEmailContactId] = useState<string | null>(null);
@@ -403,6 +427,7 @@ export function PropertyDetails() {
   
   // State for delete confirmation
   const [showDeleteCallbackConfirm, setShowDeleteCallbackConfirm] = useState<string | null>(null);
+  const [showDeleteInHouseNoteConfirm, setShowDeleteInHouseNoteConfirm] = useState<string | null>(null);
   const [showDeleteUpdateConfirm, setShowDeleteUpdateConfirm] = useState<string | null>(null);
 
   const fetchPropertyGeneralNotes = async () => {
@@ -439,6 +464,45 @@ export function PropertyDetails() {
     } catch (error) {
       console.error('Error fetching property general notes:', error);
       setGeneralNotes([]);
+    }
+  };
+
+  const fetchPropertyInHouseNotes = async () => {
+    if (!propertyId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('property_in_house_notes')
+        .select(`
+          id,
+          property_id,
+          note_date,
+          painter,
+          note,
+          created_by,
+          created_at,
+          updated_at,
+          source_callback_id,
+          creator:profiles!property_in_house_notes_created_by_fkey(full_name)
+        `)
+        .eq('property_id', propertyId)
+        .order('note_date', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching property in-house notes:', error);
+        setInHouseNotes([]);
+        return;
+      }
+
+      const normalized = (data || []).map((item: any) => ({
+        ...item,
+        creator: Array.isArray(item.creator) ? (item.creator[0] || null) : (item.creator || null),
+      }));
+      setInHouseNotes(normalized);
+    } catch (error) {
+      console.error('Error fetching property in-house notes:', error);
+      setInHouseNotes([]);
     }
   };
 
@@ -776,6 +840,8 @@ export function PropertyDetails() {
         if (callbackError) throw callbackError;
         setCallbacks(callbackData || []);
 
+        await fetchPropertyInHouseNotes();
+
         // Fetch updates
         const { data: updateData, error: updateError } = await supabase
           .from('property_updates')
@@ -968,6 +1034,45 @@ export function PropertyDetails() {
     }
   };
 
+  const handleAddInHouseNote = async () => {
+    if (!propertyId) return;
+
+    if (!newCallback.reason.trim()) {
+      toast.error('Note details are required');
+      return;
+    }
+
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('Not authenticated');
+
+      const { error } = await supabase
+        .from('property_in_house_notes')
+        .insert({
+          property_id: propertyId,
+          note_date: newCallback.callback_date,
+          painter: newCallback.painter.trim() || null,
+          note: newCallback.reason.trim(),
+          created_by: userData.user.id
+        });
+
+      if (error) throw error;
+
+      setNewCallback({
+        callback_date: format(new Date(), 'yyyy-MM-dd'),
+        painter: '',
+        unit_number: '',
+        reason: ''
+      });
+      setShowPropertyNoteForm(false);
+      await fetchPropertyInHouseNotes();
+      toast.success('Note added successfully');
+    } catch (err) {
+      console.error('Error adding in-house note:', err);
+      toast.error('Failed to add note');
+    }
+  };
+
   const handleAddUpdate = async () => {
     if (!propertyId) return;
 
@@ -1043,6 +1148,24 @@ export function PropertyDetails() {
     } catch (err) {
       console.error('Error deleting callback:', err);
       toast.error('Failed to delete callback');
+    }
+  };
+
+  const handleDeleteInHouseNote = async (noteId: string) => {
+    try {
+      const { error } = await supabase
+        .from('property_in_house_notes')
+        .delete()
+        .eq('id', noteId);
+
+      if (error) throw error;
+
+      setShowDeleteInHouseNoteConfirm(null);
+      await fetchPropertyInHouseNotes();
+      toast.success('Note deleted successfully');
+    } catch (err) {
+      console.error('Error deleting in-house note:', err);
+      toast.error('Failed to delete note');
     }
   };
 
@@ -2101,7 +2224,7 @@ export function PropertyDetails() {
           {/* Content */}
           <div className="p-6">
 
-            {callbackItems.length === 0 ? (
+            {callbacks.length === 0 ? (
               <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                 <Clipboard className="h-12 w-12 mx-auto mb-3 text-gray-400" />
                 <p className="font-medium">No callbacks recorded for this property</p>
@@ -2121,7 +2244,7 @@ export function PropertyDetails() {
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-[#1E293B] divide-y divide-gray-200 dark:divide-gray-700">
-                    {callbackItems.map((callback) => (
+                    {callbacks.map((callback) => (
                       <tr key={callback.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                           {formatDate(callback.callback_date)}
@@ -2334,7 +2457,7 @@ export function PropertyDetails() {
                         <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => setShowDeleteCallbackConfirm(callback.id)}
+                              onClick={() => canUseInHouseNotes ? setShowDeleteInHouseNoteConfirm(callback.id) : setShowDeleteCallbackConfirm(callback.id)}
                               className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg text-red-600 dark:text-red-400 transition-colors"
                               aria-label="Delete note"
                             >
@@ -2458,7 +2581,7 @@ export function PropertyDetails() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleAddCallback(canUseInHouseNotes)}
+                    onClick={() => canUseInHouseNotes ? handleAddInHouseNote() : handleAddCallback(false)}
                     className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                   >
                     Add Note
@@ -2469,7 +2592,7 @@ export function PropertyDetails() {
           )}
 
           {/* Delete Callback Confirmation (reused) */}
-          {showDeleteCallbackConfirm && (canUseInHouseNotes || isSubcontractor) && (
+          {((canUseInHouseNotes && showDeleteInHouseNoteConfirm) || (!canUseInHouseNotes && showDeleteCallbackConfirm && isSubcontractor)) && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
               <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 max-w-md w-full">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Delete Note</h3>
@@ -2477,14 +2600,17 @@ export function PropertyDetails() {
                 <div className="flex justify-end space-x-3">
                   <button
                     type="button"
-                    onClick={() => setShowDeleteCallbackConfirm(null)}
+                    onClick={() => canUseInHouseNotes ? setShowDeleteInHouseNoteConfirm(null) : setShowDeleteCallbackConfirm(null)}
                     className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
                   >
                     Cancel
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleDeleteCallback(showDeleteCallbackConfirm)}
+                    onClick={() => canUseInHouseNotes
+                      ? handleDeleteInHouseNote(showDeleteInHouseNoteConfirm!)
+                      : handleDeleteCallback(showDeleteCallbackConfirm!)
+                    }
                     className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
                   >
                     Delete
