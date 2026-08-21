@@ -373,8 +373,9 @@ export function JobDetails() {
   // Null-safe accessors to prevent crashes during slow loads
   const phaseLabel = job?.job_phase?.label ?? '—';
   const isHistoricalSnapshotJob = isFrozenHistoricalSnapshot(phaseLabel, job?.historical_data_mode);
+  const hasSubmittedWorkOrder = Boolean(job?.work_order?.id);
   const canManageRepair = isAdmin || isJGManagement || isSuperAdmin;
-  const canEditRepairInCurrentPhase = canManageRepair && !isHistoricalSnapshotJob;
+  const canEditRepairInCurrentPhase = canManageRepair && hasSubmittedWorkOrder && !isHistoricalSnapshotJob;
   const isRepairLocked = canManageRepair && !canEditRepairInCurrentPhase;
   const unitSizeId = job?.unit_size?.id ?? null;
   const propertyName = job?.property?.name ?? '—';
@@ -672,7 +673,9 @@ export function JobDetails() {
   );
 
   const hasMiscAdditionalCostBilling = miscAdditionalCostTotal > 0 || miscAdditionalCostSubPayTotal > 0 || (job?.repair_amount ?? 0) > 0;
-  const hasMiscAdditionalCostsNeedingReview = (miscAdditionalCostTotal > 0 || miscAdditionalCostSubPayTotal > 0) && phaseLabel === 'Pending Work Order';
+  const hasSubcontractorSubmittedMiscAdditionalCosts = miscAdditionalCostItems.some(
+    item => (item.description.trim() || (Number(item.subPay) || 0) > 0) && (Number(item.price) || 0) <= 0
+  );
 
   const miscAdditionalCostInputTotal = useMemo(
     () => miscAdditionalCostItemsInput.reduce((sum, item) => sum + (Number(item.price) || 0), 0),
@@ -3099,7 +3102,18 @@ export function JobDetails() {
   const handleSaveRepairAmount = async () => {
     if (!jobId) return;
     if (!canEditRepairInCurrentPhase) {
-      toast.error('Miscellaneous additional costs cannot be edited on frozen historical job data.');
+      toast.error(hasSubmittedWorkOrder
+        ? 'Miscellaneous additional costs cannot be edited on frozen historical job data.'
+        : 'A work order must be submitted before miscellaneous additional costs can be edited.'
+      );
+      setMiscAdditionalCostItemsInput(miscAdditionalCostItems);
+      setIsEditingRepairAmount(false);
+      return;
+    }
+    if (!job?.work_order?.id) {
+      toast.error('A work order must be submitted before miscellaneous additional costs can be saved.');
+      setMiscAdditionalCostItemsInput(miscAdditionalCostItems);
+      setIsEditingRepairAmount(false);
       return;
     }
     const miscItems = normalizeMiscAdditionalCostItems(miscAdditionalCostItemsInput);
@@ -3124,19 +3138,15 @@ export function JobDetails() {
         .eq('id', jobId);
       if (error) throw error;
 
-      if (job?.work_order?.id) {
-        const { error: workOrderError } = await supabase
-          .from('work_orders')
-          .update({
-            misc_additional_cost_items: miscItems,
-            repair_cost: miscTotal,
-            repair_description: miscDescription
-          })
-          .eq('id', job.work_order.id);
-        if (workOrderError) throw workOrderError;
-      } else if (miscItems.length > 0) {
-        throw new Error('A work order must exist before miscellaneous additional cost items can be saved.');
-      }
+      const { error: workOrderError } = await supabase
+        .from('work_orders')
+        .update({
+          misc_additional_cost_items: miscItems,
+          repair_cost: miscTotal,
+          repair_description: miscDescription
+        })
+        .eq('id', job.work_order.id);
+      if (workOrderError) throw workOrderError;
 
       const currentPhase = job?.job_phase?.label?.trim();
       const hadRepairBefore = (job?.repair_amount ?? 0) > 0;
@@ -4551,17 +4561,17 @@ export function JobDetails() {
                       )}
                       {miscAdditionalCostTotal <= 0 && miscAdditionalCostSubPayTotal > 0 && !repairExpanded && (
                         <span className="text-xs text-zinc-400 dark:text-zinc-500 truncate">
-                          &nbsp;(Sub Pay: {formatCurrency(miscAdditionalCostSubPayTotal)})
+                          &nbsp;(Sub Input / Pay: {formatCurrency(miscAdditionalCostSubPayTotal)})
                         </span>
                       )}
                       {isRepairLocked && (
                         <span className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
-                          &nbsp;·&nbsp;Frozen historical data
+                          &nbsp;·&nbsp;{hasSubmittedWorkOrder ? 'Frozen historical data' : 'Work order required'}
                         </span>
                       )}
-                      {hasMiscAdditionalCostsNeedingReview && !repairExpanded && (
-                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-800 dark:bg-red-900/40 dark:text-red-200">
-                          Review before approval
+                      {hasSubcontractorSubmittedMiscAdditionalCosts && !repairExpanded && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
+                          Bill to Customer needed
                         </span>
                       )}
                     </div>
@@ -4576,7 +4586,9 @@ export function JobDetails() {
                       {isRepairLocked && (
                         <div className="px-4 py-3 bg-zinc-50 dark:bg-zinc-900/30 border-b border-zinc-200 dark:border-zinc-700/60">
                           <p className="text-sm text-zinc-600 dark:text-zinc-300">
-                            Miscellaneous additional costs cannot be edited because this job is showing frozen historical data.
+                            {hasSubmittedWorkOrder
+                              ? 'Miscellaneous additional costs cannot be edited because this job is showing frozen historical data.'
+                              : 'Miscellaneous additional costs become available after the work order is submitted.'}
                           </p>
                           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
                             Current phase: {phaseLabel}
@@ -4603,24 +4615,24 @@ export function JobDetails() {
                                 <span>{item.description || 'Miscellaneous additional cost'}</span>
                                 <span className="font-semibold text-zinc-700 dark:text-zinc-200 sm:text-right">Bill: {formatCurrency(item.price)}</span>
                                 <span className={`font-semibold sm:text-right ${item.subPay == null ? 'text-amber-700 dark:text-amber-300' : 'text-zinc-700 dark:text-zinc-200'}`}>
-                                  Pay to Sub: {item.subPay == null ? 'Needs input' : formatCurrency(item.subPay)}
+                                  Sub Input / Pay: {item.subPay == null ? 'Needs input' : formatCurrency(item.subPay)}
                                 </span>
                               </div>
                             ))}
                           </div>
                           {hasMiscAdditionalCostItemsMissingBillAmount && (
                             <div className="mt-3 rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-semibold text-red-900 dark:border-red-700 dark:bg-red-950/30 dark:text-red-100">
-                              Bill to Customer needs input for one or more subcontractor-submitted items before approval can be sent.
+                              Enter Bill to Customer for one or more subcontractor-submitted items before sending approval.
                             </div>
                           )}
                           {hasMiscAdditionalCostItemsMissingSubPay && (
                             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200">
-                              Pay to Sub needs input for one or more saved items.
+                              Sub Input Cost / Pay to Sub needs input for one or more saved items.
                             </div>
                           )}
-                          {hasMiscAdditionalCostsNeedingReview && (
-                            <div className="mt-3 rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-semibold text-red-900 dark:border-red-700 dark:bg-red-950/30 dark:text-red-100">
-                              Subcontractor-submitted miscellaneous additional costs need admin review before any approval email is sent.
+                          {hasSubcontractorSubmittedMiscAdditionalCosts && (
+                            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200">
+                              Subcontractor input is loaded. Set the customer bill amount, then adjust Pay to Sub if needed.
                             </div>
                           )}
                         </div>
@@ -4636,12 +4648,12 @@ export function JobDetails() {
                           </div>
                           {hasMiscAdditionalCostInputMissingSubPay && (
                             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200">
-                              Pay to Sub needs input for one or more items.
+                              Sub Input Cost / Pay to Sub needs input for one or more items.
                             </div>
                           )}
                           {hasMiscAdditionalCostInputMissingBillAmount && (
                             <div className="rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-900 dark:border-red-700 dark:bg-red-950/30 dark:text-red-100">
-                              Bill to Customer needs input for one or more subcontractor-submitted items before approval can be sent.
+                              Enter Bill to Customer for one or more subcontractor-submitted items before sending approval.
                             </div>
                           )}
                           {miscAdditionalCostItemsInput.length === 0 ? (
@@ -4699,7 +4711,7 @@ export function JobDetails() {
                                     </div>
                                     <div>
                                       <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-1">
-                                        Pay to Sub
+                                        Sub Input Cost / Pay to Sub
                                       </label>
                                       <div className="relative">
                                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-400 font-medium">$</span>
@@ -4724,7 +4736,7 @@ export function JobDetails() {
                               <div className="grid grid-cols-1 gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200 border-t border-zinc-200 dark:border-zinc-700 pt-3 sm:grid-cols-[1fr_160px_160px]">
                                 <span>Total</span>
                                 <span className="sm:text-right">Bill: {formatCurrency(miscAdditionalCostInputTotal)}</span>
-                                <span className="sm:text-right">Sub: {formatCurrency(miscAdditionalCostSubPayInputTotal)}</span>
+                                <span className="sm:text-right">Sub Input / Pay: {formatCurrency(miscAdditionalCostSubPayInputTotal)}</span>
                               </div>
                             </div>
                           )}
@@ -4748,7 +4760,7 @@ export function JobDetails() {
                               <div className="text-base font-bold text-zinc-900 dark:text-white">{formatCurrency(job.repair_amount ?? 0)}</div>
                             </div>
                             <div>
-                              <div className="text-xs text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Pay to Sub</div>
+                              <div className="text-xs text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Sub Input Cost / Pay to Sub</div>
                               <div className="text-base font-bold text-zinc-900 dark:text-white">{formatCurrency(job.repair_sub_pay ?? 0)}</div>
                             </div>
                             <div>
