@@ -110,6 +110,10 @@ export function useDashboardJobs(): UseDashboardJobsResult {
         ...acc,
         [phase.job_phase_label]: phase.id
       }), {} as Record<string, string>);
+      const hiddenAgendaPhaseIds = [
+        phaseMapData['Cancelled'],
+        phaseMapData['Archived']
+      ].filter(Boolean);
       
       setPhaseMap(phaseMapData);
       phaseMapRef.current = phaseMapData;
@@ -260,8 +264,9 @@ export function useDashboardJobs(): UseDashboardJobsResult {
           .order('updated_at', { ascending: false })
           .limit(4),
           
-        // Today's jobs
-        supabase
+        // Today's jobs. Keep this count/list tied to the day's scheduled work, not the current workflow phase.
+        (() => {
+          let query = supabase
           .from('jobs')
           .select(`
             id,
@@ -285,15 +290,16 @@ export function useDashboardJobs(): UseDashboardJobsResult {
               full_name
             )
           `)
-          .in('current_phase_id', [
-            phaseMapData['Job Request'],
-            phaseMapData['Work Order'],
-            phaseMapData['Pending Work Order']
-          ].filter(Boolean))
-          .not('current_phase_id', 'eq', phaseMapData['Cancelled'] || 'never-match')
           .gte('scheduled_date', startOfToday)
           .lte('scheduled_date', endOfToday)
-          .order('scheduled_date', { ascending: true })
+          .order('scheduled_date', { ascending: true });
+
+          if (hiddenAgendaPhaseIds.length > 0) {
+            query = query.not('current_phase_id', 'in', `(${hiddenAgendaPhaseIds.join(',')})`);
+          }
+
+          return query;
+        })()
       ]);
 
       // Handle errors
@@ -400,8 +406,12 @@ export function useDashboardJobs(): UseDashboardJobsResult {
               }
               
               // Update today's jobs if scheduled for today
-              if (newJob.scheduled_date && isEasternToday(newJob.scheduled_date)) {
-                setTodaysJobs(prev => [newJob, ...prev].slice(0, 4));
+              if (
+                newJob.scheduled_date &&
+                isEasternToday(newJob.scheduled_date) &&
+                !['Cancelled', 'Archived'].includes(phaseLabel || '')
+              ) {
+                setTodaysJobs(prev => [newJob, ...prev]);
               }
             }
           }
@@ -453,10 +463,24 @@ export function useDashboardJobs(): UseDashboardJobsResult {
                 prev.map(job => job.id === updatedJob.id ? updatedJob : job)
               );
               
-              // Update today's jobs
-              setTodaysJobs(prev => 
-                prev.map(job => job.id === updatedJob.id ? updatedJob : job)
-              );
+              // Keep today's agenda tied to the scheduled date. Completion/phase progress should not reduce it.
+              setTodaysJobs(prev => {
+                const isShownPhase = !['Cancelled', 'Archived'].includes(phaseLabel || '');
+                const shouldShowToday = Boolean(updatedJob.scheduled_date && isEasternToday(updatedJob.scheduled_date) && isShownPhase);
+                const exists = prev.some(job => job.id === updatedJob.id);
+
+                if (!shouldShowToday) {
+                  return prev.filter(job => job.id !== updatedJob.id);
+                }
+
+                if (exists) {
+                  return prev.map(job => job.id === updatedJob.id ? updatedJob : job);
+                }
+
+                return [...prev, updatedJob].sort((a, b) => {
+                  return new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime();
+                });
+              });
             }
           }
         }
@@ -534,6 +558,24 @@ export function useDashboardJobs(): UseDashboardJobsResult {
               } else if (newPhaseLabel === 'Invoicing') {
                 setInvoicingJobs(prev => [updatedJob, ...prev].slice(0, 4));
               }
+
+              setTodaysJobs(prev => {
+                const isShownPhase = !['Cancelled', 'Archived'].includes(newPhaseLabel || '');
+                const shouldShowToday = Boolean(updatedJob.scheduled_date && isEasternToday(updatedJob.scheduled_date) && isShownPhase);
+                const exists = prev.some(job => job.id === updatedJob.id);
+
+                if (!shouldShowToday) {
+                  return prev.filter(job => job.id !== updatedJob.id);
+                }
+
+                if (exists) {
+                  return prev.map(job => job.id === updatedJob.id ? updatedJob : job);
+                }
+
+                return [...prev, updatedJob].sort((a, b) => {
+                  return new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime();
+                });
+              });
             }
           }
         }

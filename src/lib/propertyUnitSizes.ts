@@ -2,6 +2,31 @@ import { supabase } from '../utils/supabase';
 
 export type UnitSize = { id: string; unit_size_label: string };
 
+const SPECIAL_UNIT_SIZE_LABELS = ['N/A', 'TBD'];
+
+async function appendSpecialUnitSizes(unitSizes: UnitSize[], seen: Set<string>): Promise<UnitSize[]> {
+  const nextSizes = [...unitSizes];
+
+  for (const label of SPECIAL_UNIT_SIZE_LABELS) {
+    try {
+      const { data } = await supabase
+        .from('unit_sizes')
+        .select('id, unit_size_label')
+        .ilike('unit_size_label', label)
+        .maybeSingle();
+
+      if (data && !seen.has(data.id)) {
+        seen.add(data.id);
+        nextSizes.push({ id: data.id, unit_size_label: String(data.unit_size_label) });
+      }
+    } catch (e) {
+      // Keep configured unit sizes available even if one special lookup fails.
+    }
+  }
+
+  return nextSizes;
+}
+
 async function fetchConfiguredUnitSizes(propertyId: string, categoryIds: string[]): Promise<UnitSize[]> {
   if (!propertyId || categoryIds.length === 0) return [];
 
@@ -33,7 +58,9 @@ export async function fetchPropertyUnitSizesForBillingCategory(
   if (!propertyId || !billingCategoryId) return [];
 
   try {
-    return await fetchConfiguredUnitSizes(propertyId, [billingCategoryId]);
+    const sizes = await fetchConfiguredUnitSizes(propertyId, [billingCategoryId]);
+    const seen = new Set(sizes.map(size => size.id));
+    return await appendSpecialUnitSizes(sizes, seen);
   } catch (err) {
     console.error('fetchPropertyUnitSizesForBillingCategory error:', err);
     return [];
@@ -227,31 +254,12 @@ export async function fetchPropertyUnitSizesForCategory(propertyId: string, cate
       }
     }
 
-    // Append N/A and TBD if they exist and aren't already present
-    try {
-      const { data: naData } = await supabase.from('unit_sizes').select('id, unit_size_label').ilike('unit_size_label', 'n/a').maybeSingle();
-      if (naData && !seen.has(naData.id)) {
-        seen.add(naData.id);
-        unitSizes.push({ id: naData.id, unit_size_label: String(naData.unit_size_label) });
-      }
-    } catch (e) {
-      // ignore
-    }
-
-    try {
-      const { data: tbdData } = await supabase.from('unit_sizes').select('id, unit_size_label').ilike('unit_size_label', 'tbd').maybeSingle();
-      if (tbdData && !seen.has(tbdData.id)) {
-        seen.add(tbdData.id);
-        unitSizes.push({ id: tbdData.id, unit_size_label: String(tbdData.unit_size_label) });
-      }
-    } catch (e) {
-      // ignore
-    }
+    const unitSizesWithSpecialOptions = await appendSpecialUnitSizes(unitSizes, seen);
 
     // Final debug: what we will return
-    console.debug('[fetchPropertyUnitSizesForCategory] final returned unitSizes (post N/A/TBD):', unitSizes);
+    console.debug('[fetchPropertyUnitSizesForCategory] final returned unitSizes (post N/A/TBD):', unitSizesWithSpecialOptions);
 
-    return unitSizes;
+    return unitSizesWithSpecialOptions;
   } catch (err) {
     console.error('fetchPropertyUnitSizesForCategory error:', err);
     return [];

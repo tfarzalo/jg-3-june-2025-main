@@ -25,6 +25,7 @@ import { prepareCeilingAccentUpdate } from '../lib/workOrders/prepareCeilingAcce
 import ExtraChargesSection from './ExtraChargesSection';
 import { ExtraChargeLineItem } from '../types/extraCharges';
 import { validateAllExtraCharges } from '../utils/extraChargesValidation';
+import { deleteFilesByStoragePaths } from '../lib/utils/fileUpload';
 
 
 interface Job {
@@ -1858,25 +1859,11 @@ const NewWorkOrderPreview = () => {
         
       }
       
-      // Delete marked images
-      for (const filePath of imagesToDelete) {
-        // Remove from storage
-        const { error: storageError } = await supabase.storage
-          .from('files')
-          .remove([filePath.replace(/^\/+/, '')]);
-
-        if (storageError) {
-          console.error('Error deleting file from storage:', storageError);
-        }
-
-        // Remove from database
-        const { error: dbError } = await supabase
-          .from('files')
-          .delete()
-          .eq('path', filePath);
-
-        if (dbError) {
-          console.error('Error deleting file record:', dbError);
+      if (imagesToDelete.size > 0) {
+        const deleteResult = await deleteFilesByStoragePaths(imagesToDelete);
+        if (deleteResult.errors.length > 0) {
+          console.error('Error deleting marked work order images:', deleteResult.errors);
+          toast.error('Work order saved, but one or more removed images could not be fully deleted.');
         }
       }
       
@@ -2407,19 +2394,6 @@ const NewWorkOrderPreview = () => {
                       <div className="mt-4 space-y-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Sprinkler Images with Cover {isSubcontractor && <span className="text-red-500">*</span>}
-                          </label>
-                          <ImageUpload
-                            jobId={jobId || ''}
-                            workOrderId={existingWorkOrder?.id || ''}
-                            folder="sprinkler_with_cover"
-                            onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_with_cover')}
-                            onError={handleUploadError}
-                            required={isSubcontractor}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
                             Sprinkler Images without Cover {isSubcontractor && <span className="text-red-500">*</span>}
                           </label>
                           <ImageUpload
@@ -2428,6 +2402,21 @@ const NewWorkOrderPreview = () => {
                             folder="sprinkler_without_cover"
                             onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_without_cover')}
                             onError={handleUploadError}
+                            onImageDelete={handleImageDelete}
+                            required={isSubcontractor}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Sprinkler Images with Cover {isSubcontractor && <span className="text-red-500">*</span>}
+                          </label>
+                          <ImageUpload
+                            jobId={jobId || ''}
+                            workOrderId={existingWorkOrder?.id || ''}
+                            folder="sprinkler_with_cover"
+                            onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_with_cover')}
+                            onError={handleUploadError}
+                            onImageDelete={handleImageDelete}
                             required={isSubcontractor}
                           />
                         </div>

@@ -10,6 +10,86 @@ export interface FileUploadResult {
   error?: string;
 }
 
+type FileDeleteRecord = {
+  id: string;
+  path?: string | null;
+  storage_path?: string | null;
+  bucket?: string | null;
+};
+
+export async function deleteFilesByStoragePaths(filePaths: Iterable<string>): Promise<{ deleted: number; errors: string[] }> {
+  const normalizedPaths = Array.from(new Set(
+    Array.from(filePaths)
+      .map(path => path.trim())
+      .filter(Boolean)
+      .map(path => path.replace(/^\/+/, ''))
+  ));
+
+  const errors: string[] = [];
+  let deleted = 0;
+
+  for (const filePath of normalizedPaths) {
+    try {
+      const { data: records, error: fetchError } = await supabase
+        .from('files')
+        .select('id, path, storage_path, bucket')
+        .or(`path.eq.${filePath},storage_path.eq.${filePath}`);
+
+      if (fetchError) {
+        errors.push(`Unable to find file record for ${filePath}: ${fetchError.message}`);
+        continue;
+      }
+
+      const matchedRecords = (records || []) as FileDeleteRecord[];
+      const storagePaths = new Set<string>([filePath]);
+      const recordIds: string[] = [];
+
+      for (const record of matchedRecords) {
+        recordIds.push(record.id);
+        if (record.path) storagePaths.add(record.path.replace(/^\/+/, ''));
+        if (record.storage_path) storagePaths.add(record.storage_path.replace(/^\/+/, ''));
+      }
+
+      const { error: storageError } = await supabase.storage
+        .from('files')
+        .remove(Array.from(storagePaths));
+
+      if (storageError) {
+        errors.push(`Unable to delete storage file ${filePath}: ${storageError.message}`);
+        continue;
+      }
+
+      if (recordIds.length > 0) {
+        const { error: dbError } = await supabase
+          .from('files')
+          .delete()
+          .in('id', recordIds);
+
+        if (dbError) {
+          errors.push(`Unable to delete file record for ${filePath}: ${dbError.message}`);
+          continue;
+        }
+      } else {
+        const { error: dbError } = await supabase
+          .from('files')
+          .delete()
+          .or(`path.eq.${filePath},storage_path.eq.${filePath}`);
+
+        if (dbError) {
+          errors.push(`Unable to delete file record for ${filePath}: ${dbError.message}`);
+          continue;
+        }
+      }
+
+      deleted += 1;
+    } catch (error) {
+      errors.push(`Unable to delete ${filePath}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  return { deleted, errors };
+}
+
 /**
  * Upload a property unit map file to Supabase storage
  * @param file - The file to upload

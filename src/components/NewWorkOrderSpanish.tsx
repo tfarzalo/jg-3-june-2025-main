@@ -525,19 +525,6 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                   <div className="mt-4 space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Imágenes de Aspersores con Cubierta {isSubcontractor && <span className="text-red-500">*</span>}
-                      </label>
-                      <ImageUpload
-                        jobId={job.id}
-                        workOrderId={existingWorkOrder?.id || ''}
-                        folder="sprinkler_with_cover"
-                        onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_with_cover')}
-                        onError={handleUploadError}
-                        required={isSubcontractor}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
                         Imágenes de Aspersores sin Cubierta {isSubcontractor && <span className="text-red-500">*</span>}
                       </label>
                       <ImageUpload
@@ -546,6 +533,21 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                         folder="sprinkler_without_cover"
                         onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_without_cover')}
                         onError={handleUploadError}
+                        onImageDelete={handleImageDelete}
+                        required={isSubcontractor}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Imágenes de Aspersores con Cubierta {isSubcontractor && <span className="text-red-500">*</span>}
+                      </label>
+                      <ImageUpload
+                        jobId={job.id}
+                        workOrderId={existingWorkOrder?.id || ''}
+                        folder="sprinkler_with_cover"
+                        onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_with_cover')}
+                        onError={handleUploadError}
+                        onImageDelete={handleImageDelete}
                         required={isSubcontractor}
                       />
                     </div>
@@ -579,6 +581,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                             folder="sprinkler_form"
                             onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_form')}
                             onError={handleUploadError}
+                            onImageDelete={handleImageDelete}
                             required
                           />
                         </div>

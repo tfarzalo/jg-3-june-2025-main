@@ -28,6 +28,7 @@ import { validateAllExtraCharges } from '../utils/extraChargesValidation';
 import { isFrozenHistoricalSnapshot } from '../lib/jobs/historicalDataMode';
 import { dispatchSmsNotification, dispatchSmsNotificationBatch } from '../lib/sms/dispatchSmsNotification';
 import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
+import { deleteFilesByStoragePaths } from '../lib/utils/fileUpload';
 
 interface MiscAdditionalCostItem {
   id: string;
@@ -1993,25 +1994,11 @@ const NewWorkOrder = () => {
         
       }
       
-      // Delete marked images
-      for (const filePath of imagesToDelete) {
-        // Remove from storage
-        const { error: storageError } = await supabase.storage
-          .from('files')
-          .remove([filePath.replace(/^\/+/, '')]);
-
-        if (storageError) {
-          console.error('Error deleting file from storage:', storageError);
-        }
-
-        // Remove from database
-        const { error: dbError } = await supabase
-          .from('files')
-          .delete()
-          .eq('path', filePath);
-
-        if (dbError) {
-          console.error('Error deleting file record:', dbError);
+      if (imagesToDelete.size > 0) {
+        const deleteResult = await deleteFilesByStoragePaths(imagesToDelete);
+        if (deleteResult.errors.length > 0) {
+          console.error('Error deleting marked work order images:', deleteResult.errors);
+          toast.error('Work order saved, but one or more removed images could not be fully deleted.');
         }
       }
       
@@ -2606,19 +2593,6 @@ const NewWorkOrder = () => {
                       <div className="mt-4 space-y-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Sprinkler Images with Cover {isSubcontractor && <span className="text-red-500">*</span>}
-                          </label>
-                          <ImageUpload
-                            jobId={jobId || ''}
-                            workOrderId={existingWorkOrder?.id || ''}
-                            folder="sprinkler_with_cover"
-                            onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_with_cover')}
-                            onError={handleUploadError}
-                            required={isSubcontractor}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
                             Sprinkler Images without Cover {isSubcontractor && <span className="text-red-500">*</span>}
                           </label>
                           <ImageUpload
@@ -2627,6 +2601,21 @@ const NewWorkOrder = () => {
                             folder="sprinkler_without_cover"
                             onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_without_cover')}
                             onError={handleUploadError}
+                            onImageDelete={handleImageDelete}
+                            required={isSubcontractor}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Sprinkler Images with Cover {isSubcontractor && <span className="text-red-500">*</span>}
+                          </label>
+                          <ImageUpload
+                            jobId={jobId || ''}
+                            workOrderId={existingWorkOrder?.id || ''}
+                            folder="sprinkler_with_cover"
+                            onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_with_cover')}
+                            onError={handleUploadError}
+                            onImageDelete={handleImageDelete}
                             required={isSubcontractor}
                           />
                         </div>
@@ -2665,6 +2654,7 @@ const NewWorkOrder = () => {
                                 folder="sprinkler_form"
                                 onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_form')}
                                 onError={handleUploadError}
+                                onImageDelete={handleImageDelete}
                                 required
                               />
                               {sprinklerFormImagesUploaded && (
