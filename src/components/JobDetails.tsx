@@ -465,12 +465,6 @@ export function JobDetails() {
   }, [job?.purchase_order]);
 
   useEffect(() => {
-    if (!showReopenConfirm) return;
-    const defaultPhase = phases.find(phase => phase.job_phase_label === 'Work Order') || phases[0];
-    setReopenTargetPhaseLabel(defaultPhase?.job_phase_label || 'Work Order');
-  }, [showReopenConfirm, phases]);
-
-  useEffect(() => {
     const fetchUnitSizes = async () => {
       if (!canInternalEdit) return;
 
@@ -645,6 +639,13 @@ export function JobDetails() {
   });
   const [reopeningHistoricalJob, setReopeningHistoricalJob] = useState(false);
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
+
+  useEffect(() => {
+    if (!showReopenConfirm) return;
+    const defaultPhase = phases.find(phase => phase.job_phase_label === 'Work Order') || phases[0];
+    setReopenTargetPhaseLabel(defaultPhase?.job_phase_label || 'Work Order');
+  }, [showReopenConfirm, phases]);
+
   const [newJobNote, setNewJobNote] = useState({
     topic: '',
     note_content: '',
