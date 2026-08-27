@@ -184,6 +184,27 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
           workOrderNumber = parseInt(woMatch[1], 10);
         }
 
+        const shouldSearchJobProperties =
+          safeTerm &&
+          (searchFilters.types.jobs || searchFilters.types.work_orders || searchFilters.types.job_requests);
+        let matchingPropertyIdsForJobs: string[] = [];
+
+        if (shouldSearchJobProperties) {
+          const { data: matchingProperties, error: propertyLookupError } = await supabase
+            .from('properties')
+            .select('id')
+            .ilike('property_name', `%${safeTerm}%`)
+            .limit(100);
+
+          if (propertyLookupError) {
+            console.error('Error finding matching properties for job search:', propertyLookupError);
+          } else {
+            matchingPropertyIdsForJobs = (matchingProperties || [])
+              .map(property => property.id)
+              .filter(Boolean);
+          }
+        }
+
         // Search jobs if enabled
         if (searchFilters.types.jobs) {
           let query = supabase
@@ -216,12 +237,12 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             
           // If searching for a work order number, include unit matches too.
           if (workOrderSearch && workOrderNumber) {
-            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber, true));
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber, true, matchingPropertyIdsForJobs));
           } else if (exactDate) {
             query = query.gte('scheduled_date', `${exactDate}T00:00:00`).lte('scheduled_date', `${exactDate}T23:59:59`);
           } else {
             // Otherwise do a regular search
-            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, null, true));
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, null, true, matchingPropertyIdsForJobs));
           }
 
           if (dateFilter) {
@@ -479,11 +500,11 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             .limit(25);
 
           if (workOrderSearch && workOrderNumber) {
-            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber));
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber, false, matchingPropertyIdsForJobs));
           } else if (exactDate) {
             query = query.gte('scheduled_date', `${exactDate}T00:00:00`).lte('scheduled_date', `${exactDate}T23:59:59`);
           } else {
-            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms));
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, null, false, matchingPropertyIdsForJobs));
           }
 
           if (dateFilter) {
@@ -538,11 +559,11 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             .limit(25);
 
           if (workOrderSearch && workOrderNumber) {
-            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber));
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber, false, matchingPropertyIdsForJobs));
           } else if (exactDate) {
             query = query.gte('scheduled_date', `${exactDate}T00:00:00`).lte('scheduled_date', `${exactDate}T23:59:59`);
           } else {
-            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms));
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, null, false, matchingPropertyIdsForJobs));
           }
 
           if (dateFilter) {
@@ -1147,7 +1168,8 @@ function buildJobSearchFilter(
   safeTerm: string,
   unitSearchTerms: string[] = [],
   workOrderNumber: number | null = null,
-  includePurchaseOrder = false
+  includePurchaseOrder = false,
+  propertyIds: string[] = []
 ) {
   const clauses: string[] = [];
   const textTerms = Array.from(new Set([safeTerm, ...unitSearchTerms].filter(Boolean)));
@@ -1166,6 +1188,10 @@ function buildJobSearchFilter(
     if (includePurchaseOrder) {
       clauses.push(`purchase_order.ilike.%${safeTerm}%`);
     }
+  }
+
+  if (propertyIds.length > 0) {
+    clauses.push(`property_id.in.(${propertyIds.join(',')})`);
   }
 
   return clauses.join(',');
