@@ -380,6 +380,7 @@ export function JobDetails() {
   // Null-safe accessors to prevent crashes during slow loads
   const phaseLabel = job?.job_phase?.label ?? '—';
   const isHistoricalSnapshotJob = isFrozenHistoricalSnapshot(phaseLabel, job?.historical_data_mode);
+  const canEditInlineJobDetails = canInternalEdit && !isHistoricalSnapshotJob;
   const hasSubmittedWorkOrder = Boolean(job?.work_order?.id);
   const canManageRepair = isAdmin || isJGManagement || isSuperAdmin;
   const canEditRepairInCurrentPhase = canManageRepair && hasSubmittedWorkOrder && !isHistoricalSnapshotJob;
@@ -391,8 +392,8 @@ export function JobDetails() {
   const jobIdForFiles = job?.id ?? null;
   const canUseQualityControl = isAdmin || isJGManagement || isSuperAdmin;
   const canManagePainterNotes = isAdmin || isJGManagement;
-  const canEditCancellationReason = canInternalEdit;
-  const canEditExtraChargeNotes = canInternalEdit;
+  const canEditCancellationReason = canEditInlineJobDetails;
+  const canEditExtraChargeNotes = canEditInlineJobDetails;
   const {
     activityItems,
     loading: activityLogLoading,
@@ -467,8 +468,18 @@ export function JobDetails() {
   }, [job?.purchase_order]);
 
   useEffect(() => {
+    if (!isHistoricalSnapshotJob) return;
+    setEditingScheduledDate(false);
+    setEditingUnitSize(false);
+    setEditingPurchaseOrder(false);
+    setEditingCancellationReason(false);
+    setEditingExtraChargeNoteId(null);
+    setEditingExtraChargeDescriptionId(null);
+  }, [isHistoricalSnapshotJob]);
+
+  useEffect(() => {
     const fetchUnitSizes = async () => {
-      if (!canInternalEdit) return;
+      if (!canEditInlineJobDetails) return;
 
       setUnitSizesLoading(true);
       try {
@@ -2046,6 +2057,11 @@ export function JobDetails() {
 
   const handleSaveScheduledDate = async () => {
     if (!jobId || !scheduledDateDraft) return;
+    if (!canEditInlineJobDetails) {
+      setEditingScheduledDate(false);
+      toast.error('Reopen the frozen job before editing scheduled date.');
+      return;
+    }
 
     const currentDate = job?.scheduled_date?.split('T')[0] || '';
     if (scheduledDateDraft === currentDate) {
@@ -2088,6 +2104,11 @@ export function JobDetails() {
 
   const handleSaveUnitSize = async () => {
     if (!jobId || !unitSizeDraft) return;
+    if (!canEditInlineJobDetails) {
+      setEditingUnitSize(false);
+      toast.error('Reopen the frozen job before editing unit size.');
+      return;
+    }
 
     const currentUnitSizeId = job?.unit_size?.id || '';
     if (unitSizeDraft === currentUnitSizeId) {
@@ -2148,6 +2169,11 @@ export function JobDetails() {
 
   const handleSavePurchaseOrder = async () => {
     if (!jobId) return;
+    if (!canEditInlineJobDetails) {
+      setEditingPurchaseOrder(false);
+      toast.error('Reopen the frozen job before editing purchase order.');
+      return;
+    }
 
     const nextPurchaseOrder = purchaseOrderDraft.trim();
     const currentPurchaseOrder = job?.purchase_order || '';
@@ -4607,7 +4633,7 @@ export function JobDetails() {
                     </div>
                     <div className="flex min-w-0 items-start text-sm text-gray-600 dark:text-gray-400">
                       <ClipboardList className="h-4 w-4 mr-2 mt-2 text-gray-400 flex-shrink-0" />
-                      {editingUnitSize ? (
+                      {editingUnitSize && canEditInlineJobDetails ? (
                         <div className="min-w-0 flex-1">
                           <label htmlFor="job_details_unit_size" className="mb-1 block text-sm font-medium text-gray-600 dark:text-gray-300">
                             Size:
@@ -4663,7 +4689,7 @@ export function JobDetails() {
                       ) : (
                         <span className="inline-flex items-center gap-2">
                           Size: {job.unit_size.label}
-                          {canInternalEdit && (
+                          {canEditInlineJobDetails && (
                             <button
                               type="button"
                               onClick={() => setEditingUnitSize(true)}
@@ -4687,7 +4713,7 @@ export function JobDetails() {
                     Scheduled Date
                   </h3>
                   <div className="pl-5">
-                    {editingScheduledDate ? (
+                    {editingScheduledDate && canEditInlineJobDetails ? (
                       <div className="flex flex-wrap items-center gap-2">
                         <input
                           type="date"
@@ -4723,15 +4749,17 @@ export function JobDetails() {
                     ) : (
                       <span className="inline-flex items-center gap-2 text-gray-900 dark:text-white font-medium">
                         {formatDate(job?.scheduled_date)}
-                        <button
-                          type="button"
-                          onClick={() => setEditingScheduledDate(true)}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-[#2D3B4E] dark:hover:text-blue-400"
-                          title="Edit scheduled date"
-                          aria-label="Edit scheduled date"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </button>
+                        {canEditInlineJobDetails && (
+                          <button
+                            type="button"
+                            onClick={() => setEditingScheduledDate(true)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-[#2D3B4E] dark:hover:text-blue-400"
+                            title="Edit scheduled date"
+                            aria-label="Edit scheduled date"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                        )}
                       </span>
                     )}
                   </div>
@@ -4744,7 +4772,7 @@ export function JobDetails() {
                     Purchase Order
                   </h3>
                   <div className="pl-5">
-                    {editingPurchaseOrder ? (
+                    {editingPurchaseOrder && canEditInlineJobDetails ? (
                       <div className="flex flex-wrap items-center gap-2">
                         <input
                           type="text"
@@ -4780,7 +4808,7 @@ export function JobDetails() {
                     ) : (
                       <span className="inline-flex items-center gap-2 text-gray-900 dark:text-white font-medium">
                         {job?.purchase_order || <span className="text-gray-400 italic">None</span>}
-                        {canInternalEdit && (
+                        {canEditInlineJobDetails && (
                           <button
                             type="button"
                             onClick={() => setEditingPurchaseOrder(true)}
