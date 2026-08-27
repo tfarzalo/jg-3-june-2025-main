@@ -352,7 +352,7 @@ const normalizeSubcontractorMiscAdditionalCostItems = (items: unknown): MiscAddi
       return {
         id: typeof source.id === 'string' && source.id ? source.id : `misc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         description: typeof source.description === 'string' ? source.description : '',
-        price: 0,
+        price: billAmount,
         subPay: submittedAmount
       };
     })
@@ -2791,7 +2791,7 @@ const NewWorkOrder = () => {
                                   onChange={(e) => setFormData(prev => ({
                                     ...prev,
                                     misc_additional_cost_items: prev.misc_additional_cost_items.map(existing =>
-                                      existing.id === item.id ? { ...existing, price: 0, subPay: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 } : existing
+                                      existing.id === item.id ? { ...existing, subPay: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 } : existing
                                     )
                                   }))}
                                   placeholder="0.00"
