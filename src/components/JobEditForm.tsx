@@ -22,6 +22,7 @@ import {
 } from '../lib/jobs/cancellationReasons';
 import { fetchPropertyUnitSizesForBillingCategory } from '../lib/propertyUnitSizes';
 import { fetchPropertyJobCategoryOptions } from '../lib/propertyJobCategoryOptions';
+import { broadcastCalendarScheduleChanged } from '../services/calendarRealtime';
 
 interface Property {
   id: string;
@@ -642,6 +643,13 @@ export function JobEditForm() {
         console.log('JobEditForm: Are they equal?', scheduledDate === verifyData.scheduled_date);
         console.log('JobEditForm: ========================');
       }
+
+      await broadcastCalendarScheduleChanged({
+        source: 'job-edit-form',
+        jobId,
+        scheduledDate,
+        previousScheduledDate: job?.scheduled_date || null,
+      });
 
       // Upload files if any were selected
       if (selectedFiles.length > 0 && job) {

@@ -35,6 +35,7 @@ import EventDetailsModal from './calendar/EventDetailsModal';
 import SubscribeCalendarsModal from './calendar/SubscribeCalendarsModal';
 
 import { listCalendarEvents } from '../services/calendarEvents';
+import { CALENDAR_SCHEDULE_CHANGED_EVENT, CALENDAR_SCHEDULE_CHANNEL } from '../services/calendarRealtime';
 import type { CalendarEvent } from '../types/calendar';
 import { useUserRole } from '../contexts/UserRoleContext';
 import { getRecurringEventsForDay } from '../utils/recurringEvents';
@@ -377,6 +378,16 @@ export function Calendar() {
         console.log('[Calendar] calendar_events realtime status:', status);
       });
 
+    const scheduleBroadcastChannel = supabase
+      .channel(CALENDAR_SCHEDULE_CHANNEL)
+      .on('broadcast', { event: CALENDAR_SCHEDULE_CHANGED_EVENT }, (message) => {
+        console.log('[Calendar] schedule broadcast received:', message.payload);
+        scheduleJobsRefresh('schedule broadcast received');
+      })
+      .subscribe((status) => {
+        console.log('[Calendar] schedule broadcast status:', status);
+      });
+
     return () => {
       if (jobsRefreshTimeoutRef.current) {
         clearTimeout(jobsRefreshTimeoutRef.current);
@@ -389,6 +400,7 @@ export function Calendar() {
       supabase.removeChannel(phaseChangesChannel);
       supabase.removeChannel(phasesChannel);
       supabase.removeChannel(eventsChannel);
+      supabase.removeChannel(scheduleBroadcastChannel);
     };
   }, [currentDate, selectedPhases, refreshCalendarEvents]);
 

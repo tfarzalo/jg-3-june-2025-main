@@ -54,6 +54,7 @@ import { fetchActiveSubcontractors } from '../lib/users/activeSubcontractors';
 import { getAdditionalBillingLines } from '../lib/billing/additional';
 import { fetchPropertyJobCategoryOptions } from '../lib/propertyJobCategoryOptions';
 import { fetchPropertyUnitSizesForBillingCategory, fetchPropertyUnitSizesForCategory } from '../lib/propertyUnitSizes';
+import { broadcastCalendarScheduleChanged } from '../services/calendarRealtime';
 import {
   DEFAULT_CANCELLATION_TRIP_CHARGE,
   findCancellationTripChargeRate,
@@ -1955,6 +1956,13 @@ export function JobDetails() {
         .eq('id', noteId);
 
       if (error) throw error;
+
+      await broadcastCalendarScheduleChanged({
+        source: 'job-details-inline-date',
+        jobId,
+        scheduledDate: scheduledDateDraft,
+        previousScheduledDate: currentDate || null,
+      });
 
       await logJobActivity({
         jobId,

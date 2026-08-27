@@ -41,6 +41,11 @@ import { toast } from 'sonner';
 
 import { supabase } from '../../utils/supabase';
 import { listCalendarEvents } from '../../services/calendarEvents';
+import {
+  broadcastCalendarScheduleChanged,
+  CALENDAR_SCHEDULE_CHANGED_EVENT,
+  CALENDAR_SCHEDULE_CHANNEL,
+} from '../../services/calendarRealtime';
 import type { CalendarEvent } from '../../types/calendar';
 import { getRecurringEventsForDay } from '../../utils/recurringEvents';
 import { formatDisplayDate } from '../../lib/dateUtils';
@@ -497,6 +502,88 @@ export default function DevCalendar3Page() {
   }, [loadData]);
 
   useEffect(() => {
+    let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleRefresh = (reason: string) => {
+      if (refreshTimeout) {
+        clearTimeout(refreshTimeout);
+      }
+
+      refreshTimeout = setTimeout(() => {
+        console.log(`[DevCalendar3] ${reason}; refreshing calendar data...`);
+        loadData();
+      }, 500);
+    };
+
+    const jobsChannel = supabase
+      .channel('dev-calendar-3-jobs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, () => {
+        scheduleRefresh('job changed');
+      })
+      .subscribe((status) => {
+        console.log('[DevCalendar3] jobs realtime status:', status);
+      });
+
+    const workOrdersChannel = supabase
+      .channel('dev-calendar-3-work-orders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'work_orders' }, () => {
+        scheduleRefresh('work order changed');
+      })
+      .subscribe((status) => {
+        console.log('[DevCalendar3] work_orders realtime status:', status);
+      });
+
+    const phaseChangesChannel = supabase
+      .channel('dev-calendar-3-phase-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_phase_changes' }, () => {
+        scheduleRefresh('job phase history changed');
+      })
+      .subscribe((status) => {
+        console.log('[DevCalendar3] job_phase_changes realtime status:', status);
+      });
+
+    const phasesChannel = supabase
+      .channel('dev-calendar-3-phases')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_phases' }, () => {
+        scheduleRefresh('job phase metadata changed');
+      })
+      .subscribe((status) => {
+        console.log('[DevCalendar3] job_phases realtime status:', status);
+      });
+
+    const eventsChannel = supabase
+      .channel('dev-calendar-3-events')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'calendar_events' }, () => {
+        scheduleRefresh('calendar event changed');
+      })
+      .subscribe((status) => {
+        console.log('[DevCalendar3] calendar_events realtime status:', status);
+      });
+
+    const scheduleBroadcastChannel = supabase
+      .channel(CALENDAR_SCHEDULE_CHANNEL)
+      .on('broadcast', { event: CALENDAR_SCHEDULE_CHANGED_EVENT }, (message) => {
+        console.log('[DevCalendar3] schedule broadcast received:', message.payload);
+        scheduleRefresh('schedule broadcast received');
+      })
+      .subscribe((status) => {
+        console.log('[DevCalendar3] schedule broadcast status:', status);
+      });
+
+    return () => {
+      if (refreshTimeout) {
+        clearTimeout(refreshTimeout);
+      }
+      supabase.removeChannel(jobsChannel);
+      supabase.removeChannel(workOrdersChannel);
+      supabase.removeChannel(phaseChangesChannel);
+      supabase.removeChannel(phasesChannel);
+      supabase.removeChannel(eventsChannel);
+      supabase.removeChannel(scheduleBroadcastChannel);
+    };
+  }, [loadData]);
+
+  useEffect(() => {
     if (!authLoaded || phases.length === 0) return;
 
     const saved = readJson<Partial<VisibilityState>>(visibilityStorageKey, {});
@@ -855,6 +942,12 @@ export default function DevCalendar3Page() {
       try {
         const { error } = await supabase.from('jobs').update({ scheduled_date: targetDate }).eq('id', item.sourceId);
         if (error) throw error;
+        await broadcastCalendarScheduleChanged({
+          source: 'calendar-drag-reschedule',
+          jobId: item.sourceId,
+          scheduledDate: targetDate,
+          previousScheduledDate: item.date,
+        });
         toast.success(`Moved ${item.title} to ${formatDisplayDate(targetDate)}`);
       } catch (error) {
         setJobs(previousJobs);
