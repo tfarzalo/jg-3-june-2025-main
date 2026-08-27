@@ -5031,7 +5031,7 @@ export function JobDetails() {
                                       Remove
                                     </button>
                                   </div>
-                                  <div className="grid grid-cols-1 md:grid-cols-[1fr_160px_160px] gap-3">
+                                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(240px,1fr)_220px_300px]">
                                     <div>
                                       <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-1">
                                         Description
@@ -5047,7 +5047,7 @@ export function JobDetails() {
                                       />
                                     </div>
                                     <div>
-                                      <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-1">
+                                      <label className="block whitespace-nowrap text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-1">
                                         Bill to Customer
                                       </label>
                                       <div className="relative">
@@ -5066,7 +5066,7 @@ export function JobDetails() {
                                       </div>
                                     </div>
                                     <div>
-                                      <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-1">
+                                      <label className="block whitespace-nowrap text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-1">
                                         Sub Input Cost / Pay to Sub
                                       </label>
                                       <div className="relative">
@@ -5089,7 +5089,7 @@ export function JobDetails() {
                                   </div>
                                 </div>
                               ))}
-                              <div className="grid grid-cols-1 gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200 border-t border-zinc-200 dark:border-zinc-700 pt-3 sm:grid-cols-[1fr_160px_160px]">
+                              <div className="grid grid-cols-1 gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200 border-t border-zinc-200 dark:border-zinc-700 pt-3 lg:grid-cols-[minmax(240px,1fr)_220px_300px]">
                                 <span>Total</span>
                                 <span className="sm:text-right">Bill: {formatCurrency(miscAdditionalCostInputTotal)}</span>
                                 <span className="sm:text-right">Sub Input / Pay: {formatCurrency(miscAdditionalCostSubPayInputTotal)}</span>
