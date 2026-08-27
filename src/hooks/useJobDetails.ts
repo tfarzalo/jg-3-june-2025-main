@@ -377,6 +377,11 @@ export function useJobDetails(jobId: string | undefined) {
               id,
               job_type_label
             ),
+            job_category:job_categories (
+              id,
+              name,
+              description
+            ),
             job_phase:job_phases (
               id,
               job_phase_label,
@@ -444,6 +449,11 @@ export function useJobDetails(jobId: string | undefined) {
             job_type: jd.job_type ? {
               id: jd.job_type.id,
               label: jd.job_type.job_type_label,
+            } : null,
+            job_category: jd.job_category ? {
+              id: jd.job_category.id,
+              name: jd.job_category.name,
+              description: jd.job_category.description,
             } : null,
             job_phase: jd.job_phase ? {
               id: jd.job_phase.id,

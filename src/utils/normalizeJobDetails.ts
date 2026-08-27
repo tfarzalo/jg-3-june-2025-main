@@ -73,6 +73,7 @@ export type JobDetailsNormalized = {
   invoice_paid?: boolean | null;
   invoice_sent_date?: string | null;
   invoice_paid_date?: string | null;
+  job_category?: { id: string | null; name: string; description?: string | null } | null;
   property: PropertyLite;
   unit_size: UnitSize;
   job_type?: { id: string | null; label: string } | null;
@@ -120,6 +121,14 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
         label: d?.job_phase?.label ?? d?.job_phase?.job_phase_label ?? d?.job_phase?.name ?? 'Unknown Phase',
         color_light_mode: d?.job_phase?.color_light_mode,
         color_dark_mode: d?.job_phase?.color_dark_mode,
+      }
+    : null;
+
+  const job_category = d?.job_category
+    ? {
+        id: d.job_category.id ?? d.job_category.job_category_id ?? null,
+        name: d.job_category.name ?? d.job_category.job_category_name ?? '—',
+        description: d.job_category.description ?? null,
       }
     : null;
 
@@ -176,6 +185,7 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
     invoice_paid: d?.invoice_paid ?? null,
     invoice_sent_date: d?.invoice_sent_date ?? null,
     invoice_paid_date: d?.invoice_paid_date ?? null,
+    job_category,
     property,
     unit_size,
     job_type: d?.job_type
