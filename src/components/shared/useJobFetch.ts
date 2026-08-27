@@ -88,6 +88,7 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
           updated_at,
           total_billing_amount,
           unit_size_id,
+          unit_size_label_snapshot,
           invoice_sent,
           invoice_paid,
           invoice_sent_date,
@@ -269,7 +270,10 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
             cancellation_trip_charge_sub_pay_amount: job.cancellation_trip_charge_sub_pay_amount,
             purchase_order: job.purchase_order,
             property: Array.isArray(job.property) ? job.property[0] : job.property,
-            unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
+            unit_size: {
+              ...((Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size) || {}),
+              unit_size_label: job.unit_size_label_snapshot || (Array.isArray(job.unit_size) ? job.unit_size[0]?.unit_size_label : job.unit_size?.unit_size_label),
+            },
             job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
             job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase,
             assigned_to_profile: Array.isArray(job.assigned_to_profile) ? job.assigned_to_profile[0] : job.assigned_to_profile
@@ -340,6 +344,7 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
               historical_data_mode,
               active_snapshot_id,
               snapshot_frozen_at,
+              unit_size_label_snapshot,
               property:properties (
                 id,
                 property_name,
@@ -367,7 +372,10 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
             
           if (!error && newJob) {
             const propertyObj = Array.isArray(newJob.property) ? newJob.property[0] : newJob.property;
-            const unitSizeObj = Array.isArray(newJob.unit_size) ? newJob.unit_size[0] : newJob.unit_size;
+            const unitSizeObj = {
+              ...((Array.isArray(newJob.unit_size) ? newJob.unit_size[0] : newJob.unit_size) || {}),
+              unit_size_label: newJob.unit_size_label_snapshot || (Array.isArray(newJob.unit_size) ? newJob.unit_size[0]?.unit_size_label : newJob.unit_size?.unit_size_label),
+            };
             let totalBillingAmount = newJob.total_billing_amount;
             const phaseLabel = Array.isArray(newJob.job_phase) ? newJob.job_phase[0]?.job_phase_label : newJob.job_phase?.job_phase_label;
             const jobCategory = Array.isArray(newJob.job_type) ? newJob.job_type[0]?.job_type_label : newJob.job_type?.job_type_label;

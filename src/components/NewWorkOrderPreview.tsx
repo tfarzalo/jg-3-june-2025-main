@@ -1129,6 +1129,9 @@ const NewWorkOrderPreview = () => {
       // Map the job data to include all required fields
       const mappedJob: Job = {
         ...data,
+        unit_size: data.unit_size_label_snapshot
+          ? { ...(data.unit_size || {}), unit_size_label: data.unit_size_label_snapshot }
+          : data.unit_size,
         is_occupied: data.is_occupied ?? false,
         is_full_paint: data.is_full_paint ?? false,
         job_category: data.job_category ?? 'Regular Paint',

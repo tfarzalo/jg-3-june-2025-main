@@ -306,6 +306,7 @@ function JobSummaryPanel({ item }: { item: PinnedWorkspaceItem }) {
             scheduled_date,
             purchase_order,
             total_billing_amount,
+            unit_size_label_snapshot,
             property:properties(id, property_name, address, city, state),
             unit_size:unit_sizes(unit_size_label),
             job_type:job_types(job_type_label),
@@ -316,7 +317,16 @@ function JobSummaryPanel({ item }: { item: PinnedWorkspaceItem }) {
           .single();
 
         if (fetchError) throw fetchError;
-        if (mounted) setJob(data as unknown as JobSummary);
+
+        const jobSummary = data as any;
+        if (jobSummary?.unit_size_label_snapshot) {
+          jobSummary.unit_size = {
+            ...((Array.isArray(jobSummary.unit_size) ? jobSummary.unit_size[0] : jobSummary.unit_size) || {}),
+            unit_size_label: jobSummary.unit_size_label_snapshot,
+          };
+        }
+
+        if (mounted) setJob(jobSummary as JobSummary);
       } catch (err) {
         console.error('Error loading pinned job summary:', err);
         if (mounted) setError(err instanceof Error ? err.message : 'Unable to load job summary');

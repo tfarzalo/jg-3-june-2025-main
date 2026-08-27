@@ -98,6 +98,7 @@ type ReportJob = {
   cancellation_trip_charge_sub_pay_amount?: number | string | null;
   invoice_sent?: boolean | null;
   invoice_paid?: boolean | null;
+  unit_size_label_snapshot?: string | null;
   property?: RelatedRecord;
   unit_size?: RelatedRecord;
   job_phase?: RelatedRecord;
@@ -177,7 +178,7 @@ export const REPORT_COLUMNS: ReportColumn[] = [
   { key: 'work_order_num', label: 'Work Order #', value: job => formatWorkOrderNumber(job.work_order_num) },
   { key: 'property', label: 'Property', value: job => textFrom(job.property, 'property_name') },
   { key: 'unit_number', label: 'Unit #', value: job => job.unit_number },
-  { key: 'unit_size', label: 'Unit Size', value: job => textFrom(job.unit_size, 'unit_size_label') || textFrom(firstWorkOrder(job), 'unit_size') },
+  { key: 'unit_size', label: 'Unit Size', value: job => job.unit_size_label_snapshot || textFrom(job.unit_size, 'unit_size_label') || textFrom(firstWorkOrder(job), 'unit_size') },
   { key: 'job_type', label: 'Job Type', value: job => textFrom(job.job_type, 'job_type_label') },
   { key: 'job_category', label: 'Job Category', value: job => textFrom(job.job_category, 'name') || textFrom(firstWorkOrder(job), 'job_category') },
   { key: 'phase', label: 'Phase', value: job => formatJobPhaseLabel(textFrom(job.job_phase, 'job_phase_label')) },
@@ -447,6 +448,7 @@ export async function generateReport(params: {
      purchase_order,
      assigned_to,
      total_billing_amount,
+     unit_size_label_snapshot,
      active_snapshot_id,
      historical_data_mode,
      cancellation_trip_charge_added,

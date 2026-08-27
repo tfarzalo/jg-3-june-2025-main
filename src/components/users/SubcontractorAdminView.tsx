@@ -17,6 +17,7 @@ interface JobRow {
   unit_number: string | null;
   scheduled_date: string | null;
   assigned_to_name_snapshot?: string | null;
+  unit_size_label_snapshot?: string | null;
   property: { id: string; property_name: string } | null;
   job_phase: { job_phase_label: string; color_dark_mode: string | null } | null;
   unit_size: { unit_size_label: string } | null;
@@ -74,6 +75,7 @@ export function SubcontractorAdminView({ userId, userName, userEmail }: Subcontr
               unit_number,
               scheduled_date,
               assigned_to_name_snapshot,
+              unit_size_label_snapshot,
               property:properties(id, property_name),
               job_phase:job_phases(job_phase_label, color_dark_mode),
               unit_size:unit_sizes(unit_size_label),
@@ -103,11 +105,14 @@ export function SubcontractorAdminView({ userId, userName, userEmail }: Subcontr
 
         setJobs((jobData || []).map((job) => {
           const row = job as unknown as RawJobRow;
+          const unitSize = firstRelated(row.unit_size);
           return {
             ...row,
             property: firstRelated(row.property),
             job_phase: firstRelated(row.job_phase),
-            unit_size: firstRelated(row.unit_size),
+            unit_size: row.unit_size_label_snapshot
+              ? { id: (unitSize as any)?.id, unit_size_label: row.unit_size_label_snapshot }
+              : unitSize,
             job_type: firstRelated(row.job_type),
           };
         }));

@@ -91,6 +91,7 @@ export type JobDetailsNormalized = {
   active_snapshot_id?: string | null;
   snapshot_frozen_at?: string | null;
   snapshot_phase_label?: string | null;
+  unit_size_label_snapshot?: string | null;
 };
 
 export function normalizeJobDetails(d: any): JobDetailsNormalized {
@@ -110,7 +111,7 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
 
   const unit_size = {
     id: d?.unit_size?.id ?? null,
-    label: d?.unit_size?.label ?? d?.unit_size?.unit_size_label ?? '—',
+    label: d?.unit_size_label_snapshot ?? d?.unit_size?.label ?? d?.unit_size?.unit_size_label ?? '—',
   };
 
   const job_phase: JobPhase | null = d?.job_phase
@@ -195,5 +196,6 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
     active_snapshot_id: d?.active_snapshot_id ?? null,
     snapshot_frozen_at: d?.snapshot_frozen_at ?? null,
     snapshot_phase_label: d?.snapshot_phase_label ?? null,
+    unit_size_label_snapshot: d?.unit_size_label_snapshot ?? null,
   };
 }
