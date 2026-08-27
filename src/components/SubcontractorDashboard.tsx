@@ -33,6 +33,7 @@ import {
 } from '../lib/billing/cancellationTripCharge';
 import { getSubcontractorContact, type PropertyContact } from '../lib/contacts/contactViewModel';
 import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
+import { getPreviewUrl } from '../utils/storagePreviews';
 
 
 
@@ -74,8 +75,20 @@ interface Job {
   cancellation_trip_charge_bill_amount?: number | null;
   cancellation_trip_charge_sub_pay_amount?: number | null;
   painter_notes?: JobPainterNote[];
+  job_media?: JobMediaItem[];
   /** True when the job has a work order submitted on the same calendar day (used to show After Photos button) */
   hasWorkOrderSubmittedToday?: boolean;
+}
+
+interface JobMediaItem {
+  id: string;
+  name: string;
+  original_filename?: string | null;
+  type?: string | null;
+  size?: number | null;
+  created_at: string;
+  storage_path: string;
+  preview_url: string;
 }
 
 interface PropertyDetails {
@@ -163,11 +176,16 @@ export function SubcontractorDashboard() {
   const [expandedJobs, setExpandedJobs] = useState<ExpandedJobs>({});
   const [propertyDataCache, setPropertyDataCache] = useState<PropertyDataCache>({});
   const [loadingProperties, setLoadingProperties] = useState<{[propertyId: string]: boolean}>({});
-  const [propertyPanelTabs, setPropertyPanelTabs] = useState<{[jobId: string]: 'info' | 'notes'}>({});
+  const [propertyPanelTabs, setPropertyPanelTabs] = useState<{[jobId: string]: 'info' | 'notes' | 'media'}>({});
   const [unitMapModalOpen, setUnitMapModalOpen] = useState<{isOpen: boolean; imageUrl: string; propertyName: string}>({
     isOpen: false,
     imageUrl: '',
     propertyName: ''
+  });
+  const [jobMediaLightbox, setJobMediaLightbox] = useState<{isOpen: boolean; imageUrl: string; imageAlt: string}>({
+    isOpen: false,
+    imageUrl: '',
+    imageAlt: ''
   });
   const [afterPhotosModal, setAfterPhotosModal] = useState<{
     isOpen: boolean;
@@ -253,6 +271,11 @@ export function SubcontractorDashboard() {
       paintingDashboard: "PAINTING DASHBOARD",
       propertyInfoTab: "Property Info",
       notesTab: "Notes",
+      jobMediaTab: "Job Media",
+      jobMediaTitle: "Job Media",
+      noJobMedia: "No job media",
+      noJobMediaMessage: "No files or images are currently available for this job.",
+      openFile: "Open File",
       painterNotes: "Painter Notes",
       jobPainterNotes: "Notes for This Job",
       propertyPainterNotes: "Property Painter Notes",
@@ -316,6 +339,11 @@ export function SubcontractorDashboard() {
       paintingDashboard: "PANEL DE PINTURA",
       propertyInfoTab: "Información de la Propiedad",
       notesTab: "Notas",
+      jobMediaTab: "Medios del Trabajo",
+      jobMediaTitle: "Medios del Trabajo",
+      noJobMedia: "No hay medios del trabajo",
+      noJobMediaMessage: "No hay archivos o imágenes disponibles actualmente para este trabajo.",
+      openFile: "Abrir Archivo",
       painterNotes: "Notas del Pintor",
       jobPainterNotes: "Notas Para Este Trabajo",
       propertyPainterNotes: "Notas de la Propiedad",
@@ -769,6 +797,7 @@ export function SubcontractorDashboard() {
 
       const jobIds = (jobsData || []).map(job => job.id);
       let painterNotesByJobId: Record<string, JobPainterNote[]> = {};
+      let jobMediaByJobId: Record<string, JobMediaItem[]> = {};
 
       if (jobIds.length > 0) {
         try {
@@ -806,6 +835,52 @@ export function SubcontractorDashboard() {
         } catch (painterNotesErr) {
           console.error('Error fetching job painter notes:', painterNotesErr);
         }
+
+        try {
+          const { data: mediaData, error: mediaError } = await supabase
+            .from('files')
+            .select('id, job_id, name, original_filename, type, size, created_at, path, storage_path')
+            .in('job_id', jobIds)
+            .eq('category', 'job_files')
+            .order('created_at', { ascending: false });
+
+          if (mediaError) {
+            console.error('Error fetching job media:', mediaError);
+          } else {
+            const mediaItems = await Promise.all((mediaData || []).map(async (file: any) => {
+              const storagePath = file.storage_path || file.path;
+              if (!storagePath) return null;
+
+              try {
+                const preview = await getPreviewUrl(supabase, 'files', storagePath);
+                return {
+                  id: file.id,
+                  name: file.name,
+                  original_filename: file.original_filename || null,
+                  type: file.type || null,
+                  size: file.size || null,
+                  created_at: file.created_at,
+                  storage_path: storagePath,
+                  preview_url: preview.url,
+                  job_id: file.job_id,
+                };
+              } catch (previewError) {
+                console.error('Error creating job media preview:', previewError);
+                return null;
+              }
+            }));
+
+            jobMediaByJobId = mediaItems.reduce((acc: Record<string, JobMediaItem[]>, item: (JobMediaItem & { job_id?: string }) | null) => {
+              if (!item?.job_id) return acc;
+              const { job_id, ...mediaItem } = item;
+              acc[job_id] = acc[job_id] || [];
+              acc[job_id].push(mediaItem);
+              return acc;
+            }, {});
+          }
+        } catch (mediaErr) {
+          console.error('Error fetching job media:', mediaErr);
+        }
       }
 
       // Map the data to match the Job interface and flatten nested arrays
@@ -821,6 +896,7 @@ export function SubcontractorDashboard() {
           work_order: wo,
           unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
           painter_notes: painterNotesByJobId[job.id] || [],
+          job_media: jobMediaByJobId[job.id] || [],
           hasWorkOrderSubmittedToday,
         };
       });
@@ -851,6 +927,17 @@ export function SubcontractorDashboard() {
       currency: 'USD'
     }).format(amount);
   };
+
+  const formatFileSize = (bytes?: number | null) => {
+    if (!bytes || bytes <= 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    const value = bytes / Math.pow(1024, unitIndex);
+    return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  };
+
+  const isImageMedia = (media: JobMediaItem) =>
+    Boolean(media.type?.startsWith('image/'));
 
   const filteredByTab = (jobs: Job[], tab: 'pending' | 'accepted') => {
     if (tab === 'pending') {
@@ -1629,6 +1716,17 @@ export function SubcontractorDashboard() {
                                   >
                                     {text.notesTab}
                                   </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPropertyPanelTabs(prev => ({ ...prev, [job.id]: 'media' }))}
+                                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                                      activePropertyTab === 'media'
+                                        ? 'bg-white dark:bg-[#1E293B] text-gray-900 dark:text-white shadow-sm'
+                                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                                    }`}
+                                  >
+                                    {text.jobMediaTab}
+                                  </button>
                                 </div>
 
                                 {activePropertyTab === 'notes' ? (
@@ -1704,6 +1802,77 @@ export function SubcontractorDashboard() {
                                         <FileText className="h-10 w-10 mx-auto mb-3 text-gray-400" />
                                         <p className="font-medium">{text.noPainterNotes}</p>
                                         <p className="text-sm mt-1">{text.noJobPainterNotesMessage}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : activePropertyTab === 'media' ? (
+                                  <div className="space-y-4">
+                                    {job.job_media?.length ? (
+                                      <div className="border border-blue-200 dark:border-blue-800/50 rounded-lg p-4 bg-blue-50 dark:bg-blue-900/10">
+                                        <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                                          <Camera className="h-5 w-5 mr-2 text-blue-600 dark:text-blue-300" />
+                                          {text.jobMediaTitle}
+                                        </h4>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                          {job.job_media.map((media) => {
+                                            const label = media.original_filename || media.name;
+                                            const fileSize = formatFileSize(media.size);
+                                            return (
+                                              <div
+                                                key={media.id}
+                                                className="overflow-hidden rounded-lg border border-blue-100 dark:border-blue-900/50 bg-white dark:bg-[#1E293B] shadow-sm"
+                                              >
+                                                {isImageMedia(media) ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setJobMediaLightbox({
+                                                      isOpen: true,
+                                                      imageUrl: media.preview_url,
+                                                      imageAlt: label
+                                                    })}
+                                                    className="block w-full aspect-video bg-gray-100 dark:bg-[#0F172A]"
+                                                  >
+                                                    <img
+                                                      src={media.preview_url}
+                                                      alt={label}
+                                                      className="h-full w-full object-cover"
+                                                      loading="lazy"
+                                                    />
+                                                  </button>
+                                                ) : (
+                                                  <div className="flex aspect-video items-center justify-center bg-gray-100 dark:bg-[#0F172A]">
+                                                    <FileText className="h-10 w-10 text-blue-500 dark:text-blue-300" />
+                                                  </div>
+                                                )}
+                                                <div className="p-3">
+                                                  <p className="truncate text-sm font-semibold text-gray-900 dark:text-white" title={label}>
+                                                    {label}
+                                                  </p>
+                                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                                    {fileSize && <span>{fileSize}</span>}
+                                                    {fileSize && <span>•</span>}
+                                                    <span>{format(new Date(media.created_at), 'MMM d, yyyy')}</span>
+                                                  </div>
+                                                  <a
+                                                    href={media.preview_url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="mt-3 inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700"
+                                                  >
+                                                    <FileText className="mr-1.5 h-3.5 w-3.5" />
+                                                    {text.openFile}
+                                                  </a>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                                        <Camera className="h-10 w-10 mx-auto mb-3 text-gray-400" />
+                                        <p className="font-medium">{text.noJobMedia}</p>
+                                        <p className="text-sm mt-1">{text.noJobMediaMessage}</p>
                                       </div>
                                     )}
                                   </div>
@@ -1943,6 +2112,15 @@ export function SubcontractorDashboard() {
           onClose={closeUnitMapModal}
           imageUrl={unitMapModalOpen.imageUrl}
           imageAlt={`${unitMapModalOpen.propertyName} Unit Map`}
+        />
+      )}
+
+      {jobMediaLightbox.isOpen && (
+        <Lightbox
+          isOpen={jobMediaLightbox.isOpen}
+          onClose={() => setJobMediaLightbox({ isOpen: false, imageUrl: '', imageAlt: '' })}
+          imageUrl={jobMediaLightbox.imageUrl}
+          imageAlt={jobMediaLightbox.imageAlt}
         />
       )}
 

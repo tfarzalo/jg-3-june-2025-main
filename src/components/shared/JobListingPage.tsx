@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Search, 
@@ -15,7 +15,8 @@ import {
   Mailbox,
   CheckCircle,
   ClipboardCheck,
-  Pin
+  Pin,
+  Check
 } from 'lucide-react';
 import { parseISO, format, subMonths } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
@@ -414,6 +415,151 @@ function getCancellationTripChargeAmounts(job: Job) {
     billAmount: Number.isFinite(billAmount) ? billAmount : 0,
     subPayAmount: Number.isFinite(subPayAmount) ? subPayAmount : 0
   };
+}
+
+interface SearchableFilterSelectProps {
+  label: string;
+  value: string;
+  allValue: string;
+  allLabel: string;
+  options: string[];
+  onChange: (value: string) => void;
+  getOptionLabel?: (value: string) => string;
+}
+
+function SearchableFilterSelect({
+  label,
+  value,
+  allValue,
+  allLabel,
+  options,
+  onChange,
+  getOptionLabel = (option) => option
+}: SearchableFilterSelectProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const selectedLabel = value === allValue ? allLabel : getOptionLabel(value);
+  const filteredOptions = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return options;
+    return options.filter((option) => getOptionLabel(option).toLowerCase().includes(normalizedQuery));
+  }, [getOptionLabel, options, query]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 0);
+    return () => window.clearTimeout(focusTimer);
+  }, [isOpen]);
+
+  const selectValue = (nextValue: string) => {
+    onChange(nextValue);
+    setQuery('');
+    setIsOpen(false);
+  };
+
+  const toggleOpen = () => {
+    setIsOpen((open) => {
+      const nextOpen = !open;
+      if (!nextOpen) setQuery('');
+      return nextOpen;
+    });
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+        {label}
+      </label>
+      <button
+        type="button"
+        onClick={toggleOpen}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        className="flex w-full items-center justify-between gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-left text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-[#334155] dark:bg-[#0F172A] dark:text-white"
+      >
+        <span className="min-w-0 flex-1 truncate">{selectedLabel}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-gray-500 transition-transform dark:text-gray-400 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 right-0 z-30 mt-2 rounded-lg border border-gray-200 bg-white shadow-xl dark:border-[#334155] dark:bg-[#0F172A]">
+          <div className="border-b border-gray-200 p-2 dark:border-[#334155]">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    setIsOpen(false);
+                    setQuery('');
+                  }
+                }}
+                placeholder={`Search ${label.toLowerCase()}...`}
+                className="w-full rounded-md border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-[#334155] dark:bg-[#1E293B] dark:text-white dark:placeholder-gray-400"
+              />
+            </div>
+          </div>
+
+          <div role="listbox" className="max-h-72 overflow-y-auto py-1">
+            <button
+              type="button"
+              role="option"
+              aria-selected={value === allValue}
+              onClick={() => selectValue(allValue)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-[#1E293B]"
+            >
+              <Check className={`h-4 w-4 shrink-0 ${value === allValue ? 'text-blue-600 dark:text-blue-400' : 'text-transparent'}`} />
+              <span className="min-w-0 flex-1 truncate">{allLabel}</span>
+            </button>
+
+            {filteredOptions.map((option) => (
+              <button
+                key={option}
+                type="button"
+                role="option"
+                aria-selected={value === option}
+                onClick={() => selectValue(option)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-[#1E293B]"
+              >
+                <Check className={`h-4 w-4 shrink-0 ${value === option ? 'text-blue-600 dark:text-blue-400' : 'text-transparent'}`} />
+                <span className="min-w-0 flex-1 truncate">{getOptionLabel(option)}</span>
+              </button>
+            ))}
+
+            {filteredOptions.length === 0 && (
+              <div className="px-3 py-3 text-sm text-gray-500 dark:text-gray-400">
+                No matches
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function JobListingPage({ 
@@ -1967,42 +2113,24 @@ export function JobListingPage({
             </div>
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
-                  Property Name
-                </label>
-                <select
-                  value={propertyFilter}
-                  onChange={(e) => setPropertyFilter(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="all">All Properties</option>
-                  {propertyOptions.map((propertyName) => (
-                    <option key={propertyName} value={propertyName}>
-                      {propertyName}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SearchableFilterSelect
+                label="Property Name"
+                value={propertyFilter}
+                allValue="all"
+                allLabel="All Properties"
+                options={propertyOptions}
+                onChange={setPropertyFilter}
+              />
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
-                  Subcontractor
-                </label>
-                <select
-                  value={subcontractorFilter}
-                  onChange={(e) => setSubcontractorFilter(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-white dark:bg-[#0F172A] border border-gray-300 dark:border-[#334155] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="all">All Subcontractors</option>
-                  <option value="unassigned">Unassigned</option>
-                  {subcontractorOptions.map((subcontractorName) => (
-                    <option key={subcontractorName} value={subcontractorName}>
-                      {subcontractorName}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <SearchableFilterSelect
+                label="Subcontractor"
+                value={subcontractorFilter}
+                allValue="all"
+                allLabel="All Subcontractors"
+                options={['unassigned', ...subcontractorOptions]}
+                onChange={setSubcontractorFilter}
+                getOptionLabel={(option) => option === 'unassigned' ? 'Unassigned' : option}
+              />
 
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">

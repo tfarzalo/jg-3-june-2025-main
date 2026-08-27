@@ -4,9 +4,31 @@ import { JobListingPage, type Job } from './shared/JobListingPage';
 import { useJobFetch } from './shared/useJobFetch';
 import { supabase } from '../utils/supabase';
 
-function normalizeSubmittedQcJob(row: any): Job | null {
-  const job = Array.isArray(row.job) ? row.job[0] : row.job;
+type SubmittedQcJobRecord = Omit<Job, 'property' | 'unit_size' | 'job_type' | 'job_phase' | 'assigned_to_profile'> & {
+  property: Job['property'] | Job['property'][] | null;
+  unit_size: Job['unit_size'] | Job['unit_size'][] | null;
+  job_type: Job['job_type'] | Job['job_type'][] | null;
+  job_phase: Job['job_phase'] | NonNullable<Job['job_phase']>[] | null;
+  assigned_to_profile?: Job['assigned_to_profile'] | NonNullable<Job['assigned_to_profile']>[] | null;
+};
+
+interface SubmittedQcRow {
+  job_id?: string | null;
+  job?: SubmittedQcJobRecord | SubmittedQcJobRecord[] | null;
+}
+
+function firstRelatedRecord<T>(value: T | T[] | null | undefined): T | null {
+  return Array.isArray(value) ? value[0] ?? null : value ?? null;
+}
+
+function normalizeSubmittedQcJob(row: SubmittedQcRow): Job | null {
+  const job = firstRelatedRecord(row.job);
   if (!job) return null;
+  const property = firstRelatedRecord(job.property);
+  const unitSize = firstRelatedRecord(job.unit_size);
+  const jobType = firstRelatedRecord(job.job_type);
+
+  if (!property || !unitSize || !jobType) return null;
 
   return {
     id: job.id,
@@ -27,11 +49,11 @@ function normalizeSubmittedQcJob(row: any): Job | null {
     cancellation_trip_charge_bill_amount: job.cancellation_trip_charge_bill_amount,
     cancellation_trip_charge_sub_pay_amount: job.cancellation_trip_charge_sub_pay_amount,
     purchase_order: job.purchase_order,
-    property: Array.isArray(job.property) ? job.property[0] : job.property,
-    unit_size: Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size,
-    job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
-    job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase,
-    assigned_to_profile: Array.isArray(job.assigned_to_profile) ? job.assigned_to_profile[0] : job.assigned_to_profile,
+    property,
+    unit_size: unitSize,
+    job_type: jobType,
+    job_phase: firstRelatedRecord(job.job_phase),
+    assigned_to_profile: firstRelatedRecord(job.assigned_to_profile),
   };
 }
 
@@ -51,63 +73,78 @@ export function QualityControl() {
   const loadSubmittedQcJobs = useCallback(async () => {
     setQcLoading(true);
     try {
-      const { data, error: qcError } = await supabase
-        .from('job_quality_control_submissions')
-        .select(`
-          job_id,
-          updated_at,
+      const submissionSelect = `
+        job_id,
+        updated_at,
+        created_at,
+        job:jobs (
+          id,
+          work_order_num,
+          unit_number,
+          scheduled_date,
           created_at,
-          job:jobs (
+          updated_at,
+          total_billing_amount,
+          historical_data_mode,
+          active_snapshot_id,
+          snapshot_frozen_at,
+          invoice_sent,
+          invoice_paid,
+          invoice_sent_date,
+          invoice_paid_date,
+          cancellation_trip_charge_added,
+          cancellation_trip_charge_bill_amount,
+          cancellation_trip_charge_sub_pay_amount,
+          purchase_order,
+          property:properties (
             id,
-            work_order_num,
-            unit_number,
-            scheduled_date,
-            created_at,
-            updated_at,
-            total_billing_amount,
-            historical_data_mode,
-            active_snapshot_id,
-            snapshot_frozen_at,
-            invoice_sent,
-            invoice_paid,
-            invoice_sent_date,
-            invoice_paid_date,
-            cancellation_trip_charge_added,
-            cancellation_trip_charge_bill_amount,
-            cancellation_trip_charge_sub_pay_amount,
-            purchase_order,
-            property:properties (
-              id,
-              property_name,
-              address,
-              city,
-              state
-            ),
-            unit_size:unit_sizes (
-              id,
-              unit_size_label
-            ),
-            job_type:job_types (
-              job_type_label
-            ),
-            job_phase:current_phase_id (
-              job_phase_label,
-              color_light_mode,
-              color_dark_mode
-            ),
-            assigned_to_profile:assigned_to (
-              full_name
-            )
+            property_name,
+            address,
+            city,
+            state
+          ),
+          unit_size:unit_sizes (
+            id,
+            unit_size_label
+          ),
+          job_type:job_types (
+            job_type_label
+          ),
+          job_phase:current_phase_id (
+            job_phase_label,
+            color_light_mode,
+            color_dark_mode
+          ),
+          assigned_to_profile:assigned_to (
+            full_name
           )
-        `)
-        .order('updated_at', { ascending: false });
+        )
+      `;
 
-      if (qcError) throw qcError;
+      const pageSize = 1000;
+      let from = 0;
+      let hasMore = true;
+      const rows: SubmittedQcRow[] = [];
+
+      while (hasMore) {
+        const { data, error: qcError } = await supabase
+          .from('job_quality_control_submissions')
+          .select(submissionSelect)
+          .order('updated_at', { ascending: false })
+          .range(from, from + pageSize - 1);
+
+        if (qcError) throw qcError;
+
+        const pageRows = (data || []) as SubmittedQcRow[];
+        rows.push(...pageRows);
+        hasMore = pageRows.length === pageSize;
+        from += pageSize;
+      }
 
       const found = new Set<string>();
       const uniqueSubmittedJobs: Job[] = [];
 
-      (data || []).forEach((row: any) => {
+      rows.forEach((row) => {
         if (!row.job_id || found.has(row.job_id)) return;
         const normalized = normalizeSubmittedQcJob(row);
         if (!normalized) return;
