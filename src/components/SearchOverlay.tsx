@@ -193,7 +193,7 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
           const { data: matchingProperties, error: propertyLookupError } = await supabase
             .from('properties')
             .select('id')
-            .ilike('property_name', `%${safeTerm}%`)
+            .or(buildPropertySearchFilter(normalizedTerm))
             .limit(100);
 
           if (propertyLookupError) {
@@ -291,11 +291,11 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               state,
               zip,
               created_at,
-              property_management_group:property_management_groups (
+              property_management_group:property_management_groups!fk_property_management_group (
                 company_name
               )
             `)
-            .or(`property_name.ilike.%${safeTerm}%,address.ilike.%${safeTerm}%,city.ilike.%${safeTerm}%,state.ilike.%${safeTerm}%,zip.ilike.%${safeTerm}%`);
+            .or(buildPropertySearchFilter(normalizedTerm));
           query = query.limit(25);
 
           if (dateFilter) {
@@ -1162,6 +1162,36 @@ function getUnitSearchTerms(value: string) {
   return Array.from(terms)
     .map(escapePostgrestSearchTerm)
     .filter(Boolean);
+}
+
+function getSearchTerms(value: string) {
+  const terms = new Set<string>();
+  const cleaned = escapePostgrestSearchTerm(value);
+
+  if (cleaned) {
+    terms.add(cleaned);
+  }
+
+  value
+    .split(/[^a-z0-9]+/i)
+    .map(escapePostgrestSearchTerm)
+    .filter(term => term.length >= 2)
+    .forEach(term => terms.add(term));
+
+  return Array.from(terms).slice(0, 12);
+}
+
+function buildPropertySearchFilter(value: string) {
+  const clauses: string[] = [];
+  const fields = ['property_name', 'address', 'city', 'state', 'zip'];
+
+  getSearchTerms(value).forEach(term => {
+    fields.forEach(field => {
+      clauses.push(`${field}.ilike.%${term}%`);
+    });
+  });
+
+  return clauses.join(',');
 }
 
 function buildJobSearchFilter(
