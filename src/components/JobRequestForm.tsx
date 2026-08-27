@@ -640,9 +640,22 @@ export function JobRequestForm() {
             
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                  Select Property
-                </label>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
+                    Select Property
+                  </label>
+                  {selectedProperty && canUsePinnedWorkspace && (
+                    <button
+                      type="button"
+                      onClick={handlePinSelectedProperty}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-900/30 dark:text-blue-200 dark:hover:bg-blue-900/50"
+                      title={isPinned(`property:${selectedProperty.id}`) ? 'Pinned Property Summary' : 'Pin Property Summary'}
+                      aria-label={isPinned(`property:${selectedProperty.id}`) ? 'Pinned Property Summary' : 'Pin Property Summary'}
+                    >
+                      <Pin className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
                 <div ref={propertyDropdownRef} className="relative">
                   {/* Selected property display / search input */}
                   <div
@@ -730,20 +743,6 @@ export function JobRequestForm() {
                   tabIndex={-1}
                 />
               </div>
-
-              {selectedProperty && canUsePinnedWorkspace && (
-                <div className="flex w-full justify-end">
-                  <button
-                    type="button"
-                    onClick={handlePinSelectedProperty}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-900/30 dark:text-blue-200 dark:hover:bg-blue-900/50"
-                    title={isPinned(`property:${selectedProperty.id}`) ? 'Pinned Property Summary' : 'Pin Property Summary'}
-                    aria-label={isPinned(`property:${selectedProperty.id}`) ? 'Pinned Property Summary' : 'Pin Property Summary'}
-                  >
-                    <Pin className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
 
               <div>
                 <label htmlFor="unit_number" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
