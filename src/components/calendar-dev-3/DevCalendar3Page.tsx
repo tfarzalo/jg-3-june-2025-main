@@ -151,6 +151,59 @@ interface SubscriptionTarget {
   limitation?: string;
 }
 
+interface CalendarScheduleUpdate {
+  source_table: string;
+  source_event: 'INSERT' | 'UPDATE' | 'DELETE';
+  job_id: string | null;
+  scheduled_date: string | null;
+  previous_scheduled_date: string | null;
+  changed_at: string;
+}
+
+type LoadDataOptions = {
+  silent?: boolean;
+};
+
+const JOB_CALENDAR_SELECT = `
+  id,
+  work_order_num,
+  unit_number,
+  description,
+  purchase_order,
+  scheduled_date,
+  assigned_to,
+  assigned_at,
+  assignment_status,
+  assignment_deadline,
+  assignment_decision_at,
+  declined_reason_code,
+  declined_reason_text,
+  property:properties (
+    id,
+    property_name,
+    address,
+    city,
+    state,
+    zip
+  ),
+  unit_size:unit_sizes (
+    unit_size_label
+  ),
+  job_phase:current_phase_id (
+    id,
+    job_phase_label,
+    color_dark_mode,
+    sort_order
+  ),
+  job_type:job_types (
+    job_type_label
+  ),
+  profiles:assigned_to (
+    full_name,
+    email
+  )
+`;
+
 function getEasternNow() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
 }
@@ -320,6 +373,41 @@ function compareCalendarItemsBySubcontractor(a: CalendarItem, b: CalendarItem) {
   return a.title.localeCompare(b.title);
 }
 
+function mapCalendarJobRow(job: any): CalendarJob {
+  const property = Array.isArray(job.property) ? job.property[0] : job.property;
+  const unitSize = Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size;
+  const phase = Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase;
+  const jobType = Array.isArray(job.job_type) ? job.job_type[0] : job.job_type;
+  const profile = Array.isArray(job.profiles) ? job.profiles[0] : job.profiles;
+
+  return {
+    id: job.id,
+    work_order_num: job.work_order_num,
+    property_id: property?.id || '',
+    property_name: property?.property_name || 'Property',
+    address: property?.address || null,
+    city: property?.city || null,
+    state: property?.state || null,
+    zip: property?.zip || null,
+    unit_number: job.unit_number,
+    unit_size_label: unitSize?.unit_size_label || null,
+    description: job.description,
+    purchase_order: job.purchase_order || null,
+    scheduled_date: job.scheduled_date,
+    job_phase: phase || { id: 'unknown', job_phase_label: 'Unknown', color_dark_mode: '#64748b' },
+    job_type_label: jobType?.job_type_label || null,
+    assigned_to: job.assigned_to || null,
+    assigned_to_name: profile?.full_name || null,
+    assigned_to_email: profile?.email || null,
+    assigned_at: job.assigned_at || null,
+    assignment_status: job.assignment_status || null,
+    assignment_deadline: job.assignment_deadline || null,
+    assignment_decision_at: job.assignment_decision_at || null,
+    declined_reason_code: job.declined_reason_code || null,
+    declined_reason_text: job.declined_reason_text || null,
+  };
+}
+
 export default function DevCalendar3Page() {
   const { role, isAdmin, isJGManagement } = useUserRole();
   const canManage = isAdmin || isJGManagement || role === 'is_super_admin';
@@ -380,8 +468,11 @@ export default function DevCalendar3Page() {
     return monthRange;
   }, [currentDate, monthRange, viewMode]);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (options: LoadDataOptions = {}) => {
+    if (!options.silent) {
+      setLoading(true);
+    }
+
     try {
       const rangeStart = formatInTimeZone(visibleRange.start, TZ, "yyyy-MM-dd'T'00:00:00XXX");
       const rangeEnd = formatInTimeZone(visibleRange.end, TZ, "yyyy-MM-dd'T'23:59:59XXX");
@@ -390,45 +481,7 @@ export default function DevCalendar3Page() {
         supabase.from('job_phases').select('id, job_phase_label, color_dark_mode, sort_order').neq('job_phase_label', 'Grading').order('sort_order'),
         supabase
           .from('jobs')
-          .select(`
-            id,
-            work_order_num,
-            unit_number,
-            description,
-            purchase_order,
-            scheduled_date,
-            assigned_to,
-            assigned_at,
-            assignment_status,
-            assignment_deadline,
-            assignment_decision_at,
-            declined_reason_code,
-            declined_reason_text,
-            property:properties (
-              id,
-              property_name,
-              address,
-              city,
-              state,
-              zip
-            ),
-            unit_size:unit_sizes (
-              unit_size_label
-            ),
-            job_phase:current_phase_id (
-              id,
-              job_phase_label,
-              color_dark_mode,
-              sort_order
-            ),
-            job_type:job_types (
-              job_type_label
-            ),
-            profiles:assigned_to (
-              full_name,
-              email
-            )
-          `)
+          .select(JOB_CALENDAR_SELECT)
           .gte('scheduled_date', rangeStart)
           .lte('scheduled_date', rangeEnd)
           .order('scheduled_date', { ascending: true }),
@@ -454,39 +507,7 @@ export default function DevCalendar3Page() {
         return merged;
       });
 
-      setJobs((jobResult.data || []).map((job: any) => {
-        const property = Array.isArray(job.property) ? job.property[0] : job.property;
-        const unitSize = Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size;
-        const phase = Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase;
-        const jobType = Array.isArray(job.job_type) ? job.job_type[0] : job.job_type;
-        const profile = Array.isArray(job.profiles) ? job.profiles[0] : job.profiles;
-        return {
-          id: job.id,
-          work_order_num: job.work_order_num,
-          property_id: property?.id || '',
-          property_name: property?.property_name || 'Property',
-          address: property?.address || null,
-          city: property?.city || null,
-          state: property?.state || null,
-          zip: property?.zip || null,
-          unit_number: job.unit_number,
-          unit_size_label: unitSize?.unit_size_label || null,
-          description: job.description,
-          purchase_order: job.purchase_order || null,
-          scheduled_date: job.scheduled_date,
-          job_phase: phase || { id: 'unknown', job_phase_label: 'Unknown', color_dark_mode: '#64748b' },
-          job_type_label: jobType?.job_type_label || null,
-          assigned_to: job.assigned_to || null,
-          assigned_to_name: profile?.full_name || null,
-          assigned_to_email: profile?.email || null,
-          assigned_at: job.assigned_at || null,
-          assignment_status: job.assignment_status || null,
-          assignment_deadline: job.assignment_deadline || null,
-          assignment_decision_at: job.assignment_decision_at || null,
-          declined_reason_code: job.declined_reason_code || null,
-          declined_reason_text: job.declined_reason_text || null,
-        };
-      }));
+      setJobs((jobResult.data || []).map(mapCalendarJobRow));
 
       setEvents((eventResult || []).filter((event) => !isDailyAgendaEvent(event)));
       setSubcontractors((subResult.data || []) as Subcontractor[]);
@@ -494,8 +515,54 @@ export default function DevCalendar3Page() {
       console.error('Calendar load failed:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to load calendar data');
     } finally {
-      setLoading(false);
+      if (!options.silent) {
+        setLoading(false);
+      }
     }
+  }, [visibleRange.end, visibleRange.start]);
+
+  const mergeChangedJob = useCallback(async (update: CalendarScheduleUpdate) => {
+    if (!update.job_id) return false;
+
+    if (update.source_event === 'DELETE') {
+      setJobs((prev) => prev.filter((job) => job.id !== update.job_id));
+      setSelectedItem((current) => (current?.type === 'job' && current.sourceId === update.job_id ? null : current));
+      return true;
+    }
+
+    const { data, error } = await supabase
+      .from('jobs')
+      .select(JOB_CALENDAR_SELECT)
+      .eq('id', update.job_id)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[DevCalendar3] targeted job refresh failed:', error);
+      return false;
+    }
+
+    if (!data) {
+      setJobs((prev) => prev.filter((job) => job.id !== update.job_id));
+      return true;
+    }
+
+    const mappedJob = mapCalendarJobRow(data);
+    const scheduledDate = dateOnlyFromJob(mappedJob.scheduled_date);
+    const rangeStart = dateOnlyFromDate(visibleRange.start);
+    const rangeEnd = dateOnlyFromDate(visibleRange.end);
+    const isInVisibleRange = scheduledDate >= rangeStart && scheduledDate <= rangeEnd;
+
+    setJobs((prev) => {
+      const withoutChangedJob = prev.filter((job) => job.id !== mappedJob.id);
+      return isInVisibleRange ? [...withoutChangedJob, mappedJob] : withoutChangedJob;
+    });
+
+    setSelectedItem((current) => {
+      if (current?.type !== 'job' || current.sourceId !== mappedJob.id) return current;
+      return isInVisibleRange ? normalizeJob(mappedJob) : null;
+    });
+
+    return true;
   }, [visibleRange.end, visibleRange.start]);
 
   useEffect(() => {
@@ -512,9 +579,19 @@ export default function DevCalendar3Page() {
       }
 
       refreshTimeout = setTimeout(() => {
-        console.log(`[DevCalendar3] ${reason}; refreshing calendar data...`);
-        loadData();
+        console.log(`[DevCalendar3] ${reason}; refreshing calendar data in background...`);
+        loadData({ silent: true });
       }, 500);
+    };
+
+    const handleScheduleUpdate = async (update: CalendarScheduleUpdate, reason: string) => {
+      const canTargetJob = Boolean(update.job_id) && ['jobs', 'work_orders'].includes(update.source_table);
+      if (canTargetJob && await mergeChangedJob(update)) {
+        console.log(`[DevCalendar3] ${reason}; merged changed job into calendar state.`);
+        return;
+      }
+
+      scheduleRefresh(reason);
     };
 
     const jobsChannel = supabase
@@ -565,12 +642,13 @@ export default function DevCalendar3Page() {
     const scheduleUpdatesChannel = supabase
       .channel('dev-calendar-3-schedule-updates')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'calendar_schedule_updates' }, (payload) => {
-        const changedAt = typeof payload.new?.changed_at === 'string' ? payload.new.changed_at : null;
+        const update = payload.new as CalendarScheduleUpdate;
+        const changedAt = typeof update.changed_at === 'string' ? update.changed_at : null;
         if (changedAt) {
           lastScheduleUpdateAtRef.current = changedAt;
         }
-        console.log('[DevCalendar3] schedule update stream received:', payload.new);
-        scheduleRefresh('schedule update stream received');
+        console.log('[DevCalendar3] schedule update stream received:', update);
+        void handleScheduleUpdate(update, 'schedule update stream received');
       })
       .subscribe((status) => {
         console.log('[DevCalendar3] schedule update stream status:', status);
@@ -580,6 +658,19 @@ export default function DevCalendar3Page() {
       .channel(CALENDAR_SCHEDULE_CHANNEL)
       .on('broadcast', { event: CALENDAR_SCHEDULE_CHANGED_EVENT }, (message) => {
         console.log('[DevCalendar3] schedule broadcast received:', message.payload);
+        const jobId = typeof message.payload?.jobId === 'string' ? message.payload.jobId : null;
+        if (jobId) {
+          void handleScheduleUpdate({
+            source_table: 'jobs',
+            source_event: 'UPDATE',
+            job_id: jobId,
+            scheduled_date: typeof message.payload?.scheduledDate === 'string' ? message.payload.scheduledDate : null,
+            previous_scheduled_date: typeof message.payload?.previousScheduledDate === 'string' ? message.payload.previousScheduledDate : null,
+            changed_at: typeof message.payload?.changedAt === 'string' ? message.payload.changedAt : new Date().toISOString(),
+          }, 'schedule broadcast received');
+          return;
+        }
+
         scheduleRefresh('schedule broadcast received');
       })
       .subscribe((status) => {
@@ -589,7 +680,7 @@ export default function DevCalendar3Page() {
     const pollScheduleUpdates = async () => {
       const { data, error } = await supabase
         .from('calendar_schedule_updates')
-        .select('changed_at')
+        .select('source_table, source_event, job_id, scheduled_date, previous_scheduled_date, changed_at')
         .order('changed_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -609,7 +700,7 @@ export default function DevCalendar3Page() {
 
       if (new Date(changedAt).getTime() > new Date(lastScheduleUpdateAtRef.current).getTime()) {
         lastScheduleUpdateAtRef.current = changedAt;
-        scheduleRefresh('schedule update poll detected change');
+        await handleScheduleUpdate(data as CalendarScheduleUpdate, 'schedule update poll detected change');
       }
     };
 
@@ -633,7 +724,7 @@ export default function DevCalendar3Page() {
       supabase.removeChannel(scheduleUpdatesChannel);
       supabase.removeChannel(scheduleBroadcastChannel);
     };
-  }, [loadData]);
+  }, [loadData, mergeChangedJob]);
 
   useEffect(() => {
     if (!authLoaded || phases.length === 0) return;
