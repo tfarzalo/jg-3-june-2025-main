@@ -13,9 +13,9 @@ export function normalizeHistoricalDataMode(
 }
 
 export function shouldShowHistoricalDataIndicator(
-  phaseLabel?: string | null
+  _phaseLabel?: string | null
 ): boolean {
-  return isHistoricalPhase(phaseLabel);
+  return true;
 }
 
 export function isFrozenHistoricalSnapshot(
@@ -30,7 +30,7 @@ export function getHistoricalDataIndicator(
   mode?: string | null
 ): {
   code: 'L' | 'S';
-  label: 'Live' | 'Snapshot';
+  label: 'Live' | 'Static';
   bgClass: string;
   title: string;
 } | null {
@@ -43,9 +43,9 @@ export function getHistoricalDataIndicator(
   if (normalizedMode === 'snapshot') {
     return {
       code: 'S',
-      label: 'Snapshot',
+      label: 'Static',
       bgClass: 'bg-sky-400',
-      title: 'Snapshot data: this completed work order, quality control, completed, invoicing, cancelled, or archived job is frozen as a historical record.',
+      title: 'Static/frozen data: this job is showing a saved snapshot instead of live mutable data.',
     };
   }
 
@@ -53,6 +53,6 @@ export function getHistoricalDataIndicator(
     code: 'L',
     label: 'Live',
     bgClass: 'bg-red-600',
-    title: 'Live data: this completed work order, quality control, completed, invoicing, cancelled, or archived job is still using mutable live data.',
+    title: 'Live data: this job is showing current mutable job and work order data.',
   };
 }

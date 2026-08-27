@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ExternalLink, MapPin, Minimize2, Pin, X } from 'lucide-react';
+import { ExternalLink, MapPin, Minus, Pin, X } from 'lucide-react';
 import { supabase } from '../../utils/supabase';
 import { usePinnedWorkspace, PinnedWorkspaceItem } from '../../contexts/PinnedWorkspaceContext';
 
@@ -445,8 +445,8 @@ export function PinnedWorkspaceDock() {
   return (
     <div className="fixed bottom-4 right-4 z-40 flex max-w-[calc(100vw-2rem)] flex-col items-end gap-3">
       {expandedItem && (
-        <section className="w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-2xl dark:border-[#2D3B4E] dark:bg-[#1E293B]">
-          <header className="flex items-start justify-between gap-3 border-b border-gray-200 px-4 py-3 dark:border-[#2D3B4E]">
+        <section className="w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-blue-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.28),0_0_0_1px_rgba(37,99,235,0.08)] ring-1 ring-blue-100/80 dark:border-blue-500/40 dark:bg-[#1E293B] dark:shadow-[0_18px_48px_rgba(0,0,0,0.55),0_0_0_1px_rgba(96,165,250,0.18)] dark:ring-blue-400/20">
+          <header className="flex items-start justify-between gap-3 border-b border-blue-100 bg-blue-50/60 px-4 py-3 dark:border-blue-500/20 dark:bg-blue-950/20">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <Pin className="h-4 w-4 flex-shrink-0 text-blue-600 dark:text-blue-400" />
@@ -473,7 +473,7 @@ export function PinnedWorkspaceDock() {
                 title="Minimize summary"
                 aria-label="Minimize summary"
               >
-                <Minimize2 className="h-4 w-4" />
+                <Minus className="h-4 w-4" />
               </button>
               <button
                 type="button"
@@ -498,7 +498,7 @@ export function PinnedWorkspaceDock() {
         {pinnedItems.map(item => (
           <div
             key={item.id}
-            className="flex max-w-[280px] items-center overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-[#2D3B4E] dark:bg-[#1E293B]"
+            className="flex max-w-[280px] items-center overflow-hidden rounded-lg border border-blue-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.18),0_0_0_1px_rgba(37,99,235,0.08)] ring-1 ring-blue-100/70 dark:border-blue-500/40 dark:bg-[#1E293B] dark:shadow-[0_8px_24px_rgba(0,0,0,0.45),0_0_0_1px_rgba(96,165,250,0.18)] dark:ring-blue-400/20"
           >
             <button
               type="button"

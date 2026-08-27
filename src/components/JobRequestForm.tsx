@@ -736,10 +736,11 @@ export function JobRequestForm() {
                   <button
                     type="button"
                     onClick={handlePinSelectedProperty}
-                    className="inline-flex w-full items-center justify-center rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-900/30 dark:text-blue-200 dark:hover:bg-blue-900/50 sm:w-auto"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-500/40 dark:bg-blue-900/30 dark:text-blue-200 dark:hover:bg-blue-900/50"
+                    title={isPinned(`property:${selectedProperty.id}`) ? 'Pinned Property Summary' : 'Pin Property Summary'}
+                    aria-label={isPinned(`property:${selectedProperty.id}`) ? 'Pinned Property Summary' : 'Pin Property Summary'}
                   >
-                    <Pin className="mr-2 h-4 w-4" />
-                    {isPinned(`property:${selectedProperty.id}`) ? 'Pinned Property Summary' : 'Pin Property Summary'}
+                    <Pin className="h-4 w-4" />
                   </button>
                 </div>
               )}

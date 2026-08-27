@@ -1529,10 +1529,11 @@ export function PropertyDetails() {
             <button
               type="button"
               onClick={handlePinPropertySummary}
-              className="inline-flex items-center px-4 py-2 bg-white dark:bg-[#1E293B] border border-blue-200 dark:border-blue-500/40 text-blue-700 dark:text-blue-200 text-sm font-medium rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-blue-200 bg-white text-blue-700 transition-colors hover:bg-blue-50 dark:border-blue-500/40 dark:bg-[#1E293B] dark:text-blue-200 dark:hover:bg-blue-900/30"
+              title={isPinned(`property:${property.id}`) ? 'Pinned Property Summary' : 'Pin Property Summary'}
+              aria-label={isPinned(`property:${property.id}`) ? 'Pinned Property Summary' : 'Pin Property Summary'}
             >
-              <Pin className="h-4 w-4 mr-2" />
-              {isPinned(`property:${property.id}`) ? 'Pinned Property Summary' : 'Pin Property Summary'}
+              <Pin className="h-4 w-4" />
             </button>
           )}
           {!isSubcontractor && (

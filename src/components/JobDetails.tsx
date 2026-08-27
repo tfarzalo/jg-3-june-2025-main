@@ -2236,6 +2236,25 @@ export function JobDetails() {
     let y = 20; // Starting y position
     const pageHeight = 280; // Maximum height before new page
     const margin = 20; // Left margin
+    const ensureSpace = (height = 30) => {
+      if (y > pageHeight - height) {
+        doc.addPage();
+        y = 20;
+      }
+    };
+    const miscAdditionalCostPdfItems = miscAdditionalCostItems.length > 0
+      ? miscAdditionalCostItems.map((item, index) => ({
+          description: item.description?.trim() || `Miscellaneous Additional Cost Item ${index + 1}`,
+          billAmount: Number(item.price) || 0,
+          subPayAmount: item.subPay == null ? null : Number(item.subPay) || 0,
+        }))
+      : (job.repair_amount ?? 0) > 0
+        ? [{
+            description: job.work_order?.repair_description?.trim() || 'Miscellaneous Additional Cost',
+            billAmount: Number(job.repair_amount) || 0,
+            subPayAmount: Number(job.repair_sub_pay) || 0,
+          }]
+        : [];
     
     // Add title
     doc.setFontSize(20);
@@ -2370,6 +2389,35 @@ export function JobDetails() {
         }
       }
 
+      if (miscAdditionalCostPdfItems.length > 0) {
+        ensureSpace(80);
+        y += 5;
+        doc.setFontSize(12);
+        doc.text('Miscellaneous Additional Cost:', margin, y);
+        y += 8;
+
+        miscAdditionalCostPdfItems.forEach((item, index) => {
+          ensureSpace(40);
+          const subPayText = item.subPayAmount == null ? 'Needs input' : formatCurrency(item.subPayAmount);
+          const profitText = item.subPayAmount == null
+            ? 'Needs input'
+            : formatCurrency(item.billAmount - item.subPayAmount);
+          const itemLines = [
+            `Item ${index + 1}: ${item.description}`,
+            `Bill to Customer: ${formatCurrency(item.billAmount)}`,
+            `Sub Input Cost / Pay to Sub: ${subPayText}`,
+            `Profit: ${profitText}`,
+          ];
+
+          itemLines.forEach(line => {
+            const splitLine = doc.splitTextToSize(line, 170);
+            doc.text(splitLine, margin, y);
+            y += splitLine.length * 7;
+          });
+          y += 2;
+        });
+      }
+
       // Add additional comments if available
       if (job?.work_order?.additional_comments) {
         // Check if we need a new page
@@ -2401,15 +2449,21 @@ export function JobDetails() {
 
       // Table header
       doc.setFontSize(10);
+      const qtyX = margin + 80;
+      const billX = margin + 98;
+      const subPayX = margin + 125;
+      const profitX = margin + 160;
       
       // Admin sees full breakdown
       doc.text('Description', margin, y);
-      doc.text('Qty', margin + 80, y);
-      doc.text('Bill', margin + 100, y);
-      doc.text('Pay', margin + 125, y);
-      doc.text('Profit', margin + 150, y);
+      doc.text('Qty', qtyX, y);
+      doc.text('Bill to', billX, y);
+      doc.text('Customer', billX, y + 4);
+      doc.text('Sub Input Cost /', subPayX, y);
+      doc.text('Pay to Sub', subPayX, y + 4);
+      doc.text('Profit', profitX, y);
       
-      y += 5;
+      y += 9;
       doc.setLineWidth(0.1);
       doc.line(margin, y, margin + (pageWidth - margin * 2), y);
       y += 6;
@@ -2427,10 +2481,10 @@ export function JobDetails() {
       const baseSub = job.billing_details?.sub_pay_amount ?? 0;
       const baseProfitVal = baseAmount - baseSub;
       
-      doc.text('1', margin + 80, y);
-      doc.text(`${formatCurrency(baseAmount)}`, margin + 100, y);
-      doc.text(`${formatCurrency(baseSub)}`, margin + 125, y);
-      doc.text(`${formatCurrency(baseProfitVal)}`, margin + 150, y);
+      doc.text('1', qtyX, y);
+      doc.text(`${formatCurrency(baseAmount)}`, billX, y);
+      doc.text(`${formatCurrency(baseSub)}`, subPayX, y);
+      doc.text(`${formatCurrency(baseProfitVal)}`, profitX, y);
       
       totalAmount += baseAmount;
       totalSubPay += baseSub;
@@ -2513,16 +2567,45 @@ export function JobDetails() {
 
           const qtyText = item.is_hours ? `${item.qty_or_hours} hrs` : `${item.qty_or_hours}`;
           
-          doc.text(qtyText, margin + 80, y);
-          doc.text(`${formatCurrency(displayAmount)}`, margin + 100, y);
-          doc.text(`${formatCurrency(displaySub)}`, margin + 125, y);
-          doc.text(`${formatCurrency(displayProfit)}`, margin + 150, y);
+          doc.text(qtyText, qtyX, y);
+          doc.text(`${formatCurrency(displayAmount)}`, billX, y);
+          doc.text(`${formatCurrency(displaySub)}`, subPayX, y);
+          doc.text(`${formatCurrency(displayProfit)}`, profitX, y);
           
           totalAmount += displayAmount;
           totalSubPay += displaySub;
           totalProfit += displayProfit;
           
           y += descriptionText.length > 40 ? 10 : 6;
+        });
+      }
+
+      if (miscAdditionalCostPdfItems.length > 0) {
+        ensureSpace(50);
+        doc.setFont(undefined, 'bold');
+        doc.text('Miscellaneous Additional Cost', margin, y);
+        doc.setFont(undefined, 'normal');
+        y += 6;
+
+        miscAdditionalCostPdfItems.forEach((item, index) => {
+          ensureSpace(50);
+          const displayBill = Number(item.billAmount) || 0;
+          const displaySub = item.subPayAmount == null ? 0 : Number(item.subPayAmount) || 0;
+          const displayProfit = displayBill - displaySub;
+          const descriptionText = `Item ${index + 1}: ${item.description}`;
+          const splitDesc = doc.splitTextToSize(descriptionText, 80);
+
+          doc.text(splitDesc, margin, y);
+          doc.text('1', qtyX, y);
+          doc.text(`${formatCurrency(displayBill)}`, billX, y);
+          doc.text(item.subPayAmount == null ? 'Needs input' : `${formatCurrency(displaySub)}`, subPayX, y);
+          doc.text(item.subPayAmount == null ? 'Needs input' : `${formatCurrency(displayProfit)}`, profitX, y);
+
+          totalAmount += displayBill;
+          totalSubPay += displaySub;
+          totalProfit += displayProfit;
+
+          y += splitDesc.length > 1 ? splitDesc.length * 6 : 6;
         });
       }
 
@@ -2534,9 +2617,9 @@ export function JobDetails() {
       doc.setFont(undefined, 'bold');
       doc.text('Total', margin, y);
       
-      doc.text(`${formatCurrency(totalAmount)}`, margin + 100, y);
-      doc.text(`${formatCurrency(totalSubPay)}`, margin + 125, y);
-      doc.text(`${formatCurrency(totalProfit)}`, margin + 150, y);
+      doc.text(`${formatCurrency(totalAmount)}`, billX, y);
+      doc.text(`${formatCurrency(totalSubPay)}`, subPayX, y);
+      doc.text(`${formatCurrency(totalProfit)}`, profitX, y);
       doc.setFont(undefined, 'normal');
       
       y += 15;
@@ -4401,10 +4484,11 @@ export function JobDetails() {
               <button
                 type="button"
                 onClick={handlePinJobSummary}
-                className="inline-flex items-center px-4 py-2 bg-white dark:bg-[#1E293B] border border-blue-200 dark:border-blue-500/40 text-blue-700 dark:text-blue-200 text-sm font-medium rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-blue-200 bg-white text-blue-700 transition-colors hover:bg-blue-50 dark:border-blue-500/40 dark:bg-[#1E293B] dark:text-blue-200 dark:hover:bg-blue-900/30"
+                title={isPinned(`job:${jobId}`) ? 'Pinned Job Summary' : 'Pin Job Summary'}
+                aria-label={isPinned(`job:${jobId}`) ? 'Pinned Job Summary' : 'Pin Job Summary'}
               >
-                <Pin className="h-4 w-4 mr-2" />
-                {isPinned(`job:${jobId}`) ? 'Pinned Job Summary' : 'Pin Job Summary'}
+                <Pin className="h-4 w-4" />
               </button>
             )}
             {canUseQualityControl && (isCompleted || isQualityControl) && (
