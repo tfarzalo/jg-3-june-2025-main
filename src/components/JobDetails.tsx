@@ -4179,6 +4179,9 @@ export function JobDetails() {
   const hasWorkOrder = !!job.work_order;
   const hasCancellationTripCharge = isCancelled && Boolean(job.cancellation_trip_charge_added);
   const hasBillingBreakdown = hasWorkOrder || hasCancellationTripCharge;
+  const jobCategoryLabel = hasCancellationTripCharge
+    ? 'Cancellation Trip Charge'
+    : job.work_order?.job_category || job.job_category?.name || 'N/A';
   const isJobRequest = phaseLabel === 'Job Request';
   const isPendingWorkOrder = phaseLabel === 'Pending Work Order';
   const isWorkOrder = phaseLabel === 'Work Order';
@@ -4529,14 +4532,22 @@ export function JobDetails() {
           <div className="lg:col-span-2 bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
             {/* Header Section */}
             <div className="bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 px-6 py-4">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <h2 className="text-xl font-semibold text-white flex items-center">
                   <FileText className="h-5 w-5 mr-2" />
                   Job Details
                 </h2>
-                <div className="flex items-center space-x-2 bg-white/10 backdrop-blur-sm rounded-lg px-3 py-1.5">
-                  <span className="text-xs font-medium text-white/80">Job Type:</span>
-                  <span className="text-sm font-semibold text-white">{job.job_type.label}</span>
+                <div className="flex max-w-full flex-wrap items-center gap-2">
+                  <div className="flex items-center space-x-2 bg-white/10 backdrop-blur-sm rounded-lg px-3 py-1.5">
+                    <span className="text-xs font-medium text-white/80">Job Category:</span>
+                    <span className="max-w-[16rem] truncate text-sm font-semibold text-white" title={jobCategoryLabel}>
+                      {jobCategoryLabel}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2 bg-white/10 backdrop-blur-sm rounded-lg px-3 py-1.5">
+                    <span className="text-xs font-medium text-white/80">Job Type:</span>
+                    <span className="text-sm font-semibold text-white">{job.job_type.label}</span>
+                  </div>
                 </div>
               </div>
             </div>
