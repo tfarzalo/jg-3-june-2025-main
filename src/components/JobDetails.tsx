@@ -113,6 +113,11 @@ type Property = {
   is_archived: boolean;
 };
 
+type UnitSizeOption = {
+  id: string;
+  unit_size_label: string;
+};
+
 type EmailData = {
   to: string;
   subject: string;
@@ -363,7 +368,7 @@ export function JobDetails() {
   const { phases, loading: phasesLoading } = usePhases();
   const { role, isAdmin, isJGManagement, isSubcontractor, isSuperAdmin } = useUserRole();
   const { canUsePinnedWorkspace, pinSummary, isPinned } = usePinnedWorkspace();
-  const canInternalEdit = role !== null && role !== 'subcontractor';
+  const canInternalEdit = role !== null && !isSubcontractor;
   
   // Get job phase color (same approach as all jobs pages)
   const getJobPhaseColor = () => {
@@ -430,6 +435,15 @@ export function JobDetails() {
   const [editingScheduledDate, setEditingScheduledDate] = useState(false);
   const [scheduledDateDraft, setScheduledDateDraft] = useState('');
   const [savingScheduledDate, setSavingScheduledDate] = useState(false);
+  const [editingUnitSize, setEditingUnitSize] = useState(false);
+  const [unitSizeDraft, setUnitSizeDraft] = useState('');
+  const [unitSizeOptions, setUnitSizeOptions] = useState<UnitSizeOption[]>([]);
+  const [unitSizesLoading, setUnitSizesLoading] = useState(false);
+  const [savingUnitSize, setSavingUnitSize] = useState(false);
+  const [editingPurchaseOrder, setEditingPurchaseOrder] = useState(false);
+  const [purchaseOrderDraft, setPurchaseOrderDraft] = useState('');
+  const [savingPurchaseOrder, setSavingPurchaseOrder] = useState(false);
+  const [reopenTargetPhaseLabel, setReopenTargetPhaseLabel] = useState('Work Order');
   const [editingCancellationReason, setEditingCancellationReason] = useState(false);
   const [cancellationReasonDraft, setCancellationReasonDraft] = useState('');
   const [savingCancellationReason, setSavingCancellationReason] = useState(false);
@@ -439,6 +453,63 @@ export function JobDetails() {
     setScheduledDateDraft(job.scheduled_date.split('T')[0]);
     setEditingScheduledDate(false);
   }, [job?.scheduled_date]);
+
+  useEffect(() => {
+    setUnitSizeDraft(job?.unit_size?.id || '');
+    setEditingUnitSize(false);
+  }, [job?.unit_size?.id]);
+
+  useEffect(() => {
+    setPurchaseOrderDraft(job?.purchase_order || '');
+    setEditingPurchaseOrder(false);
+  }, [job?.purchase_order]);
+
+  useEffect(() => {
+    if (!showReopenConfirm) return;
+    const defaultPhase = phases.find(phase => phase.job_phase_label === 'Work Order') || phases[0];
+    setReopenTargetPhaseLabel(defaultPhase?.job_phase_label || 'Work Order');
+  }, [showReopenConfirm, phases]);
+
+  useEffect(() => {
+    const fetchUnitSizes = async () => {
+      if (!canInternalEdit) return;
+
+      setUnitSizesLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('unit_sizes')
+          .select('id, unit_size_label')
+          .order('unit_size_label');
+
+        if (error) throw error;
+
+        const seen = new Set<string>();
+        const nextOptions: UnitSizeOption[] = [];
+        for (const size of data || []) {
+          if (size.id && !seen.has(size.id)) {
+            seen.add(size.id);
+            nextOptions.push({ id: size.id, unit_size_label: String(size.unit_size_label) });
+          }
+        }
+
+        if (job?.unit_size?.id && !seen.has(job.unit_size.id)) {
+          nextOptions.push({
+            id: job.unit_size.id,
+            unit_size_label: job.unit_size.label || 'Current Unit Size',
+          });
+        }
+
+        setUnitSizeOptions(nextOptions);
+      } catch (err) {
+        console.error('Error fetching unit sizes for inline edit:', err);
+        toast.error('Unable to load unit size options');
+      } finally {
+        setUnitSizesLoading(false);
+      }
+    };
+
+    fetchUnitSizes();
+  }, [canInternalEdit, job?.unit_size?.id, job?.unit_size?.label]);
 
   const activityFilterOptions: Array<{ value: 'all' | JobActivityCategory; label: string }> = [
     { value: 'all', label: 'All' },
@@ -1992,6 +2063,109 @@ export function JobDetails() {
       toast.error(err instanceof Error ? err.message : 'Failed to update scheduled date');
     } finally {
       setSavingScheduledDate(false);
+    }
+  };
+
+  const handleSaveUnitSize = async () => {
+    if (!jobId || !unitSizeDraft) return;
+
+    const currentUnitSizeId = job?.unit_size?.id || '';
+    if (unitSizeDraft === currentUnitSizeId) {
+      setEditingUnitSize(false);
+      return;
+    }
+
+    const selectedSize = unitSizeOptions.find(size => size.id === unitSizeDraft);
+    const nextLabel = selectedSize?.unit_size_label || 'Unknown';
+    const previousLabel = job?.unit_size?.label || 'Unassigned';
+
+    setSavingUnitSize(true);
+    try {
+      const { data, error } = await supabase.rpc('update_job_unit_size', {
+        p_job_id: jobId,
+        p_unit_size_id: unitSizeDraft,
+      });
+
+      if (error) throw error;
+      if (data && typeof data === 'object' && 'success' in data && data.success === false) {
+        throw new Error(String((data as any).error || 'Failed to update unit size'));
+      }
+
+      if (job?.work_order?.id) {
+        const { error: workOrderError } = await supabase
+          .from('work_orders')
+          .update({ unit_size: nextLabel })
+          .eq('id', job.work_order.id);
+
+        if (workOrderError) throw workOrderError;
+      }
+
+      await logJobActivity({
+        jobId,
+        eventType: 'unit_size_updated',
+        title: 'Unit size updated',
+        description: `Unit size changed from ${previousLabel} to ${nextLabel}`,
+        action: 'updated',
+        metadata: {
+          previous_unit_size_id: currentUnitSizeId || null,
+          previous_unit_size_label: previousLabel,
+          unit_size_id: unitSizeDraft,
+          unit_size_label: nextLabel,
+        },
+      });
+
+      await refetchJob(true);
+      await refetchActivityLog();
+      setEditingUnitSize(false);
+      toast.success('Unit size updated');
+    } catch (err) {
+      console.error('Error updating unit size:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to update unit size');
+    } finally {
+      setSavingUnitSize(false);
+    }
+  };
+
+  const handleSavePurchaseOrder = async () => {
+    if (!jobId) return;
+
+    const nextPurchaseOrder = purchaseOrderDraft.trim();
+    const currentPurchaseOrder = job?.purchase_order || '';
+    if (nextPurchaseOrder === currentPurchaseOrder) {
+      setEditingPurchaseOrder(false);
+      return;
+    }
+
+    setSavingPurchaseOrder(true);
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .update({ purchase_order: nextPurchaseOrder || null })
+        .eq('id', jobId);
+
+      if (error) throw error;
+
+      await logJobActivity({
+        jobId,
+        eventType: 'purchase_order_updated',
+        title: 'Purchase order updated',
+        description: `Purchase order changed from ${currentPurchaseOrder || 'None'} to ${nextPurchaseOrder || 'None'}`,
+        action: 'updated',
+        metadata: {
+          previous_purchase_order: currentPurchaseOrder || null,
+          purchase_order: nextPurchaseOrder || null,
+        },
+      });
+
+      await refetchJob(true);
+      await refetchActivityLog();
+      setEditingPurchaseOrder(false);
+      toast.success('Purchase order updated');
+    } catch (err) {
+      console.error('Error updating purchase order:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to update purchase order');
+    } finally {
+      setSavingPurchaseOrder(false);
     }
   };
 
@@ -4099,20 +4273,20 @@ export function JobDetails() {
   };
 
   const handleReopenHistoricalJob = async () => {
-    if (!jobId || !job || !(isAdmin || isJGManagement)) return;
+    if (!jobId || !job || !canInternalEdit || !reopenTargetPhaseLabel) return;
 
     setReopeningHistoricalJob(true);
     try {
       const { error } = await supabase.rpc('reopen_job_from_snapshot', {
         p_job_id: jobId,
         p_reason: 'Reopened by user',
-        p_target_phase_label: null,
+        p_target_phase_label: reopenTargetPhaseLabel,
       });
 
       if (error) throw error;
 
       toast.success(
-        'Job reopened. The page will now refresh to show the latest live data. The job has returned to the Work Order phase.',
+        `Job reopened. The page will now refresh to show the latest live data. The job has returned to the ${reopenTargetPhaseLabel} phase.`,
         { duration: 5000 }
       );
       await Promise.all([refetchJob(), refetchPhaseChanges()]);
@@ -4184,7 +4358,7 @@ export function JobDetails() {
                 {qualityControlSubmissions.length > 0 ? 'Edit QC Entry' : 'Quality Control'}
               </button>
             )}
-            {(isAdmin || isJGManagement) && isHistoricalSnapshotJob && (
+            {canInternalEdit && isHistoricalSnapshotJob && (
               <button
                 onClick={() => setShowReopenConfirm(true)}
                 disabled={reopeningHistoricalJob}
@@ -4402,7 +4576,62 @@ export function JobDetails() {
                     </div>
                     <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
                       <ClipboardList className="h-4 w-4 mr-2 text-gray-400" />
-                      <span>Size: {job.unit_size.label}</span>
+                      {editingUnitSize ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>Size:</span>
+                          <select
+                            value={unitSizeDraft}
+                            onChange={(event) => setUnitSizeDraft(event.target.value)}
+                            disabled={unitSizesLoading || savingUnitSize}
+                            className="h-9 min-w-48 rounded-md border border-gray-300 dark:border-[#2D3B4E] bg-white dark:bg-[#0F172A] px-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                          >
+                            <option value="">Select a unit size</option>
+                            {unitSizeOptions.map(size => (
+                              <option key={size.id} value={size.id}>
+                                {size.unit_size_label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={handleSaveUnitSize}
+                            disabled={savingUnitSize || unitSizesLoading || !unitSizeDraft}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                            title="Save unit size"
+                            aria-label="Save unit size"
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUnitSizeDraft(job?.unit_size?.id || '');
+                              setEditingUnitSize(false);
+                            }}
+                            disabled={savingUnitSize}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 dark:border-[#2D3B4E] dark:text-gray-400 dark:hover:bg-[#2D3B4E] dark:hover:text-gray-200"
+                            title="Cancel unit size edit"
+                            aria-label="Cancel unit size edit"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-2">
+                          Size: {job.unit_size.label}
+                          {canInternalEdit && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingUnitSize(true)}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-[#2D3B4E] dark:hover:text-blue-400"
+                              title="Edit unit size"
+                              aria-label="Edit unit size"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+                          )}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -4471,9 +4700,55 @@ export function JobDetails() {
                     Purchase Order
                   </h3>
                   <div className="pl-5">
-                    <span className="text-gray-900 dark:text-white font-medium">
-                      {job?.purchase_order || <span className="text-gray-400 italic">None</span>}
-                    </span>
+                    {editingPurchaseOrder ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          value={purchaseOrderDraft}
+                          onChange={(event) => setPurchaseOrderDraft(event.target.value)}
+                          placeholder="None"
+                          className="h-9 min-w-56 rounded-md border border-gray-300 dark:border-[#2D3B4E] bg-white dark:bg-[#0F172A] px-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSavePurchaseOrder}
+                          disabled={savingPurchaseOrder}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                          title="Save purchase order"
+                          aria-label="Save purchase order"
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPurchaseOrderDraft(job?.purchase_order || '');
+                            setEditingPurchaseOrder(false);
+                          }}
+                          disabled={savingPurchaseOrder}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 dark:border-[#2D3B4E] dark:text-gray-400 dark:hover:bg-[#2D3B4E] dark:hover:text-gray-200"
+                          title="Cancel purchase order edit"
+                          aria-label="Cancel purchase order edit"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center gap-2 text-gray-900 dark:text-white font-medium">
+                        {job?.purchase_order || <span className="text-gray-400 italic">None</span>}
+                        {canInternalEdit && (
+                          <button
+                            type="button"
+                            onClick={() => setEditingPurchaseOrder(true)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-[#2D3B4E] dark:hover:text-blue-400"
+                            title="Edit purchase order"
+                            aria-label="Edit purchase order"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                        )}
+                      </span>
+                    )}
                   </div>
                 </div>
                 
@@ -7148,9 +7423,25 @@ export function JobDetails() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Reopen Job?</h2>
-            <p className="text-sm text-gray-600 dark:text-gray-300 mb-6">
-              This job will be reopened and returned to the <strong>Work Order</strong> phase. The page will refresh to show the latest live data.
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+              This job will be reopened and returned to the phase selected below. The page will refresh to show the latest live data.
             </p>
+            <label htmlFor="reopen_phase" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+              Return job to phase
+            </label>
+            <select
+              id="reopen_phase"
+              value={reopenTargetPhaseLabel}
+              onChange={(event) => setReopenTargetPhaseLabel(event.target.value)}
+              disabled={reopeningHistoricalJob}
+              className="mb-6 w-full h-11 rounded-lg border border-gray-300 dark:border-[#2D3B4E] bg-white dark:bg-[#0F172A] px-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50"
+            >
+              {phases.map(phase => (
+                <option key={phase.id} value={phase.job_phase_label}>
+                  {phase.job_phase_label}
+                </option>
+              ))}
+            </select>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowReopenConfirm(false)}
@@ -7160,7 +7451,7 @@ export function JobDetails() {
               </button>
               <button
                 onClick={() => { setShowReopenConfirm(false); handleReopenHistoricalJob(); }}
-                disabled={reopeningHistoricalJob}
+                disabled={reopeningHistoricalJob || !reopenTargetPhaseLabel}
                 className="px-4 py-2 text-sm font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {reopeningHistoricalJob ? 'Reopening...' : 'Confirm Reopen'}
