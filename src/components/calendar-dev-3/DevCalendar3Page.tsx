@@ -59,6 +59,7 @@ const VISIBILITY_KEY = 'jg-dev-calendar-3-visibility';
 const VIEW_MODE_KEY = 'jg-dev-calendar-3-view-mode';
 const VIEW_MODE_PREF_KEY = 'jg-calendar-view-mode-preference';
 const LOCAL_ORDER_KEY = 'jg-dev-calendar-3-local-order';
+const PANEL_STATE_KEY = 'jg-dev-calendar-3-panel-state';
 const ASSIGNMENT_DECISION_URL = 'https://portal.jgpaintingprosinc.com/assignment/decision';
 const SUBCONTRACTOR_DASHBOARD_URL = 'https://portal.jgpaintingprosinc.com/dashboard/subcontractor';
 const UNASSIGNED_SUBCONTRACTOR_LABEL = 'Unassigned';
@@ -131,6 +132,12 @@ interface VisibilityState {
 
 interface ViewModePreference {
   viewMode: CalendarViewMode;
+  updatedAt: number;
+}
+
+interface PanelStatePreference {
+  calendarListCollapsed: boolean;
+  rightPanelCollapsed: boolean;
   updatedAt: number;
 }
 
@@ -305,6 +312,40 @@ function writeViewModePreference(viewMode: CalendarViewMode, userId?: string | n
   }
 }
 
+function panelStatePreferenceKey(userId?: string | null) {
+  return userId ? `${PANEL_STATE_KEY}-${userId}` : PANEL_STATE_KEY;
+}
+
+function readPanelStatePreference(userId?: string | null): PanelStatePreference | null {
+  const saved = readJson<Partial<PanelStatePreference> | null>(panelStatePreferenceKey(userId), null);
+  if (!saved || typeof saved !== 'object') return null;
+
+  return {
+    calendarListCollapsed: Boolean(saved.calendarListCollapsed),
+    rightPanelCollapsed: Boolean(saved.rightPanelCollapsed),
+    updatedAt: Number(saved.updatedAt) || 0,
+  };
+}
+
+function latestPanelStatePreference(userId?: string | null) {
+  const generic = readPanelStatePreference(null);
+  const user = userId ? readPanelStatePreference(userId) : null;
+  if (generic && user) return generic.updatedAt >= user.updatedAt ? generic : user;
+  return user || generic;
+}
+
+function writePanelStatePreference(
+  panelState: Pick<PanelStatePreference, 'calendarListCollapsed' | 'rightPanelCollapsed'>,
+  userId?: string | null
+) {
+  const preference: PanelStatePreference = { ...panelState, updatedAt: Date.now() };
+  writeJson(PANEL_STATE_KEY, preference);
+
+  if (userId) {
+    writeJson(panelStatePreferenceKey(userId), preference);
+  }
+}
+
 function defaultVisibility(phases: JobPhase[]): VisibilityState {
   return {
     allJobs: true,
@@ -423,12 +464,13 @@ export default function DevCalendar3Page() {
   const [authLoaded, setAuthLoaded] = useState(false);
   const [preferencesHydrated, setPreferencesHydrated] = useState(false);
   const [viewPreferenceHydrated, setViewPreferenceHydrated] = useState(false);
+  const [panelPreferenceHydrated, setPanelPreferenceHydrated] = useState(false);
   const [localOrder, setLocalOrder] = useState<Record<string, string[]>>(() => readJson(LOCAL_ORDER_KEY, {}));
   const [sortBySubcontractor, setSortBySubcontractor] = useState(false);
   const [selectedItem, setSelectedItem] = useState<CalendarItem | null>(null);
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
-  const [calendarListCollapsed, setCalendarListCollapsed] = useState(false);
-  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+  const [calendarListCollapsed, setCalendarListCollapsed] = useState(() => latestPanelStatePreference()?.calendarListCollapsed || false);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(() => latestPanelStatePreference()?.rightPanelCollapsed || false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
@@ -763,6 +805,19 @@ export default function DevCalendar3Page() {
   }, [authLoaded, currentUserId]);
 
   useEffect(() => {
+    if (!authLoaded) return;
+
+    const savedPanelState = latestPanelStatePreference(currentUserId);
+    if (savedPanelState) {
+      setCalendarListCollapsed(savedPanelState.calendarListCollapsed);
+      setRightPanelCollapsed(savedPanelState.rightPanelCollapsed);
+      writePanelStatePreference(savedPanelState, currentUserId);
+    }
+
+    setPanelPreferenceHydrated(true);
+  }, [authLoaded, currentUserId]);
+
+  useEffect(() => {
     if (!preferencesHydrated) return;
     writeJson(visibilityStorageKey, visibility);
   }, [preferencesHydrated, visibility, visibilityStorageKey]);
@@ -771,6 +826,11 @@ export default function DevCalendar3Page() {
     if (!viewPreferenceHydrated) return;
     writeViewModePreference(viewMode, currentUserId);
   }, [currentUserId, viewMode, viewPreferenceHydrated]);
+
+  useEffect(() => {
+    if (!panelPreferenceHydrated) return;
+    writePanelStatePreference({ calendarListCollapsed, rightPanelCollapsed }, currentUserId);
+  }, [calendarListCollapsed, currentUserId, panelPreferenceHydrated, rightPanelCollapsed]);
 
   useEffect(() => {
     writeJson(LOCAL_ORDER_KEY, localOrder);
