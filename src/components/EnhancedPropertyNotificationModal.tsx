@@ -301,6 +301,13 @@ export function EnhancedPropertyNotificationModal({
   );
 
   const safeSections = useMemo(() => selectedTemplate?.included_sections ?? [], [selectedTemplate]);
+  const isSelectedApprovalTemplate = useMemo(() => {
+    if (!selectedTemplate) return false;
+    const templateType = selectedTemplate.template_type?.toLowerCase() ?? '';
+    const triggerPhase = selectedTemplate.trigger_phase?.toLowerCase() ?? '';
+    return templateType === 'approval' || triggerPhase.includes('extra_charges');
+  }, [selectedTemplate]);
+  const isApprovalEmail = notificationType === 'extra_charges' || isSelectedApprovalTemplate;
   const hasSection = useCallback(
     (...keys: string[]) => keys.some((key) => safeSections.includes(key)),
     [safeSections]
@@ -1407,7 +1414,7 @@ export function EnhancedPropertyNotificationModal({
 
     const sectionHtml = buildSectionHtml(cidMap);
     const previewDisclaimerHtml =
-      notificationType === 'extra_charges' && selectedImages.length > 0
+      isApprovalEmail && selectedImages.length > 0
         ? `<p style="margin-top:16px;font-size:12px;color:#6b7280;">${escapeHtml(IMAGE_PREVIEW_DISCLAIMER)}</p>`
         : '';
 
@@ -1423,7 +1430,7 @@ export function EnhancedPropertyNotificationModal({
   };
 
   const handlePreview = async () => {
-    if (notificationType !== 'extra_charges') {
+    if (!isApprovalEmail) {
       toast.info('Preview is only available for approval emails.');
       return;
     }
@@ -1455,8 +1462,10 @@ export function EnhancedPropertyNotificationModal({
     try {
       setSending(true);
       let approvalLink: string | undefined;
+      const effectiveNotificationType = isApprovalEmail ? 'extra_charges' : notificationType;
+      const effectiveEmailPurpose = NOTIFICATION_TYPE_LABELS[effectiveNotificationType];
 
-      if (notificationType === 'extra_charges') {
+      if (isApprovalEmail) {
         const tokenRecord = await createApprovalToken({ isPreview: false });
         approvalLink = `${window.location.origin}/approval/${tokenRecord.token}`;
       }
@@ -1541,13 +1550,14 @@ export function EnhancedPropertyNotificationModal({
 
       await logJobActivity({
         jobId: job.id,
-        eventType: `${notificationType}_email_sent`,
-        title: `${NOTIFICATION_TYPE_LABELS[notificationType]} sent`,
-        description: `${NOTIFICATION_TYPE_LABELS[notificationType]} sent to ${recipientEmail}`,
+        eventType: `${effectiveNotificationType}_email_sent`,
+        title: `${effectiveEmailPurpose} sent`,
+        description: `${effectiveEmailPurpose} sent to ${recipientEmail}`,
         action: 'other',
         metadata: {
-          notification_type: notificationType,
-          email_purpose: NOTIFICATION_TYPE_LABELS[notificationType],
+          notification_type: effectiveNotificationType,
+          original_notification_type: notificationType,
+          email_purpose: effectiveEmailPurpose,
           recipient_email: recipientEmail,
           cc_emails: ccEmails.split(',').map((email) => email.trim()).filter(Boolean),
           bcc_emails: allBcc.filter(Boolean),
@@ -1567,7 +1577,7 @@ export function EnhancedPropertyNotificationModal({
         const currentUserId = sessionData?.session?.user?.id;
 
         if (currentUserId) {
-          if (notificationType === 'extra_charges') {
+          if (isApprovalEmail) {
             // For extra charges, just log activity (approval is still needed)
             const { data: phaseData } = await supabase
               .from('job_phases')
@@ -1639,7 +1649,7 @@ export function EnhancedPropertyNotificationModal({
         <div>
           <h4 className="text-sm font-medium text-gray-900 dark:text-white">Images to include</h4>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            {notificationType === 'extra_charges'
+            {isApprovalEmail
               ? 'Selected images will be shown on the approval page.'
               : 'Selected images will be embedded directly in the email.'}
           </p>
@@ -1927,8 +1937,8 @@ export function EnhancedPropertyNotificationModal({
           )}
         </div>
 
-        {notificationType === 'extra_charges' && renderImageSelection()}
-        {notificationType !== 'extra_charges' && safeSections.some(s => ['before_images', 'after_images', 'sprinkler_images', 'other_images'].includes(s)) && renderImageSelection()}
+        {isApprovalEmail && renderImageSelection()}
+        {!isApprovalEmail && safeSections.some(s => ['before_images', 'after_images', 'sprinkler_images', 'other_images'].includes(s)) && renderImageSelection()}
       </div>
     );
   };
@@ -1967,7 +1977,7 @@ export function EnhancedPropertyNotificationModal({
         </div>
       )}
 
-      {notificationType === 'extra_charges' && (
+      {isApprovalEmail && (
         <div className="flex items-start space-x-3 rounded-md border border-blue-200 bg-blue-50 p-4 text-blue-800 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-200">
           <Mail className="h-5 w-5 mt-0.5 flex-shrink-0" />
           <div className="flex-1">
@@ -2020,12 +2030,12 @@ export function EnhancedPropertyNotificationModal({
         {renderImagePreview('after', 'after_images')}
         {renderImagePreview('sprinkler', 'sprinkler_images')}
         {renderImagePreview('other', 'other_images')}
-        {notificationType === 'extra_charges' && selectedImages.length > 0 && (
+        {isApprovalEmail && selectedImages.length > 0 && (
           <p className="text-xs text-gray-500 dark:text-gray-300">
             {IMAGE_PREVIEW_DISCLAIMER}
           </p>
         )}
-        {notificationType !== 'extra_charges' && selectedImages.length > 0 && (
+        {!isApprovalEmail && selectedImages.length > 0 && (
           <p className="text-xs text-green-700 dark:text-green-300 font-medium">
             ✓ {selectedImages.length} image{selectedImages.length !== 1 ? 's' : ''} will be embedded directly in this email.
           </p>
@@ -2093,7 +2103,7 @@ export function EnhancedPropertyNotificationModal({
             <ChevronLeft className="mr-2 h-4 w-4" /> Back
           </button>
           <div className="flex items-center space-x-3">
-            {isFinalStep && notificationType === 'extra_charges' && (
+            {isFinalStep && isApprovalEmail && (
               <button
                 type="button"
                 onClick={handlePreview}
