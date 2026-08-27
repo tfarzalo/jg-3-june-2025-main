@@ -61,6 +61,13 @@ interface Job {
   purchase_order?: string | null;
 }
 
+type JobTypeTotals = {
+  paint: number;
+  callback: number;
+  repair: number;
+  total: number;
+};
+
 interface JobPhase {
   id: string;
   job_phase_label: string;
@@ -92,6 +99,52 @@ export function Calendar() {
   const { role } = useUserRole?.() || { role: "user" }; // adjust to your context
   const canCreateEvents = ["admin","jg_management","is_super_admin"].includes(role);
 
+  const getDateKey = (dateString?: string | null) => {
+    if (!dateString) return '';
+    try {
+      return formatInTimeZone(parseISO(dateString), 'America/New_York', 'yyyy-MM-dd');
+    } catch {
+      return dateString.split('T')[0] || '';
+    }
+  };
+
+  const getJobTypeLabel = (job: Pick<Job, 'job_type'> | any) => {
+    const jobTypeObj = Array.isArray(job.job_type) && job.job_type.length > 0
+      ? job.job_type[0]
+      : job.job_type;
+
+    return String(jobTypeObj?.job_type_label || 'Paint');
+  };
+
+  const addJobToTotals = (totals: JobTypeTotals, jobTypeLabel: string) => {
+    const jobType = jobTypeLabel.toLowerCase();
+    if (jobType.includes('callback')) {
+      totals.callback += 1;
+    } else if (jobType.includes('repair')) {
+      totals.repair += 1;
+    } else {
+      totals.paint += 1;
+    }
+    totals.total += 1;
+  };
+
+  const buildJobsByDateTotals = (sourceJobs: Job[]) => {
+    const jobsByDate = new Map<string, JobTypeTotals>();
+
+    sourceJobs.forEach(job => {
+      const date = getDateKey(job.scheduled_date);
+      if (!date) return;
+
+      if (!jobsByDate.has(date)) {
+        jobsByDate.set(date, { paint: 0, callback: 0, repair: 0, total: 0 });
+      }
+
+      addJobToTotals(jobsByDate.get(date)!, getJobTypeLabel(job));
+    });
+
+    return jobsByDate;
+  };
+
   // Event handlers
   const handleEventClick = (event: CalendarEvent) => {
     setSelectedEvent(event);
@@ -111,39 +164,17 @@ export function Calendar() {
   };
 
   // Function to calculate job type totals for a specific date (using dashboard logic)
-  const getJobTypeTotalsForDate = (date: Date) => {
+  const getJobTypeTotalsForDate = (date: Date): JobTypeTotals => {
     const dateString = format(date, 'yyyy-MM-dd');
-    
-    // Filter jobs for the specific date (allJobs already excludes Cancelled and Archived)
+
     const dateJobs = allJobs.filter(job => 
-      job.scheduled_date.startsWith(dateString)
+      getDateKey(job.scheduled_date) === dateString
     );
-    
-    // Calculate totals using the same logic as the dashboard
-    const paintCount = dateJobs.filter(job => {
-      const jobTypeObj = Array.isArray(job.job_type) && job.job_type.length > 0 
-        ? job.job_type[0] 
-        : (job.job_type as any);
-      return jobTypeObj?.job_type_label === 'Paint';
-    }).length;
-    
-    const callbackCount = dateJobs.filter(job => {
-      const jobTypeObj = Array.isArray(job.job_type) && job.job_type.length > 0 
-        ? job.job_type[0] 
-        : (job.job_type as any);
-      return jobTypeObj?.job_type_label === 'Callback';
-    }).length;
-    
-    const repairCount = dateJobs.filter(job => {
-      const jobTypeObj = Array.isArray(job.job_type) && job.job_type.length > 0 
-        ? job.job_type[0] 
-        : (job.job_type as any);
-      return jobTypeObj?.job_type_label === 'Repair';
-    }).length;
-    
-    const totalCount = paintCount + callbackCount + repairCount;
-    
-    return { paint: paintCount, callback: callbackCount, repair: repairCount, total: totalCount };
+    const totals = { paint: 0, callback: 0, repair: 0, total: 0 };
+
+    dateJobs.forEach(job => addJobToTotals(totals, getJobTypeLabel(job)));
+
+    return totals;
   };
 
   // Manual refresh function for daily agenda totals
@@ -167,13 +198,13 @@ export function Calendar() {
 
   // Update daily agenda events when jobs are loaded
   useEffect(() => {
-    if (jobs.length > 0) {
-      updateDailyAgendaEvents();
-    }
-  }, [jobs]);
+    updateDailyAgendaEvents(allJobs);
+  }, [allJobs]);
 
   // Clean up agenda events when switching months
   useEffect(() => {
+    if (loading) return;
+
     // When month changes, ensure we clean up any orphaned agenda events
     const cleanupOrphanedEvents = async () => {
       try {
@@ -203,8 +234,8 @@ export function Calendar() {
             const eventDate = event.start_at.split('T')[0];
             
             // Check if there are any jobs on this date
-            const hasJobsOnDate = jobs.some(job => 
-              job.scheduled_date.startsWith(eventDate)
+            const hasJobsOnDate = allJobs.some(job =>
+              getDateKey(job.scheduled_date) === eventDate
             );
 
             if (!hasJobsOnDate) {
@@ -225,7 +256,7 @@ export function Calendar() {
 
     // Run cleanup when month changes
     cleanupOrphanedEvents();
-  }, [currentDate]);
+  }, [currentDate, allJobs, loading]);
 
   // [CAL_EVENTS] Data fetch for calendar events
   useEffect(() => {
@@ -260,11 +291,6 @@ export function Calendar() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, async (payload) => {
         console.log('Calendar: Job change detected, refreshing...');
         await fetchJobs();
-        
-        // Update daily agenda summary events when jobs change
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
-          await updateDailyAgendaEvents();
-        }
       })
       .subscribe();
 
@@ -274,11 +300,6 @@ export function Calendar() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'work_orders' }, async (payload) => {
         console.log('Calendar: Work order change detected, refreshing...');
         await fetchJobs();
-        
-        // Update daily agenda summary events when work orders change
-        if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
-          await updateDailyAgendaEvents();
-        }
       })
       .subscribe();
 
@@ -337,7 +358,7 @@ export function Calendar() {
   };
 
   // Function to update daily agenda summary events based on current job counts
-  const updateDailyAgendaEvents = async () => {
+  const updateDailyAgendaEvents = async (agendaJobs: Job[] = allJobs) => {
     try {
       // Get the current month's date range
       const start = formatInTimeZone(
@@ -352,89 +373,7 @@ export function Calendar() {
         "yyyy-MM-dd'T'23:59:59XXX"
       );
       
-      console.log('Querying jobs for date range:', { start, end, currentDate: currentDate.toISOString() });
-
-      // Get phase IDs for default filtering (Job Request, Work Order, Pending Work Order)
-      let phaseIds: string[] = [];
-      
-      if (selectedPhases.length > 0) {
-        // Filter by selected phases
-        const { data: phaseData, error: phaseError } = await supabase
-          .from('job_phases')
-          .select('id')
-          .in('job_phase_label', selectedPhases);
-
-        if (phaseError) throw phaseError;
-        phaseIds = phaseData.map(p => p.id);
-      } else {
-        // Default phases if none selected - only Job Request, Work Order, and Pending Work Order
-        const { data: phaseData, error: phaseError } = await supabase
-          .from('job_phases')
-          .select('id')
-          .in('job_phase_label', ['Job Request', 'Work Order', 'Pending Work Order']);
-
-        if (phaseError) throw phaseError;
-        phaseIds = phaseData.map(p => p.id);
-      }
-
-      // Get all jobs for the current month with job type information
-      const { data: monthJobs, error: jobsError } = await supabase
-        .from('jobs')
-        .select(`
-          scheduled_date, 
-          current_phase_id,
-          job_types (
-            job_type_label
-          )
-        `)
-        .gte('scheduled_date', start)
-        .lte('scheduled_date', end)
-        .in('current_phase_id', phaseIds);
-
-      if (jobsError) throw jobsError;
-
-      console.log('Month jobs found:', monthJobs?.length || 0);
-      console.log('Sample jobs with types:', monthJobs?.slice(0, 3));
-
-      // Group jobs by date and count by type
-      const jobsByDate = new Map<string, { paint: number; callback: number; repair: number }>();
-      
-      monthJobs?.forEach(job => {
-        const date = job.scheduled_date.split('T')[0]; // Get just the date part
-        
-        // Get the job type label from the joined data
-        const jobTypeLabel = Array.isArray(job.job_types) && job.job_types.length > 0 
-          ? job.job_types[0].job_type_label 
-          : 'Unknown';
-        
-        console.log(`Processing job:`, job);
-        console.log(`Job scheduled_date: ${job.scheduled_date}`);
-        console.log(`Job type data:`, job.job_types);
-        console.log(`Extracted job type label: "${jobTypeLabel}"`);
-        
-        if (!jobsByDate.has(date)) {
-          jobsByDate.set(date, { paint: 0, callback: 0, repair: 0 });
-        }
-        
-        const counts = jobsByDate.get(date)!;
-        
-        // Categorize based on job type (Paint, Callback, Repair)
-        const jobType = jobTypeLabel.toLowerCase();
-        if (jobType.includes('paint')) {
-          counts.paint++;
-        } else if (jobType.includes('callback')) {
-          counts.callback++;
-        } else if (jobType.includes('repair')) {
-          counts.repair++;
-        } else {
-          // Default to paint for any other job types
-          counts.paint++;
-        }
-        
-        console.log(`Job on ${date}: job type "${jobTypeLabel}" categorized as paint:${counts.paint}, callback:${counts.callback}, repair:${counts.repair}`);
-      });
-      
-      console.log('Final jobsByDate map:', jobsByDate);
+      const jobsByDate = buildJobsByDateTotals(agendaJobs);
 
       // Update or create daily agenda summary events for each date
       for (const [date, counts] of jobsByDate) {
@@ -557,15 +496,16 @@ export function Calendar() {
         phaseIds = phaseData.map(p => p.id);
       }
 
-      // Also fetch ALL jobs for agenda totals (excluding only Cancelled and Archived)
+      // Also fetch ALL jobs for agenda totals. Cancelled jobs are filtered below
+      // based on when the cancellation happened relative to the scheduled day.
       const { data: allPhaseData, error: allPhaseError } = await supabase
         .from('job_phases')
-        .select('id')
-        .not('job_phase_label', 'eq', 'Cancelled')
+        .select('id, job_phase_label')
         .not('job_phase_label', 'eq', 'Archived');
 
       if (allPhaseError) throw allPhaseError;
       const allPhaseIds = allPhaseData.map(p => p.id);
+      const cancelledPhaseId = allPhaseData.find(p => p.job_phase_label === 'Cancelled')?.id || null;
 
       // Get start and end of month in Eastern Time
       const start = formatInTimeZone(
@@ -610,7 +550,7 @@ export function Calendar() {
         .gte('scheduled_date', start)
         .lte('scheduled_date', end);
 
-      // Fetch ALL jobs for agenda totals (excluding only Cancelled and Archived)
+      // Fetch ALL jobs for agenda totals (excluding only Archived)
       const { data: allJobs, error: allJobsError } = await supabase
         .from('jobs')
         .select(`
@@ -642,6 +582,35 @@ export function Calendar() {
 
       if (filteredError) throw filteredError;
       if (allJobsError) throw allJobsError;
+
+      const cancelledJobIds = (allJobs || [])
+        .filter(job => {
+          const jobPhase = Array.isArray(job.job_phase) && job.job_phase.length > 0
+            ? job.job_phase[0]
+            : job.job_phase as any;
+          return jobPhase?.job_phase_label === 'Cancelled';
+        })
+        .map(job => job.id);
+
+      let cancellationDateByJobId = new Map<string, string>();
+      if (cancelledPhaseId && cancelledJobIds.length > 0) {
+        const { data: cancellationChanges, error: cancellationChangesError } = await supabase
+          .from('job_phase_changes')
+          .select('job_id, changed_at')
+          .eq('to_phase_id', cancelledPhaseId)
+          .in('job_id', cancelledJobIds)
+          .lte('changed_at', end)
+          .order('changed_at', { ascending: false });
+
+        if (cancellationChangesError) throw cancellationChangesError;
+
+        cancellationDateByJobId = new Map<string, string>();
+        (cancellationChanges || []).forEach(change => {
+          if (!cancellationDateByJobId.has(change.job_id)) {
+            cancellationDateByJobId.set(change.job_id, getDateKey(change.changed_at));
+          }
+        });
+      }
       
       // Transform the filtered jobs for display
       const transformedJobs = filteredJobs?.map(job => {
@@ -693,6 +662,15 @@ export function Calendar() {
             : (job.profiles as any)?.full_name || null
         };
         return transformedJob;
+      }).filter(job => {
+        if (job.job_phase.job_phase_label !== 'Cancelled') {
+          return true;
+        }
+
+        const scheduledDate = getDateKey(job.scheduled_date);
+        const cancellationDate = cancellationDateByJobId.get(job.id);
+
+        return Boolean(cancellationDate && cancellationDate >= scheduledDate);
       }) || [];
 
       setJobs(transformedJobs);
@@ -1013,8 +991,8 @@ export function Calendar() {
                         {format(date, 'd')}
                       </span>
                       
-                      {/* Daily Agenda Summary Numbers - Only show if there are jobs scheduled */}
-                      {dayJobs.length > 0 && (() => {
+                      {/* Daily Agenda Summary Numbers */}
+                      {(() => {
                         const totals = getJobTypeTotalsForDate(date);
                         if (totals.total > 0) {
                           return (
