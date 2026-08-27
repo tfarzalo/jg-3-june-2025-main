@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   ChevronLeft, 
@@ -98,6 +98,8 @@ export function Calendar() {
   const [showEventDetails, setShowEventDetails] = useState(false);
   const { role } = useUserRole?.() || { role: "user" }; // adjust to your context
   const canCreateEvents = Boolean(role && role !== 'subcontractor');
+  const jobsRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const eventsRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const getDateKey = (dateString?: string | null) => {
     if (!dateString) return '';
@@ -144,6 +146,31 @@ export function Calendar() {
 
     return jobsByDate;
   };
+
+  const getCalendarEventRange = useCallback(() => {
+    const startISO = formatInTimeZone(
+      startOfMonth(currentDate),
+      'America/New_York',
+      "yyyy-MM-dd'T'00:00:00XXX"
+    );
+    const endISO = formatInTimeZone(
+      endOfMonth(currentDate),
+      'America/New_York',
+      "yyyy-MM-dd'T'23:59:59XXX"
+    );
+
+    return { startISO, endISO };
+  }, [currentDate]);
+
+  const refreshCalendarEvents = useCallback(async () => {
+    try {
+      const { startISO, endISO } = getCalendarEventRange();
+      const evts = await listCalendarEvents(startISO, endISO);
+      setEvents(evts);
+    } catch (e) {
+      console.error("Failed to load calendar events", e);
+    }
+  }, [getCalendarEventRange]);
 
   // Event handlers
   const handleEventClick = (event: CalendarEvent) => {
@@ -263,16 +290,7 @@ export function Calendar() {
     let active = true;
     async function loadEvents() {
       try {
-        const startISO = formatInTimeZone(
-          startOfMonth(currentDate),
-          'America/New_York',
-          "yyyy-MM-dd'T'00:00:00XXX"
-        );
-        const endISO = formatInTimeZone(
-          endOfMonth(currentDate),
-          'America/New_York',
-          "yyyy-MM-dd'T'23:59:59XXX"
-        );
+        const { startISO, endISO } = getCalendarEventRange();
         const evts = await listCalendarEvents(startISO, endISO);
         if (active) setEvents(evts);
       } catch (e) {
@@ -281,54 +299,98 @@ export function Calendar() {
     }
     loadEvents();
     return () => { active = false; }
-  }, [currentDate]);
+  }, [getCalendarEventRange]);
 
-  // Real-time subscriptions
+  // Real-time subscriptions for schedule-sensitive calendar data.
   useEffect(() => {
-    // Subscribe to job changes
-    const jobSubscription = supabase
-      .channel('calendar_jobs')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, async (payload) => {
-        console.log('Calendar: Job change detected, refreshing...');
-        await fetchJobs();
-      })
-      .subscribe();
+    const scheduleJobsRefresh = (reason: string) => {
+      if (jobsRefreshTimeoutRef.current) {
+        clearTimeout(jobsRefreshTimeoutRef.current);
+      }
 
-    // Subscribe to work order changes
-    const workOrderSubscription = supabase
-      .channel('calendar_work_orders')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'work_orders' }, async (payload) => {
-        console.log('Calendar: Work order change detected, refreshing...');
-        await fetchJobs();
+      jobsRefreshTimeoutRef.current = setTimeout(() => {
+        console.log(`Calendar: ${reason}; refreshing schedule data...`);
+        fetchJobs();
+      }, 500);
+    };
+
+    const scheduleEventsRefresh = (reason: string) => {
+      if (eventsRefreshTimeoutRef.current) {
+        clearTimeout(eventsRefreshTimeoutRef.current);
+      }
+
+      eventsRefreshTimeoutRef.current = setTimeout(() => {
+        console.log(`Calendar: ${reason}; refreshing calendar events...`);
+        refreshCalendarEvents();
+      }, 500);
+    };
+
+    const jobsChannel = supabase
+      .channel('calendar-schedule-jobs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'jobs' }, () => {
+        scheduleJobsRefresh('job created');
       })
-      .subscribe();
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'jobs' }, () => {
+        scheduleJobsRefresh('job schedule/details changed');
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'jobs' }, () => {
+        scheduleJobsRefresh('job deleted');
+      })
+      .subscribe((status) => {
+        console.log('[Calendar] jobs realtime status:', status);
+      });
+
+    const workOrdersChannel = supabase
+      .channel('calendar-schedule-work-orders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'work_orders' }, () => {
+        scheduleJobsRefresh('work order changed');
+      })
+      .subscribe((status) => {
+        console.log('[Calendar] work_orders realtime status:', status);
+      });
+
+    const phaseChangesChannel = supabase
+      .channel('calendar-schedule-phase-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_phase_changes' }, () => {
+        scheduleJobsRefresh('job phase history changed');
+      })
+      .subscribe((status) => {
+        console.log('[Calendar] job_phase_changes realtime status:', status);
+      });
+
+    const phasesChannel = supabase
+      .channel('calendar-schedule-phases')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_phases' }, () => {
+        fetchPhases();
+        scheduleJobsRefresh('job phase metadata changed');
+      })
+      .subscribe((status) => {
+        console.log('[Calendar] job_phases realtime status:', status);
+      });
+
+    const eventsChannel = supabase
+      .channel("calendar-events")
+      .on("postgres_changes", { event: "*", schema: "public", table: "calendar_events" }, () => {
+        scheduleEventsRefresh('calendar event changed');
+      })
+      .subscribe((status) => {
+        console.log('[Calendar] calendar_events realtime status:', status);
+      });
 
     return () => {
-      supabase.removeChannel(jobSubscription);
-      supabase.removeChannel(workOrderSubscription);
+      if (jobsRefreshTimeoutRef.current) {
+        clearTimeout(jobsRefreshTimeoutRef.current);
+      }
+      if (eventsRefreshTimeoutRef.current) {
+        clearTimeout(eventsRefreshTimeoutRef.current);
+      }
+      supabase.removeChannel(jobsChannel);
+      supabase.removeChannel(workOrdersChannel);
+      supabase.removeChannel(phaseChangesChannel);
+      supabase.removeChannel(phasesChannel);
+      supabase.removeChannel(eventsChannel);
     };
-  }, [currentDate, selectedPhases]);
-
-  // [CAL_EVENTS] Realtime subscription for calendar events
-  useEffect(() => {
-    const channel = supabase.channel("calendar_events_rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "calendar_events" }, (payload) => {
-        // naive refresh; optimize later
-        const startISO = formatInTimeZone(
-          startOfMonth(currentDate),
-          'America/New_York',
-          "yyyy-MM-dd'T'00:00:00XXX"
-        );
-        const endISO = formatInTimeZone(
-          endOfMonth(currentDate),
-          'America/New_York',
-          "yyyy-MM-dd'T'23:59:59XXX"
-        );
-        listCalendarEvents(startISO, endISO).then(setEvents).catch(() => {});
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [currentDate]);
+  }, [currentDate, selectedPhases, refreshCalendarEvents]);
 
   const fetchPhases = async () => {
     try {
