@@ -355,6 +355,7 @@ export default function DevCalendar3Page() {
   const [subscriptionCopied, setSubscriptionCopied] = useState(false);
   const lastDragMonthScrollAt = useRef(0);
   const lastMonthWheelAt = useRef(0);
+  const lastScheduleUpdateAtRef = useRef<string | null>(null);
   const calendarContentRef = useRef<HTMLDivElement | null>(null);
   const agendaDayRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://tbwtfimnbmvbgesidbxh.supabase.co';
@@ -503,6 +504,7 @@ export default function DevCalendar3Page() {
 
   useEffect(() => {
     let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
+    let scheduleUpdatesPoll: ReturnType<typeof setInterval> | null = null;
 
     const scheduleRefresh = (reason: string) => {
       if (refreshTimeout) {
@@ -560,6 +562,20 @@ export default function DevCalendar3Page() {
         console.log('[DevCalendar3] calendar_events realtime status:', status);
       });
 
+    const scheduleUpdatesChannel = supabase
+      .channel('dev-calendar-3-schedule-updates')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'calendar_schedule_updates' }, (payload) => {
+        const changedAt = typeof payload.new?.changed_at === 'string' ? payload.new.changed_at : null;
+        if (changedAt) {
+          lastScheduleUpdateAtRef.current = changedAt;
+        }
+        console.log('[DevCalendar3] schedule update stream received:', payload.new);
+        scheduleRefresh('schedule update stream received');
+      })
+      .subscribe((status) => {
+        console.log('[DevCalendar3] schedule update stream status:', status);
+      });
+
     const scheduleBroadcastChannel = supabase
       .channel(CALENDAR_SCHEDULE_CHANNEL)
       .on('broadcast', { event: CALENDAR_SCHEDULE_CHANGED_EVENT }, (message) => {
@@ -570,15 +586,51 @@ export default function DevCalendar3Page() {
         console.log('[DevCalendar3] schedule broadcast status:', status);
       });
 
+    const pollScheduleUpdates = async () => {
+      const { data, error } = await supabase
+        .from('calendar_schedule_updates')
+        .select('changed_at')
+        .order('changed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('[DevCalendar3] schedule update poll failed:', error);
+        return;
+      }
+
+      const changedAt = data?.changed_at || null;
+      if (!changedAt) return;
+
+      if (!lastScheduleUpdateAtRef.current) {
+        lastScheduleUpdateAtRef.current = changedAt;
+        return;
+      }
+
+      if (new Date(changedAt).getTime() > new Date(lastScheduleUpdateAtRef.current).getTime()) {
+        lastScheduleUpdateAtRef.current = changedAt;
+        scheduleRefresh('schedule update poll detected change');
+      }
+    };
+
+    void pollScheduleUpdates();
+    scheduleUpdatesPoll = setInterval(() => {
+      void pollScheduleUpdates();
+    }, 5000);
+
     return () => {
       if (refreshTimeout) {
         clearTimeout(refreshTimeout);
+      }
+      if (scheduleUpdatesPoll) {
+        clearInterval(scheduleUpdatesPoll);
       }
       supabase.removeChannel(jobsChannel);
       supabase.removeChannel(workOrdersChannel);
       supabase.removeChannel(phaseChangesChannel);
       supabase.removeChannel(phasesChannel);
       supabase.removeChannel(eventsChannel);
+      supabase.removeChannel(scheduleUpdatesChannel);
       supabase.removeChannel(scheduleBroadcastChannel);
     };
   }, [loadData]);

@@ -1957,13 +1957,6 @@ export function JobDetails() {
 
       if (error) throw error;
 
-      await broadcastCalendarScheduleChanged({
-        source: 'job-details-inline-date',
-        jobId,
-        scheduledDate: scheduledDateDraft,
-        previousScheduledDate: currentDate || null,
-      });
-
       await logJobActivity({
         jobId,
         eventType: 'painter_note_updated',
@@ -2094,6 +2087,13 @@ export function JobDetails() {
         .eq('id', jobId);
 
       if (error) throw error;
+
+      await broadcastCalendarScheduleChanged({
+        source: 'job-details-inline-date',
+        jobId,
+        scheduledDate: scheduledDateDraft,
+        previousScheduledDate: currentDate || null,
+      });
 
       await logJobActivity({
         jobId,
