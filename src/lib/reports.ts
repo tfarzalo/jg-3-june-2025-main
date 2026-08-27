@@ -33,7 +33,7 @@ type ReportRow = Record<string, string | number | boolean | null | undefined>;
 type BillingTotals = { bill: number; sub: number };
 type ExtraChargeReportItem = {
   name?: string;
-  type?: 'extra_charge' | 'misc_additional_cost' | 'cancellation_trip_charge';
+  type?: 'extra_charge' | 'cancellation_trip_charge';
   description: string;
   unit?: string;
   qty?: number;
@@ -160,10 +160,7 @@ const formatExtraChargeReportItemText = (item?: ExtraChargeReportItem) => {
   if (!item) return '';
   const name = item.name?.trim();
   const description = item.description?.trim();
-  const isMiscAdditionalCost = item.type === 'misc_additional_cost' || name?.toLowerCase() === 'miscellaneous additional cost';
-  const detail = isMiscAdditionalCost
-    ? (description || name || '')
-    : [name, description && description !== name ? description : ''].filter(Boolean).join(' - ');
+  const detail = [name, description && description !== name ? description : ''].filter(Boolean).join(' - ');
   return `${formatCurrency(item.bill)}${detail ? ` - ${detail}` : ''}`;
 };
 
@@ -629,7 +626,9 @@ export function openReportInNewWindow(report: GeneratedReport) {
     'Extra Profit',
     'Total Bill to Customer',
     'Sub Pay',
-    'Total Profit'
+    'Total Profit',
+    'Miscellaneous Additional Cost Bill',
+    'Miscellaneous Additional Cost Sub Pay'
   ]);
   const percentHeaders = new Set(['Profit Margin', 'Base Profit Margin', 'Extra Profit Margin', 'QC Score %', 'Subcontractor QC Score Average %']);
 
@@ -726,10 +725,7 @@ async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob
         const miscAdditionalCostDescription = directMiscAdditionalCostDetails.description || totals.miscAdditionalCostDescription || '';
         const miscAdditionalCostBill = totals.miscAdditionalCostBill || directMiscAdditionalCostDetails.bill || 0;
         const miscAdditionalCostSubPay = totals.miscAdditionalCostSubPay || directMiscAdditionalCostDetails.subPay || 0;
-        const extraItemDetails = replaceMiscAdditionalCostDescriptions(
-          totals.extraItems || [],
-          miscAdditionalCostDescription
-        );
+        const extraItemDetails = totals.extraItems || [];
         return {
           ...job,
           report_total_billing_amount: totals.bill,
@@ -743,9 +739,7 @@ async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob
           extra_sub_total: totals.extraSub ?? 0,
           extra_profit: Number(((totals.extra ?? 0) - (totals.extraSub ?? 0)).toFixed(2)),
           extra_profit_margin: totals.extra ? Number((((totals.extra ?? 0) - (totals.extraSub ?? 0)) / (totals.extra ?? 1) * 100).toFixed(2)) : 0,
-          extra_items: extraItemDetails
-            .map(i => `${formatExtraChargeReportItemText(i)}`)
-            .join(';; '),
+          extra_items: extraItemDetails.map(i => `${formatExtraChargeReportItemText(i)}`).join(';; '),
           extra_item_details: extraItemDetails,
           misc_additional_cost_description: miscAdditionalCostDescription,
           misc_additional_cost_bill: miscAdditionalCostBill,
@@ -929,7 +923,7 @@ export function downloadTextFile(content: string, filename: string, type: string
 
 // End of helpers
 
-function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals & {
+export function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals & {
   extra?: number;
   extraList?: string;
   base?: number;
@@ -980,6 +974,8 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
   // non-base components that we'll attribute as 'extra'
   let nonBaseBill: number = 0;
   let nonBaseSub: number = 0;
+  let extraChargeBill: number = 0;
+  let extraChargeSub: number = 0;
 
   const extraItems: ExtraChargeReportItem[] = [];
   const miscDescriptions: string[] = [];
@@ -1001,6 +997,8 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
     // Coerce to Number to satisfy TypeScript narrowing (reduce items may be unknown)
     nonBaseBill += Number(lineTotals.bill);
     nonBaseSub += Number(lineTotals.sub);
+    extraChargeBill += Number(lineTotals.bill);
+    extraChargeSub += Number(lineTotals.sub);
 
     extraLineItems.forEach((item: any) => {
       const qty = numberFrom(item.quantity);
@@ -1029,6 +1027,8 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
     const eSub = numberFrom(extra?.sub_pay_amount);
     nonBaseBill += eBill;
     nonBaseSub += eSub;
+    extraChargeBill += eBill;
+    extraChargeSub += eSub;
     if (extra && (extra?.bill_amount || extra?.sub_pay_amount)) {
       extraItems.push({ name: 'Extra Charges', description: String(extra?.description ?? '').trim(), bill: Number(eBill.toFixed(2)), sub: Number(eSub.toFixed(2)), profit: Number((eBill - eSub).toFixed(2)) });
     }
@@ -1043,9 +1043,13 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
   if (frozenBill >= additionalBill) {
     nonBaseBill += frozenBill;
     nonBaseSub += frozenSubPay;
+    extraChargeBill += frozenBill;
+    extraChargeSub += frozenSubPay;
   } else {
     nonBaseBill += additionalBill;
     nonBaseSub += additionalSubPay;
+    extraChargeBill += additionalBill;
+    extraChargeSub += additionalSubPay;
   }
 
   if (jobDetails.cancellation_trip_charge_added) {
@@ -1053,6 +1057,8 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
     const cSub = numberFrom(jobDetails.cancellation_trip_charge_sub_pay_amount);
     nonBaseBill += cBill;
     nonBaseSub += cSub;
+    extraChargeBill += cBill;
+    extraChargeSub += cSub;
     extraItems.push({ name: 'Cancellation Trip Charge', type: 'cancellation_trip_charge', description: '', bill: Number(cBill.toFixed(2)), sub: Number(cSub.toFixed(2)), profit: Number((cBill - cSub).toFixed(2)) });
   }
 
@@ -1067,16 +1073,6 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
       miscAdditionalCostBill += billAmount;
       miscAdditionalCostSubPay += subAmount;
       addUniqueDescription(miscDescriptions, description);
-      if (billAmount > 0 || subAmount > 0 || description) {
-        extraItems.push({
-          name: description ? undefined : 'Miscellaneous Additional Cost',
-          type: 'misc_additional_cost',
-          description,
-          bill: Number(billAmount.toFixed(2)),
-          sub: Number(subAmount.toFixed(2)),
-          profit: Number((billAmount - subAmount).toFixed(2)),
-        });
-      }
     });
   } else {
     const repairBill = numberFrom(jobDetails.repair_amount, workOrder?.repair_cost);
@@ -1088,14 +1084,6 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
       miscAdditionalCostBill += repairBill;
       miscAdditionalCostSubPay += repairSub;
       addUniqueDescription(miscDescriptions, description);
-      extraItems.push({
-        name: description ? undefined : 'Miscellaneous Additional Cost',
-        type: 'misc_additional_cost',
-        description,
-        bill: Number(repairBill.toFixed(2)),
-        sub: Number(repairSub.toFixed(2)),
-        profit: Number((repairBill - repairSub).toFixed(2)),
-      });
     }
   }
 
@@ -1123,8 +1111,8 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
   const baseSubTotal = Number((!isPhaseCancelled && basePortion > 0 ? baseSub : 0).toFixed(2));
   const sub = bill > 0 ? baseSubTotal + nonBaseSub : 0;
 
-  const extraPortion = Number((bill - basePortion || 0).toFixed(2));
-  const extraSubTotal = Number((nonBaseSub || 0).toFixed(2));
+  const extraPortion = Number((extraChargeBill || 0).toFixed(2));
+  const extraSubTotal = Number((extraChargeSub || 0).toFixed(2));
   if (directMiscAdditionalCostDetails.description) {
     addUniqueDescription(miscDescriptions, directMiscAdditionalCostDetails.description);
   }
@@ -1143,7 +1131,7 @@ function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals
     base: Number(basePortion.toFixed(2)),
     baseSub: baseSubTotal,
     extraSub: extraSubTotal,
-    extraItems: replaceMiscAdditionalCostDescriptions(extraItems, miscDescriptions.join('; ')),
+    extraItems,
     miscAdditionalCostDescription: miscDescriptions.join('; '),
     miscAdditionalCostBill: Number(miscAdditionalCostBill.toFixed(2)),
     miscAdditionalCostSubPay: Number(miscAdditionalCostSubPay.toFixed(2)),
@@ -1298,25 +1286,6 @@ function getMiscAdditionalCostReportDetails(workOrder: RelatedRecord) {
     bill: Number(bill.toFixed(2)),
     subPay: Number(subPay.toFixed(2)),
   };
-}
-
-function replaceMiscAdditionalCostDescriptions(
-  items: ExtraChargeReportItem[],
-  description: string
-) {
-  const normalizedDescription = normalizeMiscAdditionalCostDescription(description);
-  if (!normalizedDescription) return items;
-
-  return items.map(item => {
-    if (item.type !== 'misc_additional_cost') return item;
-    const currentDescription = normalizeMiscAdditionalCostDescription(item.description);
-    if (currentDescription) return item;
-    return {
-      ...item,
-      description: normalizedDescription,
-      name: undefined,
-    };
-  });
 }
 
 function firstWorkOrder(job: ReportJob) {

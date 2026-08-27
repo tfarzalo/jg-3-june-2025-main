@@ -26,6 +26,7 @@ import ExtraChargesSection from './ExtraChargesSection';
 import { ExtraChargeLineItem } from '../types/extraCharges';
 import { validateAllExtraCharges } from '../utils/extraChargesValidation';
 import { deleteFilesByStoragePaths } from '../lib/utils/fileUpload';
+import { fetchPropertyUnitSizesForCategory } from '../lib/propertyUnitSizes';
 
 
 interface Job {
@@ -57,6 +58,10 @@ interface Job {
   is_occupied: boolean;
   is_full_paint: boolean;
   job_category_id: string;
+  job_category?: {
+    id: string;
+    name: string;
+  } | string | null;
   has_sprinklers: boolean;
   sprinklers_painted: boolean;
   sprinkler_form_left_in_unit: boolean;
@@ -1007,9 +1012,6 @@ const NewWorkOrderPreview = () => {
       setLoading(true);
       setError(null);
       try {
-        // First fetch unit sizes since we need them for the form
-        await fetchUnitSizes();
-        // Then fetch the rest of the data
         await Promise.all([
           fetchJob(),
           fetchJobPhases(),
@@ -1118,6 +1120,7 @@ const NewWorkOrderPreview = () => {
           property:properties(*),
           unit_size:unit_sizes(*),
           job_type:job_types(*),
+          job_category:job_categories(*),
           job_phase:job_phases(*)
         `)
         .eq('id', jobId)
@@ -1141,7 +1144,7 @@ const NewWorkOrderPreview = () => {
           : data.unit_size,
         is_occupied: data.is_occupied ?? false,
         is_full_paint: data.is_full_paint ?? false,
-        job_category: data.job_category ?? 'Regular Paint',
+        job_category: data.job_category ?? null,
         has_sprinklers: data.has_sprinklers ?? false,
         sprinklers_painted: data.sprinklers_painted ?? false,
         painted_ceilings: data.painted_ceilings ?? false,
@@ -1185,14 +1188,31 @@ const NewWorkOrderPreview = () => {
   
   const fetchUnitSizes = async () => {
     try {
-      const { data, error } = await supabase
-        .from('unit_sizes')
-        .select('id, unit_size_label')
-        .order('unit_size_label');
-        
-      if (error) throw error;
-      console.log('Fetched unit sizes:', data);
-      setUnitSizes(data || []);
+      if (!job?.property?.id) {
+        setUnitSizes([]);
+        return;
+      }
+
+      const selectedCategory = jobCategories.find(category => category.id === formData.job_category_id);
+      const joinedCategory = typeof job.job_category === 'object' && job.job_category
+        ? job.job_category
+        : null;
+      const categoryName = selectedCategory?.name || joinedCategory?.name;
+
+      let sizes = await fetchPropertyUnitSizesForCategory(job.property.id, categoryName);
+
+      if (job.unit_size?.id && !sizes.some(size => size.id === job.unit_size?.id)) {
+        sizes = [
+          ...sizes,
+          {
+            id: job.unit_size.id,
+            unit_size_label: job.unit_size.unit_size_label || 'Current Unit Size',
+          },
+        ];
+      }
+
+      console.log('Fetched scoped unit sizes:', sizes);
+      setUnitSizes(sizes);
     } catch (err) {
       console.error('Error fetching unit sizes:', err);
     }
@@ -2015,6 +2035,10 @@ const NewWorkOrderPreview = () => {
       fetchJobCategories();
     }
   }, [job?.property?.id]);
+
+  useEffect(() => {
+    void fetchUnitSizes();
+  }, [job?.property?.id, job?.unit_size?.id, job?.unit_size?.unit_size_label, job?.job_category, formData.job_category_id, jobCategories]);
 
   const fetchJobCategories = async () => {
     try {

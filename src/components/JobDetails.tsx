@@ -2546,8 +2546,8 @@ export function JobDetails() {
         const PHOTO_SECTIONS: { key: string; label: string }[] = [
           { key: 'before_images',    label: 'Before Images'    },
           { key: 'after_images',     label: 'After Images'     },
-          { key: 'sprinkler_with_cover_images', label: 'Sprinkler Images with Cover' },
           { key: 'sprinkler_without_cover_images', label: 'Sprinkler Images without Cover' },
+          { key: 'sprinkler_with_cover_images', label: 'Sprinkler Images with Cover' },
           { key: 'sprinkler_form_images', label: 'Signed Sprinkler Head Form Photo' },
         ];
 
@@ -5945,18 +5945,18 @@ export function JobDetails() {
                         </p>
                       </div>
                     )}
-                    {job?.work_order?.has_sprinklers && (
-                      <div className={`p-4 rounded-lg border ${job?.work_order?.sprinkler_form_left_in_unit ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
-                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Sprinkler head form left in unit and signed?</span>
-                        <p className={`text-base font-bold mt-2 ${job?.work_order?.sprinkler_form_left_in_unit ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
-                          {job?.work_order?.sprinkler_form_left_in_unit ? 'Yes' : 'No'}
-                        </p>
-                      </div>
-                    )}
                   </div>
                   {/* Sprinkler Images */}
                   {hasWorkOrder && job.work_order?.has_sprinklers && job.work_order?.id && (
                     <div className="mt-6 space-y-4">
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">Sprinkler Images without Cover</h4>
+                        <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                          {jobIdForFiles && (
+                            <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="sprinkler_without_cover" />
+                          )}
+                        </div>
+                      </div>
                       <div>
                         <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">Sprinkler Images with Cover</h4>
                         <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -5966,23 +5966,23 @@ export function JobDetails() {
                         </div>
                       </div>
                       <div>
-                        <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">Sprinkler Images without Cover</h4>
-                        <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                          {jobIdForFiles && (
-                            <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="sprinkler_without_cover" />
-                          )}
+                        <div className={`mb-3 p-4 rounded-lg border ${job?.work_order?.sprinkler_form_left_in_unit ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} transition-all`}>
+                          <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Sprinkler head form left in unit and signed?</span>
+                          <p className={`text-base font-bold mt-2 ${job?.work_order?.sprinkler_form_left_in_unit ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
+                            {job?.work_order?.sprinkler_form_left_in_unit ? 'Yes' : 'No'}
+                          </p>
                         </div>
-                      </div>
-                      {job.work_order?.sprinkler_form_left_in_unit && (
-                        <div>
-                          <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">Signed Sprinkler Head Form Photo</h4>
+                        {job.work_order?.sprinkler_form_left_in_unit && (
+                          <>
+                            <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">Signed Sprinkler Head Form Photo</h4>
                           <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
                             {jobIdForFiles && (
                               <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="sprinkler_form" />
                             )}
                           </div>
-                        </div>
-                      )}
+                          </>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
