@@ -171,7 +171,6 @@ export function SubcontractorDashboardPreview() {
       addWorkOrder: "Add Work Order",
       addWO: "Add WO",
       loadingProperty: "Loading property details...",
-      primaryContact: "Primary Contact",
       positionJob: "Position / Job",
       paintLocation: "Paint Location",
       notProvided: "Not provided",
@@ -220,7 +219,6 @@ export function SubcontractorDashboardPreview() {
       addWorkOrder: "Crear Orden de Trabajo",
       addWO: "Crear OT",
       loadingProperty: "Cargando detalles de la propiedad...",
-      primaryContact: "Contacto Principal",
       positionJob: "Posición / Trabajo",
       paintLocation: "Ubicación de Pintura",
       notProvided: "No proporcionado",
@@ -890,7 +888,7 @@ export function SubcontractorDashboardPreview() {
         primary_contact_name: (propertyData as any).primary_contact_name || null,
         primary_contact_role: (propertyData as any).primary_contact_role || null,
         subcontractor_contact_name: subcontractorContact?.name || null,
-        subcontractor_contact_role: subcontractorContact ? 'Primary Contact' : null,
+        subcontractor_contact_role: subcontractorContact?.position || subcontractorContact?.label || null,
         community_manager_name: (propertyData as any).community_manager_name || '',
         community_manager_title: (propertyData as any).community_manager_title || null
       };
@@ -1275,9 +1273,7 @@ export function SubcontractorDashboardPreview() {
                                       <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
                                         <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
                                           <User className="h-5 w-5 mr-2 text-green-600 dark:text-green-400" />
-                                          {(cachedPropertyDetails?.subcontractor_contact_name || cachedPropertyDetails?.primary_contact_name)
-                                            ? text.primaryContact
-                                            : cachedPropertyDetails?.community_manager_title || cachedPropertyDetails?.maintenance_supervisor_title || text.positionJob}
+                                          {cachedPropertyDetails?.subcontractor_contact_role || cachedPropertyDetails?.primary_contact_role || cachedPropertyDetails?.community_manager_title || cachedPropertyDetails?.maintenance_supervisor_title || text.positionJob}
                                         </h4>
                                         <p className="text-gray-800 dark:text-gray-200 text-sm">
                                           {getFirstName(
