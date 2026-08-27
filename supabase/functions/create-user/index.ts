@@ -51,7 +51,7 @@ serve(async (req) => {
     }
 
     // Validate role
-    const validRoles = ["admin", "user", "editor", "is_super_admin", "jg_management", "subcontractor"];
+    const validRoles = ["admin", "user", "editor", "is_super_admin", "jg_management", "assistant_manager", "subcontractor"];
     if (!validRoles.includes(role)) {
       throw new Error("Invalid role");
     }
@@ -96,11 +96,6 @@ serve(async (req) => {
           status: 403,
         }
       );
-    }
-
-    // Additional check: only admins can create other admin users
-    if (role === "admin" && currentUserProfile.role !== "admin") {
-      throw new Error("Only admins can create admin users");
     }
 
     // Create the user

@@ -13,13 +13,13 @@ interface TodaysAgendaModalProps {
 }
 
 export const TodaysAgendaModal: React.FC<TodaysAgendaModalProps> = ({ open, onClose, jobs }) => {
-  const { role } = useUserRole();
+  const { isAdmin } = useUserRole();
 
   // Directly use jobs without sorting
   const sortedTodaysJobs = jobs;
 
-  // Only show for admin and jg_management users
-  if (!open || (role !== 'admin' && role !== 'jg_management')) {
+  // Only show for internal users; subcontractors do not have operational admin access.
+  if (!open || !isAdmin) {
     return null;
   }
 

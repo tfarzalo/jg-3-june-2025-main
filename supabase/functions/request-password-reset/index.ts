@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
 };
 
-const ALLOWED_ROLES = ["admin", "jg_management", "subcontractor", "is_super_admin"];
+const ALLOWED_ROLES = ["admin", "jg_management", "assistant_manager", "subcontractor", "is_super_admin"];
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
