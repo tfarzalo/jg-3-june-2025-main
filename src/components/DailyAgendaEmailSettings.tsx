@@ -44,11 +44,12 @@ export function DailyAgendaEmailSettings() {
     try {
       setLoading(true);
       
-      // Get all admin, JG management, and super admin users
+      // Get all internal users
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
         .select('id, email, full_name, role')
-        .in('role', ['admin', 'jg_management', 'is_super_admin']);
+        .not('role', 'is', null)
+        .neq('role', 'subcontractor');
       
       if (profilesError) throw profilesError;
 

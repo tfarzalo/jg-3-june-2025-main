@@ -97,7 +97,7 @@ export function Calendar() {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [showEventDetails, setShowEventDetails] = useState(false);
   const { role } = useUserRole?.() || { role: "user" }; // adjust to your context
-  const canCreateEvents = ["admin","jg_management","is_super_admin"].includes(role);
+  const canCreateEvents = Boolean(role && role !== 'subcontractor');
 
   const getDateKey = (dateString?: string | null) => {
     if (!dateString) return '';

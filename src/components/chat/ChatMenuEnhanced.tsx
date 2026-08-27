@@ -221,7 +221,7 @@ export function ChatMenuEnhanced() {
 
         // Apply role restrictions for subcontractors
         if (currentUserRole === 'subcontractor') {
-          query = query.in('role', ['admin', 'jg_management']);
+          query = query.not('role', 'is', null).neq('role', 'subcontractor');
         }
 
         const { data, error } = await query;

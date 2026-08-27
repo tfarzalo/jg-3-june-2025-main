@@ -40,12 +40,7 @@ export function withSubcontractorAccessCheck<T>(
           navigate('/dashboard/subcontractor');
           return;
         }
-        if (
-          profile.role === 'admin' ||
-          profile.role === 'is_super_admin' ||
-          profile.role === 'jg_management' ||
-          job.assigned_to === userId
-        ) {
+        if (profile.role !== 'subcontractor' || job.assigned_to === userId) {
           // Allowed
           return;
         }

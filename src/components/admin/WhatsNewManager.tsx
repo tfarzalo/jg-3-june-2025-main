@@ -142,7 +142,8 @@ export function WhatsNewManager() {
       const { error } = await supabase
         .from('profiles')
         .update({ last_seen_whats_new_at: null })
-        .in('role', ['admin', 'jg_management', 'is_super_admin']);
+        .not('role', 'is', null)
+        .neq('role', 'subcontractor');
 
       if (error) throw error;
       toast.success('Visibility reset — all eligible users will see the modal on next load');

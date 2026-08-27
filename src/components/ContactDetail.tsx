@@ -303,7 +303,8 @@ export function ContactDetail() {
       const { data: usersData, error: usersError } = await supabase
         .from('profiles')
         .select('id, full_name, email, role')
-        .in('role', ['admin', 'jg_management'])
+        .not('role', 'is', null)
+        .neq('role', 'subcontractor')
         .order('full_name');
 
       if (usersError) {

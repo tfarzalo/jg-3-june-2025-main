@@ -125,7 +125,7 @@ export async function uploadPropertyUnitMap(
         .eq('id', user.id)
         .single();
 
-      if (profile && (profile.role === 'admin' || profile.role === 'jg_management')) {
+      if (profile && profile.role !== 'subcontractor') {
         isUnlimited = true;
       }
     }
@@ -409,7 +409,7 @@ export async function uploadPropertyUnitMapMulti(
         .select('role')
         .eq('id', user.id)
         .single();
-      if (profile && (profile.role === 'admin' || profile.role === 'jg_management')) {
+      if (profile && profile.role !== 'subcontractor') {
         isUnlimited = true;
       }
     }

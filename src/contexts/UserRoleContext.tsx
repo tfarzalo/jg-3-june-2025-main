@@ -26,11 +26,13 @@ export function UserRoleProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Calculate boolean flags based on role
-  // Super admin inherits all admin capabilities, plus the maintenance bypass
+  // Calculate boolean flags based on role.
+  // Operational admin capabilities are available to every authenticated
+  // non-subcontractor role. Super admin remains a narrower flag for
+  // Maintenance Mode and What's New settings.
   const isSubcontractor = role === 'subcontractor';
   const isSuperAdmin = role === 'is_super_admin';
-  const isAdmin = role === 'admin' || role === 'assistant_manager' || isSuperAdmin;   // super admin and assistant_manager inherit admin permissions
+  const isAdmin = role !== null && !isSubcontractor;
   const isJGManagement = role === 'jg_management';
 
   useEffect(() => {

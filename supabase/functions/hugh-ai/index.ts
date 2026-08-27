@@ -140,7 +140,7 @@ serve(async (req) => {
     // ── Build summaries ──────────────────────────────────────────────────────
     const activeProperties = (properties || []).filter(p => p.is_active !== false);
     const subcontractors = (profiles || []).filter(p => p.role === "subcontractor");
-    const adminUsers = (profiles || []).filter(p => ["admin", "is_super_admin", "jg_management"].includes(p.role));
+    const adminUsers = (profiles || []).filter(p => p.role && p.role !== "subcontractor");
 
     const phaseLabels = (phases || []).map(p => p.job_phase_label);
 

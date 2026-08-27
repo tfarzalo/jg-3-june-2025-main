@@ -316,7 +316,7 @@ async function resolveAdminNotificationRecipients(
   
   console.log(`[dispatch-sms] 🔔 Resolving admin recipients for ${eventType} | column=${adminSettingColumn}`);
   
-  // Query all admin/superadmin users with the admin setting enabled
+  // Query all internal users with the admin setting enabled
   const { data, error } = await supabase
     .from("user_sms_notification_settings")
     .select(`
@@ -335,7 +335,8 @@ async function resolveAdminNotificationRecipients(
     .eq("profiles.sms_consent_given", true)
     .eq("sms_enabled", true)
     .eq(adminSettingColumn, true)
-    .in("profiles.role", ["admin", "is_super_admin", "jg_management"]);
+    .not("profiles.role", "is", null)
+    .neq("profiles.role", "subcontractor");
   
   if (error) {
     console.error("[dispatch-sms] ❌ Admin recipient query failed:", error.message);

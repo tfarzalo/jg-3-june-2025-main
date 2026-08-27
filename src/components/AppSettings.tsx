@@ -145,7 +145,8 @@ export function AppSettings() {
       const { data: admins, error: adminError } = await supabase
         .from('profiles')
         .select('id, full_name, email, role')
-        .in('role', ['admin', 'jg_management', 'is_super_admin'])
+        .not('role', 'is', null)
+        .neq('role', 'subcontractor')
         .order('full_name');
       if (adminError) throw adminError;
       setAdminOptions(admins || []);
@@ -458,19 +459,21 @@ export function AppSettings() {
                 <span className="truncate">Bulk Schedule</span>
               </button>
 
-              <button
-                onClick={() => setActiveTab('maintenance')}
-                className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                  activeTab === 'maintenance'
-                    ? 'bg-red-50 text-red-700 dark:bg-red-900/50 dark:text-red-200'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
-                }`}
-              >
-                <ShieldAlert className={`flex-shrink-0 -ml-1 mr-3 h-6 w-6 ${
-                  activeTab === 'maintenance' ? 'text-red-600 dark:text-red-200' : 'text-gray-400 group-hover:text-gray-500'
-                }`} />
-                <span className="truncate">Maintenance Mode</span>
-              </button>
+              {isSuperAdmin && (
+                <button
+                  onClick={() => setActiveTab('maintenance')}
+                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                    activeTab === 'maintenance'
+                      ? 'bg-red-50 text-red-700 dark:bg-red-900/50 dark:text-red-200'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
+                  }`}
+                >
+                  <ShieldAlert className={`flex-shrink-0 -ml-1 mr-3 h-6 w-6 ${
+                    activeTab === 'maintenance' ? 'text-red-600 dark:text-red-200' : 'text-gray-400 group-hover:text-gray-500'
+                  }`} />
+                  <span className="truncate">Maintenance Mode</span>
+                </button>
+              )}
 
               {isSuperAdmin && (
                 <button
@@ -653,7 +656,7 @@ export function AppSettings() {
             )}
 
             {/* Maintenance Mode Tab */}
-            {activeTab === 'maintenance' && (
+            {activeTab === 'maintenance' && isSuperAdmin && (
               <div className="space-y-6">
                 {/* Super-admin-only warning banner */}
                 <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-lg">

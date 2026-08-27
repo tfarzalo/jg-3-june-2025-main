@@ -106,10 +106,8 @@ serve(async (req) => {
       currentUserRole = (user.app_metadata as any).role;
     }
 
-    // Admin, management, assistant managers, managers, and super admins can delete users
-    const allowedRoles = ["admin", "jg_management", "assistant_manager", "manager", "is_super_admin"];
-
-    if (!currentUserRole || !allowedRoles.includes(currentUserRole)) {
+    // All authenticated non-subcontractor users can delete users.
+    if (!currentUserRole || currentUserRole === "subcontractor") {
       console.warn("Delete-user denied: requester role not allowed", { requesterId: user.id, requesterRole: currentUserRole });
       return new Response(
         JSON.stringify({ 
@@ -305,7 +303,8 @@ serve(async (req) => {
       const { data: fallbackAdmin } = await supabase
         .from("profiles")
         .select("id")
-        .in("role", ["admin", "is_super_admin"])
+        .not("role", "is", null)
+        .neq("role", "subcontractor")
         .neq("id", userId)
         .limit(1)
         .maybeSingle();
@@ -325,7 +324,8 @@ serve(async (req) => {
       const { data: fallbackAuthAdmin } = await supabase
         .from("profiles")
         .select("id")
-        .in("role", ["admin", "jg_management", "is_super_admin"])
+        .not("role", "is", null)
+        .neq("role", "subcontractor")
         .neq("id", userId)
         .limit(1)
         .maybeSingle();

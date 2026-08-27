@@ -97,7 +97,7 @@ export function SubcontractorMessagingIcon() {
     );
   };
 
-  // Load available users (admin and jg_management only)
+  // Load available internal users
   const loadAvailableUsers = async () => {
     if (!currentUserId) return;
 
@@ -107,7 +107,8 @@ export function SubcontractorMessagingIcon() {
         .from('profiles')
         .select('id, email, full_name, role, avatar_url, last_seen')
         .neq('id', currentUserId)
-        .in('role', ['admin', 'jg_management'])
+        .not('role', 'is', null)
+        .neq('role', 'subcontractor')
         .order('full_name');
 
       if (error) {
@@ -160,7 +161,7 @@ export function SubcontractorMessagingIcon() {
               continue;
             }
             
-            if (participantData && ['admin', 'jg_management'].includes(participantData.role)) {
+            if (participantData && participantData.role && participantData.role !== 'subcontractor') {
               filtered.push(conv);
             }
           }

@@ -110,7 +110,7 @@ const extractClientIp = (req: Request) => {
 };
 
 const buildDefaultSmsSettingsByRole = (role: string | null) => {
-  const adminLike = role === "admin" || role === "is_super_admin" || role === "jg_management";
+  const adminLike = Boolean(role && role !== "subcontractor");
   const subcontractor = role === "subcontractor";
 
   return {
@@ -249,8 +249,8 @@ const getAdminUser = async (supabase: ReturnType<typeof getSupabaseAdmin>, req: 
     .eq("id", user.id)
     .single();
 
-  if (profileError || !profile || !["admin", "is_super_admin"].includes(profile.role)) {
-    throw new Error("Admin access is required.");
+  if (profileError || !profile || !profile.role || profile.role === "subcontractor") {
+    throw new Error("Internal user access is required.");
   }
 
   return user;

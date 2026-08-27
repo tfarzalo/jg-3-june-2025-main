@@ -321,7 +321,7 @@ Deno.serve(async (req) => {
       .eq("id", tokenOwnerId)
       .maybeSingle();
     const ownerRole = ownerProfile?.role ?? "user";
-    const isAdminLike = ["admin", "jg_management", "is_super_admin"].includes(ownerRole);
+    const isAdminLike = Boolean(ownerRole && ownerRole !== "subcontractor");
 
     if (scope === "subcontractor" && subcontractorId && subcontractorId !== tokenOwnerId && !isAdminLike) {
       return new Response("Forbidden", { status: 403, headers: commonHeaders });

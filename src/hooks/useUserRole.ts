@@ -86,8 +86,10 @@ export function useUserRole(): UseUserRoleResult {
     user,
     ...state,
     isSuperAdmin: state.role === 'is_super_admin',
-    // Super admin and assistant manager inherit admin capabilities everywhere in the app
-    isAdmin: state.role === 'admin' || state.role === 'assistant_manager' || state.role === 'is_super_admin',
+    // Operational admin capabilities are available to every authenticated
+    // non-subcontractor role. Super admin remains a narrower flag for
+    // Maintenance Mode and What's New settings.
+    isAdmin: state.role !== null && state.role !== 'subcontractor',
     isJGManagement: state.role === 'jg_management',
     isSubcontractor: state.role === 'subcontractor'
   };

@@ -80,9 +80,8 @@ serve(async (req) => {
       throw new Error("Error fetching user profile: " + currentProfileError.message);
     }
     
-    // Only admin, jg_management, and is_super_admin can create users
-    const allowedRoles = ["admin", "jg_management", "is_super_admin"];
-    if (!allowedRoles.includes(currentUserProfile.role)) {
+    // All authenticated non-subcontractor users can create users.
+    if (!currentUserProfile.role || currentUserProfile.role === "subcontractor") {
       return new Response(
         JSON.stringify({ 
           code: "not_admin",

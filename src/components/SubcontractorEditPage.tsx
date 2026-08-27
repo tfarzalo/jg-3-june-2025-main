@@ -111,10 +111,10 @@ useEffect(() => {
           .eq('id', user.id)
           .single();
         
-        if (profile && (profile.role === 'admin' || profile.role === 'is_super_admin' || profile.role === 'jg_management')) {
+        if (profile && profile.role !== 'subcontractor') {
           setCurrentUserRole(profile.role);
         } else {
-          toast.error('Access denied. Only admins and JG management can edit subcontractors.');
+          toast.error('Access denied. Only internal users can edit subcontractors.');
           navigate('/dashboard/users');
         }
       }

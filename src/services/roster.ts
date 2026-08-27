@@ -31,7 +31,7 @@ export async function listUsersForRole(
 
     // Apply role restrictions for subcontractors
     if (role === 'subcontractor') {
-      query = query.in('role', ['admin', 'jg_management']);
+      query = query.not('role', 'is', null).neq('role', 'subcontractor');
     }
     // No extra filter for other roles - they can see everyone
 

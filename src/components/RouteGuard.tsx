@@ -102,7 +102,7 @@ export function AdminRouteGuard({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Guard for admin-only routes. JG management is intentionally excluded.
+ * Guard for internal-user routes. All non-subcontractor users have operational admin access.
  */
 export function StrictAdminRouteGuard({ children }: { children: React.ReactNode }) {
   const { isAdmin, loading } = useUserRole();

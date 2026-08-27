@@ -146,11 +146,12 @@ export function EmailTemplateManager() {
       if (templatesError) throw templatesError;
       setTemplates(templatesData || []);
 
-      // Fetch admin and management users (same query as DailyAgendaEmailSettings)
+      // Fetch internal users (same query as DailyAgendaEmailSettings)
       const { data: usersData, error: usersError } = await supabase
         .from('profiles')
         .select('id, email, full_name, role')
-        .in('role', ['admin', 'manager'])
+        .not('role', 'is', null)
+        .neq('role', 'subcontractor')
         .order('full_name', { ascending: true });
 
       if (usersError) {

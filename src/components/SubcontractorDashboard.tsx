@@ -193,7 +193,7 @@ export function SubcontractorDashboard() {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const previewUserId = searchParams.get('userId');
-  const isPreview = previewUserId && (role === 'admin' || role === 'jg_management');
+  const isPreview = Boolean(previewUserId && role && role !== 'subcontractor');
   const [isLoading, setIsLoading] = useState(true);
   const [language, setLanguage] = useState<'en' | 'es'>('en');
   const [languageInitialized, setLanguageInitialized] = useState(false);

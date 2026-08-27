@@ -133,7 +133,7 @@ export function Users() {
   // Get current user role for access control
   const { role: currentUserRole, isAdmin } = useUserRole();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const canDeleteUsers = ['admin', 'jg_management', 'assistant_manager', 'manager', 'is_super_admin'].includes(currentUserRole || '');
+  const canDeleteUsers = Boolean(currentUserRole && currentUserRole !== 'subcontractor');
   
   // Form state for adding/editing users
   const [formData, setFormData] = useState({

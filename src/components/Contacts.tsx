@@ -187,7 +187,8 @@ export function Contacts() {
       const { data, error } = await supabase
         .from('profiles')
         .select('id, full_name, email, role')
-        .in('role', ['admin', 'jg_management'])
+        .not('role', 'is', null)
+        .neq('role', 'subcontractor')
         .order('full_name');
 
       if (error) throw error;
