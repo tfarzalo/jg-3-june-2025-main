@@ -422,7 +422,7 @@ export function JobImportManager() {
                 </button>
               </div>
 
-              <div className="max-h-96 overflow-y-auto">
+              <div className="max-h-96 overflow-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                   <thead className="bg-gray-50 dark:bg-gray-800">
                     <tr>
@@ -505,7 +505,7 @@ export function JobImportManager() {
             </p>
           </div>
 
-          <div className="max-h-[600px] overflow-y-auto">
+          <div className="max-h-[600px] overflow-auto">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
               <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0">
                 <tr>

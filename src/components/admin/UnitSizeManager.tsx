@@ -260,24 +260,24 @@ export function UnitSizeManager() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div className="flex items-center space-x-2">
-          <Ruler className="w-5 h-5 text-blue-600" />
-          <h2 className="text-lg font-medium text-gray-900 dark:text-white">Unit Sizes</h2>
+    <div className="min-w-0 space-y-6">
+      <div className="grid grid-cols-[1fr_auto] items-center gap-3 sm:grid-cols-[1fr_auto_1fr]">
+        <div className="flex min-w-0 items-center space-x-2">
+          <Ruler className="w-5 h-5 flex-shrink-0 text-blue-600" />
+          <h2 className="truncate text-lg font-medium text-gray-900 dark:text-white">Unit Sizes</h2>
         </div>
         <button
           onClick={() => window.history.back()}
-          className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          className="order-3 col-span-2 justify-self-center px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors sm:order-none sm:col-span-1"
         >
           Back
         </button>
         <button
           onClick={() => setIsAdding(true)}
-          className="flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+          className="flex min-w-0 items-center justify-self-end px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors sm:px-4"
         >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Unit Size
+          <Plus className="w-4 h-4 flex-shrink-0 sm:mr-2" />
+          <span className="hidden sm:inline">Add Unit Size</span>
         </button>
       </div>
 
@@ -327,20 +327,27 @@ export function UnitSizeManager() {
         </>
       )}
 
-      <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+      <div className="min-w-0 overflow-hidden bg-white dark:bg-[#1E293B] rounded-lg shadow border border-gray-200 dark:border-gray-700">
+        <div className="min-w-0 overflow-hidden">
+        <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-700">
+          <colgroup>
+            <col />
+            <col className="w-16 sm:w-28" />
+          </colgroup>
           <thead className="bg-gray-50 dark:bg-gray-800">
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Label</th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sm:px-6">Label</th>
+              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider sm:px-4">
+                <span className="sr-only sm:not-sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
             {unitSizes.map(size => (
               <tr key={size.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                <td className="px-6 py-4 whitespace-nowrap">
+                <td className="min-w-0 px-4 py-4 sm:px-6">
                   {editingId === size.id ? (
-                    <div className="flex items-center space-x-2">
+                    <div className="flex min-w-0 items-center gap-2">
                       <input
                         type="text"
                         value={editingLabel}
@@ -349,13 +356,12 @@ export function UnitSizeManager() {
                         autoFocus
                         onFocus={(e) => e.target.select()}
                         disabled={processingId === size.id}
-                        className="text-sm font-medium px-2 py-1 border border-blue-500 dark:border-blue-400 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                        style={{ width: '200px' }}
+                        className="min-w-0 w-full max-w-[16rem] text-sm font-medium px-2 py-1 border border-blue-500 dark:border-blue-400 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                       />
                       <button
                         onClick={() => handleRename(size)}
                         disabled={processingId === size.id}
-                        className="text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50"
+                        className="flex-shrink-0 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50"
                         title="Save"
                       >
                         {processingId === size.id ? (
@@ -367,25 +373,25 @@ export function UnitSizeManager() {
                       <button
                         onClick={cancelEditing}
                         disabled={processingId === size.id}
-                        className="text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 disabled:opacity-50"
+                        className="flex-shrink-0 text-gray-600 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 disabled:opacity-50"
                         title="Cancel"
                       >
                         <X className="w-4 h-4" />
                       </button>
                     </div>
                   ) : (
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
+                    <div className="min-w-0 truncate text-sm font-medium text-gray-900 dark:text-white">
                       {size.unit_size_label}
                     </div>
                   )}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <div className="flex items-center justify-end space-x-2">
+                <td className="px-3 py-4 text-right text-sm font-medium sm:px-4">
+                  <div className="flex items-center justify-end gap-2">
                     {editingId !== size.id && (
                       <button
                         onClick={() => startEditing(size)}
                         disabled={!!processingId || !!editingId}
-                        className="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 disabled:opacity-50"
+                        className="flex-shrink-0 text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 disabled:opacity-50"
                         title="Rename unit size"
                       >
                         <Pencil className="w-4 h-4" />
@@ -395,7 +401,7 @@ export function UnitSizeManager() {
                       <button
                         onClick={() => promptDelete(size)}
                         disabled={!!processingId || !!editingId}
-                        className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
+                        className="flex-shrink-0 text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
                         title="Delete unit size"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -407,13 +413,14 @@ export function UnitSizeManager() {
             ))}
             {unitSizes.length === 0 && (
               <tr>
-                <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400" colSpan={2}>
+                <td className="px-4 py-4 text-sm text-gray-500 dark:text-gray-400 sm:px-6" colSpan={2}>
                   No unit sizes found.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       <ConfirmModal

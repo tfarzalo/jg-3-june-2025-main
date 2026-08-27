@@ -31,6 +31,7 @@ import {
   DEFAULT_CANCELLATION_TRIP_CHARGE,
   findCancellationTripChargeRate,
 } from '../lib/billing/cancellationTripCharge';
+import { getSubcontractorContact, type PropertyContact } from '../lib/contacts/contactViewModel';
 import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 
 
@@ -92,6 +93,8 @@ interface PropertyDetails {
   maintenance_supervisor_title: string | null;
   primary_contact_name: string | null;
   primary_contact_role: string | null;
+  subcontractor_contact_name: string | null;
+  subcontractor_contact_role: string | null;
   billing_categories: BillingCategory[];
   paint_colors: PaintScheme[];
   property_general_notes: PropertyGeneralNote[];
@@ -937,10 +940,24 @@ export function SubcontractorDashboard() {
           unit_map_file_path,
           community_manager_name,
           community_manager_title,
+          community_manager_email,
+          community_manager_phone,
+          community_manager_secondary_email,
           maintenance_supervisor_name,
           maintenance_supervisor_title,
+          maintenance_supervisor_email,
+          maintenance_supervisor_phone,
+          maintenance_supervisor_secondary_email,
           primary_contact_name,
           primary_contact_role,
+          primary_contact_email,
+          primary_contact_phone,
+          primary_contact_secondary_email,
+          ap_name,
+          ap_email,
+          ap_phone,
+          ap_secondary_email,
+          contact_role_config,
           paint_colors
         `)
         .eq('id', propertyId)
@@ -949,6 +966,36 @@ export function SubcontractorDashboard() {
       if (propertyError) {
         console.error('Error fetching property details:', propertyError);
         throw propertyError;
+      }
+
+      let customContacts: PropertyContact[] = [];
+      try {
+        const { data: contactsData, error: contactsError } = await supabase
+          .from('property_contacts')
+          .select(`
+            id,
+            property_id,
+            position,
+            name,
+            email,
+            phone,
+            secondary_email,
+            is_subcontractor_contact,
+            is_accounts_receivable_contact,
+            is_approval_recipient,
+            is_notification_recipient,
+            is_primary_approval_recipient,
+            is_primary_notification_recipient
+          `)
+          .eq('property_id', propertyId);
+
+        if (contactsError) {
+          console.error('Error fetching property contacts:', contactsError);
+        } else {
+          customContacts = (contactsData || []) as PropertyContact[];
+        }
+      } catch (contactsErr) {
+        console.error('Error fetching property contacts:', contactsErr);
       }
 
       let propertyGeneralNotes: PropertyGeneralNote[] = [];
@@ -1116,6 +1163,8 @@ export function SubcontractorDashboard() {
         }
       }
 
+      const subcontractorContact = getSubcontractorContact(propertyData as any, customContacts);
+
       const propertyDetails: PropertyDetails = {
         ...propertyData,
         billing_categories: processedBillingData,
@@ -1123,6 +1172,8 @@ export function SubcontractorDashboard() {
         property_general_notes: propertyGeneralNotes,
         primary_contact_name: (propertyData as any).primary_contact_name || null,
         primary_contact_role: (propertyData as any).primary_contact_role || null,
+        subcontractor_contact_name: subcontractorContact?.name || null,
+        subcontractor_contact_role: subcontractorContact?.position || subcontractorContact?.label || null,
         community_manager_name: (propertyData as any).community_manager_name || '',
         community_manager_title: (propertyData as any).community_manager_title || null
       };
@@ -1658,14 +1709,15 @@ export function SubcontractorDashboard() {
                                   </div>
                                 ) : (
                                   <div className="space-y-6">
-                                    {(cachedPropertyDetails?.primary_contact_name || cachedPropertyDetails?.community_manager_name || cachedPropertyDetails?.maintenance_supervisor_name) && (
+                                    {(cachedPropertyDetails?.subcontractor_contact_name || cachedPropertyDetails?.primary_contact_name || cachedPropertyDetails?.community_manager_name || cachedPropertyDetails?.maintenance_supervisor_name) && (
                                       <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-[#0F172A]">
                                         <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
                                           <User className="h-5 w-5 mr-2 text-green-600 dark:text-green-400" />
-                                          {cachedPropertyDetails?.primary_contact_role || cachedPropertyDetails?.community_manager_title || cachedPropertyDetails?.maintenance_supervisor_title || text.positionJob}
+                                          {cachedPropertyDetails?.subcontractor_contact_role || cachedPropertyDetails?.primary_contact_role || cachedPropertyDetails?.community_manager_title || cachedPropertyDetails?.maintenance_supervisor_title || text.positionJob}
                                         </h4>
                                         <p className="text-gray-800 dark:text-gray-200 text-sm">
                                           {getFirstName(
+                                            cachedPropertyDetails?.subcontractor_contact_name ||
                                             cachedPropertyDetails?.primary_contact_name ||
                                             cachedPropertyDetails?.community_manager_name ||
                                             cachedPropertyDetails?.maintenance_supervisor_name ||

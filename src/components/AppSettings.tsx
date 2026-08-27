@@ -257,8 +257,8 @@ export function AppSettings() {
   }
 
   return (
-    <div className="p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen w-full bg-gray-100 p-4 dark:bg-[#0F172A] sm:p-6">
+      <div className="w-full">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center space-x-3">
             <Settings className="h-8 w-8 text-gray-600 dark:text-gray-400" />
@@ -273,10 +273,10 @@ export function AppSettings() {
         )}
 
         {/* Main Content Grid */}
-        <div className="grid grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[16rem_minmax(0,1fr)]">
           {/* Sidebar Navigation */}
-          <div className="col-span-12 md:col-span-3">
-            <nav className="space-y-1">
+          <div className="min-w-0">
+            <nav className="grid grid-cols-1 gap-1 sm:grid-cols-2 lg:grid-cols-3 xl:block xl:space-y-1">
               <button
                 onClick={() => setActiveTab('overview')}
                 className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
@@ -494,7 +494,7 @@ export function AppSettings() {
           </div>
 
           {/* Content Area */}
-          <div className="col-span-12 md:col-span-9">
+          <div className="min-w-0 w-full">
             {/* Overview Tab */}
             {activeTab === 'overview' && (
               <div className="bg-white dark:bg-[#1E293B] rounded-lg p-8 shadow-sm border border-gray-200 dark:border-gray-700">

@@ -464,7 +464,8 @@ export function JobCategoryManager() {
         </>
       )}
 
-      <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+      <div className="bg-white dark:bg-[#1E293B] rounded-lg shadow border border-gray-200 dark:border-gray-700">
+        <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-800">
             <tr>
@@ -565,6 +566,7 @@ export function JobCategoryManager() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
       
       <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-lg p-4 flex items-start">
