@@ -111,9 +111,9 @@ export function useDashboardJobs(): UseDashboardJobsResult {
         [phase.job_phase_label]: phase.id
       }), {} as Record<string, string>);
       const hiddenAgendaPhaseIds = [
-        phaseMapData['Cancelled'],
         phaseMapData['Archived']
       ].filter(Boolean);
+      const cancelledPhaseId = phaseMapData['Cancelled'];
       
       setPhaseMap(phaseMapData);
       phaseMapRef.current = phaseMapData;
@@ -138,7 +138,8 @@ export function useDashboardJobs(): UseDashboardJobsResult {
         workOrderJobsResult,
         pendingWorkOrderJobsResult,
         invoicingJobsResult,
-        todayJobsResult
+        todayJobsResult,
+        cancelledTodayChangesResult
       ] = await Promise.all([
         // Job Requests - sorted by creation date (newest first)
         supabase
@@ -300,6 +301,15 @@ export function useDashboardJobs(): UseDashboardJobsResult {
 
           return query;
         })()
+        ,
+        cancelledPhaseId
+          ? supabase
+              .from('job_phase_changes')
+              .select('job_id')
+              .eq('to_phase_id', cancelledPhaseId)
+              .gte('changed_at', startOfToday)
+              .lte('changed_at', endOfToday)
+          : Promise.resolve({ data: [], error: null })
       ]);
 
       // Handle errors
@@ -308,6 +318,22 @@ export function useDashboardJobs(): UseDashboardJobsResult {
       if (pendingWorkOrderJobsResult.error) throw pendingWorkOrderJobsResult.error;
       if (invoicingJobsResult.error) throw invoicingJobsResult.error;
       if (todayJobsResult.error) throw todayJobsResult.error;
+      if (cancelledTodayChangesResult.error) throw cancelledTodayChangesResult.error;
+
+      const cancelledTodayJobIds = new Set(
+        (cancelledTodayChangesResult.data || []).map((change: any) => change.job_id).filter(Boolean)
+      );
+      const todaysAgendaJobs = (todayJobsResult.data || []).filter((job: DashboardJob) => {
+        const phaseLabel = Array.isArray(job.job_phase)
+          ? job.job_phase[0]?.job_phase_label
+          : (job.job_phase as any)?.job_phase_label;
+
+        if (phaseLabel === 'Cancelled') {
+          return cancelledTodayJobIds.has(job.id);
+        }
+
+        return phaseLabel !== 'Archived';
+      });
 
       // Set phase-specific jobs
       if (isMountedRef.current) {
@@ -324,7 +350,7 @@ export function useDashboardJobs(): UseDashboardJobsResult {
         
         setWorkOrders(combinedWorkOrders);
         setInvoicingJobs(invoicingJobsResult.data || []);
-        setTodaysJobs(todayJobsResult.data || []);
+        setTodaysJobs(todaysAgendaJobs);
         setError(null);
       }
     } catch (err) {
@@ -465,9 +491,11 @@ export function useDashboardJobs(): UseDashboardJobsResult {
               
               // Keep today's agenda tied to the scheduled date. Completion/phase progress should not reduce it.
               setTodaysJobs(prev => {
-                const isShownPhase = !['Cancelled', 'Archived'].includes(phaseLabel || '');
-                const shouldShowToday = Boolean(updatedJob.scheduled_date && isEasternToday(updatedJob.scheduled_date) && isShownPhase);
                 const exists = prev.some(job => job.id === updatedJob.id);
+                const isShownPhase = phaseLabel === 'Cancelled'
+                  ? exists
+                  : phaseLabel !== 'Archived';
+                const shouldShowToday = Boolean(updatedJob.scheduled_date && isEasternToday(updatedJob.scheduled_date) && isShownPhase);
 
                 if (!shouldShowToday) {
                   return prev.filter(job => job.id !== updatedJob.id);
@@ -560,7 +588,10 @@ export function useDashboardJobs(): UseDashboardJobsResult {
               }
 
               setTodaysJobs(prev => {
-                const isShownPhase = !['Cancelled', 'Archived'].includes(newPhaseLabel || '');
+                const phaseChangedToday = payload.new.changed_at ? isEasternToday(payload.new.changed_at) : false;
+                const isShownPhase = newPhaseLabel === 'Cancelled'
+                  ? phaseChangedToday
+                  : newPhaseLabel !== 'Archived';
                 const shouldShowToday = Boolean(updatedJob.scheduled_date && isEasternToday(updatedJob.scheduled_date) && isShownPhase);
                 const exists = prev.some(job => job.id === updatedJob.id);
 
