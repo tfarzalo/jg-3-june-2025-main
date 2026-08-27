@@ -53,7 +53,7 @@ import { buildStoragePath, sanitizeFilename } from '../utils/storagePaths';
 import { fetchActiveSubcontractors } from '../lib/users/activeSubcontractors';
 import { getAdditionalBillingLines } from '../lib/billing/additional';
 import { fetchPropertyJobCategoryOptions } from '../lib/propertyJobCategoryOptions';
-import { fetchPropertyUnitSizesForBillingCategory } from '../lib/propertyUnitSizes';
+import { fetchPropertyUnitSizesForBillingCategory, fetchPropertyUnitSizesForCategory } from '../lib/propertyUnitSizes';
 import {
   DEFAULT_CANCELLATION_TRIP_CHARGE,
   findCancellationTripChargeRate,
@@ -485,6 +485,7 @@ export function JobDetails() {
       try {
         const propertyId = job?.property?.id;
         const currentJobCategoryId = job?.work_order?.job_category_id || job?.job_category?.id || null;
+        const currentJobCategoryName = job?.work_order?.job_category || job?.job_category?.name || '';
         let sizes: UnitSizeOption[] = [];
 
         if (propertyId) {
@@ -495,7 +496,13 @@ export function JobDetails() {
             billingCategoryId = propertyJobCategories.find(option => option.id === currentJobCategoryId)?.billing_category_id || billingCategoryId;
           }
 
-          sizes = await fetchPropertyUnitSizesForBillingCategory(propertyId, billingCategoryId);
+          if (billingCategoryId) {
+            sizes = await fetchPropertyUnitSizesForBillingCategory(propertyId, billingCategoryId);
+          }
+
+          if (sizes.length === 0) {
+            sizes = await fetchPropertyUnitSizesForCategory(propertyId, currentJobCategoryName || undefined);
+          }
         }
 
         const seen = new Set<string>();
@@ -525,10 +532,12 @@ export function JobDetails() {
 
     fetchUnitSizes();
   }, [
-    canInternalEdit,
+    canEditInlineJobDetails,
     job?.property?.id,
     job?.work_order?.job_category_id,
+    job?.work_order?.job_category,
     job?.job_category?.id,
+    job?.job_category?.name,
     job?.debug_billing_joins?.billing_category_id,
     job?.billing_details?.debug?.billing_category_id,
     job?.unit_size?.id,

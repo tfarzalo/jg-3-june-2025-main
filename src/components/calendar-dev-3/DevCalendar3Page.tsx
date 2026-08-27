@@ -350,6 +350,8 @@ export default function DevCalendar3Page() {
   const [subscriptionCopied, setSubscriptionCopied] = useState(false);
   const lastDragMonthScrollAt = useRef(0);
   const lastMonthWheelAt = useRef(0);
+  const calendarContentRef = useRef<HTMLDivElement | null>(null);
+  const agendaDayRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://tbwtfimnbmvbgesidbxh.supabase.co';
   const calendarFeedBase = `${supabaseUrl}/functions/v1/calendar-feed`;
   const visibilityStorageKey = currentUserId ? `${VISIBILITY_KEY}-${currentUserId}` : VISIBILITY_KEY;
@@ -623,6 +625,23 @@ export default function DevCalendar3Page() {
 
   const selectedDayItems = itemsByDate[selectedDate] || [];
 
+  const scrollAgendaToDate = useCallback((date: string, behavior: ScrollBehavior = 'smooth') => {
+    window.requestAnimationFrame(() => {
+      const dayElement = agendaDayRefs.current[date];
+      const scrollContainer = calendarContentRef.current;
+      if (!dayElement || !scrollContainer) return;
+
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const dayRect = dayElement.getBoundingClientRect();
+      const nextTop = scrollContainer.scrollTop + dayRect.top - containerRect.top;
+
+      scrollContainer.scrollTo({
+        top: Math.max(0, nextTop),
+        behavior,
+      });
+    });
+  }, []);
+
   const moveCalendar = (direction: -1 | 1) => {
     const nextDate = viewMode === 'month' || viewMode === 'agenda'
       ? (direction === 1 ? addMonths(currentDate, 1) : subMonths(currentDate, 1))
@@ -645,6 +664,11 @@ export default function DevCalendar3Page() {
 
     return format(currentDate, 'MMMM yyyy');
   }, [currentDate, viewMode, weekDays]);
+
+  useEffect(() => {
+    if (loading || viewMode !== 'agenda' || !selectedDate) return;
+    scrollAgendaToDate(selectedDate, 'auto');
+  }, [agendaDays.length, loading, scrollAgendaToDate, selectedDate, viewMode]);
 
   useEffect(() => {
     supabase.auth.getUser()
@@ -1332,6 +1356,9 @@ JG Painting Pros Inc.`,
           return (
             <div
               key={date}
+              ref={(element) => {
+                agendaDayRefs.current[date] = element;
+              }}
               onDragOver={(event) => event.preventDefault()}
               onDrop={() => handleDropOnDate(date)}
               className="grid grid-cols-1 gap-3 p-4 md:grid-cols-[180px_minmax(0,1fr)]"
@@ -1526,7 +1553,18 @@ JG Painting Pros Inc.`,
                   <button onClick={() => moveCalendar(-1)} className="p-2 rounded-lg border border-gray-200 dark:border-[#2D3B4E] bg-white dark:bg-[#1E293B]" aria-label="Previous date range">
                     <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <button onClick={() => { const today = getEasternNow(); setCurrentDate(today); setSelectedDate(dateOnlyFromDate(today)); }} className="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-sm font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                  <button
+                    onClick={() => {
+                      const today = getEasternNow();
+                      const todayDate = dateOnlyFromDate(today);
+                      setCurrentDate(today);
+                      setSelectedDate(todayDate);
+                      if (viewMode === 'agenda') {
+                        setTimeout(() => scrollAgendaToDate(todayDate), 0);
+                      }
+                    }}
+                    className="px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-sm font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                  >
                     Today
                   </button>
                   <h2 className="min-w-[260px] text-center text-2xl font-semibold tracking-normal lg:text-3xl">{calendarHeading}</h2>
@@ -1553,7 +1591,7 @@ JG Painting Pros Inc.`,
               </div>
             ) : (
               <div className={`grid h-full min-h-0 grid-cols-1 gap-5 ${rightPanelCollapsed ? 'xl:grid-cols-[minmax(0,1fr)_56px]' : 'xl:grid-cols-[minmax(0,1fr)_340px]'}`}>
-                <div onWheel={handleMonthWheel} className="min-h-0 overflow-y-auto pr-1">
+                <div ref={calendarContentRef} onWheel={handleMonthWheel} className="min-h-0 overflow-y-auto pr-1">
                   {viewMode === 'month' && renderMonthView()}
                   {viewMode === 'week' && renderWeekView()}
                   {viewMode === 'day' && renderDayView()}
