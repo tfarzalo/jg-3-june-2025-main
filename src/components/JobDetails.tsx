@@ -52,6 +52,8 @@ import { getPreviewUrl } from '../utils/storagePreviews';
 import { buildStoragePath, sanitizeFilename } from '../utils/storagePaths';
 import { fetchActiveSubcontractors } from '../lib/users/activeSubcontractors';
 import { getAdditionalBillingLines } from '../lib/billing/additional';
+import { fetchPropertyJobCategoryOptions } from '../lib/propertyJobCategoryOptions';
+import { fetchPropertyUnitSizesForBillingCategory } from '../lib/propertyUnitSizes';
 import {
   DEFAULT_CANCELLATION_TRIP_CHARGE,
   findCancellationTripChargeRate,
@@ -470,16 +472,24 @@ export function JobDetails() {
 
       setUnitSizesLoading(true);
       try {
-        const { data, error } = await supabase
-          .from('unit_sizes')
-          .select('id, unit_size_label')
-          .order('unit_size_label');
+        const propertyId = job?.property?.id;
+        const currentJobCategoryId = job?.work_order?.job_category_id || job?.job_category?.id || null;
+        let sizes: UnitSizeOption[] = [];
 
-        if (error) throw error;
+        if (propertyId) {
+          let billingCategoryId = job?.debug_billing_joins?.billing_category_id || job?.billing_details?.debug?.billing_category_id || null;
+
+          if (currentJobCategoryId) {
+            const propertyJobCategories = await fetchPropertyJobCategoryOptions(propertyId, currentJobCategoryId);
+            billingCategoryId = propertyJobCategories.find(option => option.id === currentJobCategoryId)?.billing_category_id || billingCategoryId;
+          }
+
+          sizes = await fetchPropertyUnitSizesForBillingCategory(propertyId, billingCategoryId);
+        }
 
         const seen = new Set<string>();
         const nextOptions: UnitSizeOption[] = [];
-        for (const size of data || []) {
+        for (const size of sizes || []) {
           if (size.id && !seen.has(size.id)) {
             seen.add(size.id);
             nextOptions.push({ id: size.id, unit_size_label: String(size.unit_size_label) });
@@ -503,7 +513,16 @@ export function JobDetails() {
     };
 
     fetchUnitSizes();
-  }, [canInternalEdit, job?.unit_size?.id, job?.unit_size?.label]);
+  }, [
+    canInternalEdit,
+    job?.property?.id,
+    job?.work_order?.job_category_id,
+    job?.job_category?.id,
+    job?.debug_billing_joins?.billing_category_id,
+    job?.billing_details?.debug?.billing_category_id,
+    job?.unit_size?.id,
+    job?.unit_size?.label,
+  ]);
 
   const activityFilterOptions: Array<{ value: 'all' | JobActivityCategory; label: string }> = [
     { value: 'all', label: 'All' },
@@ -4575,47 +4594,60 @@ export function JobDetails() {
                     <div className="flex items-center text-gray-900 dark:text-white">
                       <span className="font-semibold">Unit #{job.unit_number}</span>
                     </div>
-                    <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                      <ClipboardList className="h-4 w-4 mr-2 text-gray-400" />
+                    <div className="flex min-w-0 items-start text-sm text-gray-600 dark:text-gray-400">
+                      <ClipboardList className="h-4 w-4 mr-2 mt-2 text-gray-400 flex-shrink-0" />
                       {editingUnitSize ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span>Size:</span>
-                          <select
-                            value={unitSizeDraft}
-                            onChange={(event) => setUnitSizeDraft(event.target.value)}
-                            disabled={unitSizesLoading || savingUnitSize}
-                            className="h-9 min-w-48 rounded-md border border-gray-300 dark:border-[#2D3B4E] bg-white dark:bg-[#0F172A] px-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                          >
-                            <option value="">Select a unit size</option>
-                            {unitSizeOptions.map(size => (
-                              <option key={size.id} value={size.id}>
-                                {size.unit_size_label}
+                        <div className="min-w-0 flex-1">
+                          <label htmlFor="job_details_unit_size" className="mb-1 block text-sm font-medium text-gray-600 dark:text-gray-300">
+                            Size:
+                          </label>
+                          <div className="flex max-w-full flex-col gap-2 sm:flex-row sm:items-center">
+                            <select
+                              id="job_details_unit_size"
+                              value={unitSizeDraft}
+                              onChange={(event) => setUnitSizeDraft(event.target.value)}
+                              disabled={unitSizesLoading || savingUnitSize}
+                              className="h-10 w-full min-w-0 max-w-xs rounded-md border border-gray-300 dark:border-[#2D3B4E] bg-white dark:bg-[#0F172A] px-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                            >
+                              <option value="">
+                                {unitSizesLoading
+                                  ? 'Loading unit sizes...'
+                                  : unitSizeOptions.length === 0
+                                  ? 'No unit sizes configured for this property'
+                                  : 'Select a unit size'}
                               </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={handleSaveUnitSize}
-                            disabled={savingUnitSize || unitSizesLoading || !unitSizeDraft}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                            title="Save unit size"
-                            aria-label="Save unit size"
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setUnitSizeDraft(job?.unit_size?.id || '');
-                              setEditingUnitSize(false);
-                            }}
-                            disabled={savingUnitSize}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 dark:border-[#2D3B4E] dark:text-gray-400 dark:hover:bg-[#2D3B4E] dark:hover:text-gray-200"
-                            title="Cancel unit size edit"
-                            aria-label="Cancel unit size edit"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
+                              {unitSizeOptions.map(size => (
+                                <option key={size.id} value={size.id}>
+                                  {size.unit_size_label}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={handleSaveUnitSize}
+                                disabled={savingUnitSize || unitSizesLoading || !unitSizeDraft}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                                title="Save unit size"
+                                aria-label="Save unit size"
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setUnitSizeDraft(job?.unit_size?.id || '');
+                                  setEditingUnitSize(false);
+                                }}
+                                disabled={savingUnitSize}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 dark:border-[#2D3B4E] dark:text-gray-400 dark:hover:bg-[#2D3B4E] dark:hover:text-gray-200"
+                                title="Cancel unit size edit"
+                                aria-label="Cancel unit size edit"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       ) : (
                         <span className="inline-flex items-center gap-2">
