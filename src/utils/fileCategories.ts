@@ -41,7 +41,7 @@ export const FOLDER_KEY_TO_CATEGORY: Record<string, FileCategory> = {
   sprinkler: 'sprinkler_images',
   sprinkler_with_cover: 'sprinkler_with_cover_images',
   sprinkler_without_cover: 'sprinkler_without_cover_images',
-  sprinkler_form: 'sprinkler_images',
+  sprinkler_form: 'sprinkler_form_images',
   other: 'other_files',
 };
 

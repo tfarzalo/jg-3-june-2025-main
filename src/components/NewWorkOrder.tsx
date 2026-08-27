@@ -872,7 +872,7 @@ const translations = {
     // Extra Charges
     extraCharges: 'Extra Charges',
     extraChargesRequireApproval: 'Extra Charges Require Approval',
-    extraChargesWarning: 'Extra charges or sprinklers will set this job to "Pending Work Order" status until approved or notification is sent.',
+    extraChargesWarning: 'Extra charges or paint found on sprinkler heads will set this job to "Pending Work Order" status until approved or notification is sent.',
     description: 'Description',
     describeExtraCharges: 'Describe the extra charges',
     extraHours: 'Extra Hours',
@@ -1795,7 +1795,7 @@ const NewWorkOrder = () => {
         Boolean(
           formData.has_extra_charges ||
           extraChargesItems.length > 0 ||
-          formData.has_sprinklers ||
+          (formData.has_sprinklers && formData.sprinklers_painted) ||
           miscAdditionalCostTotal > 0
         );
 
@@ -2643,13 +2643,13 @@ const NewWorkOrder = () => {
                               className="mt-0.5 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                             />
                             <label htmlFor="sprinkler_form_left_in_unit" className="ml-2 block text-sm font-medium text-gray-900 dark:text-white">
-                              I confirm a sprinkler form was left in the unit.
+                              Sprinkler head form left in unit and signed?
                             </label>
                           </div>
                           {formData.sprinkler_form_left_in_unit && (
                             <div className="mt-4">
                               <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                                Sprinkler Form Photo <span className="text-red-500">*</span>
+                                Signed Sprinkler Head Form Photo <span className="text-red-500">*</span>
                               </label>
                               <ImageUpload
                                 jobId={jobId || ''}
@@ -2662,7 +2662,7 @@ const NewWorkOrder = () => {
                               />
                               {sprinklerFormImagesUploaded && (
                                 <p className="mt-2 text-xs text-green-700 dark:text-green-300">
-                                  Sprinkler form photo uploaded.
+                                  Signed sprinkler head form photo uploaded.
                                 </p>
                               )}
                             </div>

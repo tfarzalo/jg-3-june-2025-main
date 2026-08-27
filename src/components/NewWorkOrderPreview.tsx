@@ -59,6 +59,7 @@ interface Job {
   job_category_id: string;
   has_sprinklers: boolean;
   sprinklers_painted: boolean;
+  sprinkler_form_left_in_unit: boolean;
   painted_ceilings: boolean;
   ceiling_rooms_count: number;
   individual_ceiling_count?: number | null; // New field for individual ceiling count
@@ -96,6 +97,7 @@ interface WorkOrder {
   job_category_id: string;
   has_sprinklers: boolean;
   sprinklers_painted: boolean;
+  sprinkler_form_left_in_unit: boolean;
   painted_ceilings: boolean;
   ceiling_rooms_count: number;
   individual_ceiling_count?: number | null; // New field for individual ceiling count
@@ -301,6 +303,7 @@ const buildWorkOrderPayload = (
     job_category_id: formData.job_category_id,
     has_sprinklers: formData.has_sprinklers ?? false,
     sprinklers_painted: formData.sprinklers_painted ?? false,
+    sprinkler_form_left_in_unit: formData.sprinkler_form_left_in_unit ?? false,
     painted_ceilings: formData.painted_ceilings ?? false,
     ceiling_rooms_count: (() => {
       // Always set to 0 for both service-based and individual ceiling painting
@@ -777,7 +780,7 @@ const translations = {
     // Extra Charges
     extraCharges: 'Extra Charges',
     extraChargesRequireApproval: 'Extra Charges Require Approval',
-    extraChargesWarning: 'Extra charges or sprinklers will set this job to "Pending Work Order" status until approved or notification is sent.',
+    extraChargesWarning: 'Extra charges or paint found on sprinkler heads will set this job to "Pending Work Order" status until approved or notification is sent.',
     description: 'Description',
     describeExtraCharges: 'Describe the extra charges',
     extraHours: 'Extra Hours',
@@ -923,6 +926,7 @@ const NewWorkOrderPreview = () => {
     has_sprinklers: false,
     sprinklers: false,
     sprinklers_painted: false,
+    sprinkler_form_left_in_unit: false,
     painted_ceilings: false,
     unit_size_id: '',
     ceiling_rooms_count: '' as string | number,
@@ -989,6 +993,7 @@ const NewWorkOrderPreview = () => {
   // State for tracking uploaded images
   const [beforeImagesUploaded, setBeforeImagesUploaded] = useState(false);
   const [sprinklerImagesUploaded, setSprinklerImagesUploaded] = useState(false);
+  const [sprinklerFormImagesUploaded, setSprinklerFormImagesUploaded] = useState(false);
   const [accentWallDisplayLabel, setAccentWallDisplayLabel] = useState<string | null>(null);
   const [extraChargesItems, setExtraChargesItems] = useState<ExtraChargeLineItem[]>([]);
 
@@ -1040,6 +1045,7 @@ const NewWorkOrderPreview = () => {
         has_sprinklers: existingWorkOrder.has_sprinklers ?? false,
         sprinklers: existingWorkOrder.has_sprinklers ?? false,
         sprinklers_painted: existingWorkOrder.sprinklers_painted ?? false,
+        sprinkler_form_left_in_unit: existingWorkOrder.sprinkler_form_left_in_unit ?? false,
         painted_ceilings: existingWorkOrder.painted_ceilings ?? false,
         ceiling_rooms_count: ceilingRoomsCountValue,
         individual_ceiling_count: existingWorkOrder.individual_ceiling_count ?? null,
@@ -1081,6 +1087,7 @@ const NewWorkOrderPreview = () => {
         has_sprinklers: job.has_sprinklers ?? false,
         sprinklers: job.has_sprinklers ?? false,
         sprinklers_painted: job.sprinklers_painted ?? false,
+        sprinkler_form_left_in_unit: false,
         painted_ceilings: job.painted_ceilings ?? false,
         ceiling_rooms_count: job.ceiling_rooms_count || '',
         individual_ceiling_count: job.individual_ceiling_count ?? null,
@@ -1662,7 +1669,7 @@ const NewWorkOrderPreview = () => {
         Boolean(
           formData.has_extra_charges ||
           extraChargesItems.length > 0 ||
-          formData.has_sprinklers
+          (formData.has_sprinklers && formData.sprinklers_painted)
         );
 
       // Get the target phase ID for phase advancement
@@ -1988,6 +1995,8 @@ const NewWorkOrderPreview = () => {
       setBeforeImagesUploaded(true);
     } else if (folder === 'sprinkler' || folder === 'sprinkler_with_cover' || folder === 'sprinkler_without_cover') {
       setSprinklerImagesUploaded(true);
+    } else if (folder === 'sprinkler_form') {
+      setSprinklerFormImagesUploaded(true);
     }
     
     // Optionally refresh the images list if needed
@@ -2049,6 +2058,8 @@ const NewWorkOrderPreview = () => {
     (!isSubcontractor || beforeImagesUploaded) &&
     // For subcontractors with sprinklers, require sprinkler images
     (!isSubcontractor || !formData.sprinklers || sprinklerImagesUploaded) &&
+    // If a sprinkler form was left in the unit, require a photo of it
+    (!formData.sprinkler_form_left_in_unit || sprinklerFormImagesUploaded) &&
     // Extra Charges requirements - at least one line item when checkbox is checked
     (!formData.has_extra_charges || extraChargesItems.length > 0)
   );
@@ -2177,6 +2188,7 @@ const NewWorkOrderPreview = () => {
                 isEditMode={isEditMode}
                 isSubcontractor={isSubcontractor}
                 sprinklerImagesUploaded={sprinklerImagesUploaded}
+                sprinklerFormImagesUploaded={sprinklerFormImagesUploaded}
                 beforeImagesUploaded={beforeImagesUploaded}
                 ceilingPaintOptions={ceilingPaintOptions}
                 accentWallOptions={accentWallOptions}
@@ -2371,7 +2383,8 @@ const NewWorkOrderPreview = () => {
                       onChange={(e) => setFormData(prev => ({ 
                         ...prev, 
                         sprinklers: e.target.checked,
-                        has_sprinklers: e.target.checked 
+                        has_sprinklers: e.target.checked,
+                        sprinkler_form_left_in_unit: e.target.checked ? prev.sprinkler_form_left_in_unit : false
                       }))}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
@@ -2428,6 +2441,47 @@ const NewWorkOrderPreview = () => {
                             Sprinkler images are required when unit has sprinklers.
                           </p>
                         )}
+                        <fieldset className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/10 p-4">
+                          <div className="flex items-start">
+                            <input
+                              type="checkbox"
+                              id="sprinkler_form_left_in_unit"
+                              name="sprinkler_form_left_in_unit"
+                              checked={formData.sprinkler_form_left_in_unit}
+                              onChange={(e) => {
+                                setFormData(prev => ({ ...prev, sprinkler_form_left_in_unit: e.target.checked }));
+                                if (!e.target.checked) {
+                                  setSprinklerFormImagesUploaded(false);
+                                }
+                              }}
+                              className="mt-0.5 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            />
+                            <label htmlFor="sprinkler_form_left_in_unit" className="ml-2 block text-sm font-medium text-gray-900 dark:text-white">
+                              Sprinkler head form left in unit and signed?
+                            </label>
+                          </div>
+                          {formData.sprinkler_form_left_in_unit && (
+                            <div className="mt-4">
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
+                                Signed Sprinkler Head Form Photo <span className="text-red-500">*</span>
+                              </label>
+                              <ImageUpload
+                                jobId={jobId || ''}
+                                workOrderId={existingWorkOrder?.id || ''}
+                                folder="sprinkler_form"
+                                onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_form')}
+                                onError={handleUploadError}
+                                onImageDelete={handleImageDelete}
+                                required
+                              />
+                              {sprinklerFormImagesUploaded && (
+                                <p className="mt-2 text-xs text-green-700 dark:text-green-300">
+                                  Signed sprinkler head form photo uploaded.
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </fieldset>
                       </div>
                     </>
                   )}

@@ -2263,7 +2263,7 @@ export function JobDetails() {
         y += 10;
         doc.text(`Sprinklers Painted: ${job?.work_order?.sprinklers_painted ? 'Yes' : 'No'}`, margin, y);
         y += 10;
-        doc.text(`Sprinkler Form Left in Unit: ${job?.work_order?.sprinkler_form_left_in_unit ? 'Yes' : 'No'}`, margin, y);
+        doc.text(`Sprinkler head form left in unit and signed?: ${job?.work_order?.sprinkler_form_left_in_unit ? 'Yes' : 'No'}`, margin, y);
         y += 10;
       }
       
@@ -2548,7 +2548,7 @@ export function JobDetails() {
           { key: 'after_images',     label: 'After Images'     },
           { key: 'sprinkler_with_cover_images', label: 'Sprinkler Images with Cover' },
           { key: 'sprinkler_without_cover_images', label: 'Sprinkler Images without Cover' },
-          { key: 'sprinkler_form_images', label: 'Sprinkler Form Photo' },
+          { key: 'sprinkler_form_images', label: 'Signed Sprinkler Head Form Photo' },
         ];
 
         // Group rows into sections
@@ -5947,7 +5947,7 @@ export function JobDetails() {
                     )}
                     {job?.work_order?.has_sprinklers && (
                       <div className={`p-4 rounded-lg border ${job?.work_order?.sprinkler_form_left_in_unit ? 'border-green-500/50 bg-green-50 dark:bg-green-900/30' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50'} flex flex-col justify-center transition-all`}>
-                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Sprinkler Form Left in Unit</span>
+                        <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Sprinkler head form left in unit and signed?</span>
                         <p className={`text-base font-bold mt-2 ${job?.work_order?.sprinkler_form_left_in_unit ? 'text-green-800 dark:text-green-200' : 'text-gray-900 dark:text-gray-100'}`}>
                           {job?.work_order?.sprinkler_form_left_in_unit ? 'Yes' : 'No'}
                         </p>
@@ -5975,7 +5975,7 @@ export function JobDetails() {
                       </div>
                       {job.work_order?.sprinkler_form_left_in_unit && (
                         <div>
-                          <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">Sprinkler Form Photo</h4>
+                          <h4 className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wider mb-3">Signed Sprinkler Head Form Photo</h4>
                           <div className="bg-gray-50 dark:bg-[#0F172A] p-4 rounded-lg border border-gray-200 dark:border-gray-700">
                             {jobIdForFiles && (
                               <ImageGallery workOrderId={workOrderId} jobId={jobIdForFiles} folder="sprinkler_form" />

@@ -567,13 +567,13 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                           className="mt-0.5 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
                         <label htmlFor="sprinkler_form_left_in_unit" className="ml-2 block text-sm font-medium text-gray-900 dark:text-white">
-                          Confirmo que se dejó un formulario de aspersores en la unidad.
+                          ¿Formulario de cabezales de aspersores dejado en la unidad y firmado?
                         </label>
                       </div>
                       {formData.sprinkler_form_left_in_unit && (
                         <div className="mt-4">
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                            Foto del Formulario de Aspersores <span className="text-red-500">*</span>
+                            Foto del Formulario Firmado de Cabezales de Aspersores <span className="text-red-500">*</span>
                           </label>
                           <ImageUpload
                             jobId={job.id}
