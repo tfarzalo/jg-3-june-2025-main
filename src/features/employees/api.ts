@@ -5,6 +5,7 @@ import {
   extractEmployeeSmsOptInSnapshot,
 } from '../../../shared/employeeOnboarding';
 import { supabase } from '../../utils/supabase';
+import { config } from '../../config/environment';
 import { formatPhoneNumber } from '../../lib/utils/formatUtils';
 import { normalizeToE164US } from '../../lib/utils/phoneE164';
 import type {
@@ -420,7 +421,7 @@ export const sendEmployeeOnboardingPacket = async (params: {
     employeeId: params.employeeId,
     formKey: params.formKey,
     regenerate: params.regenerate ?? true,
-    baseUrl: params.baseUrl || window.location.origin,
+    baseUrl: params.baseUrl || config.portalBaseUrl,
   });
 
 export const previewEmployeeOnboardingEmail = async (employeeId: string) => {
@@ -431,7 +432,7 @@ export const previewEmployeeOnboardingEmail = async (employeeId: string) => {
   }>({
     action: 'preview_email',
     employeeId,
-    baseUrl: window.location.origin,
+    baseUrl: config.portalBaseUrl,
   });
 
   return result as EmployeeEmailPreview;
@@ -445,7 +446,7 @@ export const previewEmployeeFormLink = async (employeeId: string, formKey: strin
     action: 'preview_link',
     employeeId,
     formKey,
-    baseUrl: window.location.origin,
+    baseUrl: config.portalBaseUrl,
   });
 
   return result.url;

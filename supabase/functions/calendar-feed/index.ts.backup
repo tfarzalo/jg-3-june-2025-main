@@ -473,7 +473,7 @@ Deno.serve(async (req) => {
             const title = jobSummary(j, property, assigneeName);
             const description = jobDescription(j, property, assigneeName);
             const location = formatAddress(property);
-            const url = `https://portal.jgpaintingpros.com/jobs/${j.id}`;
+            const url = `https://portal.jgpaintingprosinc.com/dashboard/jobs/${j.id}`;
 
             items.push({
               uid: `jobreq-${j.id}@app`,
@@ -579,7 +579,7 @@ Deno.serve(async (req) => {
             const title = jobSummary(j, property, assigneeName);
             const description = jobDescription(j, property, assigneeName);
             const location = formatAddress(property);
-            const url = `https://portal.jgpaintingpros.com/jobs/${j.id}`;
+            const url = `https://portal.jgpaintingprosinc.com/dashboard/jobs/${j.id}`;
 
             items.push({
               uid: `jobdone-${j.id}@app`,
@@ -669,7 +669,7 @@ Deno.serve(async (req) => {
             const title = buildJobTitle(j, property);
             const description = buildJobDescription(j, property, undefined, isAccepted, false);
             const location = formatAddress(property);
-            const url = `https://portal.jgpaintingpros.com/jobs/${j.id}`;
+            const url = `https://portal.jgpaintingprosinc.com/dashboard/jobs/${j.id}`;
 
             let jobStatus = "CONFIRMED";
             if (isCancelled) {

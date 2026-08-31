@@ -136,7 +136,6 @@ export function EmployeeProfile() {
         employeeId,
         formKey,
         regenerate: true,
-        baseUrl: window.location.origin,
       });
       toast.success(formKey ? 'Form link resent.' : 'Onboarding packet sent.');
       await fetchProfile();

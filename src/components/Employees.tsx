@@ -162,7 +162,6 @@ export function Employees() {
         employeeId: ensuredEmployeeId,
         formKey,
         regenerate: true,
-        baseUrl: window.location.origin,
       });
       toast.success(formKey ? 'Individual paperwork link sent.' : 'Full paperwork bundle sent.');
       await fetchEmployees();

@@ -31,6 +31,7 @@ import { UserChip } from './UserChip';
 import { formatDistanceToNow } from 'date-fns';
 import { getAvailableWorkingDays, getWorkingDaysCount } from '../lib/availabilityUtils';
 import { useUserRole } from '../contexts/UserRoleContext';
+import { config } from '../config/environment';
 
 interface User {
   id: string;
@@ -717,7 +718,7 @@ export function Users() {
   };
 
   const buildWelcomeEmailHtml = (info: { full_name: string; email: string; password: string }) => {
-    const loginUrl = 'https://portal.jgpaintingpros.com';
+    const loginUrl = config.portalBaseUrl;
     const firstName = info.full_name?.split(' ')[0] || 'there';
     return `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff;">
@@ -770,7 +771,7 @@ export function Users() {
     if (!pendingWelcomeEmail) return;
     setSendingWelcomeEmail(true);
     try {
-      const loginUrl = 'https://portal.jgpaintingpros.com';
+      const loginUrl = config.portalBaseUrl;
       const firstName = pendingWelcomeEmail.full_name?.split(' ')[0] || 'there';
       const html = buildWelcomeEmailHtml(pendingWelcomeEmail);
 
@@ -859,7 +860,7 @@ export function Users() {
   const handleResendWelcomeEmail = async (user: User) => {
     setResendingEmailForUserId(user.id);
     try {
-      const loginUrl = 'https://portal.jgpaintingpros.com';
+      const loginUrl = config.portalBaseUrl;
       const firstName = user.full_name?.split(' ')[0] || 'there';
       const html = `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; background: #ffffff;">

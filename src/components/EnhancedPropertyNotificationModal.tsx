@@ -29,6 +29,7 @@ import { FOLDER_KEY_TO_CATEGORY, LEGACY_CATEGORY_ALIASES, normalizeCategory } fr
 import { RichTextEditor } from './RichTextEditor';
 import { logJobActivity } from '../lib/jobActivity';
 import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
+import { config } from '../config/environment';
 
 interface Job {
   id: string;
@@ -1439,7 +1440,7 @@ export function EnhancedPropertyNotificationModal({
       setIsPreviewing(true);
       const tokenRecord = await createApprovalToken({ isPreview: true });
       toast.success('Preview ready in a new tab');
-      window.open(`${window.location.origin}/approval/${tokenRecord.token}`, '_blank');
+      window.open(`${config.portalBaseUrl}/approval/${tokenRecord.token}`, '_blank');
     } catch (error) {
       console.error('Preview error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to generate preview');
@@ -1467,7 +1468,7 @@ export function EnhancedPropertyNotificationModal({
 
       if (isApprovalEmail) {
         const tokenRecord = await createApprovalToken({ isPreview: false });
-        approvalLink = `${window.location.origin}/approval/${tokenRecord.token}`;
+        approvalLink = `${config.portalBaseUrl}/approval/${tokenRecord.token}`;
       }
 
       // --- Inline image embedding ---

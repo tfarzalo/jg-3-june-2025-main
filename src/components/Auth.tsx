@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthProvider';
 import { toast } from 'sonner';
 import { supabase } from '../utils/supabase';
+import { config } from '../config/environment';
 
 export function Auth() {
   const navigate = useNavigate();
@@ -123,7 +124,7 @@ export function Auth() {
       const { data, error } = await supabase.functions.invoke('request-password-reset', {
         body: {
           email: resetEmail.trim(),
-          redirectBase: window.location.origin,
+          redirectBase: config.portalBaseUrl,
         },
       });
 

@@ -9,6 +9,7 @@ export const config = {
   isBrowser: typeof window !== 'undefined',
   mode: import.meta.env.MODE,
   baseUrl: import.meta.env.BASE_URL,
+  portalBaseUrl: (import.meta.env.VITE_PORTAL_BASE_URL || 'https://portal.jgpaintingprosinc.com').replace(/\/$/, ''),
 };
 
 // Get detailed environment status
