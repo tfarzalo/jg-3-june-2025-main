@@ -23,6 +23,7 @@ import {
 import { fetchPropertyUnitSizesForBillingCategory } from '../lib/propertyUnitSizes';
 import { fetchPropertyJobCategoryOptions } from '../lib/propertyJobCategoryOptions';
 import { broadcastCalendarScheduleChanged } from '../services/calendarRealtime';
+import { deleteJobSafely } from '../lib/jobs/deleteJob';
 
 interface Property {
   id: string;
@@ -675,130 +676,7 @@ export function JobEditForm() {
     setError(null);
 
     try {
-      console.log('Starting job deletion process for job:', jobId);
-      
-      // 1. Delete files and clean up storage
-      console.log('Step 1: Deleting files and cleaning up storage...');
-      const { data: files, error: filesFetchError } = await supabase
-        .from('files')
-        .select('path, name')
-        .eq('job_id', jobId);
-        
-      if (filesFetchError) {
-        console.error('Error fetching files for deletion:', filesFetchError);
-        throw filesFetchError;
-      }
-      
-      // Delete files from storage
-      if (files && files.length > 0) {
-        const filePaths = files.map(file => file.path.replace(/^\//, '')); // Remove leading slash for storage paths
-        const { error: storageDeleteError } = await supabase.storage
-          .from('files')
-          .remove(filePaths);
-          
-        if (storageDeleteError) {
-          console.error('Error deleting files from storage:', storageDeleteError);
-          // Continue with database cleanup even if storage deletion fails
-        } else {
-          console.log(`Deleted ${files.length} files from storage`);
-        }
-      }
-      
-      // Delete file records from database
-      const { error: filesDeleteError } = await supabase
-        .from('files')
-        .delete()
-        .eq('job_id', jobId);
-        
-      if (filesDeleteError) {
-        console.error('Error deleting file records:', filesDeleteError);
-        throw filesDeleteError;
-      }
-      console.log('Deleted file records from database');
-      
-      // 2. Delete job phase changes
-      console.log('Step 2: Deleting job phase changes...');
-      const { error: phaseChangeError } = await supabase
-        .from('job_phase_changes')
-        .delete()
-        .eq('job_id', jobId);
-
-      if (phaseChangeError) {
-        console.error('Error deleting job phase changes:', phaseChangeError);
-        throw phaseChangeError;
-      }
-      console.log('Deleted job phase changes');
-      
-      // 3. Delete work orders
-      console.log('Step 3: Deleting work orders...');
-      const { error: workOrderError } = await supabase
-        .from('work_orders')
-        .delete()
-        .eq('job_id', jobId);
-        
-      if (workOrderError) {
-        console.error('Error deleting work orders:', workOrderError);
-        throw workOrderError;
-      }
-      console.log('Deleted work orders');
-      
-      // 4. Delete billing details (if any)
-      console.log('Step 4: Deleting billing details...');
-      const { error: billingError } = await supabase
-        .from('billing_details')
-        .delete()
-        .eq('job_id', jobId);
-        
-      if (billingError) {
-        console.error('Error deleting billing details:', billingError);
-        // Don't throw here as billing details might not exist
-        console.log('Note: No billing details to delete or error occurred');
-      } else {
-        console.log('Deleted billing details');
-      }
-      
-      // 5. Delete messages/chat related to this job (if any)
-      console.log('Step 5: Deleting job-related messages...');
-      const { error: messagesError } = await supabase
-        .from('messages')
-        .delete()
-        .eq('job_id', jobId);
-        
-      if (messagesError) {
-        console.error('Error deleting messages:', messagesError);
-        // Don't throw here as messages might not exist
-        console.log('Note: No messages to delete or error occurred');
-      } else {
-        console.log('Deleted job-related messages');
-      }
-      
-      // 6. Delete notifications related to this job (if any)
-      console.log('Step 6: Deleting job-related notifications...');
-      const { error: notificationsError } = await supabase
-        .from('notifications')
-        .delete()
-        .eq('job_id', jobId);
-        
-      if (notificationsError) {
-        console.error('Error deleting notifications:', notificationsError);
-        // Don't throw here as notifications might not exist
-        console.log('Note: No notifications to delete or error occurred');
-      } else {
-        console.log('Deleted job-related notifications');
-      }
-
-      // 7. Finally, delete the job itself
-      console.log('Step 7: Deleting the job record...');
-      const { error: jobError } = await supabase
-        .from('jobs')
-        .delete()
-        .eq('id', jobId);
-
-      if (jobError) {
-        console.error('Error deleting job:', jobError);
-        throw jobError;
-      }
-      console.log('Successfully deleted job record');
+      await deleteJobSafely(supabase, jobId);
       
       console.log('Job deletion completed successfully');
       navigate('/dashboard/jobs');

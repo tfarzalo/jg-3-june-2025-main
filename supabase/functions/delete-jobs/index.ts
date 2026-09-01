@@ -6,6 +6,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+type DeleteJobsResult = {
+  success?: boolean
+  file_paths?: string[]
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -13,11 +18,18 @@ serve(async (req) => {
   }
 
   try {
-    // Create a Supabase client with the Auth context of the function
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    const authorization = req.headers.get('Authorization') ?? ''
+
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: { Authorization: authorization },
+      },
+    })
+
+    const serviceClient = createClient(supabaseUrl, supabaseServiceRoleKey)
 
     // Get the request body
     const { jobIds } = await req.json()
@@ -32,17 +44,14 @@ serve(async (req) => {
       )
     }
 
-    // Delete in the correct order to maintain referential integrity
-    // 1. Delete work orders first (no cascade)
-    const { error: workOrdersError } = await supabaseClient
-      .from('work_orders')
-      .delete()
-      .in('job_id', jobIds)
+    const { data, error } = await userClient.rpc('delete_jobs_safely', {
+      p_job_ids: jobIds,
+    })
 
-    if (workOrdersError) {
-      console.error('Error deleting work orders:', workOrdersError)
+    if (error) {
+      console.error('Error deleting jobs:', error)
       return new Response(
-        JSON.stringify({ error: 'Failed to delete work orders' }),
+        JSON.stringify({ error: error.message || 'Failed to delete jobs' }),
         { 
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -50,42 +59,22 @@ serve(async (req) => {
       )
     }
 
-    // 2. Delete files associated with the jobs (no cascade)
-    const { error: filesError } = await supabaseClient
-      .from('files')
-      .delete()
-      .in('job_id', jobIds)
+    const result = (data || {}) as DeleteJobsResult
+    const filePaths = (result.file_paths || [])
+      .filter((path) => typeof path === 'string' && path.trim().length > 0)
 
-    if (filesError) {
-      console.error('Error deleting files:', filesError)
-      return new Response(
-        JSON.stringify({ error: 'Failed to delete files' }),
-        { 
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      )
-    }
+    if (filePaths.length > 0) {
+      const { error: storageError } = await serviceClient.storage
+        .from('files')
+        .remove(filePaths)
 
-    // 3. Delete the jobs themselves
-    const { error: jobsError } = await supabaseClient
-      .from('jobs')
-      .delete()
-      .in('id', jobIds)
-
-    if (jobsError) {
-      console.error('Error deleting jobs:', jobsError)
-      return new Response(
-        JSON.stringify({ error: 'Failed to delete jobs' }),
-        { 
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      )
+      if (storageError) {
+        console.error('Jobs deleted, but storage cleanup failed:', storageError)
+      }
     }
 
     return new Response(
-      JSON.stringify({ success: true }),
+      JSON.stringify(data),
       { 
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
