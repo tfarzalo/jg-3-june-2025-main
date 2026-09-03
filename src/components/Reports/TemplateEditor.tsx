@@ -218,7 +218,7 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
 
   const handleSave = () => {
     if (!name.trim()) return alert('Please name the template');
-    const filters = {} as Record<string, unknown>;
+    const filters = { ...(template?.filters || {}) } as Record<string, unknown>;
     if (phaseSelection && phaseSelection.length) filters.phases = phaseSelection;
     onSave({ id: template?.id || `tmp-${Date.now()}`, name: name.trim(), columns, preset: template?.preset, filters });
   };

@@ -56,6 +56,13 @@ type SubcontractorQualityControlAggregate = {
   averageScore: number;
 };
 
+type QualityControlPercentageAggregate = {
+  key: string;
+  subcontractor: string;
+  submissions: number;
+  totalScore: number;
+};
+
 export type GeneratedReport = {
   templateName: string;
   from: string;
@@ -297,6 +304,22 @@ export const DEFAULT_REPORT_COLUMNS = [
 
 const DAILY_WORK_ORDER_REPORT_COLUMNS = DEFAULT_REPORT_COLUMNS.filter(column => column !== 'created_at');
 
+export const PRESET_REPORT_TEMPLATES: ReportTemplate[] = [
+  {
+    id: 'preset-qc-percentages',
+    name: 'QC Percentages',
+    columns: [
+      'qc_painter_name',
+      'qc_subcontractor_submission_total',
+      'qc_subcontractor_score_average_percent',
+    ],
+    filters: {
+      reportType: 'qc_percentages',
+    },
+    preset: true,
+  },
+];
+
 export async function fetchReportTemplates(): Promise<ReportTemplate[]> {
   const { data, error } = await supabase
     .from('report_templates')
@@ -320,7 +343,7 @@ export async function fetchReportTemplates(): Promise<ReportTemplate[]> {
    }));
 }
 
-export async function saveReportTemplate(template: Pick<ReportTemplate, 'id' | 'name' | 'columns'> & { preset?: boolean }) {
+export async function saveReportTemplate(template: Pick<ReportTemplate, 'id' | 'name' | 'columns'> & { filters?: Record<string, unknown>; preset?: boolean }) {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError) throw authError;
   if (!authData.user) throw new Error('You must be signed in to save report templates.');
@@ -399,6 +422,10 @@ export async function generateReport(params: {
   to: string;
   template: ReportTemplate;
 }): Promise<GeneratedReport> {
+  if (params.template.filters?.reportType === 'qc_percentages') {
+    return generateQualityControlPercentagesReport(params);
+  }
+
   const selectedColumns = resolveColumns(params.template.columns);
   const needsSubPay = selectedColumns.some(column => column.key === 'sub_pay');
   const needsQualityControl = selectedColumns.some(column => column.key.startsWith('qc_'));
@@ -561,7 +588,7 @@ export async function generateReport(params: {
       'Miscellaneous Additional Cost Bill',
       'Miscellaneous Additional Cost Sub Pay'
     ]);
-    const percentHeaders = new Set(['Profit Margin', 'Base Profit Margin', 'Extra Profit Margin', 'QC Score %', 'Subcontractor QC Score Average %']);
+    const percentHeaders = new Set(['Profit Margin', 'Base Profit Margin', 'Extra Profit Margin', 'QC Score %', 'Subcontractor QC Score Average %', 'Average QC %']);
     for (const header of Object.keys(r)) {
       const val = r[header];
       if (val === null || val === undefined || val === '') {
@@ -590,6 +617,85 @@ export async function generateReport(params: {
     headers,
     rows,
     csv,
+  };
+
+  await saveReportRun(params.template, report);
+
+  return report;
+}
+
+async function generateQualityControlPercentagesReport(params: {
+  from: string;
+  to: string;
+  template: ReportTemplate;
+}): Promise<GeneratedReport> {
+  const from = `${params.from}T00:00:00`;
+  const to = `${params.to}T23:59:59`;
+
+  const { data, error } = await supabase
+    .from('job_quality_control_submissions')
+    .select('id, score_total, created_at, form_data')
+    .gte('created_at', from)
+    .lte('created_at', to)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to load QC Percentages report data: ${error.message}`);
+  }
+
+  const aggregates = new Map<string, QualityControlPercentageAggregate>();
+
+  ((data || []) as QualityControlSubmissionRecord[]).forEach((submission) => {
+    const key = qualityControlSubcontractorKey(submission);
+    const subcontractor = qualityControlSubcontractorName(submission);
+    if (!key) return;
+
+    const aggregate = aggregates.get(key) || {
+      key,
+      subcontractor,
+      submissions: 0,
+      totalScore: 0,
+    };
+
+    aggregate.submissions += 1;
+    aggregate.totalScore += qualityControlClampedScore(submission.score_total);
+    aggregates.set(key, aggregate);
+  });
+
+  const headers = ['Subcontractor Name', 'QC Submissions', 'Average QC %'];
+  const rows = Array.from(aggregates.values())
+    .map((aggregate) => {
+      const averageScore = aggregate.submissions ? aggregate.totalScore / aggregate.submissions : 0;
+      const averagePercent = QUALITY_CONTROL_SCORE_TOTAL
+        ? (averageScore / QUALITY_CONTROL_SCORE_TOTAL) * 100
+        : 0;
+
+      return {
+        'Subcontractor Name': aggregate.subcontractor,
+        'QC Submissions': aggregate.submissions,
+        'Average QC %': Number(averagePercent.toFixed(2)),
+      };
+    })
+    .sort((a, b) => {
+      const percentDiff = Number(b['Average QC %']) - Number(a['Average QC %']);
+      if (percentDiff !== 0) return percentDiff;
+      const submissionsDiff = Number(b['QC Submissions']) - Number(a['QC Submissions']);
+      if (submissionsDiff !== 0) return submissionsDiff;
+      return String(a['Subcontractor Name']).localeCompare(String(b['Subcontractor Name']));
+    });
+
+  const csvRows = rows.map(row => ({
+    ...row,
+    'Average QC %': `${Number(row['Average QC %']).toFixed(2)}%`,
+  }));
+  const report = {
+    templateName: params.template.name,
+    from: params.from,
+    to: params.to,
+    filename: `${slugify(params.template.name)}_${params.from}_${params.to}.csv`,
+    headers,
+    rows,
+    csv: toCsv(csvRows, headers),
   };
 
   await saveReportRun(params.template, report);
@@ -630,7 +736,7 @@ export function openReportInNewWindow(report: GeneratedReport) {
     'Miscellaneous Additional Cost Bill',
     'Miscellaneous Additional Cost Sub Pay'
   ]);
-  const percentHeaders = new Set(['Profit Margin', 'Base Profit Margin', 'Extra Profit Margin', 'QC Score %', 'Subcontractor QC Score Average %']);
+  const percentHeaders = new Set(['Profit Margin', 'Base Profit Margin', 'Extra Profit Margin', 'QC Score %', 'Subcontractor QC Score Average %', 'Average QC %']);
 
   const tableHead = report.headers
     .map(header => `<th>${escapeHtml(header)}</th>`)
@@ -1171,10 +1277,19 @@ function qualityControlSubcontractorKey(submission: QualityControlSubmissionReco
   const id = textFrom(formData, 'subcontractor_id');
   if (id) return `id:${id}`;
 
+  const name = qualityControlSubcontractorName(submission);
+  return name ? `name:${name.toLowerCase()}` : '';
+}
+
+function qualityControlSubcontractorName(submission: QualityControlSubmissionRecord) {
+  const formData = objectFrom(submission.form_data);
   const explicitName = textFrom(formData, 'subcontractor_name', 'painter_name');
   const fullName = [textFrom(formData, 'painter_first_name'), textFrom(formData, 'painter_last_name')].filter(Boolean).join(' ');
-  const name = explicitName || fullName;
-  return name ? `name:${name.toLowerCase()}` : '';
+  return explicitName || fullName || 'Unassigned subcontractor';
+}
+
+function qualityControlClampedScore(value: unknown) {
+  return Math.min(QUALITY_CONTROL_SCORE_TOTAL, Math.max(0, numberFrom(value)));
 }
 
 function qualityControlMediaCount(value: unknown) {

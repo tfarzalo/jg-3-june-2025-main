@@ -13,6 +13,7 @@ import {
   saveReportTemplate,
   deleteReportTemplate,
   deleteReportRun,
+  PRESET_REPORT_TEMPLATES,
   type GeneratedReport,
   type ReportRun,
   type ReportTemplate,
@@ -29,7 +30,7 @@ export default function ReportsPage() {
   const [reportResult, setReportResult] = useState<GeneratedReport | null>(null);
   const [reportRuns, setReportRuns] = useState<ReportRun[]>([]);
 
-  const allTemplates = useMemo(() => [...savedTemplates], [savedTemplates]);
+  const allTemplates = useMemo(() => [...PRESET_REPORT_TEMPLATES, ...savedTemplates], [savedTemplates]);
 
   useEffect(() => {
     void loadTemplates();
@@ -77,7 +78,7 @@ export default function ReportsPage() {
     });
   };
 
-  const handleSaveTemplate = async (template: Pick<ReportTemplate, 'id' | 'name' | 'columns' | 'preset'>) => {
+  const handleSaveTemplate = async (template: Pick<ReportTemplate, 'id' | 'name' | 'columns' | 'filters' | 'preset'>) => {
     try {
       setSavingTemplate(true);
       await saveReportTemplate(template);
@@ -149,6 +150,15 @@ export default function ReportsPage() {
       </div>
 
       <section>
+        <h2 className="text-lg font-medium mb-4">Preset Templates</h2>
+        <TemplatesList
+          templates={PRESET_REPORT_TEMPLATES}
+          onRun={handleRunTemplate}
+          onClone={handleCloneTemplate}
+        />
+      </section>
+
+      <section className="mt-8">
         <h2 className="text-lg font-medium mb-4">Your Templates</h2>
         {loadingTemplates ? (
           <div className="p-4 border rounded-lg bg-white dark:bg-[#071027] text-sm text-gray-600 dark:text-gray-400">
