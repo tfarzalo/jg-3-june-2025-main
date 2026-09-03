@@ -359,6 +359,7 @@ const CURRENCY_REPORT_HEADERS = new Set([
 
 const WUFOO_STYLE_BILLING_COLUMNS = [
   'work_order_num',
+  'phase',
   'assigned_to',
   'scheduled_date',
   'property',
