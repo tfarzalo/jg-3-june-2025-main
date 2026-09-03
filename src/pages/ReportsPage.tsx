@@ -130,9 +130,9 @@ export default function ReportsPage() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-6 text-gray-900 dark:text-gray-100">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Reports</h1>
+        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Reports</h1>
         <div className="flex items-center gap-2">
           <button
             className="bg-[#9B111E] hover:bg-[#7f0e17] text-white px-4 py-2 rounded-lg shadow"
@@ -142,7 +142,7 @@ export default function ReportsPage() {
           </button>
           <button
             onClick={() => setEditing({ id: '', name: '', columns: [], preset: false })}
-            className="px-3 py-2 bg-gray-100 dark:bg-[#1E293B] rounded"
+            className="px-3 py-2 rounded bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-[#1E293B] dark:text-gray-100 dark:hover:bg-[#263449]"
           >
             New Template
           </button>
@@ -150,7 +150,7 @@ export default function ReportsPage() {
       </div>
 
       <section>
-        <h2 className="text-lg font-medium mb-4">Preset Templates</h2>
+        <h2 className="text-lg font-medium mb-4 text-gray-900 dark:text-white">Preset Templates</h2>
         <TemplatesList
           templates={PRESET_REPORT_TEMPLATES}
           onRun={handleRunTemplate}
@@ -159,13 +159,13 @@ export default function ReportsPage() {
       </section>
 
       <section className="mt-8">
-        <h2 className="text-lg font-medium mb-4">Your Templates</h2>
+        <h2 className="text-lg font-medium mb-4 text-gray-900 dark:text-white">Your Templates</h2>
         {loadingTemplates ? (
-          <div className="p-4 border rounded-lg bg-white dark:bg-[#071027] text-sm text-gray-600 dark:text-gray-400">
+          <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-[#071027] text-sm text-gray-600 dark:text-gray-400">
             Loading templates...
           </div>
         ) : savedTemplates.length === 0 ? (
-          <div className="p-4 border rounded-lg bg-white dark:bg-[#071027] text-sm text-gray-600 dark:text-gray-400">
+          <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-[#071027] text-sm text-gray-600 dark:text-gray-400">
             No saved templates yet.
           </div>
         ) : (
@@ -180,7 +180,7 @@ export default function ReportsPage() {
       </section>
 
       <section className="mt-8">
-        <h2 className="text-lg font-medium mb-4">Report History</h2>
+        <h2 className="text-lg font-medium mb-4 text-gray-900 dark:text-white">Report History</h2>
         <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#071027]">
           {loadingRuns ? (
             <div className="p-4 text-sm text-gray-600 dark:text-gray-400">Loading report history...</div>
@@ -241,7 +241,7 @@ export default function ReportsPage() {
                                   toast.error(err instanceof Error ? err.message : 'Failed to delete report');
                                 }
                               }}
-                              className="text-sm text-red-600 hover:text-red-700"
+                              className="text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                               title="Delete report"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor">

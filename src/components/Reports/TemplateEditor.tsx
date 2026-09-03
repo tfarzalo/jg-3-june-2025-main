@@ -229,7 +229,7 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
         <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">{template ? 'Edit' : 'New'} Report Template</h3>
         <label className="block mb-3">
           <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Name</div>
-          <input value={name} onChange={e => setName(e.target.value)} className="w-full p-2 border rounded dark:bg-[#111827] dark:border-gray-700 dark:text-white" />
+          <input value={name} onChange={e => setName(e.target.value)} className="w-full p-2 border border-gray-200 rounded bg-white text-gray-900 dark:bg-[#111827] dark:border-gray-700 dark:text-white" />
         </label>
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-6 mb-5">
@@ -297,7 +297,7 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
             {/* Phase selection moved into left column so it's saved with template */}
             <div className="mt-4">
               <div className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-2">Include Job Phases</div>
-               <div className="flex flex-wrap gap-2 items-center">
+               <div className="flex flex-wrap gap-2 items-center text-gray-800 dark:text-gray-100">
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={phaseSelection?.includes('ALL')} onChange={e => setPhaseSelection(e.target.checked ? ['ALL'] : [])} />
                   <span className="text-sm">All</span>
@@ -353,10 +353,10 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
 
         <div className="flex justify-end space-x-2">
           {onDelete && template && !template.preset && (
-            <button onClick={() => onDelete(template.id)} className="px-3 py-2 rounded text-red-600">Delete</button>
+            <button onClick={() => onDelete(template.id)} className="px-3 py-2 rounded text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20">Delete</button>
           )}
-          <button onClick={onCancel} className="px-3 py-2 rounded">Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-60">
+          <button onClick={onCancel} className="px-3 py-2 rounded text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800">Cancel</button>
+          <button onClick={handleSave} disabled={saving} className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60">
             {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
