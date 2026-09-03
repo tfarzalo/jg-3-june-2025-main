@@ -1,26 +1,28 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { Beaker, ShieldCheck } from 'lucide-react';
 import RunReportModal from '../components/Reports/RunReportModal';
 import TemplatesList from '../components/Reports/TemplatesList';
 import TemplateEditor from '../components/Reports/TemplateEditor';
 import ReportResultModal from '../components/Reports/ReportResultModal';
 import {
+  DEV_PRESET_REPORT_TEMPLATES,
+  devReportHeadersForTemplate,
+  deleteReportRun,
+  deleteReportTemplate,
   downloadReportCsv,
   fetchReportRuns,
   fetchReportTemplates,
-  generateReport,
+  generateDevReport,
   openReportInNewWindow,
   saveReportTemplate,
-  deleteReportTemplate,
-  deleteReportRun,
-  PRESET_REPORT_TEMPLATES,
   type GeneratedReport,
-  type ReportSort,
   type ReportRun,
+  type ReportSort,
   type ReportTemplate,
-} from '../lib/reports';
+} from '../lib/reportsDev';
 
-export default function ReportsPage() {
+export default function ReportsDevPage() {
   const [showRun, setShowRun] = useState(false);
   const [activeTemplate, setActiveTemplate] = useState<ReportTemplate | null>(null);
   const [editing, setEditing] = useState<ReportTemplate | null>(null);
@@ -31,7 +33,10 @@ export default function ReportsPage() {
   const [reportResult, setReportResult] = useState<GeneratedReport | null>(null);
   const [reportRuns, setReportRuns] = useState<ReportRun[]>([]);
 
-  const allTemplates = useMemo(() => [...PRESET_REPORT_TEMPLATES, ...savedTemplates], [savedTemplates]);
+  const allTemplates = useMemo(
+    () => [...DEV_PRESET_REPORT_TEMPLATES, ...savedTemplates],
+    [savedTemplates]
+  );
 
   useEffect(() => {
     void loadTemplates();
@@ -43,7 +48,7 @@ export default function ReportsPage() {
       setLoadingTemplates(true);
       setSavedTemplates(await fetchReportTemplates());
     } catch (error) {
-      console.error('Failed to load report templates:', error);
+      console.error('Failed to load dev report templates:', error);
       toast.error('Failed to load report templates');
     } finally {
       setLoadingTemplates(false);
@@ -55,7 +60,7 @@ export default function ReportsPage() {
       setLoadingRuns(true);
       setReportRuns(await fetchReportRuns());
     } catch (error) {
-      console.error('Failed to load report history:', error);
+      console.error('Failed to load dev report history:', error);
       toast.error('Failed to load report history');
     } finally {
       setLoadingRuns(false);
@@ -70,7 +75,7 @@ export default function ReportsPage() {
   const handleCloneTemplate = (template: ReportTemplate) => {
     setEditing({
       ...template,
-      id: `tmp-clone-${Date.now()}`,
+      id: `tmp-dev-clone-${Date.now()}`,
       name: `${template.name} Copy`,
       columns: [...template.columns],
       filters: { ...(template.filters || {}) },
@@ -87,7 +92,7 @@ export default function ReportsPage() {
       setEditing(null);
       await loadTemplates();
     } catch (error) {
-      console.error('Failed to save report template:', error);
+      console.error('Failed to save dev report template:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to save report template');
     } finally {
       setSavingTemplate(false);
@@ -103,16 +108,16 @@ export default function ReportsPage() {
       setEditing(null);
       await loadTemplates();
     } catch (error) {
-      console.error('Failed to delete report template:', error);
+      console.error('Failed to delete dev report template:', error);
       toast.error('Failed to delete report template');
     }
   };
 
   const handleRunReport = async ({ from, to, template, sort }: { from: string; to: string; template: ReportTemplate; sort?: ReportSort }) => {
-    const report = await generateReport({ from, to, template, sort });
+    const report = await generateDevReport({ from, to, template, sort });
     setReportResult(report);
     await loadRuns();
-    toast.success(`Report generated with ${report.rows.length} ${report.rows.length === 1 ? 'row' : 'rows'}`);
+    toast.success(`Dev report generated with ${report.rows.length} ${report.rows.length === 1 ? 'row' : 'rows'}`);
   };
 
   const handleDownloadReport = () => {
@@ -125,48 +130,69 @@ export default function ReportsPage() {
     try {
       openReportInNewWindow(reportResult);
     } catch (error) {
-      console.error('Failed to open report window:', error);
+      console.error('Failed to open dev report window:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to open report window');
     }
   };
 
   return (
     <div className="p-6 text-gray-900 dark:text-gray-100">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Reports</h1>
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="mb-2 inline-flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-800/60 dark:bg-amber-900/20 dark:text-amber-200">
+            <Beaker className="h-3.5 w-3.5" />
+            Dev Report Builder
+          </div>
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Dev Report Builder</h1>
+          <p className="mt-1 max-w-3xl text-sm text-gray-600 dark:text-gray-400">
+            Sandbox for testing updated billing-report output before replacing the current report builder. This page reads existing application data and does not require database schema changes.
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <button
-            className="bg-[#9B111E] hover:bg-[#7f0e17] text-white px-4 py-2 rounded-lg shadow"
+            className="rounded-lg bg-[#9B111E] px-4 py-2 text-white shadow hover:bg-[#7f0e17]"
             onClick={() => handleRunTemplate(undefined)}
           >
             Run Report
           </button>
           <button
             onClick={() => setEditing({ id: '', name: '', columns: [], preset: false })}
-            className="px-3 py-2 rounded bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-[#1E293B] dark:text-gray-100 dark:hover:bg-[#263449]"
+            className="rounded bg-gray-100 px-3 py-2 text-gray-800 hover:bg-gray-200 dark:bg-[#1E293B] dark:text-gray-100 dark:hover:bg-[#263449]"
           >
             New Template
           </button>
         </div>
       </div>
 
+      <div className="mb-8 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-800/60 dark:bg-blue-900/20 dark:text-blue-100">
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="mt-0.5 h-5 w-5 flex-shrink-0" />
+          <div>
+            <div className="font-semibold">Non-destructive testing area</div>
+            <div className="mt-1">
+              Existing report templates, saved reports, filters, CSV downloads, and preview behavior are retained. The additional dev preset reshapes report output in memory from the current report data.
+            </div>
+          </div>
+        </div>
+      </div>
+
       <section>
-        <h2 className="text-lg font-medium mb-4 text-gray-900 dark:text-white">Preset Templates</h2>
+        <h2 className="mb-4 text-lg font-medium text-gray-900 dark:text-white">Dev Presets</h2>
         <TemplatesList
-          templates={PRESET_REPORT_TEMPLATES}
+          templates={DEV_PRESET_REPORT_TEMPLATES}
           onRun={handleRunTemplate}
           onClone={handleCloneTemplate}
         />
       </section>
 
       <section className="mt-8">
-        <h2 className="text-lg font-medium mb-4 text-gray-900 dark:text-white">Your Templates</h2>
+        <h2 className="mb-4 text-lg font-medium text-gray-900 dark:text-white">Your Templates</h2>
         {loadingTemplates ? (
-          <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-[#071027] text-sm text-gray-600 dark:text-gray-400">
+          <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 dark:border-gray-700 dark:bg-[#071027] dark:text-gray-400">
             Loading templates...
           </div>
         ) : savedTemplates.length === 0 ? (
-          <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-[#071027] text-sm text-gray-600 dark:text-gray-400">
+          <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600 dark:border-gray-700 dark:bg-[#071027] dark:text-gray-400">
             No saved templates yet.
           </div>
         ) : (
@@ -181,8 +207,8 @@ export default function ReportsPage() {
       </section>
 
       <section className="mt-8">
-        <h2 className="text-lg font-medium mb-4 text-gray-900 dark:text-white">Report History</h2>
-        <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#071027]">
+        <h2 className="mb-4 text-lg font-medium text-gray-900 dark:text-white">Report History</h2>
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-[#071027]">
           {loadingRuns ? (
             <div className="p-4 text-sm text-gray-600 dark:text-gray-400">Loading report history...</div>
           ) : reportRuns.length === 0 ? (
@@ -220,34 +246,31 @@ export default function ReportsPage() {
                                   toast.error(error instanceof Error ? error.message : 'Failed to open report window');
                                 }
                               }}
-                              className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                              className="text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
                             >
                               View
                             </button>
                             <button
                               onClick={() => downloadReportCsv(run.report as GeneratedReport)}
-                              className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                              className="text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                             >
                               Download
                             </button>
                             <button
                               onClick={async () => {
-                                if (!confirm('Delete this saved report from history?')) return;
+                                if (!confirm('Delete this report history item?')) return;
                                 try {
                                   await deleteReportRun(run.id);
-                                  toast.success('Report deleted');
                                   await loadRuns();
-                                } catch (err) {
-                                  console.error('Failed to delete report run', err);
-                                  toast.error(err instanceof Error ? err.message : 'Failed to delete report');
+                                  toast.success('Report history item deleted');
+                                } catch (error) {
+                                  console.error('Failed to delete report run:', error);
+                                  toast.error(error instanceof Error ? error.message : 'Failed to delete report run');
                                 }
                               }}
-                              className="text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                              title="Delete report"
+                              className="text-sm font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                             >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3m-7 0h8" />
-                              </svg>
+                              Delete
                             </button>
                           </div>
                         ) : (
@@ -265,20 +288,21 @@ export default function ReportsPage() {
 
       {showRun && (
         <RunReportModal
-          onClose={() => { setShowRun(false); setActiveTemplate(null); }}
+          onClose={() => setShowRun(false)}
           template={activeTemplate}
           templates={allTemplates}
+          getReportHeaders={devReportHeadersForTemplate}
           onRun={handleRunReport}
         />
       )}
 
       {editing && (
         <TemplateEditor
-          template={editing.id ? editing : undefined}
+          template={editing}
+          saving={savingTemplate}
           onSave={handleSaveTemplate}
           onCancel={() => setEditing(null)}
-          onDelete={handleDeleteTemplate}
-          saving={savingTemplate}
+          onDelete={!editing.preset && editing.id ? handleDeleteTemplate : undefined}
         />
       )}
 
@@ -294,12 +318,9 @@ export default function ReportsPage() {
   );
 }
 
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+function formatDateTime(value?: string) {
+  if (!value) return 'N/A';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }

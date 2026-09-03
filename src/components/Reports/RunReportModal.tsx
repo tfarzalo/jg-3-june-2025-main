@@ -1,20 +1,40 @@
-import React, { useState, useEffect } from 'react';
-import type { ReportTemplate } from '../../lib/reports';
+import React, { useState, useEffect, useMemo } from 'react';
+import { reportHeadersForTemplate, type ReportSort, type ReportTemplate } from '../../lib/reports';
 
-export default function RunReportModal({ onClose, template, templates, onRun }: {
+export default function RunReportModal({ onClose, template, templates, getReportHeaders, onRun }: {
   onClose: () => void;
   template?: ReportTemplate | null;
   templates?: ReportTemplate[];
-  onRun: (params: { from: string; to: string; template: ReportTemplate }) => Promise<void>;
+  getReportHeaders?: (template: ReportTemplate) => string[];
+  onRun: (params: { from: string; to: string; template: ReportTemplate; sort?: ReportSort }) => Promise<void>;
 }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<ReportTemplate | null>(template || null);
+  const [sortColumn, setSortColumn] = useState('');
+  const [sortDirection, setSortDirection] = useState<ReportSort['direction']>('asc');
+  const headers = useMemo(
+    () => selectedTemplate ? (getReportHeaders || reportHeadersForTemplate)(selectedTemplate) : [],
+    [getReportHeaders, selectedTemplate]
+  );
 
   useEffect(() => {
     if (template) setSelectedTemplate(template);
   }, [template]);
+
+  useEffect(() => {
+    if (!headers.length) {
+      setSortColumn('');
+      return;
+    }
+
+    if (sortColumn && headers.includes(sortColumn)) return;
+
+    setSortColumn(
+      headers.find(header => header === 'Scheduled Date' || header === 'Scheduled Work Date') || headers[0]
+    );
+  }, [headers, sortColumn]);
 
   const applyPreset = (preset: string) => {
     const today = new Date();
@@ -56,7 +76,12 @@ export default function RunReportModal({ onClose, template, templates, onRun }: 
     if (!selectedTemplate) return alert('Please select a report template');
     setLoading(true);
     try {
-      await onRun({ from, to, template: selectedTemplate });
+      await onRun({
+        from,
+        to,
+        template: selectedTemplate,
+        sort: sortColumn ? { column: sortColumn, direction: sortDirection } : undefined,
+      });
       onClose();
     } catch (err) {
       console.error(err);
@@ -107,6 +132,33 @@ export default function RunReportModal({ onClose, template, templates, onRun }: 
           <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">To</div>
           <input type="date" value={to} onChange={e => setTo(e.target.value)} className="w-full p-2 border border-gray-200 rounded bg-white text-gray-900 dark:border-gray-700 dark:bg-[#111827] dark:text-white" />
         </label>
+
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_180px]">
+          <label className="block">
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Sort By</div>
+            <select
+              value={sortColumn}
+              onChange={e => setSortColumn(e.target.value)}
+              disabled={!selectedTemplate || headers.length === 0}
+              className="w-full p-2 border border-gray-200 rounded bg-white text-gray-900 disabled:opacity-60 dark:border-gray-700 dark:bg-[#111827] dark:text-white"
+            >
+              {headers.map(header => (
+                <option key={header} value={header}>{header}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Direction</div>
+            <select
+              value={sortDirection}
+              onChange={e => setSortDirection(e.target.value as ReportSort['direction'])}
+              className="w-full p-2 border border-gray-200 rounded bg-white text-gray-900 dark:border-gray-700 dark:bg-[#111827] dark:text-white"
+            >
+              <option value="asc">Ascending</option>
+              <option value="desc">Descending</option>
+            </select>
+          </label>
+        </div>
 
         <div className="flex justify-end space-x-2">
           <button onClick={onClose} className="px-4 py-2 rounded text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-[#1E293B]">Cancel</button>

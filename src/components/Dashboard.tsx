@@ -50,6 +50,7 @@ const EmployeeProfile = lazy(() => import('./EmployeeProfile').then(module => ({
 const EmployeeFormPreviewPage = lazy(() => import('./EmployeeFormPreviewPage').then(module => ({ default: module.EmployeeFormPreviewPage })));
 const Calendar = lazy(() => import('./calendar-dev-3/DevCalendar3Page'));
 const ReportsPage = lazy(() => import('../pages/ReportsPage').then(module => ({ default: module.default })));
+const ReportsDevPage = lazy(() => import('../pages/ReportsDevPage').then(module => ({ default: module.default })));
 
 
 const LoadingSpinner = () => (
@@ -217,6 +218,11 @@ export function Dashboard() {
           <Route path="reports" element={
             <RouteGuard>
               <ReportsPage />
+            </RouteGuard>
+          } />
+          <Route path="reports-dev" element={
+            <RouteGuard>
+              <ReportsDevPage />
             </RouteGuard>
           } />
           <Route path="changelog" element={

@@ -73,6 +73,11 @@ export type GeneratedReport = {
   csv: string;
 };
 
+export type ReportSort = {
+  column: string;
+  direction: 'asc' | 'desc';
+};
+
 export type ReportRun = {
   id: string;
   template_id?: string | null;
@@ -304,7 +309,82 @@ export const DEFAULT_REPORT_COLUMNS = [
 
 const DAILY_WORK_ORDER_REPORT_COLUMNS = DEFAULT_REPORT_COLUMNS.filter(column => column !== 'created_at');
 
+const WUFOO_STYLE_DESCRIPTION_HEADER = 'Description, Extra Charges Amounts and Descriptions for each, Misc Additional Costs, ect';
+
+const WUFOO_STYLE_DESCRIPTION_COLUMN_KEYS = new Set([
+  'description',
+  ...EXTRA_CHARGE_ITEM_COLUMN_KEYS,
+  'misc_additional_cost_description',
+  'misc_additional_cost_bill',
+  'additional_comments',
+]);
+
+const WUFOO_STYLE_HEADER_OVERRIDES: Record<string, string> = {
+  work_order_num: 'Work Order #',
+  assigned_to: 'Subcontractor Name',
+  scheduled_date: 'Scheduled Work Date',
+  property: 'Property Name, Address',
+  unit_number: 'Unit#',
+  unit_size: 'Unit Size',
+  total_billing_amount: 'Bill to Customer',
+  sub_pay: 'Pay to Subcontractor',
+  created_at: 'Created Date (Job Request Created Date)',
+};
+
+const WUFOO_STYLE_SOURCE_HEADER_OVERRIDES: Record<string, string> = {
+  assigned_to: 'Assigned To',
+  scheduled_date: 'Scheduled Date',
+  property: 'Property',
+  unit_number: 'Unit #',
+  total_billing_amount: 'Total Bill to Customer',
+  sub_pay: 'Sub Pay',
+  created_at: 'Date Created',
+};
+
+const CURRENCY_REPORT_HEADERS = new Set([
+  'Base Bill to Customer',
+  'Base Pay to Subcontractor',
+  'Base Profit',
+  'Extra Charges Billing',
+  'Extra Pay to Subcontractor',
+  'Extra Profit',
+  'Total Bill to Customer',
+  'Sub Pay',
+  'Total Profit',
+  'Miscellaneous Additional Cost Bill',
+  'Miscellaneous Additional Cost Sub Pay',
+  'Bill to Customer',
+  'Pay to Subcontractor',
+]);
+
+const WUFOO_STYLE_BILLING_COLUMNS = [
+  'work_order_num',
+  'assigned_to',
+  'scheduled_date',
+  'property',
+  'unit_number',
+  'unit_size',
+  'description',
+  ...EXTRA_CHARGE_ITEM_COLUMN_KEYS,
+  'misc_additional_cost_description',
+  'misc_additional_cost_bill',
+  'additional_comments',
+  'total_billing_amount',
+  'sub_pay',
+  'created_at',
+];
+
 export const PRESET_REPORT_TEMPLATES: ReportTemplate[] = [
+  {
+    id: 'preset-wufoo-style-billing',
+    name: 'Wufoo-Style Billing',
+    columns: WUFOO_STYLE_BILLING_COLUMNS,
+    filters: {
+      reportType: 'wufoo_style_billing',
+      phases: ['ALL_EXCEPT_ARCHIVED'],
+    },
+    preset: true,
+  },
   {
     id: 'preset-qc-percentages',
     name: 'QC Percentages',
@@ -343,7 +423,7 @@ export async function fetchReportTemplates(): Promise<ReportTemplate[]> {
    }));
 }
 
-export async function saveReportTemplate(template: Pick<ReportTemplate, 'id' | 'name' | 'columns'> & { filters?: Record<string, unknown>; preset?: boolean }) {
+export async function saveReportTemplate(template: Pick<ReportTemplate, 'id' | 'name' | 'columns'> & { filters?: Record<string, unknown>; sort?: Record<string, unknown>; preset?: boolean }) {
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError) throw authError;
   if (!authData.user) throw new Error('You must be signed in to save report templates.');
@@ -354,8 +434,9 @@ export async function saveReportTemplate(template: Pick<ReportTemplate, 'id' | '
     name: template.name,
     columns: template.columns,
   };
-  // Attach filters if provided
-  if ((template as any).filters) payload.filters = (template as any).filters;
+  // Attach optional template metadata when provided.
+  if (template.filters) payload.filters = template.filters;
+  if (template.sort) payload.sort = template.sort;
 
   if (template.id && !template.id.startsWith('tmp-') && !template.preset) {
     const { error } = await supabase
@@ -421,7 +502,13 @@ export async function generateReport(params: {
   from: string;
   to: string;
   template: ReportTemplate;
+  sort?: ReportSort;
+  persistRun?: boolean;
 }): Promise<GeneratedReport> {
+  if (params.template.filters?.reportType === 'wufoo_style_billing') {
+    return generateWufooStyleBillingReport(params);
+  }
+
   if (params.template.filters?.reportType === 'qc_percentages') {
     return generateQualityControlPercentagesReport(params);
   }
@@ -572,28 +659,17 @@ export async function generateReport(params: {
   });
 
   // Prepare CSV rows: format currency and percent columns for CSV output only
-  const csvRows = rows.map(r => {
+  const sortedRows = sortReportRows(rows, params.sort);
+
+  const csvRows = sortedRows.map(r => {
     const out: Record<string, unknown> = {};
     // Use the same header labels as the preview window formatting so CSV matches displayed report
-    const currencyHeaders = new Set([
-      'Base Bill to Customer',
-      'Base Pay to Subcontractor',
-      'Base Profit',
-      'Extra Charges Billing',
-      'Extra Pay to Subcontractor',
-      'Extra Profit',
-      'Total Bill to Customer',
-      'Sub Pay',
-      'Total Profit',
-      'Miscellaneous Additional Cost Bill',
-      'Miscellaneous Additional Cost Sub Pay'
-    ]);
     const percentHeaders = new Set(['Profit Margin', 'Base Profit Margin', 'Extra Profit Margin', 'QC Score %', 'Subcontractor QC Score Average %', 'Average QC %']);
     for (const header of Object.keys(r)) {
       const val = r[header];
       if (val === null || val === undefined || val === '') {
         out[header] = '';
-      } else if (currencyHeaders.has(header)) {
+      } else if (CURRENCY_REPORT_HEADERS.has(header)) {
         out[header] = formatCurrency(val);
       } else if (percentHeaders.has(header)) {
         // if numeric, append % with two decimals; otherwise string
@@ -615,11 +691,13 @@ export async function generateReport(params: {
     to: params.to,
     filename,
     headers,
-    rows,
+    rows: sortedRows,
     csv,
   };
 
-  await saveReportRun(params.template, report);
+  if (params.persistRun !== false) {
+    await saveReportRun(params.template, report);
+  }
 
   return report;
 }
@@ -628,6 +706,8 @@ async function generateQualityControlPercentagesReport(params: {
   from: string;
   to: string;
   template: ReportTemplate;
+  sort?: ReportSort;
+  persistRun?: boolean;
 }): Promise<GeneratedReport> {
   const from = `${params.from}T00:00:00`;
   const to = `${params.to}T23:59:59`;
@@ -675,16 +755,18 @@ async function generateQualityControlPercentagesReport(params: {
         'QC Submissions': aggregate.submissions,
         'Average QC %': Number(averagePercent.toFixed(2)),
       };
-    })
-    .sort((a, b) => {
+    });
+
+  const defaultSortedRows = rows.sort((a, b) => {
       const percentDiff = Number(b['Average QC %']) - Number(a['Average QC %']);
       if (percentDiff !== 0) return percentDiff;
       const submissionsDiff = Number(b['QC Submissions']) - Number(a['QC Submissions']);
       if (submissionsDiff !== 0) return submissionsDiff;
       return String(a['Subcontractor Name']).localeCompare(String(b['Subcontractor Name']));
     });
+  const sortedRows = sortReportRows(defaultSortedRows, params.sort);
 
-  const csvRows = rows.map(row => ({
+  const csvRows = sortedRows.map(row => ({
     ...row,
     'Average QC %': `${Number(row['Average QC %']).toFixed(2)}%`,
   }));
@@ -694,11 +776,73 @@ async function generateQualityControlPercentagesReport(params: {
     to: params.to,
     filename: `${slugify(params.template.name)}_${params.from}_${params.to}.csv`,
     headers,
-    rows,
+    rows: sortedRows,
     csv: toCsv(csvRows, headers),
   };
 
-  await saveReportRun(params.template, report);
+  if (params.persistRun !== false) {
+    await saveReportRun(params.template, report);
+  }
+
+  return report;
+}
+
+async function generateWufooStyleBillingReport(params: {
+  from: string;
+  to: string;
+  template: ReportTemplate;
+  sort?: ReportSort;
+  persistRun?: boolean;
+}): Promise<GeneratedReport> {
+  const sourceReport = await generateReport({
+    ...params,
+    template: {
+      ...params.template,
+      name: `${params.template.name} Source`,
+      columns: params.template.columns.length ? params.template.columns : WUFOO_STYLE_BILLING_COLUMNS,
+      filters: {
+        ...(params.template.filters || {}),
+        reportType: undefined,
+      },
+      preset: true,
+    },
+    persistRun: false,
+  });
+
+  const outputColumns = wufooStyleOutputColumns(params.template);
+  const headers = outputColumns.map(column => column.header);
+  const rows = sourceReport.rows.map(row => {
+    const description = buildWufooStyleDescription(row);
+    const outputRow: Record<string, unknown> = {};
+
+    outputColumns.forEach(column => {
+      if (column.key === '__wufoo_description') {
+        outputRow[column.header] = description;
+        return;
+      }
+
+      const sourceValue = row[column.sourceHeader];
+      outputRow[column.header] = CURRENCY_REPORT_HEADERS.has(column.header) || CURRENCY_REPORT_HEADERS.has(column.sourceHeader)
+        ? formatCurrencyForReport(sourceValue)
+        : sourceValue;
+    });
+
+    return outputRow;
+  });
+  const sortedRows = sortReportRows(rows, params.sort);
+  const report = {
+    templateName: params.template.name,
+    from: params.from,
+    to: params.to,
+    filename: `${slugify(params.template.name)}_${params.from}_${params.to}.csv`,
+    headers,
+    rows: sortedRows,
+    csv: toCsv(sortedRows, headers),
+  };
+
+  if (params.persistRun !== false) {
+    await saveReportRun(params.template, report);
+  }
 
   return report;
 }
@@ -723,19 +867,6 @@ export function openReportInNewWindow(report: GeneratedReport) {
     throw new Error('The report window was blocked by the browser.');
   }
 
-  const currencyHeaders = new Set([
-    'Base Bill to Customer',
-    'Base Pay to Subcontractor',
-    'Base Profit',
-    'Extra Charges Billing',
-    'Extra Pay to Subcontractor',
-    'Extra Profit',
-    'Total Bill to Customer',
-    'Sub Pay',
-    'Total Profit',
-    'Miscellaneous Additional Cost Bill',
-    'Miscellaneous Additional Cost Sub Pay'
-  ]);
   const percentHeaders = new Set(['Profit Margin', 'Base Profit Margin', 'Extra Profit Margin', 'QC Score %', 'Subcontractor QC Score Average %', 'Average QC %']);
 
   const tableHead = report.headers
@@ -748,7 +879,7 @@ export function openReportInNewWindow(report: GeneratedReport) {
         let display = raw;
         if (raw === null || raw === undefined || raw === '') {
           display = '';
-        } else if (currencyHeaders.has(header)) {
+        } else if (CURRENCY_REPORT_HEADERS.has(header)) {
           // If it's already a formatted string, keep it; otherwise format
           const num = Number(raw);
           display = isFinite(num) ? formatCurrency(num) : String(raw);
@@ -1323,6 +1454,155 @@ function resolveColumns(keys: string[]) {
     .filter((column): column is ReportColumn => Boolean(column));
 
   return selected.length > 0 ? selected : fallback;
+}
+
+export function reportHeadersForTemplate(template: ReportTemplate): string[] {
+  if (template.filters?.reportType === 'wufoo_style_billing') {
+    return wufooStyleOutputColumns(template).map(column => column.header);
+  }
+
+  if (template.filters?.reportType === 'qc_percentages') {
+    return ['Subcontractor Name', 'QC Submissions', 'Average QC %'];
+  }
+
+  return resolveColumns(template.columns).map(column => column.label);
+}
+
+function wufooStyleOutputColumns(template: ReportTemplate) {
+  const selectedKeys = template.columns.length ? template.columns : WUFOO_STYLE_BILLING_COLUMNS;
+  const outputColumns: Array<{ key: string; header: string; sourceHeader: string }> = [];
+  const usedHeaders = new Set<string>();
+  let addedDescriptionColumn = false;
+
+  selectedKeys.forEach(key => {
+    if (WUFOO_STYLE_DESCRIPTION_COLUMN_KEYS.has(key)) {
+      if (!addedDescriptionColumn) {
+        outputColumns.push({
+          key: '__wufoo_description',
+          header: WUFOO_STYLE_DESCRIPTION_HEADER,
+          sourceHeader: 'Description',
+        });
+        usedHeaders.add(WUFOO_STYLE_DESCRIPTION_HEADER);
+        addedDescriptionColumn = true;
+      }
+      return;
+    }
+
+    const sourceColumn = REPORT_COLUMNS.find(column => column.key === key);
+    const header = WUFOO_STYLE_HEADER_OVERRIDES[key] || sourceColumn?.label || key;
+    if (usedHeaders.has(header)) return;
+
+    outputColumns.push({
+      key,
+      header,
+      sourceHeader: WUFOO_STYLE_SOURCE_HEADER_OVERRIDES[key] || sourceColumn?.label || header,
+    });
+    usedHeaders.add(header);
+  });
+
+  return outputColumns;
+}
+
+function buildWufooStyleDescription(row: Record<string, unknown>) {
+  const parts: string[] = [];
+  const jobDescription = String(row.Description ?? '').trim();
+  const additionalComments = String(row['Additional Comments'] ?? '').trim();
+
+  if (jobDescription) parts.push(jobDescription);
+
+  for (let index = 1; index <= EXTRA_CHARGE_ITEM_COLUMN_COUNT; index += 1) {
+    const text = String(row[`Extra Charge ${index}`] ?? '').trim();
+    if (!text) continue;
+    parts.push(formatChargeSentence(text));
+  }
+
+  const miscBill = String(row['Miscellaneous Additional Cost Bill'] ?? '').trim();
+  const miscDescription = String(row['Miscellaneous Additional Cost Description'] ?? '').trim();
+  if (miscDescription && miscBill && miscBill !== '$0.00' && miscBill !== '0') {
+    parts.push(`${normalizeCurrencyForSentence(miscBill)} Misc Additional Cost - ${miscDescription}.`);
+  }
+
+  if (additionalComments) parts.push(`Additional Comments: ${additionalComments}`);
+
+  return parts.join(' ');
+}
+
+function formatChargeSentence(value: string) {
+  const [amount, ...parts] = value.split(' - ');
+  const detail = parts.join(' - ').trim();
+  const normalizedAmount = normalizeCurrencyForSentence(amount);
+  return `${normalizedAmount} Charge${detail ? ` - ${detail}` : ''}.`;
+}
+
+function normalizeCurrencyForSentence(value: string) {
+  const trimmed = value.trim();
+  const numeric = Number(trimmed.replace(/[$,]/g, ''));
+  if (Number.isFinite(numeric)) {
+    return `$${numeric % 1 === 0 ? numeric.toFixed(0) : numeric.toFixed(2)}`;
+  }
+  return trimmed;
+}
+
+function formatCurrencyForReport(value: unknown) {
+  if (value === null || value === undefined || value === '') return '';
+  const text = String(value).trim();
+  if (text.startsWith('$')) return text;
+  const numeric = Number(text.replace(/[$,]/g, ''));
+  if (!Number.isFinite(numeric)) return text;
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(numeric);
+}
+
+export function sortReportRows<T extends Record<string, unknown>>(rows: T[], sort?: ReportSort): T[] {
+  if (!sort?.column) return rows;
+
+  const direction = sort.direction === 'desc' ? -1 : 1;
+
+  return [...rows].sort((a, b) => {
+    const aEmpty = isBlankReportValue(a[sort.column]);
+    const bEmpty = isBlankReportValue(b[sort.column]);
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return 1;
+    if (bEmpty) return -1;
+
+    const comparison = compareReportRowValues(a[sort.column], b[sort.column]);
+    return comparison * direction;
+  });
+}
+
+function compareReportRowValues(a: unknown, b: unknown) {
+  const aNumber = numberForSort(a);
+  const bNumber = numberForSort(b);
+  if (aNumber !== null && bNumber !== null) {
+    return aNumber - bNumber;
+  }
+
+  return String(a).localeCompare(String(b), undefined, {
+    sensitivity: 'base',
+    numeric: true,
+  });
+}
+
+function isBlankReportValue(value: unknown) {
+  return value === null || value === undefined || String(value).trim() === '';
+}
+
+function numberForSort(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+
+  const text = String(value).trim();
+  if (!text) return null;
+
+  const dateValue = Date.parse(text);
+  if (/^\d{4}-\d{2}-\d{2}/.test(text) && Number.isFinite(dateValue)) return dateValue;
+
+  const numeric = Number(text.replace(/[$,%\s,]/g, '').replace(/^WO-/, ''));
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 function compareReportJobsByPropertyAndUnit(a: ReportJob, b: ReportJob) {

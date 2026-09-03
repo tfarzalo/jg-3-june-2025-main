@@ -277,6 +277,7 @@ export function Sidebar() {
         items: [
           { icon: Activity, label: 'Activity Log', to: '/dashboard/activity', dataTutorial: 'activity' },
           { icon: FileText, label: 'Reports', to: '/dashboard/reports' },
+          { icon: FileText, label: 'Dev Reports', to: '/dashboard/reports-dev' },
         ]
       },
       // Show settings for admin settings managers

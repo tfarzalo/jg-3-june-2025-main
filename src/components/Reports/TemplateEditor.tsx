@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { EXTRA_CHARGE_ITEM_COLUMN_KEYS, REPORT_COLUMNS, type ReportTemplate } from '../../lib/reports';
 import { formatJobPhaseLabel } from '../../lib/jobPhaseLabels';
 
-type TemplateDraft = Pick<ReportTemplate, 'id' | 'name' | 'columns' | 'preset' | 'filters'>;
+type TemplateDraft = Pick<ReportTemplate, 'id' | 'name' | 'columns' | 'preset' | 'filters' | 'sort'>;
 
 const COLUMN_CATEGORIES = [
   {
@@ -170,7 +170,15 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
         if (!mounted) return;
         if (res.ok) {
           const data = await res.json();
-          const labels = (data || []).map((p: any) => p.job_phase_label).filter(Boolean);
+          const labels = Array.isArray(data)
+            ? data
+                .map((phase: unknown) => (
+                  phase && typeof phase === 'object' && 'job_phase_label' in phase
+                    ? String(phase.job_phase_label || '')
+                    : ''
+                ))
+                .filter(Boolean)
+            : [];
           setPhases(labels);
           return;
         }
@@ -220,7 +228,14 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
     if (!name.trim()) return alert('Please name the template');
     const filters = { ...(template?.filters || {}) } as Record<string, unknown>;
     if (phaseSelection && phaseSelection.length) filters.phases = phaseSelection;
-    onSave({ id: template?.id || `tmp-${Date.now()}`, name: name.trim(), columns, preset: template?.preset, filters });
+    onSave({
+      id: template?.id || `tmp-${Date.now()}`,
+      name: name.trim(),
+      columns,
+      preset: template?.preset,
+      filters,
+      sort: template?.sort || {},
+    });
   };
 
   return (
