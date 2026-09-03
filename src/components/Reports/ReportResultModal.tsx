@@ -5,11 +5,13 @@ export default function ReportResultModal({
   report,
   onClose,
   onDownload,
+  onDownloadExcel,
   onView,
 }: {
   report: GeneratedReport;
   onClose: () => void;
   onDownload: () => void;
+  onDownloadExcel: () => void | Promise<void>;
   onView: () => void;
 }) {
   return (
@@ -40,6 +42,12 @@ export default function ReportResultModal({
             className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white"
           >
             Download CSV
+          </button>
+          <button
+            onClick={onDownloadExcel}
+            className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            Download Excel
           </button>
         </div>
       </div>

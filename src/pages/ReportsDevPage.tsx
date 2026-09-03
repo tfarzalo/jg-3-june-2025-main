@@ -11,6 +11,7 @@ import {
   deleteReportRun,
   deleteReportTemplate,
   downloadReportCsv,
+  downloadReportExcel,
   fetchReportRuns,
   fetchReportTemplates,
   generateDevReport,
@@ -123,6 +124,16 @@ export default function ReportsDevPage() {
   const handleDownloadReport = () => {
     if (!reportResult) return;
     downloadReportCsv(reportResult);
+  };
+
+  const handleDownloadExcelReport = async () => {
+    if (!reportResult) return;
+    try {
+      await downloadReportExcel(reportResult);
+    } catch (error) {
+      console.error('Failed to download dev Excel report:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to download Excel report');
+    }
   };
 
   const handleViewReport = () => {
@@ -258,6 +269,19 @@ export default function ReportsDevPage() {
                             </button>
                             <button
                               onClick={async () => {
+                                try {
+                                  await downloadReportExcel(run.report as GeneratedReport);
+                                } catch (error) {
+                                  console.error('Failed to download dev Excel report:', error);
+                                  toast.error(error instanceof Error ? error.message : 'Failed to download Excel report');
+                                }
+                              }}
+                              className="text-sm font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                            >
+                              Excel
+                            </button>
+                            <button
+                              onClick={async () => {
                                 if (!confirm('Delete this report history item?')) return;
                                 try {
                                   await deleteReportRun(run.id);
@@ -311,6 +335,7 @@ export default function ReportsDevPage() {
           report={reportResult}
           onClose={() => setReportResult(null)}
           onDownload={handleDownloadReport}
+          onDownloadExcel={handleDownloadExcelReport}
           onView={handleViewReport}
         />
       )}

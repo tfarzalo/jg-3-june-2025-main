@@ -10,6 +10,7 @@ export {
   deleteReportRun,
   deleteReportTemplate,
   downloadReportCsv,
+  downloadReportExcel,
   fetchReportRuns,
   fetchReportTemplates,
   openReportInNewWindow,

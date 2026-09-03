@@ -357,6 +357,28 @@ const CURRENCY_REPORT_HEADERS = new Set([
   'Pay to Subcontractor',
 ]);
 
+const PERCENT_REPORT_HEADERS = new Set([
+  'Profit Margin',
+  'Base Profit Margin',
+  'Extra Profit Margin',
+  'QC Score %',
+  'Subcontractor QC Score Average %',
+  'Average QC %',
+]);
+
+const DATE_REPORT_HEADERS = new Set([
+  'Scheduled Date',
+  'Scheduled Work Date',
+  'Date Created',
+  'Created Date (Job Request Created Date)',
+  'Last Updated',
+  'QC Submitted Date',
+  'QC Updated Date',
+  'QC Date Painted',
+  'QC Date Walked',
+  'Work Order Submitted',
+]);
+
 const WUFOO_STYLE_BILLING_COLUMNS = [
   'work_order_num',
   'phase',
@@ -665,14 +687,13 @@ export async function generateReport(params: {
   const csvRows = sortedRows.map(r => {
     const out: Record<string, unknown> = {};
     // Use the same header labels as the preview window formatting so CSV matches displayed report
-    const percentHeaders = new Set(['Profit Margin', 'Base Profit Margin', 'Extra Profit Margin', 'QC Score %', 'Subcontractor QC Score Average %', 'Average QC %']);
     for (const header of Object.keys(r)) {
       const val = r[header];
       if (val === null || val === undefined || val === '') {
         out[header] = '';
       } else if (CURRENCY_REPORT_HEADERS.has(header)) {
         out[header] = formatCurrency(val);
-      } else if (percentHeaders.has(header)) {
+      } else if (PERCENT_REPORT_HEADERS.has(header)) {
         // if numeric, append % with two decimals; otherwise string
         const n = Number(val);
         out[header] = Number.isFinite(n) ? `${n.toFixed(2)}%` : String(val);
@@ -862,13 +883,87 @@ export function downloadReportCsv(report: GeneratedReport) {
   downloadTextFile(report.csv, report.filename, 'text/csv;charset=utf-8;');
 }
 
+export async function downloadReportExcel(report: GeneratedReport) {
+  const ExcelJS = await import('exceljs');
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'JG Painting Pros';
+  workbook.created = new Date();
+  workbook.modified = new Date();
+
+  const worksheet = workbook.addWorksheet('Report', {
+    views: [{ state: 'frozen', ySplit: 1 }],
+  });
+
+  worksheet.columns = report.headers.map(header => ({
+    header,
+    key: header,
+    width: excelColumnWidth(report, header),
+    style: {
+      alignment: {
+        vertical: 'top',
+        wrapText: shouldWrapExcelColumn(header),
+      },
+    },
+  }));
+
+  report.rows.forEach(row => {
+    const excelRow = worksheet.addRow(
+      Object.fromEntries(report.headers.map(header => [header, excelCellValue(header, row[header])]))
+    );
+
+    report.headers.forEach((header, index) => {
+      const cell = excelRow.getCell(index + 1);
+      if (CURRENCY_REPORT_HEADERS.has(header) && typeof cell.value === 'number') {
+        cell.numFmt = '$#,##0.00';
+      } else if (PERCENT_REPORT_HEADERS.has(header) && typeof cell.value === 'number') {
+        cell.numFmt = '0.00"%"';
+      } else if (DATE_REPORT_HEADERS.has(header) && cell.value instanceof Date) {
+        cell.numFmt = 'yyyy-mm-dd';
+      }
+    });
+  });
+
+  const headerRow = worksheet.getRow(1);
+  headerRow.height = 24;
+  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  headerRow.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FF1F4E78' },
+  };
+  headerRow.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  headerRow.eachCell(cell => {
+    cell.border = {
+      bottom: { style: 'thin', color: { argb: 'FFD9E2F3' } },
+    };
+  });
+
+  worksheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: Math.max(report.rows.length + 1, 1), column: Math.max(report.headers.length, 1) },
+  };
+
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+    row.eachCell(cell => {
+      cell.border = {
+        bottom: { style: 'hair', color: { argb: 'FFE5E7EB' } },
+      };
+    });
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  downloadBlob(
+    new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    report.filename.replace(/\.csv$/i, '.xlsx')
+  );
+}
+
 export function openReportInNewWindow(report: GeneratedReport) {
   const win = window.open('', '_blank');
   if (!win) {
     throw new Error('The report window was blocked by the browser.');
   }
-
-  const percentHeaders = new Set(['Profit Margin', 'Base Profit Margin', 'Extra Profit Margin', 'QC Score %', 'Subcontractor QC Score Average %', 'Average QC %']);
 
   const tableHead = report.headers
     .map(header => `<th>${escapeHtml(header)}</th>`)
@@ -884,7 +979,7 @@ export function openReportInNewWindow(report: GeneratedReport) {
           // If it's already a formatted string, keep it; otherwise format
           const num = Number(raw);
           display = isFinite(num) ? formatCurrency(num) : String(raw);
-        } else if (percentHeaders.has(header)) {
+        } else if (PERCENT_REPORT_HEADERS.has(header)) {
           const num = Number(raw);
           display = isFinite(num) ? `${num.toFixed(2)}%` : String(raw);
         } else {
@@ -1149,6 +1244,10 @@ async function fetchSnapshotTotals(jobs: ReportJob[]) {
 
 export function downloadTextFile(content: string, filename: string, type: string) {
   const blob = new Blob([content], { type });
+  downloadBlob(blob, filename);
+}
+
+function downloadBlob(blob: Blob, filename: string) {
   const url = window.URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
@@ -1157,6 +1256,56 @@ export function downloadTextFile(content: string, filename: string, type: string
   anchor.click();
   anchor.remove();
   window.URL.revokeObjectURL(url);
+}
+
+function excelColumnWidth(report: GeneratedReport, header: string) {
+  const maxLength = Math.max(
+    header.length,
+    ...report.rows.map(row => String(displayReportValueForExcel(header, row[header]) ?? '').length)
+  );
+  const maxWidth = shouldWrapExcelColumn(header) ? 80 : 36;
+  return Math.min(Math.max(maxLength + 2, 12), maxWidth);
+}
+
+function excelCellValue(header: string, value: unknown) {
+  if (value === null || value === undefined || value === '') return '';
+
+  if (CURRENCY_REPORT_HEADERS.has(header) || PERCENT_REPORT_HEADERS.has(header)) {
+    const numeric = numericReportValue(value);
+    return numeric === null ? String(value) : numeric;
+  }
+
+  if (DATE_REPORT_HEADERS.has(header)) {
+    const text = String(value).trim();
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(text) ? new Date(`${text}T00:00:00`) : new Date(text);
+    return Number.isNaN(date.getTime()) ? String(value) : date;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  return String(value);
+}
+
+function displayReportValueForExcel(header: string, value: unknown) {
+  if (value === null || value === undefined || value === '') return '';
+  if (CURRENCY_REPORT_HEADERS.has(header)) return formatCurrencyForReport(value);
+  if (PERCENT_REPORT_HEADERS.has(header)) {
+    const numeric = numericReportValue(value);
+    return numeric === null ? String(value) : `${numeric.toFixed(2)}%`;
+  }
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value);
+}
+
+function numericReportValue(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const numeric = Number(String(value).replace(/[$,%\s,]/g, ''));
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function shouldWrapExcelColumn(header: string) {
+  return header === WUFOO_STYLE_DESCRIPTION_HEADER ||
+    header.toLowerCase().includes('description') ||
+    header.toLowerCase().includes('comments');
 }
 
 // End of helpers

@@ -93,7 +93,7 @@ export default function RunReportModal({ onClose, template, templates, getReport
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-[#0F172A] rounded-lg p-6 w-full max-w-xl shadow-xl">
+      <div className="bg-white dark:bg-[#0F172A] rounded-lg p-6 w-full max-w-4xl shadow-xl">
         <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Run Report {selectedTemplate ? `- ${selectedTemplate.name}` : ''}</h3>
 
         {/* Template selection when not preselected */}
@@ -115,7 +115,7 @@ export default function RunReportModal({ onClose, template, templates, getReport
           </div>
         )}
 
-        <div className="mb-3 flex flex-wrap gap-2">
+        <div className="mb-3 flex flex-wrap gap-2 lg:flex-nowrap">
           <button onClick={() => applyPreset('yesterday')} className="px-3 py-1 rounded bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-[#1E293B] dark:text-gray-100 dark:hover:bg-[#263449]">Yesterday</button>
           <button onClick={() => applyPreset('today')} className="px-3 py-1 rounded bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-[#1E293B] dark:text-gray-100 dark:hover:bg-[#263449]">Today</button>
           <button onClick={() => applyPreset('this-week')} className="px-3 py-1 rounded bg-gray-100 text-gray-800 hover:bg-gray-200 dark:bg-[#1E293B] dark:text-gray-100 dark:hover:bg-[#263449]">This Week</button>
