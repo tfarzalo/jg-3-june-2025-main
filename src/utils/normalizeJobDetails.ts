@@ -62,6 +62,7 @@ export type JobDetailsNormalized = {
   unit_number?: string | null;
   description?: string | null;
   scheduled_date?: string | null;
+  scheduled_end_date?: string | null;
   purchase_order?: string | null;
   assigned_to?: string | null;
   assignment_status?: string | null;
@@ -174,6 +175,7 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
     unit_number: d?.unit_number ?? null,
     description: d?.description ?? null,
     scheduled_date: d?.scheduled_date ?? null,
+    scheduled_end_date: d?.scheduled_end_date ?? null,
     purchase_order: d?.purchase_order ?? null,
     assigned_to: d?.assigned_to ?? null,
     assignment_status: d?.assignment_status ?? null,

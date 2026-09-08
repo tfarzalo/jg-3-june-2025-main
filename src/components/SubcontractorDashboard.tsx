@@ -35,6 +35,7 @@ import { getSubcontractorContact, type PropertyContact } from '../lib/contacts/c
 import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 import { getPreviewUrl } from '../utils/storagePreviews';
 import { getSubcontractorVisibleDates } from '../utils/subcontractorScheduleDates';
+import { getJobSpanDayLabel } from '../utils/jobScheduling';
 
 
 
@@ -43,6 +44,7 @@ interface Job {
   work_order_num: number;
   unit_number: string;
   scheduled_date: string;
+  scheduled_end_date?: string | null;
   assignment_status?: 'pending' | 'accepted' | 'declined' | 'auto_declined' | 'in_progress' | 'completed' | null;
   assignment_decision_at?: string | null;
   assigned_at?: string | null;
@@ -713,6 +715,10 @@ export function SubcontractorDashboard() {
         'America/New_York', 
         "yyyy-MM-dd'T'23:59:59XXX"
       );
+
+      // Plain YYYY-MM-DD (date-only) form of the selected day, used to match
+      // against scheduled_end_date (a `date` column) for multi-day jobs.
+      const selectedDateOnly = formatInTimeZone(date, 'America/New_York', 'yyyy-MM-dd');
       
       console.log(`fetchJobsForDate: Date range (ET): ${startOfDate} to ${endOfDate}`);
 
@@ -756,6 +762,7 @@ export function SubcontractorDashboard() {
           work_order_num,
           unit_number,
           scheduled_date,
+          scheduled_end_date,
           assignment_status,
           assignment_decision_at,
           assigned_at,
@@ -791,8 +798,8 @@ export function SubcontractorDashboard() {
         `)
         .eq('assigned_to', userId)
         .in('current_phase_id', activePhaseIds)
-        .gte('scheduled_date', startOfDate)
         .lte('scheduled_date', endOfDate)
+        .or(`scheduled_end_date.gte.${selectedDateOnly},and(scheduled_end_date.is.null,scheduled_date.gte.${startOfDate})`)
         .order('scheduled_date', { ascending: true });
         
       if (jobsError) {

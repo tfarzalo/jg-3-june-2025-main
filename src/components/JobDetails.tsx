@@ -439,6 +439,8 @@ export function JobDetails() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [editingScheduledDate, setEditingScheduledDate] = useState(false);
   const [scheduledDateDraft, setScheduledDateDraft] = useState('');
+  const [isMultiDayDraft, setIsMultiDayDraft] = useState(false);
+  const [scheduledEndDateDraft, setScheduledEndDateDraft] = useState('');
   const [savingScheduledDate, setSavingScheduledDate] = useState(false);
   const [editingUnitSize, setEditingUnitSize] = useState(false);
   const [unitSizeDraft, setUnitSizeDraft] = useState('');
@@ -456,8 +458,12 @@ export function JobDetails() {
   useEffect(() => {
     if (!job?.scheduled_date) return;
     setScheduledDateDraft(job.scheduled_date.split('T')[0]);
+    const endDateOnly = job.scheduled_end_date ? job.scheduled_end_date.split('T')[0] : '';
+    const startDateOnly = job.scheduled_date.split('T')[0];
+    setIsMultiDayDraft(Boolean(endDateOnly && endDateOnly !== startDateOnly));
+    setScheduledEndDateDraft(endDateOnly);
     setEditingScheduledDate(false);
-  }, [job?.scheduled_date]);
+  }, [job?.scheduled_date, job?.scheduled_end_date]);
 
   useEffect(() => {
     setUnitSizeDraft(job?.unit_size?.id || '');
@@ -1952,7 +1958,19 @@ export function JobDetails() {
     }
 
     const currentDate = job?.scheduled_date?.split('T')[0] || '';
-    if (scheduledDateDraft === currentDate) {
+    const currentEndDate = job?.scheduled_end_date ? job.scheduled_end_date.split('T')[0] : '';
+    const nextEndDate = isMultiDayDraft ? scheduledEndDateDraft : '';
+
+    if (isMultiDayDraft && !scheduledEndDateDraft) {
+      toast.error('Please select an estimated end date, or uncheck the multi-day option.');
+      return;
+    }
+    if (isMultiDayDraft && scheduledEndDateDraft < scheduledDateDraft) {
+      toast.error('Estimated end date cannot be before the scheduled start date.');
+      return;
+    }
+
+    if (scheduledDateDraft === currentDate && nextEndDate === currentEndDate) {
       setEditingScheduledDate(false);
       return;
     }
@@ -1961,7 +1979,10 @@ export function JobDetails() {
     try {
       const { error } = await supabase
         .from('jobs')
-        .update({ scheduled_date: `${scheduledDateDraft}T00:00:00` })
+        .update({
+          scheduled_date: `${scheduledDateDraft}T00:00:00`,
+          scheduled_end_date: nextEndDate || null,
+        })
         .eq('id', jobId);
 
       if (error) throw error;
@@ -1977,11 +1998,16 @@ export function JobDetails() {
         jobId,
         eventType: 'scheduled_date_updated',
         title: 'Scheduled date updated',
-        description: `Scheduled date changed from ${currentDate || 'not set'} to ${scheduledDateDraft}`,
+        description: `Scheduled date changed from ${currentDate || 'not set'} to ${scheduledDateDraft}` +
+          (nextEndDate !== currentEndDate
+            ? `; end date changed from ${currentEndDate || 'not set'} to ${nextEndDate || 'not set'}`
+            : ''),
         action: 'updated',
         metadata: {
           previous_scheduled_date: currentDate || null,
           scheduled_date: scheduledDateDraft,
+          previous_scheduled_end_date: currentEndDate || null,
+          scheduled_end_date: nextEndDate || null,
         },
       });
 
@@ -4693,41 +4719,79 @@ export function JobDetails() {
                   </h3>
                   <div className="pl-5">
                     {editingScheduledDate && canEditInlineJobDetails ? (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          type="date"
-                          value={scheduledDateDraft}
-                          onChange={(event) => setScheduledDateDraft(event.target.value)}
-                          onClick={(event) => event.currentTarget.showPicker?.()}
-                          className="h-9 rounded-md border border-gray-300 dark:border-[#2D3B4E] bg-white dark:bg-[#0F172A] px-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleSaveScheduledDate}
-                          disabled={savingScheduledDate}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                          title="Save scheduled date"
-                          aria-label="Save scheduled date"
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setScheduledDateDraft(job?.scheduled_date?.split('T')[0] || '');
-                            setEditingScheduledDate(false);
-                          }}
-                          disabled={savingScheduledDate}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 dark:border-[#2D3B4E] dark:text-gray-400 dark:hover:bg-[#2D3B4E] dark:hover:text-gray-200"
-                          title="Cancel scheduled date edit"
-                          aria-label="Cancel scheduled date edit"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            type="date"
+                            value={scheduledDateDraft}
+                            onChange={(event) => setScheduledDateDraft(event.target.value)}
+                            onClick={(event) => event.currentTarget.showPicker?.()}
+                            className="h-9 rounded-md border border-gray-300 dark:border-[#2D3B4E] bg-white dark:bg-[#0F172A] px-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleSaveScheduledDate}
+                            disabled={savingScheduledDate}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                            title="Save scheduled date"
+                            aria-label="Save scheduled date"
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setScheduledDateDraft(job?.scheduled_date?.split('T')[0] || '');
+                              const endDateOnly = job?.scheduled_end_date ? job.scheduled_end_date.split('T')[0] : '';
+                              const startDateOnly = job?.scheduled_date?.split('T')[0] || '';
+                              setIsMultiDayDraft(Boolean(endDateOnly && endDateOnly !== startDateOnly));
+                              setScheduledEndDateDraft(endDateOnly);
+                              setEditingScheduledDate(false);
+                            }}
+                            disabled={savingScheduledDate}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50 dark:border-[#2D3B4E] dark:text-gray-400 dark:hover:bg-[#2D3B4E] dark:hover:text-gray-200"
+                            title="Cancel scheduled date edit"
+                            aria-label="Cancel scheduled date edit"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={isMultiDayDraft}
+                            onChange={(event) => {
+                              const checked = event.target.checked;
+                              setIsMultiDayDraft(checked);
+                              if (!checked) setScheduledEndDateDraft('');
+                            }}
+                            className="w-4 h-4 rounded border-gray-300 dark:border-[#2D3B4E] text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">
+                            Job completion date is different than the scheduled start date
+                          </span>
+                        </label>
+
+                        {isMultiDayDraft && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">Estimated End Date:</span>
+                            <input
+                              type="date"
+                              value={scheduledEndDateDraft}
+                              min={scheduledDateDraft}
+                              onChange={(event) => setScheduledEndDateDraft(event.target.value)}
+                              onClick={(event) => event.currentTarget.showPicker?.()}
+                              className="h-9 rounded-md border border-gray-300 dark:border-[#2D3B4E] bg-white dark:bg-[#0F172A] px-3 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <span className="inline-flex items-center gap-2 text-gray-900 dark:text-white font-medium">
-                        {formatDate(job?.scheduled_date)}
+                        {job?.scheduled_end_date && job.scheduled_end_date.split('T')[0] !== job?.scheduled_date?.split('T')[0]
+                          ? `${formatDate(job?.scheduled_date)} – ${formatDate(job.scheduled_end_date)}`
+                          : formatDate(job?.scheduled_date)}
                         {canEditInlineJobDetails && (
                           <button
                             type="button"

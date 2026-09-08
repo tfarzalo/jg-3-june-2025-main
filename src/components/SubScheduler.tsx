@@ -22,12 +22,14 @@ import { isAvailableOnDate, WorkingDays } from '../lib/availabilityUtils';
 import { AssignmentCountdownTimer } from './AssignmentCountdownTimer';
 import { dispatchSmsNotification } from '../lib/sms/dispatchSmsNotification';
 import { fetchActiveSubcontractors } from '../lib/users/activeSubcontractors';
+import { isJobActiveOnDate, getJobSpanDayLabel } from '../utils/jobScheduling';
 
 interface Job {
   id: string;
   work_order_num: number;
   unit_number: string;
   scheduled_date: string;
+  scheduled_end_date?: string | null;
   assigned_to?: string | null;
   assigned_at?: string | null;
   assignment_status?: string | null;
@@ -158,8 +160,8 @@ export default function SubScheduler() {
 
     // Filter jobs by selected date
     const jobsForDate = jobs.filter(job => {
-      // Use helper to compare dates safely
-      return isSameDayInEastern(job.scheduled_date, selectedDate);
+      // Use shared helper so multi-day jobs remain visible on every day of their span
+      return isJobActiveOnDate(job, selectedDate);
     });
 
     const phaseFiltered = showAllPhases
@@ -217,6 +219,7 @@ export default function SubScheduler() {
           work_order_num,
           unit_number,
           scheduled_date,
+          scheduled_end_date,
           assigned_to,
           assigned_at,
           assignment_status,
@@ -946,6 +949,11 @@ JG Painting Pros Inc.`;
                             <p className="text-xs text-gray-500 dark:text-gray-500">
                               {formatDate(job.scheduled_date)}
                             </p>
+                            {getJobSpanDayLabel(job, selectedDate) && (
+                              <span className="ml-2 px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-semibold">
+                                {getJobSpanDayLabel(job, selectedDate)}
+                              </span>
+                            )}
                           </div>
                           {job.assignment_status === 'declined' && (
                             <p className="mt-1 text-[11px] text-red-600">

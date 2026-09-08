@@ -14,6 +14,7 @@ export interface Job {
   unit_number: string;
   description: string;
   scheduled_date: string;
+  scheduled_end_date?: string | null;
   purchase_order?: string | null;
   assigned_to: string | null;
   assignment_status?: string | null;
@@ -345,6 +346,7 @@ export function useJobDetails(jobId: string | undefined) {
             unit_number,
             description,
             scheduled_date,
+            scheduled_end_date,
             assigned_to,
             assigned_to_name_snapshot,
             assigned_to_email_snapshot,

@@ -53,6 +53,7 @@ import { dispatchSmsNotification } from '../../lib/sms/dispatchSmsNotification';
 import { useUserRole } from '../../contexts/UserRoleContext';
 import { fetchActiveSubcontractors } from '../../lib/users/activeSubcontractors';
 import EventModal from '../calendar/EventModal';
+import { isJobActiveOnDate, getJobSpanDayLabel, formatJobDateRange } from '../../utils/jobScheduling';
 
 const TZ = 'America/New_York';
 const VISIBILITY_KEY = 'jg-dev-calendar-3-visibility';
@@ -89,6 +90,7 @@ interface CalendarJob {
   description: string | null;
   purchase_order: string | null;
   scheduled_date: string;
+  scheduled_end_date: string | null;
   job_phase: JobPhase;
   job_type_label: string | null;
   assigned_to: string | null;
@@ -122,6 +124,15 @@ interface CalendarItem {
   address?: string | null;
   assignedSubcontractor?: string | null;
   raw: CalendarJob | CalendarEvent;
+  /** For jobs that span multiple days: which day of the span this instance represents. */
+  spanInfo?: {
+    startDate: string;
+    endDate: string;
+    dayIndex: number; // 1-based
+    totalDays: number;
+    isSpanStart: boolean;
+    isSpanEnd: boolean;
+  } | null;
 }
 
 interface VisibilityState {
@@ -178,6 +189,7 @@ const JOB_CALENDAR_SELECT = `
   description,
   purchase_order,
   scheduled_date,
+  scheduled_end_date,
   assigned_to,
   assigned_at,
   assignment_status,
@@ -354,26 +366,72 @@ function defaultVisibility(phases: JobPhase[]): VisibilityState {
   };
 }
 
-function normalizeJob(job: CalendarJob): CalendarItem {
+function normalizeJob(job: CalendarJob): CalendarItem[] {
   const workOrder = formatWorkOrderNumber(job.work_order_num);
   const unit = job.unit_number ? `Unit ${job.unit_number}` : 'Unit not set';
   const jobType = job.job_type_label || 'Job type not set';
   const subcontractor = job.assigned_to_name || 'Unassigned';
   const isUnassignedJobRequest = !job.assigned_to && job.job_phase?.job_phase_label === 'Job Request';
-  return {
-    id: `job-${job.id}`,
+  const color = isUnassignedJobRequest ? '#60a5fa' : job.job_phase?.color_dark_mode || '#64748b';
+  const status = job.job_phase?.job_phase_label || 'Unknown';
+
+  const startDate = dateOnlyFromJob(job.scheduled_date);
+  const endDate = job.scheduled_end_date ? dateOnlyFromJob(job.scheduled_end_date) : startDate;
+  const isMultiDay = Boolean(endDate && endDate > startDate);
+
+  const baseTitle = `${workOrder} · ${job.property_name} · ${unit} · ${jobType} · ${subcontractor}`;
+
+  if (!isMultiDay) {
+    return [{
+      id: `job-${job.id}`,
+      sourceId: job.id,
+      type: 'job',
+      title: baseTitle,
+      date: startDate,
+      allDay: true,
+      color,
+      status,
+      customerName: job.property_name,
+      address: formatAddress(job),
+      assignedSubcontractor: job.assigned_to_name,
+      raw: job,
+      spanInfo: null,
+    }];
+  }
+
+  // Multi-day job: produce one CalendarItem per day in the [start, end] range,
+  // each tagged with spanInfo so day-cells and pills can render a visual
+  // continuation and the correct "Day X of Y" indicator.
+  const dayDates: string[] = [];
+  let cursor = startDate;
+  while (cursor <= endDate) {
+    dayDates.push(cursor);
+    cursor = dateOnlyFromDate(addDays(new Date(`${cursor}T00:00:00`), 1));
+  }
+  const totalDays = dayDates.length;
+
+  return dayDates.map((date, index) => ({
+    id: `job-${job.id}-day${index + 1}`,
     sourceId: job.id,
     type: 'job',
-    title: `${workOrder} · ${job.property_name} · ${unit} · ${jobType} · ${subcontractor}`,
-    date: dateOnlyFromJob(job.scheduled_date),
+    title: `${baseTitle} (Day ${index + 1}/${totalDays})`,
+    date,
     allDay: true,
-    color: isUnassignedJobRequest ? '#60a5fa' : job.job_phase?.color_dark_mode || '#64748b',
-    status: job.job_phase?.job_phase_label || 'Unknown',
+    color,
+    status,
     customerName: job.property_name,
     address: formatAddress(job),
     assignedSubcontractor: job.assigned_to_name,
     raw: job,
-  };
+    spanInfo: {
+      startDate,
+      endDate,
+      dayIndex: index + 1,
+      totalDays,
+      isSpanStart: index === 0,
+      isSpanEnd: index === totalDays - 1,
+    },
+  }));
 }
 
 function normalizeEvent(event: CalendarEvent): CalendarItem {
@@ -435,6 +493,7 @@ function mapCalendarJobRow(job: any): CalendarJob {
     description: job.description,
     purchase_order: job.purchase_order || null,
     scheduled_date: job.scheduled_date,
+    scheduled_end_date: job.scheduled_end_date || null,
     job_phase: phase || { id: 'unknown', job_phase_label: 'Unknown', color_dark_mode: '#64748b' },
     job_type_label: jobType?.job_type_label || null,
     assigned_to: job.assigned_to || null,
@@ -483,6 +542,14 @@ export default function DevCalendar3Page() {
   const [subscriptionTarget, setSubscriptionTarget] = useState<SubscriptionTarget | null>(null);
   const [calendarToken, setCalendarToken] = useState('');
   const [subscriptionCopied, setSubscriptionCopied] = useState(false);
+  const [pendingJobMove, setPendingJobMove] = useState<{
+    job: CalendarJob;
+    targetStartDate: string;
+    originalStartDate: string;
+    originalEndDate: string;
+    deltaDays: number;
+  } | null>(null);
+  const [applyingJobMove, setApplyingJobMove] = useState(false);
   const lastDragMonthScrollAt = useRef(0);
   const lastMonthWheelAt = useRef(0);
   const lastScheduleUpdateAtRef = useRef<string | null>(null);
@@ -518,14 +585,15 @@ export default function DevCalendar3Page() {
     try {
       const rangeStart = formatInTimeZone(visibleRange.start, TZ, "yyyy-MM-dd'T'00:00:00XXX");
       const rangeEnd = formatInTimeZone(visibleRange.end, TZ, "yyyy-MM-dd'T'23:59:59XXX");
+      const rangeStartDateOnly = dateOnlyFromDate(visibleRange.start);
 
       const [phaseResult, jobResult, eventResult, subResult] = await Promise.all([
         supabase.from('job_phases').select('id, job_phase_label, color_dark_mode, sort_order').neq('job_phase_label', 'Grading').order('sort_order'),
         supabase
           .from('jobs')
           .select(JOB_CALENDAR_SELECT)
-          .gte('scheduled_date', rangeStart)
           .lte('scheduled_date', rangeEnd)
+          .or(`scheduled_end_date.gte.${rangeStartDateOnly},and(scheduled_end_date.is.null,scheduled_date.gte.${rangeStart})`)
           .order('scheduled_date', { ascending: true }),
         listCalendarEvents(rangeStart, rangeEnd),
         fetchActiveSubcontractors('id, full_name, email, phone'),
@@ -590,9 +658,10 @@ export default function DevCalendar3Page() {
 
     const mappedJob = mapCalendarJobRow(data);
     const scheduledDate = dateOnlyFromJob(mappedJob.scheduled_date);
+    const scheduledEndDate = mappedJob.scheduled_end_date ? dateOnlyFromJob(mappedJob.scheduled_end_date) : scheduledDate;
     const rangeStart = dateOnlyFromDate(visibleRange.start);
     const rangeEnd = dateOnlyFromDate(visibleRange.end);
-    const isInVisibleRange = scheduledDate >= rangeStart && scheduledDate <= rangeEnd;
+    const isInVisibleRange = scheduledEndDate >= rangeStart && scheduledDate <= rangeEnd;
 
     setJobs((prev) => {
       const withoutChangedJob = prev.filter((job) => job.id !== mappedJob.id);
@@ -601,7 +670,9 @@ export default function DevCalendar3Page() {
 
     setSelectedItem((current) => {
       if (current?.type !== 'job' || current.sourceId !== mappedJob.id) return current;
-      return isInVisibleRange ? normalizeJob(mappedJob) : null;
+      if (!isInVisibleRange) return null;
+      const normalized = normalizeJob(mappedJob);
+      return normalized.find((candidate) => candidate.date === current.date) || normalized[0] || null;
     });
 
     return true;
@@ -848,7 +919,7 @@ export default function DevCalendar3Page() {
   }, [selectedItem]);
 
   const allItems = useMemo(() => {
-    const normalizedJobs = jobs.map(normalizeJob);
+    const normalizedJobs = jobs.flatMap(normalizeJob);
     const normalizedEvents = events.flatMap((event) => {
       if (event.parent_event_id) return [];
       if (event.is_recurring && event.recurrence_type) {
@@ -1133,8 +1204,37 @@ export default function DevCalendar3Page() {
     }
 
     if (item.type === 'job') {
-      const previousJobs = jobs;
       const draggedJob = item.raw as CalendarJob;
+      const spanStartDate = item.spanInfo?.startDate || dateOnlyFromJob(draggedJob.scheduled_date);
+      const spanEndDate = item.spanInfo?.endDate || (draggedJob.scheduled_end_date ? dateOnlyFromJob(draggedJob.scheduled_end_date) : spanStartDate);
+      const isMultiDay = spanEndDate > spanStartDate;
+
+      // Compute how many days forward/back the drop target shifts the job's START date,
+      // relative to the day the dragged pill instance represents (not necessarily the
+      // job's start day, since multi-day jobs render one pill per day of the span).
+      const draggedInstanceDate = item.date;
+      const dayOffsetOfDraggedInstance = Math.round(
+        (new Date(`${draggedInstanceDate}T00:00:00`).getTime() - new Date(`${spanStartDate}T00:00:00`).getTime()) / (1000 * 60 * 60 * 24)
+      );
+      const newSpanStartDate = dateOnlyFromDate(
+        addDays(new Date(`${targetDate}T00:00:00`), -dayOffsetOfDraggedInstance)
+      );
+
+      if (isMultiDay) {
+        const deltaDays = Math.round(
+          (new Date(`${newSpanStartDate}T00:00:00`).getTime() - new Date(`${spanStartDate}T00:00:00`).getTime()) / (1000 * 60 * 60 * 24)
+        );
+        setPendingJobMove({
+          job: draggedJob,
+          targetStartDate: newSpanStartDate,
+          originalStartDate: spanStartDate,
+          originalEndDate: spanEndDate,
+          deltaDays,
+        });
+        return;
+      }
+
+      const previousJobs = jobs;
       setJobs((prev) => {
         const exists = prev.some((job) => job.id === item.sourceId);
         if (exists) {
@@ -1181,6 +1281,54 @@ export default function DevCalendar3Page() {
       setEvents(previousEvents);
       console.error('Event reschedule failed:', error);
       toast.error(error instanceof Error ? error.message : 'Could not move event');
+    }
+  };
+
+  const applyPendingJobMove = async (keepEndDateFixed: boolean) => {
+    if (!pendingJobMove) return;
+    const { job, targetStartDate, originalStartDate, originalEndDate, deltaDays } = pendingJobMove;
+
+    const newEndDate = keepEndDateFixed
+      ? originalEndDate
+      : dateOnlyFromDate(addDays(new Date(`${originalEndDate}T00:00:00`), deltaDays));
+
+    if (newEndDate < targetStartDate) {
+      toast.error('That would make the end date earlier than the new start date. Please choose a different date or option.');
+      return;
+    }
+
+    setApplyingJobMove(true);
+    const previousJobs = jobs;
+    setJobs((prev) => prev.map((candidate) => (
+      candidate.id === job.id
+        ? { ...candidate, scheduled_date: targetStartDate, scheduled_end_date: newEndDate }
+        : candidate
+    )));
+
+    try {
+      const { error } = await supabase
+        .from('jobs')
+        .update({ scheduled_date: targetStartDate, scheduled_end_date: newEndDate })
+        .eq('id', job.id);
+      if (error) throw error;
+
+      await broadcastCalendarScheduleChanged({
+        source: 'calendar-drag-reschedule-multiday',
+        jobId: job.id,
+        scheduledDate: targetStartDate,
+        previousScheduledDate: originalStartDate,
+      });
+
+      toast.success(
+        `Moved job to ${formatDisplayDate(targetStartDate)} – ${formatDisplayDate(newEndDate)}`
+      );
+      setPendingJobMove(null);
+    } catch (error) {
+      setJobs(previousJobs);
+      console.error('Multi-day job reschedule failed:', error);
+      toast.error(error instanceof Error ? error.message : 'Could not move job');
+    } finally {
+      setApplyingJobMove(false);
     }
   };
 
@@ -1322,7 +1470,10 @@ JG Painting Pros Inc.`,
         assigned_to_email: subcontractor?.email || null,
       };
       setJobs((prev) => prev.map((candidate) => (candidate.id === job.id ? updatedJob : candidate)));
-      setSelectedItem(normalizeJob(updatedJob));
+      setSelectedItem((current) => {
+        const normalized = normalizeJob(updatedJob);
+        return normalized.find((candidate) => candidate.date === current?.date) || normalized[0] || null;
+      });
       toast.success(subcontractor ? `Assigned to ${subcontractor.full_name || subcontractor.email}` : 'Assignment cleared');
 
       if (subcontractor?.email) {
@@ -1391,33 +1542,44 @@ JG Painting Pros Inc.`,
 
   const viewOptions = CALENDAR_VIEW_MODES;
 
-  const renderItemPill = (item: CalendarItem, date: string, className = '') => (
-    <button
-      key={item.id}
-      title={item.title}
-      draggable
-      onDragStart={(event) => {
-        event.stopPropagation();
-        setDraggingItemId(item.id);
-        setDraggingItem(item);
-      }}
-      onDragEnd={() => {
-        setDraggingItemId(null);
-        setDraggingItem(null);
-      }}
-      onClick={(event) => {
-        event.stopPropagation();
-        setSelectedDate(date);
-        setSelectedItem(item);
-      }}
-      className={`group w-full rounded px-1.5 py-1 text-left text-[12px] leading-tight text-white shadow-sm flex items-center gap-1 cursor-grab active:cursor-grabbing ${draggingItemId === item.id ? 'opacity-50' : ''} ${className}`}
-      style={{ backgroundColor: item.color }}
-      aria-label={`${item.type === 'job' ? 'Job' : 'Event'} ${item.title}`}
-    >
-      <GripVertical className="h-3 w-3 shrink-0 opacity-75" />
-      <span className="truncate">{item.title}</span>
-    </button>
-  );
+  const renderItemPill = (item: CalendarItem, date: string, className = '') => {
+    const span = item.spanInfo;
+    const spanRoundingClass = span
+      ? `${span.isSpanStart ? '' : 'rounded-l-none border-l-2 border-l-white/40'} ${span.isSpanEnd ? '' : 'rounded-r-none'}`
+      : '';
+    return (
+      <button
+        key={item.id}
+        title={span ? `${item.title.replace(/ \(Day \d+\/\d+\)$/, '')} · ${formatDisplayDate(span.startDate)} – ${formatDisplayDate(span.endDate)}` : item.title}
+        draggable
+        onDragStart={(event) => {
+          event.stopPropagation();
+          setDraggingItemId(item.id);
+          setDraggingItem(item);
+        }}
+        onDragEnd={() => {
+          setDraggingItemId(null);
+          setDraggingItem(null);
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+          setSelectedDate(date);
+          setSelectedItem(item);
+        }}
+        className={`group w-full px-1.5 py-1 text-left text-[12px] leading-tight text-white shadow-sm flex items-center gap-1 cursor-grab active:cursor-grabbing ${span ? spanRoundingClass : 'rounded'} ${draggingItemId === item.id ? 'opacity-50' : ''} ${className}`}
+        style={{ backgroundColor: item.color }}
+        aria-label={`${item.type === 'job' ? 'Job' : 'Event'} ${item.title}`}
+      >
+        {(!span || span.isSpanStart) && <GripVertical className="h-3 w-3 shrink-0 opacity-75" />}
+        <span className="truncate">{item.title}</span>
+        {span && (
+          <span className="ml-auto shrink-0 rounded bg-black/25 px-1 text-[10px] font-semibold">
+            {span.dayIndex}/{span.totalDays}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   const renderSubcontractorGroupHeading = (label: string) => (
     <div key={`subcontractor-group-${label}`} className="px-1 pt-1 text-[11px] font-semibold uppercase tracking-wide text-purple-700 dark:text-purple-300">
@@ -1937,6 +2099,72 @@ JG Painting Pros Inc.`,
         </main>
       </div>
 
+      {pendingJobMove && (() => {
+        const spanDays = Math.round(
+          (new Date(`${pendingJobMove.originalEndDate}T00:00:00`).getTime() - new Date(`${pendingJobMove.originalStartDate}T00:00:00`).getTime())
+          / (1000 * 60 * 60 * 24)
+        ) + 1;
+        const shiftedEndDate = dateOnlyFromDate(
+          addDays(new Date(`${pendingJobMove.originalEndDate}T00:00:00`), pendingJobMove.deltaDays)
+        );
+        return (
+          <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+            <div className="w-full max-w-md rounded-xl bg-white dark:bg-[#111827] shadow-2xl p-6 space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Move Multi-Day Job</h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  This job is scheduled to span <strong>{spanDays} days</strong>{' '}
+                  ({formatDisplayDate(pendingJobMove.originalStartDate)} – {formatDisplayDate(pendingJobMove.originalEndDate)}).
+                  Moving the start date to <strong>{formatDisplayDate(pendingJobMove.targetStartDate)}</strong> will affect
+                  the estimated end date. How should the end date be updated?
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={applyingJobMove}
+                  onClick={() => applyPendingJobMove(false)}
+                  className="w-full text-left rounded-lg border border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 px-4 py-3 hover:bg-blue-100 dark:hover:bg-blue-950/70 disabled:opacity-50"
+                >
+                  <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+                    Shift end date by the same amount ({pendingJobMove.deltaDays > 0 ? '+' : ''}{pendingJobMove.deltaDays} day{Math.abs(pendingJobMove.deltaDays) === 1 ? '' : 's'})
+                  </p>
+                  <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">
+                    New end date: {formatDisplayDate(shiftedEndDate)} — keeps the job&apos;s {spanDays}-day duration.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={applyingJobMove}
+                  onClick={() => applyPendingJobMove(true)}
+                  className="w-full text-left rounded-lg border border-gray-300 dark:border-[#2D3B4E] bg-gray-50 dark:bg-[#0F172A] px-4 py-3 hover:bg-gray-100 dark:hover:bg-[#1E293B] disabled:opacity-50"
+                >
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    Keep end date the same ({formatDisplayDate(pendingJobMove.originalEndDate)})
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Shortens or lengthens the job&apos;s duration to fit the new start date.
+                  </p>
+                </button>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  disabled={applyingJobMove}
+                  onClick={() => setPendingJobMove(null)}
+                  className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {selectedItem && (
         <div className="fixed inset-0 z-50 bg-black/50 flex justify-end" role="dialog" aria-modal="true">
           <div className="h-full w-full max-w-xl overflow-y-auto bg-white dark:bg-[#111827] shadow-2xl">
@@ -1957,10 +2185,23 @@ JG Painting Pros Inc.`,
 
               {selectedItem.type === 'job' ? (() => {
                 const job = selectedItem.raw as CalendarJob;
+                const isMultiDay = Boolean(job.scheduled_end_date && dateOnlyFromJob(job.scheduled_end_date) > dateOnlyFromJob(job.scheduled_date));
                 return (
                   <>
                     <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                      <div><dt className="text-gray-500">Scheduled Date</dt><dd className="font-medium">{formatDisplayDate(dateOnlyFromJob(job.scheduled_date))}</dd></div>
+                      <div className="sm:col-span-2">
+                        <dt className="text-gray-500">{isMultiDay ? 'Scheduled Date Range' : 'Scheduled Date'}</dt>
+                        <dd className="font-medium">
+                          {isMultiDay
+                            ? `${formatDisplayDate(dateOnlyFromJob(job.scheduled_date))} – ${formatDisplayDate(dateOnlyFromJob(job.scheduled_end_date))}`
+                            : formatDisplayDate(dateOnlyFromJob(job.scheduled_date))}
+                          {isMultiDay && selectedItem.spanInfo && (
+                            <span className="ml-2 inline-flex items-center rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-semibold px-1.5 py-0.5">
+                              Day {selectedItem.spanInfo.dayIndex} of {selectedItem.spanInfo.totalDays}
+                            </span>
+                          )}
+                        </dd>
+                      </div>
                       {job.job_type_label && <div><dt className="text-gray-500">Job Type</dt><dd className="font-medium">{job.job_type_label}</dd></div>}
                       <div><dt className="text-gray-500">Property</dt><dd className="font-medium">{job.property_name}</dd></div>
                       <div><dt className="text-gray-500">Unit</dt><dd className="font-medium">{job.unit_number}</dd></div>

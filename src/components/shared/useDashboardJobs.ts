@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../utils/supabase';
 import { formatInTimeZone } from 'date-fns-tz';
 import { isEasternToday } from '../../lib/dateUtils';
+import { isJobActiveOnDate } from '../../utils/jobScheduling';
 
 interface DashboardJob {
   id: string;
   work_order_num: number;
   unit_number: string;
   scheduled_date: string;
+  scheduled_end_date?: string | null;
   created_at: string;
   updated_at: string;
   total_billing_amount: number;
@@ -149,6 +151,7 @@ export function useDashboardJobs(): UseDashboardJobsResult {
             work_order_num,
             unit_number,
             scheduled_date,
+            scheduled_end_date,
             created_at,
             updated_at,
             total_billing_amount,
@@ -179,6 +182,7 @@ export function useDashboardJobs(): UseDashboardJobsResult {
             work_order_num,
             unit_number,
             scheduled_date,
+            scheduled_end_date,
             created_at,
             updated_at,
             total_billing_amount,
@@ -209,6 +213,7 @@ export function useDashboardJobs(): UseDashboardJobsResult {
             work_order_num,
             unit_number,
             scheduled_date,
+            scheduled_end_date,
             created_at,
             updated_at,
             total_billing_amount,
@@ -239,6 +244,7 @@ export function useDashboardJobs(): UseDashboardJobsResult {
             work_order_num,
             unit_number,
             scheduled_date,
+            scheduled_end_date,
             created_at,
             updated_at,
             total_billing_amount,
@@ -274,6 +280,7 @@ export function useDashboardJobs(): UseDashboardJobsResult {
             work_order_num,
             unit_number,
             scheduled_date,
+            scheduled_end_date,
             created_at,
             updated_at,
             total_billing_amount,
@@ -291,8 +298,8 @@ export function useDashboardJobs(): UseDashboardJobsResult {
               full_name
             )
           `)
-          .gte('scheduled_date', startOfToday)
           .lte('scheduled_date', endOfToday)
+          .or(`scheduled_end_date.gte.${startOfToday.split('T')[0]},and(scheduled_end_date.is.null,scheduled_date.gte.${startOfToday})`)
           .order('scheduled_date', { ascending: true });
 
           if (hiddenAgendaPhaseIds.length > 0) {
@@ -409,6 +416,7 @@ export function useDashboardJobs(): UseDashboardJobsResult {
                 work_order_num,
                 unit_number,
                 scheduled_date,
+            scheduled_end_date,
                 created_at,
                 updated_at,
                 total_billing_amount,
@@ -431,10 +439,10 @@ export function useDashboardJobs(): UseDashboardJobsResult {
                 setInvoicingJobs(prev => [newJob, ...prev].slice(0, 4));
               }
               
-              // Update today's jobs if scheduled for today
+              // Update today's jobs if scheduled for today (or today falls within a multi-day span)
               if (
                 newJob.scheduled_date &&
-                isEasternToday(newJob.scheduled_date) &&
+                isJobActiveOnDate(newJob, new Date()) &&
                 !['Cancelled', 'Archived'].includes(phaseLabel || '')
               ) {
                 setTodaysJobs(prev => [newJob, ...prev]);
@@ -460,6 +468,7 @@ export function useDashboardJobs(): UseDashboardJobsResult {
                 work_order_num,
                 unit_number,
                 scheduled_date,
+            scheduled_end_date,
                 created_at,
                 updated_at,
                 total_billing_amount,
@@ -495,7 +504,7 @@ export function useDashboardJobs(): UseDashboardJobsResult {
                 const isShownPhase = phaseLabel === 'Cancelled'
                   ? exists
                   : phaseLabel !== 'Archived';
-                const shouldShowToday = Boolean(updatedJob.scheduled_date && isEasternToday(updatedJob.scheduled_date) && isShownPhase);
+                const shouldShowToday = Boolean(updatedJob.scheduled_date && isJobActiveOnDate(updatedJob, new Date()) && isShownPhase);
 
                 if (!shouldShowToday) {
                   return prev.filter(job => job.id !== updatedJob.id);
@@ -553,6 +562,7 @@ export function useDashboardJobs(): UseDashboardJobsResult {
                 work_order_num,
                 unit_number,
                 scheduled_date,
+            scheduled_end_date,
                 created_at,
                 updated_at,
                 total_billing_amount,
@@ -592,7 +602,7 @@ export function useDashboardJobs(): UseDashboardJobsResult {
                 const isShownPhase = newPhaseLabel === 'Cancelled'
                   ? phaseChangedToday
                   : newPhaseLabel !== 'Archived';
-                const shouldShowToday = Boolean(updatedJob.scheduled_date && isEasternToday(updatedJob.scheduled_date) && isShownPhase);
+                const shouldShowToday = Boolean(updatedJob.scheduled_date && isJobActiveOnDate(updatedJob, new Date()) && isShownPhase);
                 const exists = prev.some(job => job.id === updatedJob.id);
 
                 if (!shouldShowToday) {

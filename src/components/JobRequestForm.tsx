@@ -90,6 +90,8 @@ export function JobRequestForm() {
     description: '',
     painter_notes: '',
     scheduled_date: getCurrentDateInEastern(),
+    is_multi_day: false,
+    scheduled_end_date: '',
   });
 
   // Debug log the initial date and ensure it's properly set
@@ -503,6 +505,15 @@ export function JobRequestForm() {
         throw new Error('Please select a unit size configured for the selected property billing category.');
       }
 
+      if (formData.is_multi_day) {
+        if (!formData.scheduled_end_date) {
+          throw new Error('Please select an estimated end date, or uncheck the multi-day option.');
+        }
+        if (formData.scheduled_end_date < scheduledDate) {
+          throw new Error('Estimated end date cannot be before the scheduled start date.');
+        }
+      }
+
       const { data, error } = await supabase.rpc('create_job', {
         p_property_id: formData.property_id,
         p_unit_number: formData.unit_number,
@@ -512,7 +523,8 @@ export function JobRequestForm() {
         p_scheduled_date: scheduledDate,
         p_job_category_id: formData.job_category_id || null,
         p_purchase_order: formData.purchase_order?.trim() || null,
-        p_is_occupied: formData.is_occupied
+        p_is_occupied: formData.is_occupied,
+        p_scheduled_end_date: formData.is_multi_day ? formData.scheduled_end_date : null
       });
 
       if (error) {
@@ -789,6 +801,59 @@ export function JobRequestForm() {
                     </svg>
                   </div>
                 </div>
+              </div>
+
+              <div>
+                <label className="flex items-center gap-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    id="is_multi_day"
+                    name="is_multi_day"
+                    checked={formData.is_multi_day}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setFormData(prev => ({
+                        ...prev,
+                        is_multi_day: checked,
+                        scheduled_end_date: checked ? prev.scheduled_end_date : '',
+                      }));
+                      setHasChanges(true);
+                    }}
+                    className="w-5 h-5 rounded border-gray-300 dark:border-[#2D3B4E] text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                    Job completion date is different than the scheduled start date
+                  </span>
+                </label>
+
+                {formData.is_multi_day && (
+                  <div className="mt-3">
+                    <label htmlFor="scheduled_end_date" className="block text-sm font-semibold text-gray-900 dark:text-white mb-3">
+                      Estimated End Date
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="date"
+                        id="scheduled_end_date"
+                        name="scheduled_end_date"
+                        required
+                        min={formData.scheduled_date}
+                        value={formData.scheduled_end_date}
+                        onChange={handleChange}
+                        onClick={(e) => e.currentTarget.showPicker?.()}
+                        className="w-full h-12 px-4 pr-12 bg-white dark:bg-[#0F172A] border-2 border-gray-200 dark:border-[#2D3B4E] rounded-xl text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 dark:focus:border-blue-400 transition-all duration-200 shadow-sm hover:border-gray-300 dark:hover:border-[#374151] hover:shadow-md"
+                      />
+                      <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
+                        <svg className="w-5 h-5 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      This job will appear on the calendar and subcontractor schedule for every day from the start date through this end date.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div>

@@ -29,6 +29,7 @@ import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
 import { SubcontractorLink } from './shared/SubcontractorLink';
 import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
+import { isJobActiveOnDate } from '../utils/jobScheduling';
 // [CAL_EVENTS] imports
 import EventModal from './calendar/EventModal';
 import EventDetailsModal from './calendar/EventDetailsModal';
@@ -50,6 +51,7 @@ interface Job {
   unit_number: string;
   description: string | null;
   scheduled_date: string;
+  scheduled_end_date?: string | null;
   job_phase: {
     job_phase_label: string;
     color_dark_mode: string;
@@ -608,6 +610,7 @@ export function Calendar() {
           description,
           purchase_order,
           scheduled_date,
+          scheduled_end_date,
           job_phase:current_phase_id (
             job_phase_label,
             color_dark_mode
@@ -621,8 +624,8 @@ export function Calendar() {
           )
         `)
         .in('current_phase_id', phaseIds)
-        .gte('scheduled_date', start)
-        .lte('scheduled_date', end);
+        .lte('scheduled_date', end)
+        .or(`scheduled_end_date.gte.${start},and(scheduled_end_date.is.null,scheduled_date.gte.${start})`);
 
       // Fetch ALL jobs for agenda totals (excluding only Archived)
       const { data: allJobs, error: allJobsError } = await supabase
@@ -638,6 +641,7 @@ export function Calendar() {
           description,
           purchase_order,
           scheduled_date,
+          scheduled_end_date,
           job_phase:current_phase_id (
             job_phase_label,
             color_dark_mode
@@ -694,6 +698,7 @@ export function Calendar() {
           unit_number: job.unit_number,
           description: job.description,
           scheduled_date: job.scheduled_date,
+          scheduled_end_date: job.scheduled_end_date,
           assigned_to: job.assigned_to,
           purchase_order: job.purchase_order,
           property: Array.isArray(job.property) && job.property.length > 0 
@@ -720,6 +725,7 @@ export function Calendar() {
           unit_number: job.unit_number,
           description: job.description,
           scheduled_date: job.scheduled_date,
+          scheduled_end_date: job.scheduled_end_date,
           assigned_to: job.assigned_to,
           purchase_order: job.purchase_order,
           property: Array.isArray(job.property) && job.property.length > 0 
@@ -785,17 +791,7 @@ export function Calendar() {
       return [];
     }
     
-    return jobs.filter(job => {
-      // Convert the calendar Date to YYYY-MM-DD in Eastern Time for comparison
-      const calendarDateEastern = formatInTimeZone(date, 'America/New_York', 'yyyy-MM-dd');
-      
-      // Extract just the date portion from the database timestamptz
-      // job.scheduled_date comes as "2026-01-23T00:00:00-05:00" from database
-      const jobDateOnly = job.scheduled_date.split('T')[0]; // Extract "2026-01-23"
-      
-      // Now we can compare date strings directly
-      return jobDateOnly === calendarDateEastern;
-    });
+    return jobs.filter(job => isJobActiveOnDate(job, date));
   };
 
   // [CAL_EVENTS] Get events for a specific day
