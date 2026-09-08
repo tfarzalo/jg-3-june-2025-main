@@ -31,8 +31,8 @@ export function validateExtraChargeLineItem(
   }
 
   if (item.isHourly && item.customizeHours) {
-    if (!item.billHours || item.billHours <= 0) {
-      errors.push(`Extra Charge #${itemNumber}: Customer bill hours must be greater than 0`);
+    if (item.billHours === undefined || !Number.isFinite(item.billHours) || item.billHours < 0) {
+      errors.push(`Extra Charge #${itemNumber}: Customer bill hours cannot be negative`);
     }
 
     if (item.subPayHours === undefined || !Number.isFinite(item.subPayHours) || item.subPayHours < 0) {

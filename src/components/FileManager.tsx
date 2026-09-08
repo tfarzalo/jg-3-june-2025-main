@@ -414,8 +414,11 @@ export function FileManager() {
       // Add job_id filter if we're in a job context
       const urlParams = new URLSearchParams(window.location.search);
       const jobId = urlParams.get('job_id');
+      const propertyId = urlParams.get('property_id');
       if (jobId) {
         query = query.eq('job_id', jobId);
+      } else if (propertyId) {
+        query = query.eq('property_id', propertyId);
       }
 
       const { data, error: fetchError } = await (isWorkOrdersContext

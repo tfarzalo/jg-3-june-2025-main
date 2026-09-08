@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { EXTRA_CHARGE_ITEM_COLUMN_KEYS, REPORT_COLUMNS, type ReportTemplate } from '../../lib/reports';
+import {
+  EXTRA_CHARGE_ITEM_COLUMN_KEYS,
+  REPORT_COLUMNS,
+  reportHeadersForTemplate,
+  type ReportTemplate,
+} from '../../lib/reports';
 import { formatJobPhaseLabel } from '../../lib/jobPhaseLabels';
 
 type TemplateDraft = Pick<ReportTemplate, 'id' | 'name' | 'columns' | 'preset' | 'filters' | 'sort'>;
@@ -155,6 +160,17 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
   const [phases, setPhases] = useState<string[]>([]);
   const [phaseSelection, setPhaseSelection] = useState<string[]>(template?.filters?.phases as string[] || ['ALL']);
   const columnCategories = getColumnCategories();
+  const isWufooStyleTemplate = template?.filters?.reportType === 'wufoo_style_billing';
+  const outputHeaders = isWufooStyleTemplate
+    ? reportHeadersForTemplate({
+        id: template?.id || '',
+        name: name || template?.name || '',
+        columns,
+        filters: template?.filters || {},
+        sort: template?.sort || {},
+        preset: template?.preset,
+      })
+    : [];
 
   useEffect(() => {
     setName(template?.name || '');
@@ -246,6 +262,22 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
           <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Name</div>
           <input value={name} onChange={e => setName(e.target.value)} className="w-full p-2 border border-gray-200 rounded bg-white text-gray-900 dark:bg-[#111827] dark:border-gray-700 dark:text-white" />
         </label>
+
+        {isWufooStyleTemplate && (
+          <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 dark:border-blue-800/60 dark:bg-blue-900/20 dark:text-blue-100">
+            <div className="font-semibold">{outputHeaders.length} final output columns</div>
+            <div className="mt-1 text-xs text-blue-800 dark:text-blue-200">
+              The selected source fields below are combined into the Wufoo-style billing layout when the report runs.
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {outputHeaders.map(header => (
+                <span key={header} className="rounded border border-blue-200 bg-white px-2 py-0.5 text-xs text-blue-900 dark:border-blue-800 dark:bg-[#0F172A] dark:text-blue-100">
+                  {header}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-6 mb-5">
           <div>
@@ -350,7 +382,9 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="text-base font-semibold text-gray-700 dark:text-gray-200">Order Columns</div>
-               <div className="text-xs text-gray-500 dark:text-gray-400">{columns.length} selected</div>
+               <div className="text-xs text-gray-500 dark:text-gray-400">
+                 {isWufooStyleTemplate ? `${outputHeaders.length} output columns` : `${columns.length} selected`}
+               </div>
              </div>
             <ul className="rounded border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-800 max-h-[54vh] overflow-y-auto">
               {columns.map((col, idx) => (

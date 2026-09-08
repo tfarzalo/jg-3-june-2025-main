@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { reportHeadersForTemplate, type ReportSort, type ReportTemplate } from '../../lib/reports';
+import { reportColumnCountForTemplate, reportHeadersForTemplate, type ReportSort, type ReportTemplate } from '../../lib/reports';
 
 export default function RunReportModal({ onClose, template, templates, getReportHeaders, onRun }: {
   onClose: () => void;
@@ -108,7 +108,7 @@ export default function RunReportModal({ onClose, template, templates, getReport
                   className="text-left p-2 border border-gray-200 rounded bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-[#111827] dark:hover:bg-[#1E293B]"
                 >
                   <div className="font-medium text-gray-900 dark:text-white">{t.name}</div>
-                  {t.columns && <div className="text-xs text-gray-500 dark:text-gray-400">{t.columns.length} columns</div>}
+                  {t.columns && <div className="text-xs text-gray-500 dark:text-gray-400">{reportColumnCountForTemplate(t)} columns</div>}
                 </button>
               ))}
             </div>

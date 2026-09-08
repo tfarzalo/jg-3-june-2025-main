@@ -139,6 +139,13 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
 
       setLoading(true);
       const searchResults: SearchResult[] = [];
+      const seenResultKeys = new Set<string>();
+      const addSearchResult = (result: SearchResult) => {
+        const key = `${result.type}:${result.id}`;
+        if (seenResultKeys.has(key)) return;
+        seenResultKeys.add(key);
+        searchResults.push(result);
+      };
       const searchRequestId = ++searchRequestRef.current;
 
       try {
@@ -147,7 +154,7 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
         const unitSearchTerms = getUnitSearchTerms(normalizedTerm);
         const exactDate = parseSearchDate(normalizedTerm);
         const pageResults = searchPages(normalizedTerm);
-        searchResults.push(...pageResults);
+        pageResults.forEach(addSearchResult);
         publishSearchResults(searchRequestId, searchRequestRef.current, isMountedRef.current, searchResults, setResults);
         if (isMountedRef.current && searchRequestId === searchRequestRef.current) {
           setLoading(false);
@@ -184,15 +191,21 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
           workOrderNumber = parseInt(woMatch[1], 10);
         }
 
-        const shouldSearchJobProperties =
+        const shouldSearchRelatedProperties =
           safeTerm &&
-          (searchFilters.types.jobs || searchFilters.types.work_orders || searchFilters.types.job_requests);
+          (
+            searchFilters.types.jobs ||
+            searchFilters.types.work_orders ||
+            searchFilters.types.job_requests ||
+            searchFilters.types.property_groups
+          );
         let matchingPropertyIdsForJobs: string[] = [];
+        let matchingPropertyGroupIdsFromProperties: string[] = [];
 
-        if (shouldSearchJobProperties) {
+        if (shouldSearchRelatedProperties) {
           const { data: matchingProperties, error: propertyLookupError } = await supabase
             .from('properties')
-            .select('id')
+            .select('id, property_management_group_id')
             .or(buildPropertySearchFilter(normalizedTerm))
             .limit(100);
 
@@ -201,6 +214,33 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
           } else {
             matchingPropertyIdsForJobs = (matchingProperties || [])
               .map(property => property.id)
+              .filter(Boolean);
+            matchingPropertyGroupIdsFromProperties = Array.from(new Set(
+              (matchingProperties || [])
+                .map(property => property.property_management_group_id)
+                .filter(Boolean)
+            ));
+          }
+        }
+
+        const shouldSearchJobsBySubcontractor =
+          safeTerm &&
+          (searchFilters.types.jobs || searchFilters.types.work_orders || searchFilters.types.job_requests);
+        let matchingSubcontractorIdsForJobs: string[] = [];
+
+        if (shouldSearchJobsBySubcontractor) {
+          const { data: matchingSubcontractors, error: subcontractorLookupError } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('role', 'subcontractor')
+            .or(buildProfileSearchFilter(safeTerm))
+            .limit(100);
+
+          if (subcontractorLookupError) {
+            console.error('Error finding matching subcontractors for job search:', subcontractorLookupError);
+          } else {
+            matchingSubcontractorIdsForJobs = (matchingSubcontractors || [])
+              .map(subcontractor => subcontractor.id)
               .filter(Boolean);
           }
         }
@@ -219,7 +259,11 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               created_at,
               property:properties (
                 id,
-                property_name
+                property_name,
+                address,
+                city,
+                state,
+                zip
               ),
               assigned_to_profile:assigned_to (
                 id,
@@ -237,12 +281,12 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             
           // If searching for a work order number, include unit matches too.
           if (workOrderSearch && workOrderNumber) {
-            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber, true, matchingPropertyIdsForJobs));
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber, true, matchingPropertyIdsForJobs, matchingSubcontractorIdsForJobs));
           } else if (exactDate) {
             query = query.gte('scheduled_date', `${exactDate}T00:00:00`).lte('scheduled_date', `${exactDate}T23:59:59`);
           } else {
             // Otherwise do a regular search
-            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, null, true, matchingPropertyIdsForJobs));
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, null, true, matchingPropertyIdsForJobs, matchingSubcontractorIdsForJobs));
           }
 
           if (dateFilter) {
@@ -259,11 +303,11 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               const assignedTo = normalizeRelation(job.assigned_to_profile);
               const jobPhase = normalizeRelation(job.job_phase);
               const jobType = normalizeRelation(job.job_type);
-              searchResults.push({
+              addSearchResult({
                 id: job.id,
                 type: 'job',
                 title: `${formatWorkOrderNumber(job.work_order_num)} - Unit ${job.unit_number || 'N/A'}`,
-                subtitle: property?.property_name || 'Unknown Property',
+                subtitle: formatPropertySummary(property),
                 description: job.description || '',
                 date: formatDateLabel(job.created_at),
                 tags: [
@@ -309,12 +353,11 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
           } else if (properties) {
             properties.forEach(property => {
               const propertyManagementGroup = normalizeRelation(property.property_management_group);
-              const address = [property.address, property.city, property.state, property.zip].filter(Boolean).join(', ');
-              searchResults.push({
+              addSearchResult({
                 id: property.id,
                 type: 'property',
                 title: property.property_name || 'Unnamed Property',
-                subtitle: address,
+                subtitle: formatPropertyAddress(property),
                 description: propertyManagementGroup?.company_name || 'No Management Group',
                 date: formatDateLabel(property.created_at),
                 url: `/dashboard/properties/${property.id}`,
@@ -369,14 +412,14 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
                 subtitle = `Job: ${formatWorkOrderNumber(job.work_order_num)} - Unit ${job.unit_number || 'N/A'}`;
               }
 
-              searchResults.push({
+              addSearchResult({
                 id: file.id,
                 type: 'file',
                 title: file.name,
                 subtitle: subtitle,
                 description: `${(file.size / 1024).toFixed(2)} KB - ${file.type}`,
                 date: formatDateLabel(file.created_at),
-                url: `/dashboard/files`,
+                url: getFileResultUrl(file),
                 icon: <FileText className="h-5 w-5 text-yellow-500" />
               });
             });
@@ -408,7 +451,7 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             console.error('Error searching users:', error);
           } else if (users) {
             users.forEach(user => {
-              searchResults.push({
+              addSearchResult({
                 id: user.id,
                 type: 'user',
                 title: user.full_name || 'Unnamed User',
@@ -416,7 +459,7 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
                 description: `Role: ${user.role}`,
                 date: formatDateLabel(user.created_at),
                 tags: [user.role],
-                url: `/dashboard/users`,
+                url: getUserResultUrl(user),
                 icon: <User className="h-5 w-5 text-purple-500" />
               });
             });
@@ -434,7 +477,11 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
                   created_at,
                   property:properties (
                     id,
-                    property_name
+                    property_name,
+                    address,
+                    city,
+                    state,
+                    zip
                   ),
                   assigned_to_profile:assigned_to (
                     id,
@@ -459,11 +506,11 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
                   const assignedTo = normalizeRelation(job.assigned_to_profile);
                   const jobPhase = normalizeRelation(job.job_phase);
                   const jobType = normalizeRelation(job.job_type);
-                  searchResults.push({
-                    id: `sub-job-${job.id}`,
+                  addSearchResult({
+                    id: job.id,
                     type: 'job',
                     title: `${formatWorkOrderNumber(job.work_order_num)} - Unit ${job.unit_number || 'N/A'}`,
-                    subtitle: property?.property_name || 'Unknown Property',
+                    subtitle: formatPropertySummary(property),
                     description: `Assigned to ${assignedTo?.full_name || normalizedTerm}`,
                     date: formatDateLabel(job.created_at),
                     tags: [jobPhase?.job_phase_label || 'Unknown Phase', jobType?.job_type_label || 'Unknown Type'],
@@ -490,7 +537,15 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               created_at,
               property:properties (
                 id,
-                property_name
+                property_name,
+                address,
+                city,
+                state,
+                zip
+              ),
+              assigned_to_profile:assigned_to (
+                id,
+                full_name
               ),
               job_phase:current_phase_id (
                 job_phase_label,
@@ -500,11 +555,11 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             .limit(25);
 
           if (workOrderSearch && workOrderNumber) {
-            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber, false, matchingPropertyIdsForJobs));
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber, false, matchingPropertyIdsForJobs, matchingSubcontractorIdsForJobs));
           } else if (exactDate) {
             query = query.gte('scheduled_date', `${exactDate}T00:00:00`).lte('scheduled_date', `${exactDate}T23:59:59`);
           } else {
-            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, null, false, matchingPropertyIdsForJobs));
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, null, false, matchingPropertyIdsForJobs, matchingSubcontractorIdsForJobs));
           }
 
           if (dateFilter) {
@@ -518,15 +573,19 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
           } else if (workOrders) {
             workOrders.forEach(wo => {
               const property = normalizeRelation(wo.property);
+              const assignedTo = normalizeRelation(wo.assigned_to_profile);
               const jobPhase = normalizeRelation(wo.job_phase);
-              searchResults.push({
+              addSearchResult({
                 id: wo.id,
                 type: 'work_order',
                 title: formatWorkOrderNumber(wo.work_order_num),
-                subtitle: property?.property_name || 'Unknown Property',
+                subtitle: formatPropertySummary(property),
                 description: wo.description || '',
                 date: formatDateLabel(wo.created_at),
-                tags: [jobPhase?.job_phase_label || 'Work Order'],
+                tags: [
+                  jobPhase?.job_phase_label || 'Work Order',
+                  assignedTo?.full_name ? `Sub: ${assignedTo.full_name}` : 'Unassigned'
+                ],
                 url: `/dashboard/jobs/${wo.id}`,
                 icon: <FileText className="h-5 w-5 text-orange-500" />,
                 priority: 'medium'
@@ -549,7 +608,15 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               created_at,
               property:properties (
                 id,
-                property_name
+                property_name,
+                address,
+                city,
+                state,
+                zip
+              ),
+              assigned_to_profile:assigned_to (
+                id,
+                full_name
               ),
               job_phase:current_phase_id (
                 job_phase_label,
@@ -559,11 +626,11 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             .limit(25);
 
           if (workOrderSearch && workOrderNumber) {
-            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber, false, matchingPropertyIdsForJobs));
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, workOrderNumber, false, matchingPropertyIdsForJobs, matchingSubcontractorIdsForJobs));
           } else if (exactDate) {
             query = query.gte('scheduled_date', `${exactDate}T00:00:00`).lte('scheduled_date', `${exactDate}T23:59:59`);
           } else {
-            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, null, false, matchingPropertyIdsForJobs));
+            query = query.or(buildJobSearchFilter(safeTerm, unitSearchTerms, null, false, matchingPropertyIdsForJobs, matchingSubcontractorIdsForJobs));
           }
 
           if (dateFilter) {
@@ -579,14 +646,15 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               .filter(request => normalizeRelation(request.job_phase)?.job_phase_label === 'Job Request')
               .forEach(request => {
               const property = normalizeRelation(request.property);
-              searchResults.push({
+              const assignedTo = normalizeRelation(request.assigned_to_profile);
+              addSearchResult({
                 id: request.id,
                 type: 'job_request',
                 title: `Job Request ${formatWorkOrderNumber(request.work_order_num)}`,
-                subtitle: property?.property_name || 'No property',
+                subtitle: formatPropertySummary(property),
                 description: request.description || '',
                 date: formatDateLabel(request.created_at),
-                tags: ['Job Request'],
+                tags: ['Job Request', assignedTo?.full_name ? `Sub: ${assignedTo.full_name}` : 'Unassigned'],
                 url: `/dashboard/jobs/${request.id}`,
                 icon: <FileText className="h-5 w-5 text-indigo-500" />,
                 priority: 'medium'
@@ -624,7 +692,7 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
           } else if (activities) {
             activities.forEach(activity => {
               const user = normalizeRelation(activity.user);
-              searchResults.push({
+              addSearchResult({
                 id: activity.id,
                 type: 'activity',
                 title: activity.action,
@@ -647,11 +715,17 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             .select(`
               id,
               company_name,
+              address,
+              address_2,
+              city,
+              state,
+              zip,
               contact_name,
               contact_email,
+              contact_phone,
               created_at
             `)
-            .or(`company_name.ilike.%${safeTerm}%,contact_name.ilike.%${safeTerm}%,contact_email.ilike.%${safeTerm}%`)
+            .or(buildPropertyGroupSearchFilter(safeTerm, matchingPropertyGroupIdsFromProperties))
             .limit(25);
 
           if (dateFilter) {
@@ -664,14 +738,14 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             console.error('Error searching property groups:', error);
           } else if (propertyGroups) {
             propertyGroups.forEach(group => {
-              searchResults.push({
+              addSearchResult({
                 id: group.id,
                 type: 'property_group',
                 title: group.company_name,
                 subtitle: group.contact_name ? `Contact: ${group.contact_name}` : 'No contact',
-                description: group.contact_email || '',
+                description: formatPropertyGroupDescription(group),
                 date: formatDateLabel(group.created_at),
-                url: '/dashboard/property-groups',
+                url: `/dashboard/property-groups/${group.id}`,
                 icon: <Building2 className="h-5 w-5 text-teal-500" />
               });
             });
@@ -1194,12 +1268,53 @@ function buildPropertySearchFilter(value: string) {
   return clauses.join(',');
 }
 
+function buildProfileSearchFilter(value: string) {
+  const clauses: string[] = [];
+  const fields = ['email', 'full_name'];
+
+  getSearchTerms(value).forEach(term => {
+    fields.forEach(field => {
+      clauses.push(`${field}.ilike.%${term}%`);
+    });
+  });
+
+  return clauses.join(',');
+}
+
+function buildPropertyGroupSearchFilter(value: string, propertyGroupIds: string[] = []) {
+  const clauses: string[] = [];
+  const fields = [
+    'company_name',
+    'address',
+    'address_2',
+    'city',
+    'state',
+    'zip',
+    'contact_name',
+    'contact_email',
+    'contact_phone'
+  ];
+
+  getSearchTerms(value).forEach(term => {
+    fields.forEach(field => {
+      clauses.push(`${field}.ilike.%${term}%`);
+    });
+  });
+
+  if (propertyGroupIds.length > 0) {
+    clauses.push(`id.in.(${propertyGroupIds.join(',')})`);
+  }
+
+  return clauses.join(',');
+}
+
 function buildJobSearchFilter(
   safeTerm: string,
   unitSearchTerms: string[] = [],
   workOrderNumber: number | null = null,
   includePurchaseOrder = false,
-  propertyIds: string[] = []
+  propertyIds: string[] = [],
+  assignedToIds: string[] = []
 ) {
   const clauses: string[] = [];
   const textTerms = Array.from(new Set([safeTerm, ...unitSearchTerms].filter(Boolean)));
@@ -1224,7 +1339,73 @@ function buildJobSearchFilter(
     clauses.push(`property_id.in.(${propertyIds.join(',')})`);
   }
 
+  if (assignedToIds.length > 0) {
+    clauses.push(`assigned_to.in.(${assignedToIds.join(',')})`);
+  }
+
   return clauses.join(',');
+}
+
+function formatPropertyAddress(property?: {
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+} | null) {
+  if (!property) return '';
+  return [property.address, property.city, property.state, property.zip].filter(Boolean).join(', ');
+}
+
+function formatPropertySummary(property?: {
+  property_name?: string | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+} | null) {
+  if (!property) return 'Unknown Property';
+
+  const propertyName = property.property_name || 'Unknown Property';
+  const address = formatPropertyAddress(property);
+  return address ? `${propertyName} - ${address}` : propertyName;
+}
+
+function formatPropertyGroupDescription(group: {
+  address?: string | null;
+  address_2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+}) {
+  const address = [group.address, group.address_2, group.city, group.state, group.zip]
+    .filter(Boolean)
+    .join(', ');
+  return [address, group.contact_email, group.contact_phone].filter(Boolean).join(' | ');
+}
+
+function getFileResultUrl(file: {
+  id?: string | null;
+  job?: { id?: string | null } | { id?: string | null }[] | null;
+  job_id?: string | null;
+  property?: { id?: string | null } | { id?: string | null }[] | null;
+  property_id?: string | null;
+}) {
+  const job = normalizeRelation(file.job);
+  const property = normalizeRelation(file.property);
+  const jobId = file.job_id || job?.id;
+  const propertyId = file.property_id || property?.id;
+
+  if (jobId) return `/dashboard/files?job_id=${encodeURIComponent(jobId)}`;
+  if (propertyId) return `/dashboard/files?property_id=${encodeURIComponent(propertyId)}`;
+  return '/dashboard/files';
+}
+
+function getUserResultUrl(user: { id: string; role?: string | null }) {
+  return user.role === 'subcontractor'
+    ? `/dashboard/users/subcontractors/${user.id}`
+    : '/dashboard/users';
 }
 
 function parseSearchDate(value: string) {

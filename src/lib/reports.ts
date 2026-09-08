@@ -1618,6 +1618,10 @@ export function reportHeadersForTemplate(template: ReportTemplate): string[] {
   return resolveColumns(template.columns).map(column => column.label);
 }
 
+export function reportColumnCountForTemplate(template: ReportTemplate): number {
+  return reportHeadersForTemplate(template).length;
+}
+
 function wufooStyleOutputColumns(template: ReportTemplate) {
   const selectedKeys = template.columns.length ? template.columns : WUFOO_STYLE_BILLING_COLUMNS;
   const outputColumns: Array<{ key: string; header: string; sourceHeader: string }> = [];

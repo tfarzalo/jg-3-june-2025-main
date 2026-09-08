@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Calendar as CalendarIcon, 
   Clock, 
@@ -34,6 +34,7 @@ import {
 import { getSubcontractorContact, type PropertyContact } from '../lib/contacts/contactViewModel';
 import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 import { getPreviewUrl } from '../utils/storagePreviews';
+import { getSubcontractorVisibleDates } from '../utils/subcontractorScheduleDates';
 
 
 
@@ -170,7 +171,12 @@ export function SubcontractorDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [todayJobs, setTodayJobs] = useState<Job[]>([]);
   const [tomorrowJobs, setTomorrowJobs] = useState<Job[]>([]);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  // The two dates a subcontractor is allowed to view, accounting for weekends
+  // (subs don't work Sat/Sun, so "tomorrow" skips forward to the next
+  // business day, and if today itself is a weekend both dates jump to the
+  // next Mon/Tue).
+  const visibleDates = useMemo(() => getSubcontractorVisibleDates(), []);
+  const [selectedDate, setSelectedDate] = useState<Date>(visibleDates.primaryDate);
   const [displayedJobs, setDisplayedJobs] = useState<Job[]>([]);
   const [activeTab, setActiveTab] = useState<'pending' | 'accepted'>('pending');
   const [expandedJobs, setExpandedJobs] = useState<ExpandedJobs>({});
@@ -544,10 +550,11 @@ export function SubcontractorDashboard() {
     const fetchJobs = async () => {
       console.log('useEffect: Initial job fetch triggered.');
       try {
-        // Fetch both today's and tomorrow's jobs initially
+        // Fetch both today's and next-business-day's jobs initially
+        // (skips weekends per subcontractorScheduleDates rules)
         const [todayData, tomorrowData] = await Promise.all([
-          fetchJobsForDate(new Date()),
-          fetchJobsForDate(addDays(new Date(), 1))
+          fetchJobsForDate(visibleDates.primaryDate),
+          fetchJobsForDate(visibleDates.secondaryDate)
         ]);
         console.log('fetchJobs: Today data fetched:', todayData);
         console.log('fetchJobs: Tomorrow data fetched:', tomorrowData);
@@ -568,7 +575,7 @@ export function SubcontractorDashboard() {
     };
 
     fetchJobs();
-  }, [previewUserId]); // Re-run if preview user changes
+  }, [previewUserId, visibleDates]); // Re-run if preview user or visible dates change
 
   useEffect(() => {
     console.log('useEffect: selectedDate or jobs state changed.');
@@ -577,10 +584,10 @@ export function SubcontractorDashboard() {
     console.log('  tomorrowJobs count:', tomorrowJobs.length);
     
     // Update displayed jobs when selected date changes
-    if (isSameDay(selectedDate, new Date())) {
+    if (isSameDay(selectedDate, visibleDates.primaryDate)) {
       console.log('  Setting displayedJobs to todayJobs.');
       setDisplayedJobs(todayJobs);
-    } else if (isSameDay(selectedDate, addDays(new Date(), 1))) {
+    } else if (isSameDay(selectedDate, visibleDates.secondaryDate)) {
       console.log('  Setting displayedJobs to tomorrowJobs.');
       setDisplayedJobs(tomorrowJobs);
     } else {
@@ -595,19 +602,19 @@ export function SubcontractorDashboard() {
         setDisplayedJobs([]);
       });
     }
-  }, [selectedDate, todayJobs, tomorrowJobs]);
+  }, [selectedDate, todayJobs, tomorrowJobs, visibleDates]);
 
   const refreshJobsForSelectedDate = useCallback(async () => {
     const jobs = await fetchJobsForDate(selectedDate);
     if (jobs) {
-      if (isSameDay(selectedDate, new Date())) {
+      if (isSameDay(selectedDate, visibleDates.primaryDate)) {
         setTodayJobs(jobs);
-      } else if (isSameDay(selectedDate, addDays(new Date(), 1))) {
+      } else if (isSameDay(selectedDate, visibleDates.secondaryDate)) {
         setTomorrowJobs(jobs);
       }
       setDisplayedJobs(jobs);
     }
-  }, [selectedDate]);
+  }, [selectedDate, visibleDates]);
 
   const handleAssignmentDecision = useCallback(async (decision: 'accepted' | 'declined') => {
     if (decision === 'accepted') {
@@ -1385,11 +1392,25 @@ export function SubcontractorDashboard() {
     });
   };
 
-  // Determine if selected date is today
-  const isToday = isSameDay(selectedDate, new Date());
-  
-  // Determine if selected date is tomorrow
-  const isTomorrow = isSameDay(selectedDate, addDays(new Date(), 1));
+  // Determine if selected date matches the "Today" button's target date
+  // (which itself may be shifted to Monday if today is a weekend)
+  const isToday = isSameDay(selectedDate, visibleDates.primaryDate);
+
+  // Determine if selected date matches the "Next business day" button's target date
+  const isTomorrow = isSameDay(selectedDate, visibleDates.secondaryDate);
+
+  // The secondary button's label: "Tomorrow" when it's literally the next
+  // calendar day, otherwise show the actual day name (e.g. "Monday") since
+  // weekends/Fridays cause it to jump forward by more than one day.
+  const secondaryDayLabel = isSameDay(visibleDates.secondaryDate, addDays(visibleDates.primaryDate, 1)) && !visibleDates.isReferenceWeekend
+    ? text.tomorrow
+    : format(visibleDates.secondaryDate, 'EEEE');
+
+  // The primary button's label: "Today" when it's literally the actual
+  // current day, otherwise (weekend reference) show the actual day name.
+  const primaryDayLabel = visibleDates.isReferenceWeekend
+    ? format(visibleDates.primaryDate, 'EEEE')
+    : text.today;
 
   if (isLoading) {
     return <LoadingScreen message={text.loadingWorkspace} title={text.paintingDashboard} />;
@@ -1437,16 +1458,16 @@ export function SubcontractorDashboard() {
 
           <div className="flex items-center justify-end space-x-2 sm:space-x-4">
             <button
-              onClick={() => setSelectedDate(new Date())}
+              onClick={() => setSelectedDate(visibleDates.primaryDate)}
               className={`px-3 py-2 sm:px-4 text-sm sm:text-base ${isToday ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'} rounded-lg transition-colors`}
             >
-              {text.today}
+              {primaryDayLabel}
             </button>
             <button
-              onClick={() => setSelectedDate(addDays(new Date(), 1))}
+              onClick={() => setSelectedDate(visibleDates.secondaryDate)}
               className={`px-3 py-2 sm:px-4 text-sm sm:text-base ${isTomorrow ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'} rounded-lg transition-colors`}
             >
-              {text.tomorrow}
+              {secondaryDayLabel}
             </button>
           </div>
         </div>
