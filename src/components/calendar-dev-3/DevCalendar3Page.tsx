@@ -238,6 +238,32 @@ function dateOnlyFromDate(date: Date) {
   return formatInTimeZone(date, TZ, 'yyyy-MM-dd');
 }
 
+function isWeekendDateOnly(dateOnly: string) {
+  const day = new Date(`${dateOnly}T00:00:00`).getDay();
+  return day === 0 || day === 6;
+}
+
+/**
+ * Shifts `dateOnly` forward/backward by `days` calendar days, optionally
+ * skipping Saturdays/Sundays when `skipWeekends` is true (i.e. counting
+ * only business days).
+ */
+function shiftDateOnly(dateOnly: string, days: number, skipWeekends: boolean) {
+  if (!skipWeekends || days === 0) {
+    return dateOnlyFromDate(addDays(new Date(`${dateOnly}T00:00:00`), days));
+  }
+  const step = days > 0 ? 1 : -1;
+  let remaining = Math.abs(days);
+  let cursor = new Date(`${dateOnly}T00:00:00`);
+  while (remaining > 0) {
+    cursor = addDays(cursor, step);
+    if (!isWeekendDateOnly(dateOnlyFromDate(cursor))) {
+      remaining -= 1;
+    }
+  }
+  return dateOnlyFromDate(cursor);
+}
+
 function eventStartDate(event: CalendarEvent) {
   return formatInTimeZone(parseISO(event.start_at), TZ, 'yyyy-MM-dd');
 }
@@ -550,6 +576,7 @@ export default function DevCalendar3Page() {
     deltaDays: number;
   } | null>(null);
   const [applyingJobMove, setApplyingJobMove] = useState(false);
+  const [weekendHandling, setWeekendHandling] = useState<'include' | 'exclude'>('include');
   const lastDragMonthScrollAt = useRef(0);
   const lastMonthWheelAt = useRef(0);
   const lastScheduleUpdateAtRef = useRef<string | null>(null);
@@ -1224,6 +1251,7 @@ export default function DevCalendar3Page() {
         const deltaDays = Math.round(
           (new Date(`${newSpanStartDate}T00:00:00`).getTime() - new Date(`${spanStartDate}T00:00:00`).getTime()) / (1000 * 60 * 60 * 24)
         );
+        setWeekendHandling('include');
         setPendingJobMove({
           job: draggedJob,
           targetStartDate: newSpanStartDate,
@@ -1290,7 +1318,7 @@ export default function DevCalendar3Page() {
 
     const newEndDate = keepEndDateFixed
       ? originalEndDate
-      : dateOnlyFromDate(addDays(new Date(`${originalEndDate}T00:00:00`), deltaDays));
+      : shiftDateOnly(originalEndDate, deltaDays, weekendHandling === 'exclude');
 
     if (newEndDate < targetStartDate) {
       toast.error('That would make the end date earlier than the new start date. Please choose a different date or option.');
@@ -2104,8 +2132,10 @@ JG Painting Pros Inc.`,
           (new Date(`${pendingJobMove.originalEndDate}T00:00:00`).getTime() - new Date(`${pendingJobMove.originalStartDate}T00:00:00`).getTime())
           / (1000 * 60 * 60 * 24)
         ) + 1;
-        const shiftedEndDate = dateOnlyFromDate(
-          addDays(new Date(`${pendingJobMove.originalEndDate}T00:00:00`), pendingJobMove.deltaDays)
+        const shiftedEndDate = shiftDateOnly(
+          pendingJobMove.originalEndDate,
+          pendingJobMove.deltaDays,
+          weekendHandling === 'exclude'
         );
         return (
           <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
@@ -2120,6 +2150,38 @@ JG Painting Pros Inc.`,
                 </p>
               </div>
 
+              <div>
+                <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                  When shifting the end date, weekend days should be:
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={applyingJobMove}
+                    onClick={() => setWeekendHandling('include')}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors disabled:opacity-50 ${
+                      weekendHandling === 'include'
+                        ? 'border-blue-400 bg-blue-100 text-blue-900 dark:border-blue-700 dark:bg-blue-950/60 dark:text-blue-200'
+                        : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50 dark:border-[#2D3B4E] dark:bg-[#0F172A] dark:text-gray-300 dark:hover:bg-[#1E293B]'
+                    }`}
+                  >
+                    Included (calendar days)
+                  </button>
+                  <button
+                    type="button"
+                    disabled={applyingJobMove}
+                    onClick={() => setWeekendHandling('exclude')}
+                    className={`flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition-colors disabled:opacity-50 ${
+                      weekendHandling === 'exclude'
+                        ? 'border-blue-400 bg-blue-100 text-blue-900 dark:border-blue-700 dark:bg-blue-950/60 dark:text-blue-200'
+                        : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50 dark:border-[#2D3B4E] dark:bg-[#0F172A] dark:text-gray-300 dark:hover:bg-[#1E293B]'
+                    }`}
+                  >
+                    Excluded (business days)
+                  </button>
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <button
                   type="button"
@@ -2128,7 +2190,7 @@ JG Painting Pros Inc.`,
                   className="w-full text-left rounded-lg border border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 px-4 py-3 hover:bg-blue-100 dark:hover:bg-blue-950/70 disabled:opacity-50"
                 >
                   <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
-                    Shift end date by the same amount ({pendingJobMove.deltaDays > 0 ? '+' : ''}{pendingJobMove.deltaDays} day{Math.abs(pendingJobMove.deltaDays) === 1 ? '' : 's'})
+                    Shift end date by the same amount ({pendingJobMove.deltaDays > 0 ? '+' : ''}{pendingJobMove.deltaDays} day{Math.abs(pendingJobMove.deltaDays) === 1 ? '' : 's'}{weekendHandling === 'exclude' ? ', business days' : ''})
                   </p>
                   <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">
                     New end date: {formatDisplayDate(shiftedEndDate)} — keeps the job&apos;s {spanDays}-day duration.
