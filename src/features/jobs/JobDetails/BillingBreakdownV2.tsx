@@ -42,6 +42,8 @@ type UnifiedChargeItem = {
   unit_label?: string;
   quantity_or_hours: number;
   is_hours: boolean;
+  extra_charge_number?: number;
+  show_extra_charge_number?: boolean;
   source_item_id?: string;
   customize_hours?: boolean;
   rate?: number;
@@ -107,7 +109,14 @@ const UnifiedChargesTable: React.FC<{ items: UnifiedChargeItem[] }> = ({ items }
               }`}
             >
               <td className="px-6 py-4 text-zinc-800 dark:text-zinc-100 font-semibold text-base">
-                {s.label}
+                <div className="flex items-start gap-2">
+                  {s.show_extra_charge_number && s.extra_charge_number !== undefined && (
+                    <span className="mt-0.5 inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-amber-100 px-2 text-xs font-bold text-amber-800 dark:bg-amber-900/50 dark:text-amber-100">
+                      {s.extra_charge_number}
+                    </span>
+                  )}
+                  <span>{s.label}</span>
+                </div>
                 <ChargeRateDetails item={s} />
               </td>
               <td className="px-6 py-4 text-zinc-600 dark:text-zinc-400 text-base">{s.unit_label ?? (s.is_hours ? 'Hours' : '—')}</td>
@@ -172,7 +181,14 @@ const ExtraChargeHoursEditor: React.FC<{
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-3">
           <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-            {lineItem.label}
+            <span className="inline-flex items-center gap-2">
+              {lineItem.show_extra_charge_number && lineItem.extra_charge_number !== undefined && (
+                <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-amber-100 px-2 text-xs font-bold text-amber-800 dark:bg-amber-900/50 dark:text-amber-100">
+                  {lineItem.extra_charge_number}
+                </span>
+              )}
+              <span>{lineItem.label}</span>
+            </span>
           </div>
           <label className="flex items-center gap-2 text-sm font-semibold text-zinc-800 dark:text-zinc-100">
             <input
@@ -272,7 +288,7 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
       profit_amount: i.profit_amount
     })),
     // Map Extra Charges (Itemized)
-    ...extraLineItems.map(item => {
+    ...extraLineItems.map((item, index) => {
       const quantity = Number(item.quantity) || 0;
       const billRate = Number(item.billRate) || 0;
       const subRate = Number(item.subRate) || 0;
@@ -284,6 +300,8 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
         id: `extra-${item.id}`,
         source_item_id: item.id,
         label: item.description?.trim() || `Extra Charges - ${item.categoryName}: ${item.detailName}`,
+        extra_charge_number: index + 1,
+        show_extra_charge_number: extraLineItems.length > 1,
         unit_label: item.isHourly ? 'Hours' : 'Units',
         quantity_or_hours: quantity,
         is_hours: item.isHourly,
