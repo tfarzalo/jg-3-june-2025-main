@@ -3,6 +3,7 @@ import {
   EXTRA_CHARGE_ITEM_COLUMN_KEYS,
   REPORT_COLUMNS,
   reportHeadersForTemplate,
+  reportIncludesExtraChargeNotes,
   type ReportTemplate,
 } from '../../lib/reports';
 import { formatJobPhaseLabel } from '../../lib/jobPhaseLabels';
@@ -157,6 +158,9 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
 }) {
   const [name, setName] = useState(template?.name || '');
   const [columns, setColumns] = useState<string[]>(template?.columns || REPORT_COLUMNS.map(column => column.key));
+  const [includeExtraChargeNotes, setIncludeExtraChargeNotes] = useState(
+    template ? reportIncludesExtraChargeNotes(template) : false
+  );
   const [phases, setPhases] = useState<string[]>([]);
   const [phaseSelection, setPhaseSelection] = useState<string[]>(template?.filters?.phases as string[] || ['ALL']);
   const columnCategories = getColumnCategories();
@@ -174,6 +178,7 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
 
   useEffect(() => {
     setName(template?.name || '');
+    setIncludeExtraChargeNotes(template ? reportIncludesExtraChargeNotes(template) : false);
     setColumns(template?.columns?.length ? template.columns : REPORT_COLUMNS.map(column => column.key));
     setPhaseSelection(template?.filters?.phases as string[] || ['ALL']);
   }, [template]);
@@ -244,6 +249,7 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
     if (!name.trim()) return alert('Please name the template');
     const filters = { ...(template?.filters || {}) } as Record<string, unknown>;
     if (phaseSelection && phaseSelection.length) filters.phases = phaseSelection;
+    filters.includeExtraChargeNotes = includeExtraChargeNotes;
     onSave({
       id: template?.id || `tmp-${Date.now()}`,
       name: name.trim(),
@@ -278,6 +284,21 @@ export default function TemplateEditor({ template, onSave, onCancel, onDelete, s
             </div>
           </div>
         )}
+
+        <label className="mb-4 flex items-start gap-2 text-sm text-gray-800 dark:text-gray-100">
+          <input
+            type="checkbox"
+            checked={includeExtraChargeNotes}
+            onChange={event => setIncludeExtraChargeNotes(event.target.checked)}
+            className="mt-1"
+          />
+          <span>
+            Include extra-charge notes
+            <span className="block text-xs text-gray-500 dark:text-gray-400">
+              Adds Notes: and the saved text to each selected extra charge. Charges with no notes stay unchanged.
+            </span>
+          </span>
+        </label>
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-6 mb-5">
           <div>

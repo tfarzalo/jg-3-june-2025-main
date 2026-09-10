@@ -35,6 +35,7 @@ type ExtraChargeReportItem = {
   name?: string;
   type?: 'extra_charge' | 'cancellation_trip_charge';
   description: string;
+  notes?: string;
   unit?: string;
   qty?: number;
   bill: number;
@@ -168,12 +169,13 @@ export const EXTRA_CHARGE_ITEM_COLUMN_KEYS = Array.from(
   (_, index) => `extra_item_${index + 1}`
 );
 
-const formatExtraChargeReportItemText = (item?: ExtraChargeReportItem) => {
+const formatExtraChargeReportItemText = (item?: ExtraChargeReportItem, includeNotes = false) => {
   if (!item) return '';
   const name = item.name?.trim();
   const description = item.description?.trim();
   const detail = [name, description && description !== name ? description : ''].filter(Boolean).join(' - ');
-  return `${formatCurrency(item.bill)}${detail ? ` - ${detail}` : ''}`;
+  const notes = includeNotes ? item.notes?.trim() : '';
+  return `${formatCurrency(item.bill)}${detail ? ` - ${detail}` : ''}${notes ? ` - Notes: ${notes}` : ''}`;
 };
 
 const EXTRA_CHARGE_ITEM_REPORT_COLUMNS: ReportColumn[] = EXTRA_CHARGE_ITEM_COLUMN_KEYS.map((key, index) => ({
@@ -404,6 +406,7 @@ export const PRESET_REPORT_TEMPLATES: ReportTemplate[] = [
     columns: WUFOO_STYLE_BILLING_COLUMNS,
     filters: {
       reportType: 'wufoo_style_billing',
+      includeExtraChargeNotes: true,
       phases: ['ALL_EXCEPT_ARCHIVED'],
     },
     preset: true,
@@ -519,6 +522,12 @@ export async function fetchReportRuns(): Promise<ReportRun[]> {
       report,
     };
   });
+}
+
+export function reportIncludesExtraChargeNotes(template: ReportTemplate): boolean {
+  return typeof template.filters?.includeExtraChargeNotes === 'boolean'
+    ? template.filters.includeExtraChargeNotes
+    : template.filters?.reportType === 'wufoo_style_billing';
 }
 
 export async function generateReport(params: {
@@ -673,10 +682,16 @@ export async function generateReport(params: {
     jobs = await enrichJobsWithQualityControl(jobs);
   }
 
+  const includeExtraChargeNotes = reportIncludesExtraChargeNotes(params.template);
   const rows = jobs.map(job => {
     const row: ReportRow = {};
     selectedColumns.forEach(column => {
-      row[column.label] = column.value(job);
+      const extraItemIndex = EXTRA_CHARGE_ITEM_COLUMN_KEYS.indexOf(column.key);
+      row[column.label] = includeExtraChargeNotes && extraItemIndex >= 0
+        ? formatExtraChargeReportItemText(job.extra_item_details?.[extraItemIndex], true)
+        : includeExtraChargeNotes && column.key === 'extra_items'
+          ? (job.extra_item_details || []).map(item => formatExtraChargeReportItemText(item, true)).join(';; ')
+          : column.value(job);
     });
     return row;
   });
@@ -825,6 +840,7 @@ async function generateWufooStyleBillingReport(params: {
       filters: {
         ...(params.template.filters || {}),
         reportType: undefined,
+        includeExtraChargeNotes: reportIncludesExtraChargeNotes(params.template),
       },
       preset: true,
     },
@@ -1402,6 +1418,7 @@ export function calculateBillingTotals(details: unknown, job: ReportJob): Billin
         name: itemName || undefined,
         type: 'extra_charge',
         description: desc || itemName || 'Extra Charge',
+        notes: String(item.notes ?? '').trim() || undefined,
         unit: unit || undefined,
         qty: qty || undefined,
         bill: Number(amt.toFixed(2)),
