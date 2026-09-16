@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ClipboardList, ArrowLeft, Upload, X, Image, FileText, Search, ChevronDown, Pin } from 'lucide-react';
 import { supabase } from '../utils/supabase';
-import { getCurrentDateInEastern, formatDateForInput } from '../lib/dateUtils';
+import { assertJobPropertyEligible, fetchJobEligibleProperties } from '../lib/properties/jobEligibility';
+import { getInitialJobRequestDate } from '../lib/jobs/jobRequestDate';
 import { JobType } from '../lib/types';
 import { useAuth } from '../contexts/AuthProvider';
 import { WorkOrderLink } from './shared/WorkOrderLink';
@@ -42,6 +43,7 @@ interface JobCategory {
 
 export function JobRequestForm() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const { canUsePinnedWorkspace, pinSummary, isPinned } = usePinnedWorkspace();
   const [loading, setLoading] = useState(false);
@@ -78,8 +80,8 @@ export function JobRequestForm() {
     jobCategoriesLoaded: false
   });
 
-  // Initialize form data with today's date properly formatted
-  const [formData, setFormData] = useState({
+  // Apply the calendar date only when opening the form; later edits remain user-controlled.
+  const [formData, setFormData] = useState(() => ({
     property_id: '',
     unit_number: '',
     unit_size_id: '',
@@ -89,24 +91,10 @@ export function JobRequestForm() {
     is_occupied: false,
     description: '',
     painter_notes: '',
-    scheduled_date: getCurrentDateInEastern(),
+    scheduled_date: getInitialJobRequestDate(location.search),
     is_multi_day: false,
     scheduled_end_date: '',
-  });
-
-  // Debug log the initial date and ensure it's properly set
-  useEffect(() => {
-    // Ensure we start with a clean YYYY-MM-DD date
-    const currentDate = getCurrentDateInEastern();
-    console.log('JobRequestForm: Initial scheduled_date:', formData.scheduled_date);
-    console.log('JobRequestForm: Current date in Eastern:', currentDate);
-    
-    // Only update if it's empty or invalid
-    if (!formData.scheduled_date) {
-      setFormData(prev => ({ ...prev, scheduled_date: currentDate }));
-      console.log('JobRequestForm: set scheduled_date to:', currentDate);
-    }
-  }, []);
+  }));
 
   useEffect(() => {
     const testConnection = async () => {
@@ -195,14 +183,10 @@ export function JobRequestForm() {
 
   const fetchProperties = async () => {
     try {
-      const { data, error } = await supabase
-        .from('properties')
-        .select('*')
-        .eq('is_archived', false)
-        .order('property_name');
+      const { data, error } = await fetchJobEligibleProperties();
 
       if (error) throw error;
-      setProperties(data || []);
+      setProperties((data || []) as unknown as Property[]);
       setDebugInfo(prev => ({ ...prev, propertiesLoaded: true }));
     } catch (err) {
       console.error('Error fetching properties:', err);
@@ -513,6 +497,8 @@ export function JobRequestForm() {
           throw new Error('Estimated end date cannot be before the scheduled start date.');
         }
       }
+
+      await assertJobPropertyEligible(formData.property_id);
 
       const { data, error } = await supabase.rpc('create_job', {
         p_property_id: formData.property_id,

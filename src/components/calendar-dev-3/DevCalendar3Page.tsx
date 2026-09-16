@@ -2350,7 +2350,7 @@ JG Painting Pros Inc.`,
               <button onClick={() => setAddChoice({ date: '', open: false })} aria-label="Close add menu"><X className="h-5 w-5" /></button>
             </div>
             <div className="space-y-3">
-              <Link to="/dashboard/jobs/new" className="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-[#2D3B4E] p-3 hover:bg-gray-50 dark:hover:bg-[#1E293B]">
+              <Link to={`/dashboard/jobs/new?scheduled_date=${encodeURIComponent(addChoice.date)}`} className="flex items-center gap-3 rounded-lg border border-gray-200 dark:border-[#2D3B4E] p-3 hover:bg-gray-50 dark:hover:bg-[#1E293B]">
                 <Plus className="h-4 w-4" />
                 Add Job
               </Link>

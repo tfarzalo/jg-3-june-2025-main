@@ -4,6 +4,7 @@ import Papa from 'papaparse';
 import { parse, isValid, format } from 'date-fns';
 import { Upload, FileText, Download, AlertCircle, CheckCircle, X, Loader2 } from 'lucide-react';
 import { supabase } from '../../utils/supabase';
+import { assertJobPropertyEligible, fetchJobEligibleProperties } from '../../lib/properties/jobEligibility';
 import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthProvider';
 
@@ -58,11 +59,13 @@ export function JobImportManager() {
     const fetchRefs = async () => {
       try {
         const [props, units, types, cats] = await Promise.all([
-          supabase.from('properties').select('id, property_name').eq('is_archived', false),
+          fetchJobEligibleProperties('id, property_name'),
           supabase.from('unit_sizes').select('id, unit_size_label'),
           supabase.from('job_types').select('id, job_type_label'),
           supabase.from('job_categories').select('id, name')
         ]);
+
+        if (props.error) throw props.error;
 
         const refs: ReferenceData = {
           properties: {},
@@ -71,7 +74,7 @@ export function JobImportManager() {
           jobCategories: {}
         };
 
-        props.data?.forEach(p => refs.properties[p.property_name.toLowerCase()] = p.id);
+        (props.data as unknown as Array<{ id: string; property_name: string }> | null)?.forEach(p => refs.properties[p.property_name.toLowerCase()] = p.id);
         units.data?.forEach(u => refs.unitSizes[u.unit_size_label.toLowerCase()] = u.id);
         types.data?.forEach(t => refs.jobTypes[t.job_type_label.toLowerCase()] = t.id);
         cats.data?.forEach(c => refs.jobCategories[c.name.toLowerCase()] = c.id);
@@ -135,7 +138,7 @@ export function JobImportManager() {
 
       // Validate Property
       const propertyId = referenceData.properties[data['Property Name']?.toLowerCase()];
-      if (!propertyId) errors.push(`Property "${data['Property Name']}" not found`);
+      if (!propertyId) errors.push(`Property "${data['Property Name']}" not found or not active`);
 
       // Validate Unit Number
       if (!data['Unit Number']) errors.push('Unit Number is required');
@@ -316,6 +319,14 @@ export function JobImportManager() {
       // We process sequentially to avoid overwhelming the DB connection
       for (const result of validRows) {
         if (!result.parsedData) continue;
+
+        try {
+          await assertJobPropertyEligible(result.parsedData.property_id);
+        } catch (error) {
+          failureCount++;
+          toast.error(`Row ${result.row}: ${error instanceof Error ? error.message : 'Unable to verify property status.'}`);
+          continue;
+        }
 
         const { data: jobId, error } = await supabase.rpc('create_job', {
           p_property_id: result.parsedData.property_id,

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ClipboardList, ArrowLeft, Trash2, XCircle, Upload, X, Image, FileText, AlertTriangle } from 'lucide-react';
 import { supabase } from '../utils/supabase';
+import { assertJobPropertyEligible, fetchJobEligibleProperties } from '../lib/properties/jobEligibility';
 import { formatDateForInput } from '../lib/dateUtils';
 import { JobType } from '../lib/types';
 import { WorkOrderLink } from './shared/WorkOrderLink';
@@ -317,14 +318,10 @@ export function JobEditForm() {
 
   const fetchProperties = async () => {
     try {
-      const { data, error } = await supabase
-        .from('properties')
-        .select('*')
-        .eq('is_archived', false)
-        .order('property_name');
+      const { data, error } = await fetchJobEligibleProperties();
 
       if (error) throw error;
-      setProperties(data || []);
+      setProperties((data || []) as unknown as Property[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch properties');
     }
@@ -591,6 +588,8 @@ export function JobEditForm() {
         }
       }
       const scheduledEndDate = formData.is_multi_day ? formData.scheduled_end_date : null;
+
+      await assertJobPropertyEligible(formData.property_id, job?.property_id);
 
       const { error, data: updateResult } = await supabase
         .from('jobs')
@@ -911,6 +910,11 @@ export function JobEditForm() {
                   className="w-full h-11 px-4 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select a property</option>
+                  {job?.property_id && !properties.some(property => property.id === job.property_id) && (
+                    <option value={job.property_id}>
+                      {job.property?.property_name || 'Existing property'} (current property)
+                    </option>
+                  )}
                   {properties.map(property => (
                     <option key={property.id} value={property.id}>
                       {property.property_name} | {formatPropertyAddress(property)}
