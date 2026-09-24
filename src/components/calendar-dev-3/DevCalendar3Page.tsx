@@ -2344,6 +2344,12 @@ JG Painting Pros Inc.`,
               {selectedItem.type === 'job' ? (() => {
                 const job = selectedItem.raw as CalendarJob;
                 const isMultiDay = Boolean(job.scheduled_end_date && dateOnlyFromJob(job.scheduled_end_date) > dateOnlyFromJob(job.scheduled_date));
+                const currentAssignmentNotification = notificationRows.find((row) => (
+                  row.job_id === job.id && row.assignment_assigned_at === job.assigned_at
+                )) || null;
+                const assignmentChanged = (assignmentSubId || null) !== (job.assigned_to || null);
+                const notificationSent = currentAssignmentNotification?.status === 'sent';
+                const notificationActionable = currentAssignmentNotification?.status === 'pending' || currentAssignmentNotification?.status === 'failed';
                 return (
                   <>
                     <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
@@ -2369,6 +2375,7 @@ JG Painting Pros Inc.`,
                       {job.description && <div className="sm:col-span-2"><dt className="text-gray-500">Notes</dt><dd className="font-medium whitespace-pre-wrap">{job.description}</dd></div>}
                       {job.assignment_status && <div><dt className="text-gray-500">Assignment Status</dt><dd className="font-medium capitalize">{job.assignment_status.replace('_', ' ')}</dd></div>}
                       {job.assigned_to_name && <div><dt className="text-gray-500">Assigned Subcontractor</dt><dd className="font-medium">{job.assigned_to_name}</dd></div>}
+                      {job.assigned_to && <div className="sm:col-span-2"><dt className="text-gray-500">Assignment Notification</dt><dd className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${notificationSent ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : currentAssignmentNotification?.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>{notificationSent ? <MailCheck className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}{notificationSent ? `Sent${currentAssignmentNotification?.sent_at ? ` ${new Date(currentAssignmentNotification.sent_at).toLocaleString()}` : ''}` : currentAssignmentNotification?.status === 'failed' ? 'Send failed — retry available' : currentAssignmentNotification?.status === 'processing' ? 'Sending' : currentAssignmentNotification ? 'Not sent' : 'Status unavailable'}</dd></div>}
                     </dl>
 
                     <div className="rounded-lg border border-gray-200 dark:border-[#2D3B4E] p-4">
@@ -2384,14 +2391,37 @@ JG Painting Pros Inc.`,
                               <option key={sub.id} value={sub.id}>{sub.full_name || sub.email || 'Unnamed subcontractor'}</option>
                             ))}
                           </select>
-                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                            <button onClick={() => requestAssignmentSave('send-later')} disabled={assignmentSaving} className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
-                              {assignmentSaving ? 'Saving...' : 'Assign — Send Later'}
-                            </button>
-                            <button onClick={() => requestAssignmentSave('send-now')} disabled={assignmentSaving || (!!assignmentSubId && !subcontractors.find((sub) => sub.id === assignmentSubId)?.email)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-                              {assignmentSaving ? 'Saving...' : 'Assign & Send Now'}
-                            </button>
-                          </div>
+                          {assignmentChanged ? (
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              <button onClick={() => requestAssignmentSave('send-later')} disabled={assignmentSaving} className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
+                                {assignmentSaving ? 'Saving...' : assignmentSubId ? 'Assign — Send Later' : 'Save Unassignment'}
+                              </button>
+                              {assignmentSubId && <button onClick={() => requestAssignmentSave('send-now')} disabled={assignmentSaving || !subcontractors.find((sub) => sub.id === assignmentSubId)?.email} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+                                {assignmentSaving ? 'Saving...' : 'Assign & Send Now'}
+                              </button>}
+                            </div>
+                          ) : notificationSent ? (
+                            <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200">
+                              <p className="flex items-center gap-2 font-semibold"><MailCheck className="h-4 w-4" />Assignment notification sent</p>
+                              <p className="mt-1">The subcontractor has been notified. Their assignment response is currently <strong>{job.assignment_status || 'pending'}</strong>.</p>
+                            </div>
+                          ) : notificationActionable ? (
+                            <div className="space-y-2">
+                              <div className={`rounded-lg border p-3 text-sm ${currentAssignmentNotification?.status === 'failed' ? 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200'}`}>
+                                <p className="font-semibold">{currentAssignmentNotification?.status === 'failed' ? 'The last notification attempt failed.' : 'This assignment has not been emailed yet.'}</p>
+                                {currentAssignmentNotification?.last_error && <p className="mt-1 text-xs">{currentAssignmentNotification.last_error}</p>}
+                              </div>
+                              <button onClick={() => sendSelectedNotificationRows([currentAssignmentNotification!.id], true)} disabled={batchSending} className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+                                {batchSending ? 'Sending...' : currentAssignmentNotification?.status === 'failed' ? 'Retry Assignment Notification' : 'Send Assignment Notification'}
+                              </button>
+                            </div>
+                          ) : job.assigned_to ? (
+                            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-[#2D3B4E] dark:bg-[#0F172A] dark:text-gray-300">
+                              This assignment is unchanged. Notification delivery status is not available for this assignment record.
+                            </div>
+                          ) : (
+                            <p className="text-sm text-gray-500">Select a subcontractor to create an assignment.</p>
+                          )}
                         </div>
                       ) : (
                         <p className="text-sm text-gray-500">You do not have permission to assign subcontractors.</p>
