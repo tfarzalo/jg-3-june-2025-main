@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { RouteGuard, SubcontractorRouteGuard, AdminRouteGuard, StrictAdminRouteGuard } from './RouteGuard';
 
 // Lazy load components - using correct pattern for each export type
@@ -38,7 +38,6 @@ const Users = lazy(() => import('./Users').then(module => ({ default: module.Use
 const SubcontractorAdminPage = lazy(() => import('./users/SubcontractorAdminPage').then(module => ({ default: module.SubcontractorAdminPage })));
 const AppSettings = lazy(() => import('./AppSettings').then(module => ({ default: module.AppSettings })));
 const UserProfile = lazy(() => import('./UserProfile').then(module => ({ default: module.UserProfile })));
-const SubScheduler = lazy(() => import('./SubScheduler'));
 const SubcontractorDashboard = lazy(() => import('./SubcontractorDashboard').then(module => ({ default: module.SubcontractorDashboard })));
 const SupportTickets = lazy(() => import('../pages/SupportTickets').then(module => ({ default: module.SupportTickets })));
 const Changelog = lazy(() => import('../pages/Changelog').then(module => ({ default: module.Changelog })));
@@ -177,7 +176,7 @@ export function Dashboard() {
           } />
           <Route path="sub-scheduler" element={
             <RouteGuard>
-              <SubScheduler />
+              <Navigate to="/dashboard/calendar" replace />
             </RouteGuard>
           } />
           <Route path="job-request" element={

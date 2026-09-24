@@ -18,6 +18,7 @@ import { formatInTimeZone, zonedTimeToUtc } from 'date-fns-tz';
 import { formatJobPhaseLabel } from '../../lib/jobPhaseLabels';
 import {
   CalendarDays,
+  AlertTriangle,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -27,6 +28,7 @@ import {
   Filter,
   GripVertical,
   Mail,
+  MailCheck,
   CalendarPlus,
   PanelLeftClose,
   PanelLeftOpen,
@@ -53,6 +55,13 @@ import { dispatchSmsNotification } from '../../lib/sms/dispatchSmsNotification';
 import { useUserRole } from '../../contexts/UserRoleContext';
 import { fetchActiveSubcontractors } from '../../lib/users/activeSubcontractors';
 import EventModal from '../calendar/EventModal';
+import AssignmentNotificationsModal from '../calendar/AssignmentNotificationsModal';
+import {
+  AssignmentNotificationRow,
+  findCurrentAssignmentNotification,
+  listAssignmentNotifications,
+  sendAssignmentNotifications,
+} from '../../services/assignmentNotifications';
 import { isJobActiveOnDate, getJobSpanDayLabel, formatJobDateRange } from '../../utils/jobScheduling';
 
 const TZ = 'America/New_York';
@@ -96,6 +105,7 @@ interface CalendarJob {
   assigned_to: string | null;
   assigned_to_name: string | null;
   assigned_to_email: string | null;
+  preferred_subcontractor_ids: string[];
   assigned_at: string | null;
   assignment_status: string | null;
   assignment_deadline: string | null;
@@ -203,7 +213,11 @@ const JOB_CALENDAR_SELECT = `
     address,
     city,
     state,
-    zip
+    zip,
+    preferred_subcontractor_a_id,
+    preferred_subcontractor_b_id,
+    preferred_subcontractor_c_id,
+    preferred_subcontractor_d_id
   ),
   unit_size:unit_sizes (
     unit_size_label
@@ -525,6 +539,12 @@ function mapCalendarJobRow(job: any): CalendarJob {
     assigned_to: job.assigned_to || null,
     assigned_to_name: profile?.full_name || null,
     assigned_to_email: profile?.email || null,
+    preferred_subcontractor_ids: [
+      property?.preferred_subcontractor_a_id,
+      property?.preferred_subcontractor_b_id,
+      property?.preferred_subcontractor_c_id,
+      property?.preferred_subcontractor_d_id,
+    ].filter(Boolean),
     assigned_at: job.assigned_at || null,
     assignment_status: job.assignment_status || null,
     assignment_deadline: job.assignment_deadline || null,
@@ -563,6 +583,12 @@ export default function DevCalendar3Page() {
   const [assignmentSaving, setAssignmentSaving] = useState(false);
   const [assignmentSubId, setAssignmentSubId] = useState('');
   const [pendingNotifications, setPendingNotifications] = useState<PendingNotification[]>([]);
+  const [notificationRows, setNotificationRows] = useState<AssignmentNotificationRow[]>([]);
+  const [notificationModalOpen, setNotificationModalOpen] = useState(false);
+  const [batchSending, setBatchSending] = useState(false);
+  const [sessionStartedAt] = useState(() => new Date().toISOString());
+  const [pendingAssignmentAction, setPendingAssignmentAction] = useState<'send-now' | 'send-later' | null>(null);
+  const [nonPreferredWarningOpen, setNonPreferredWarningOpen] = useState(false);
   const [sendingNotifications, setSendingNotifications] = useState(false);
   const [addChoice, setAddChoice] = useState<AddChoice>({ date: '', open: false });
   const [subscriptionTarget, setSubscriptionTarget] = useState<SubscriptionTarget | null>(null);
@@ -658,6 +684,15 @@ export default function DevCalendar3Page() {
     }
   }, [visibleRange.end, visibleRange.start]);
 
+  const loadNotificationRows = useCallback(async () => {
+    if (!canManage) return;
+    try {
+      setNotificationRows(await listAssignmentNotifications());
+    } catch (error) {
+      console.error('Assignment notification load failed:', error);
+    }
+  }, [canManage]);
+
   const mergeChangedJob = useCallback(async (update: CalendarScheduleUpdate) => {
     if (!update.job_id) return false;
 
@@ -708,6 +743,10 @@ export default function DevCalendar3Page() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    loadNotificationRows();
+  }, [loadNotificationRows]);
 
   useEffect(() => {
     let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -1449,7 +1488,7 @@ JG Painting Pros Inc.`,
     };
   };
 
-  const saveAssignment = async () => {
+  const saveAssignment = async (action: 'send-now' | 'send-later') => {
     if (!selectedItem || selectedItem.type !== 'job') return;
     const job = selectedItem.raw as CalendarJob;
     const newSubId = assignmentSubId || null;
@@ -1504,14 +1543,48 @@ JG Painting Pros Inc.`,
       });
       toast.success(subcontractor ? `Assigned to ${subcontractor.full_name || subcontractor.email}` : 'Assignment cleared');
 
-      if (subcontractor?.email) {
-        setPendingNotifications([{ subcontractor, jobs: [updatedJob] }]);
+      await loadNotificationRows();
+      if (action === 'send-now' && subcontractor?.email && assignedAt) {
+        const notificationId = await findCurrentAssignmentNotification(job.id, assignedAt);
+        if (!notificationId) throw new Error('Assignment saved, but its notification record is not available yet');
+        const result = await sendAssignmentNotifications([notificationId]);
+        const failure = result.results.find((item) => !item.success);
+        if (failure) throw new Error(failure.error || 'Assignment saved, but email failed');
+        toast.success('Assignment email sent');
+        await loadNotificationRows();
       }
     } catch (error) {
       console.error('Assignment save failed:', error);
       toast.error(error instanceof Error ? error.message : 'Could not save assignment');
     } finally {
       setAssignmentSaving(false);
+    }
+  };
+
+  const requestAssignmentSave = (action: 'send-now' | 'send-later') => {
+    if (!selectedItem || selectedItem.type !== 'job') return;
+    const job = selectedItem.raw as CalendarJob;
+    const newSubId = assignmentSubId || null;
+    const preferredIds = job.preferred_subcontractor_ids || [];
+    if (newSubId && newSubId !== job.assigned_to && preferredIds.length > 0 && !preferredIds.includes(newSubId)) {
+      setPendingAssignmentAction(action);
+      setNonPreferredWarningOpen(true);
+      return;
+    }
+    void saveAssignment(action);
+  };
+
+  const sendSelectedNotificationRows = async (ids: string[], groupBySubcontractor: boolean) => {
+    setBatchSending(true);
+    try {
+      const result = await sendAssignmentNotifications(ids, groupBySubcontractor);
+      const sent = result.results.filter((item) => item.success).reduce((sum, item) => sum + item.count, 0);
+      const failed = result.results.filter((item) => !item.success).reduce((sum, item) => sum + item.count, 0);
+      if (sent) toast.success(`${sent} assignment notification${sent === 1 ? '' : 's'} sent`);
+      if (failed) toast.error(`${failed} assignment notification${failed === 1 ? '' : 's'} failed and can be retried`);
+      await loadNotificationRows();
+    } finally {
+      setBatchSending(false);
     }
   };
 
@@ -1569,9 +1642,17 @@ JG Painting Pros Inc.`,
   };
 
   const viewOptions = CALENDAR_VIEW_MODES;
+  const pendingNotificationCount = notificationRows.filter((row) => row.status === 'pending' || row.status === 'failed').length;
+
+  const notificationForItem = (item: CalendarItem) => {
+    if (item.type !== 'job') return null;
+    const job = item.raw as CalendarJob;
+    return notificationRows.find((row) => row.job_id === job.id && row.assignment_assigned_at === job.assigned_at) || null;
+  };
 
   const renderItemPill = (item: CalendarItem, date: string, className = '') => {
     const span = item.spanInfo;
+    const assignmentNotification = notificationForItem(item);
     const spanRoundingClass = span
       ? `${span.isSpanStart ? '' : 'rounded-l-none border-l-2 border-l-white/40'} ${span.isSpanEnd ? '' : 'rounded-r-none'}`
       : '';
@@ -1600,6 +1681,14 @@ JG Painting Pros Inc.`,
       >
         {(!span || span.isSpanStart) && <GripVertical className="h-3 w-3 shrink-0 opacity-75" />}
         <span className="truncate">{item.title}</span>
+        {assignmentNotification && (!span || span.isSpanStart) && (
+          <span
+            className={`shrink-0 ${assignmentNotification.status === 'sent' ? 'text-green-100' : assignmentNotification.status === 'failed' ? 'text-red-100' : 'text-amber-100'}`}
+            title={assignmentNotification.status === 'sent' && assignmentNotification.sent_at ? `Assignment email sent ${new Date(assignmentNotification.sent_at).toLocaleString()}` : assignmentNotification.status === 'failed' ? 'Assignment email failed — open Assignment Notifications' : 'Assignment notification pending'}
+          >
+            {assignmentNotification.status === 'sent' ? <MailCheck className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}
+          </span>
+        )}
         {span && (
           <span className="ml-auto shrink-0 rounded bg-black/25 px-1 text-[10px] font-semibold">
             {span.dayIndex}/{span.totalDays}
@@ -1999,6 +2088,13 @@ JG Painting Pros Inc.`,
                   <h1 className="text-2xl font-semibold">Calendar</h1>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Jobs and events schedule</p>
                 </div>
+                {canManage && (
+                  <button onClick={() => setNotificationModalOpen(true)} className="relative inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
+                    <Mail className="h-4 w-4" />
+                    <span className="hidden sm:inline">Assignment Notifications</span>
+                    {pendingNotificationCount > 0 && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white">{pendingNotificationCount}</span>}
+                  </button>
+                )}
                 <button onClick={loadData} className="p-2 rounded-lg border border-gray-200 dark:border-[#2D3B4E] bg-white dark:bg-[#1E293B]" aria-label="Refresh calendar">
                   <RefreshCw className="h-4 w-4" />
                 </button>
@@ -2288,9 +2384,14 @@ JG Painting Pros Inc.`,
                               <option key={sub.id} value={sub.id}>{sub.full_name || sub.email || 'Unnamed subcontractor'}</option>
                             ))}
                           </select>
-                          <button onClick={saveAssignment} disabled={assignmentSaving} className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-                            {assignmentSaving ? 'Saving...' : 'Save Assignment'}
-                          </button>
+                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <button onClick={() => requestAssignmentSave('send-later')} disabled={assignmentSaving} className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
+                              {assignmentSaving ? 'Saving...' : 'Assign — Send Later'}
+                            </button>
+                            <button onClick={() => requestAssignmentSave('send-now')} disabled={assignmentSaving || (!!assignmentSubId && !subcontractors.find((sub) => sub.id === assignmentSubId)?.email)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+                              {assignmentSaving ? 'Saving...' : 'Assign & Send Now'}
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <p className="text-sm text-gray-500">You do not have permission to assign subcontractors.</p>
@@ -2480,6 +2581,31 @@ JG Painting Pros Inc.`,
               <button onClick={sendPendingNotifications} disabled={sendingNotifications} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium disabled:opacity-50">
                 {sendingNotifications ? 'Sending...' : 'Send Email'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {notificationModalOpen && (
+        <AssignmentNotificationsModal
+          rows={notificationRows}
+          sessionStartedAt={sessionStartedAt}
+          sending={batchSending}
+          onClose={() => setNotificationModalOpen(false)}
+          onSend={sendSelectedNotificationRows}
+        />
+      )}
+
+      {nonPreferredWarningOpen && selectedItem?.type === 'job' && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-[#111827]">
+            <div className="flex items-start gap-3">
+              <div className="rounded-full bg-amber-100 p-2 text-amber-700"><AlertTriangle className="h-5 w-5" /></div>
+              <div><h2 className="text-lg font-semibold">Non-preferred subcontractor</h2><p className="mt-2 text-sm text-gray-600 dark:text-gray-300">The selected subcontractor is not listed as a preferred subcontractor for this property. You can cancel or continue with the assignment.</p></div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => { setNonPreferredWarningOpen(false); setPendingAssignmentAction(null); }} className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium dark:bg-[#1E293B]">Cancel Assignment</button>
+              <button onClick={() => { const action = pendingAssignmentAction; setNonPreferredWarningOpen(false); setPendingAssignmentAction(null); if (action) void saveAssignment(action); }} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">Continue Anyway</button>
             </div>
           </div>
         </div>

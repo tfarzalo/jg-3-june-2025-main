@@ -1490,7 +1490,6 @@ function searchPages(term: string): SearchResult[] {
     { id: 'files', title: 'File Manager', subtitle: 'Files and folders', url: '/dashboard/files', keywords: ['files', 'file manager', 'documents'] },
     { id: 'users', title: 'Users', subtitle: 'User and subcontractor management', url: '/dashboard/users', keywords: ['users', 'subcontractors', 'subs', 'sub'] },
     { id: 'calendar', title: 'Calendar', subtitle: 'Job calendar', url: '/dashboard/calendar', keywords: ['calendar', 'schedule', 'date'] },
-    { id: 'sub-scheduler', title: 'Sub Scheduler', subtitle: 'Subcontractor schedule', url: '/dashboard/sub-scheduler', keywords: ['sub scheduler', 'scheduler', 'schedule', 'subcontractor schedule'] },
     { id: 'activity', title: 'Activity Log', subtitle: 'System activity', url: '/dashboard/activity', keywords: ['activity', 'log', 'history'] },
     { id: 'reports', title: 'Reports', subtitle: 'Reports and report history', url: '/dashboard/reports', keywords: ['reports', 'reporting', 'report history'] },
     { id: 'contacts', title: 'Contacts', subtitle: 'Contacts and leads', url: '/dashboard/contacts', keywords: ['contacts', 'leads'] },

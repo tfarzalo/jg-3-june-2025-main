@@ -741,7 +741,7 @@ useEffect(() => {
             Working Days & Availability
           </h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Select the days when this subcontractor is available for work. They will only appear in the Sub Scheduler on their working days.
+            Select the days when this subcontractor is available for work. Their availability is used when assigning work from Calendar.
           </p>
           
           <div className="grid grid-cols-5 gap-4">
@@ -780,7 +780,7 @@ useEffect(() => {
           
           <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
             <p className="text-sm text-blue-700 dark:text-blue-300">
-              <strong>Note:</strong> Subcontractors will only be visible in the Sub Scheduler on days marked as working days. 
+              <strong>Note:</strong> Working days help scheduling users choose an available subcontractor in Calendar.
               This helps ensure proper scheduling and resource allocation.
             </p>
           </div>

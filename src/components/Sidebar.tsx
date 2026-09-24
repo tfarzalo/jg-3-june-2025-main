@@ -237,7 +237,6 @@ export function Sidebar() {
           { icon: CheckCircle, label: 'Completed Jobs', to: '/dashboard/jobs/completed' },
           { icon: DollarSign, label: 'Invoicing', to: '/dashboard/jobs/invoicing' },
           { icon: XCircle, label: 'Cancelled', to: '/dashboard/jobs/cancelled' },
-          { icon: CalendarDays, label: 'Sub Scheduler', to: '/dashboard/sub-scheduler' },
         ]
       },
       {
@@ -277,7 +276,6 @@ export function Sidebar() {
         items: [
           { icon: Activity, label: 'Activity Log', to: '/dashboard/activity', dataTutorial: 'activity' },
           { icon: FileText, label: 'Reports', to: '/dashboard/reports' },
-          { icon: FileText, label: 'Dev Reports', to: '/dashboard/reports-dev' },
         ]
       },
       // Show settings for admin settings managers

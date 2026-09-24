@@ -4888,7 +4888,7 @@ export function JobDetails() {
                     </span>
                     {canAssignSubcontractor && (
                       <Link
-                        to={`/dashboard/sub-scheduler?jobId=${jobId}`}
+                        to={`/dashboard/calendar?jobId=${jobId}`}
                         className="inline-flex items-center text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
                       >
                         {job.assigned_to ? 'Change' : 'Assign'}

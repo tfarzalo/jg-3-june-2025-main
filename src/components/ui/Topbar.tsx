@@ -371,7 +371,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
               {actionsMenuOpen && (
                 <div className="absolute left-0 mt-2 w-64 bg-white dark:bg-[#1E293B] rounded-lg shadow-lg border border-gray-200 dark:border-[#2D3B4E] z-50 overflow-hidden">
                   <button
-                    onClick={() => handleActionNavigate('/dashboard/sub-scheduler')}
+                    onClick={() => handleActionNavigate('/dashboard/calendar')}
                     className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2D3B4E] transition-colors"
                   >
                     <Calendar className="h-4 w-4 flex-shrink-0 text-[#7C3AED]" />
@@ -437,7 +437,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
               </button>
               
               <button 
-                onClick={() => navigate('/dashboard/sub-scheduler')}
+                onClick={() => navigate('/dashboard/calendar')}
                 className="bg-[#7C3AED] hover:bg-[#6D28D9] text-white px-3 xl:px-4 py-2 rounded-lg flex items-center whitespace-nowrap transition-colors"
               >
                 <Calendar className="h-4 w-4 mr-1.5 xl:mr-2" />
@@ -855,7 +855,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
                 </div>
                 <button 
                   onClick={() => {
-                    navigate('/dashboard/sub-scheduler');
+                    navigate('/dashboard/calendar');
                     setMobileMenuOpen(false);
                   }}
                   className="w-full flex items-center px-4 py-3 text-left text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1E293B] rounded-lg transition-colors touch-manipulation min-h-[44px]"
