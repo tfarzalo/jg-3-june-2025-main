@@ -132,7 +132,7 @@ export function EmailDeliveryLog() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
-  const [recipientFilter, setRecipientFilter] = useState<'external_focus' | RecipientKind | 'all'>('external_focus');
+  const [recipientFilter, setRecipientFilter] = useState<'external_focus' | RecipientKind | 'all'>('all');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
 
