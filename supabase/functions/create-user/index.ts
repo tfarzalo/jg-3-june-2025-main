@@ -18,7 +18,7 @@ serve(async (req) => {
     // Get environment variables
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    
+
     if (!supabaseUrl || !supabaseServiceKey) {
       throw new Error("Missing environment variables");
     }
@@ -33,7 +33,7 @@ serve(async (req) => {
 
     // Get request body
     const { email, password, full_name, role, working_days, sendWelcomeEmail = true } = await req.json();
-    
+
     // Validate inputs
     if (!email || !password || !full_name || !role) {
       throw new Error("Missing required fields");
@@ -64,7 +64,7 @@ serve(async (req) => {
 
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    
+
     if (userError || !user) {
       throw new Error("Authentication failed: " + (userError?.message || "No user found"));
     }
@@ -75,22 +75,22 @@ serve(async (req) => {
       .select("role")
       .eq("id", user.id)
       .single();
-      
+
     if (currentProfileError) {
       throw new Error("Error fetching user profile: " + currentProfileError.message);
     }
-    
+
     // All authenticated non-subcontractor users can create users.
     if (!currentUserProfile.role || currentUserProfile.role === "subcontractor") {
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           code: "not_admin",
           message: "User not allowed",
-          success: false, 
+          success: false,
         }),
-        { 
-          headers: { 
-            ...corsHeaders, 
+        {
+          headers: {
+            ...corsHeaders,
             "Content-Type": "application/json",
           },
           status: 403,
@@ -121,7 +121,7 @@ serve(async (req) => {
     // when the auth user is created. We just need to update it with additional fields
     // like working_days that the trigger doesn't set.
     console.log("Auth user created, updating profile with additional fields...");
-    
+
     // Build the update data with only the fields we want to set
     const profileUpdateData: any = {
       full_name,
@@ -146,7 +146,7 @@ serve(async (req) => {
       await supabase.auth.admin.deleteUser(data.user.id);
       throw new Error(`Profile update failed: ${profileError.message}`);
     }
-    
+
     console.log("Profile updated successfully for user:", data.user.id);
 
     // Track if email was sent successfully
@@ -155,18 +155,12 @@ serve(async (req) => {
     // Send welcome email if requested
     if (sendWelcomeEmail) {
       try {
-        // Get email credentials
-        const ZOHO_EMAIL = Deno.env.get("ZOHO_EMAIL");
-        const ZOHO_PASSWORD = Deno.env.get("ZOHO_PASSWORD");
-        
-        if (!ZOHO_EMAIL || !ZOHO_PASSWORD) {
-          console.warn("Email credentials not configured, skipping welcome email");
-        } else {
-          // Call the send-email function directly
-          const functionUrl = `${supabaseUrl}/functions/v1/send-email`;
-          console.log("Calling send-email function at:", functionUrl);
-          
-          const emailResponse = await fetch(functionUrl, {
+        // The shared send-email function selects and validates the configured
+        // provider, allowing a staged Zoho-to-Mailgun cutover.
+        const functionUrl = `${supabaseUrl}/functions/v1/send-email`;
+        console.log("Calling send-email function at:", functionUrl);
+
+        const emailResponse = await fetch(functionUrl, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -187,23 +181,22 @@ serve(async (req) => {
                 </div>
               `,
             }),
-          });
-          
-          if (!emailResponse.ok) {
-            const errorText = await emailResponse.text();
-            console.warn("Failed to send welcome email:", errorText);
-            throw new Error(`Email service error: ${errorText}`);
-          }
-          
-          const emailResult = await emailResponse.json();
-          if (!emailResult.success) {
-            console.warn("Failed to send welcome email:", emailResult.error);
-            throw new Error(emailResult.error || "Unknown email error");
-          }
-          
-          emailSent = true;
-          console.log("Welcome email sent successfully");
+        });
+
+        if (!emailResponse.ok) {
+          const errorText = await emailResponse.text();
+          console.warn("Failed to send welcome email:", errorText);
+          throw new Error(`Email service error: ${errorText}`);
         }
+
+        const emailResult = await emailResponse.json();
+        if (!emailResult.success) {
+          console.warn("Failed to send welcome email:", emailResult.error);
+          throw new Error(emailResult.error || "Unknown email error");
+        }
+
+        emailSent = true;
+        console.log("Welcome email sent successfully");
       } catch (emailError) {
         console.error("Error sending welcome email:", emailError);
         // Don't fail the user creation if email fails
@@ -212,14 +205,14 @@ serve(async (req) => {
 
     // Return success response
     return new Response(
-      JSON.stringify({ 
-        success: true, 
+      JSON.stringify({
+        success: true,
         user: data.user,
         emailSent
       }),
-      { 
-        headers: { 
-          ...corsHeaders, 
+      {
+        headers: {
+          ...corsHeaders,
           "Content-Type": "application/json",
         },
         status: 200,
@@ -227,16 +220,16 @@ serve(async (req) => {
     );
   } catch (error) {
     console.error("Error creating user:", error);
-    
+
     // Return error response
     return new Response(
-      JSON.stringify({ 
-        success: false, 
+      JSON.stringify({
+        success: false,
         error: error.message,
       }),
-      { 
-        headers: { 
-          ...corsHeaders, 
+      {
+        headers: {
+          ...corsHeaders,
           "Content-Type": "application/json",
         },
         status: 400,

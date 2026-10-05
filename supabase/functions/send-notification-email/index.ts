@@ -34,7 +34,60 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Get environment variables for email configuration
+    const outboundProvider = (Deno.env.get("OUTBOUND_EMAIL_PROVIDER") || "zoho").trim().toLowerCase();
+
+    // During the staged Mailgun cutover, route this legacy endpoint through
+    // the shared dispatcher. Until then, preserve its existing Resend path.
+    if (outboundProvider === "mailgun") {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (!supabaseUrl || !serviceKey) throw new Error("Supabase function credentials are not configured");
+
+      const emailData: EmailData = await req.json();
+      if (!emailData.to || !emailData.subject || !emailData.content) {
+        throw new Error("Missing required email fields");
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${serviceKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: emailData.to,
+          cc: emailData.cc,
+          bcc: emailData.bcc,
+          subject: emailData.subject,
+          html: emailData.content,
+          emailType: emailData.template_type || "notification",
+          jobId: emailData.job_id || null,
+          attachments: (emailData.attachments || []).map((attachment) => ({
+            filename: attachment.file_name,
+            content: attachment.content,
+            contentType: attachment.mime_type,
+            encoding: "base64",
+          })),
+          metadata: { legacy_endpoint: "send-notification-email" },
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Shared email dispatcher rejected the message");
+      }
+
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (outboundProvider !== "zoho" && outboundProvider !== "resend") {
+      throw new Error(`Unsupported outbound email provider: ${outboundProvider}`);
+    }
+
+    // Get environment variables for the existing Resend configuration.
     const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
     
     if (!RESEND_API_KEY) {

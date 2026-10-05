@@ -183,6 +183,11 @@ otp_expiry = 3600
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
 
+# Mailgun authenticates this public callback with an HMAC signature inside the
+# function, so a Supabase user JWT is neither expected nor accepted here.
+[functions.mailgun-webhook]
+verify_jwt = false
+
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.
 enable_signup = false

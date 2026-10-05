@@ -175,6 +175,20 @@ type SentEmailHistoryItem = {
   sentAt: string;
 };
 const BLANK_GENERAL_WORK_ORDER_TEMPLATE_ID = '__blank_general_work_order__';
+const EMAIL_SIZE_INFO_BYTES = 5 * 1024 * 1024;
+const EMAIL_SIZE_WARNING_BYTES = 8 * 1024 * 1024;
+const EMAIL_SIZE_STRONG_WARNING_BYTES = 12 * 1024 * 1024;
+const EMAIL_SIZE_MAX_BYTES = 18 * 1024 * 1024;
+
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const estimateEncodedBase64Bytes = (base64: string) => {
+  const encodedCharacters = base64.replace(/\s/g, '').length;
+  return encodedCharacters + Math.ceil(encodedCharacters / 76) * 2;
+};
 
 const formatCurrency = (value?: number | null) => {
   if (typeof value !== 'number' || Number.isNaN(value)) {
@@ -1466,11 +1480,6 @@ export function EnhancedPropertyNotificationModal({
       const effectiveNotificationType = isApprovalEmail ? 'extra_charges' : notificationType;
       const effectiveEmailPurpose = NOTIFICATION_TYPE_LABELS[effectiveNotificationType];
 
-      if (isApprovalEmail) {
-        const tokenRecord = await createApprovalToken({ isPreview: false });
-        approvalLink = `${config.portalBaseUrl}/approval/${tokenRecord.token}`;
-      }
-
       // --- Inline image embedding ---
       // For notification-type emails (sprinkler_paint, drywall_repairs) the selected images
       // must actually appear inside the email body. We fetch each selected image, convert it
@@ -1511,7 +1520,7 @@ export function EnhancedPropertyNotificationModal({
             console.warn(`⚠️ Could not fetch image for inline embedding: ${img.file_name}`);
             continue;
           }
-          const cid = `img_${img.id.replace(/-/g, '')}@jgpaintingpros.com`;
+          const cid = `img_${img.id.replace(/-/g, '')}@jgpaintingprosinc.com`;
           cidMap[img.id] = cid;
           // Derive a safe filename with a proper extension
           const ext = data.contentType.split('/')[1]?.split('+')[0] || 'jpg';
@@ -1527,6 +1536,41 @@ export function EnhancedPropertyNotificationModal({
           });
         }
         console.log(`✅ ${inlineAttachments.length} image(s) prepared as inline attachments`);
+      }
+
+      // Estimate before creating an approval token so cancelling a large send
+      // does not leave an unused token behind. The final approval link adds only
+      // a small amount of markup and does not materially change the estimate.
+      const preliminaryHtml = buildFinalEmailHtml(undefined, cidMap);
+      const encodedAttachmentBytes = inlineAttachments.reduce(
+        (sum, attachment) => sum + estimateEncodedBase64Bytes(attachment.content),
+        0,
+      );
+      const preliminaryBodyBytes = new TextEncoder().encode(preliminaryHtml).byteLength;
+      const estimatedMessageBytes = preliminaryBodyBytes + encodedAttachmentBytes + 4096 + inlineAttachments.length * 600;
+      const estimatedSizeLabel = formatFileSize(estimatedMessageBytes);
+
+      if (estimatedMessageBytes >= EMAIL_SIZE_MAX_BYTES) {
+        toast.error(
+          `This email is approximately ${estimatedSizeLabel}, above the 18 MB attachment-email limit. ` +
+          'Remove some selected images; all original job images will remain available in the application.',
+          { duration: 10000 },
+        );
+        return;
+      }
+
+      if (estimatedMessageBytes >= EMAIL_SIZE_WARNING_BYTES) {
+        const warning = estimatedMessageBytes >= EMAIL_SIZE_STRONG_WARNING_BYTES
+          ? `This email is approximately ${estimatedSizeLabel}. Messages this large have an elevated risk of delay, rejection, or quarantine. Send it with the selected images?`
+          : `This email is approximately ${estimatedSizeLabel}. Some recipient systems may delay or quarantine larger messages. Send it with the selected images?`;
+        if (!window.confirm(warning)) return;
+      } else if (estimatedMessageBytes >= EMAIL_SIZE_INFO_BYTES) {
+        toast.info(`Estimated email size: ${estimatedSizeLabel}.`, { duration: 5000 });
+      }
+
+      if (isApprovalEmail) {
+        const tokenRecord = await createApprovalToken({ isPreview: false });
+        approvalLink = `${config.portalBaseUrl}/approval/${tokenRecord.token}`;
       }
 
       const finalHtml = buildFinalEmailHtml(approvalLink, cidMap);
@@ -1568,6 +1612,7 @@ export function EnhancedPropertyNotificationModal({
           included_sections: safeSections,
           selected_image_count: selectedImages.length,
           inline_attachment_count: inlineAttachments.length,
+          estimated_message_bytes: estimatedMessageBytes,
           approval_link_created: Boolean(approvalLink),
         },
       });
