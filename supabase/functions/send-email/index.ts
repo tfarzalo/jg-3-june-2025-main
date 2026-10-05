@@ -102,6 +102,11 @@ function normalizeReplyTo(value: string | undefined, fallback: string): string {
 function plainTextFromHtml(html: string | undefined): string | undefined {
   if (!html) return undefined;
   return html
+    .replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_match, href, label) => {
+      const cleanLabel = String(label).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      const cleanHref = String(href).replace(/&amp;/gi, "&").trim();
+      return cleanLabel && cleanLabel !== cleanHref ? `${cleanLabel}: ${cleanHref}` : cleanHref;
+    })
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
     .replace(/<br\s*\/?>/gi, "\n")
@@ -116,6 +121,24 @@ function plainTextFromHtml(html: string | undefined): string | undefined {
     .replace(/[ \t]+/g, " ")
     .replace(/\n\s*\n\s*\n+/g, "\n\n")
     .trim();
+}
+
+function inferEmailType(body: EmailRequestBody): string {
+  const explicitType = (body.emailType || body.notificationType || "").trim().toLowerCase();
+  if (explicitType) return explicitType;
+
+  const subject = body.subject.toLowerCase();
+  if (subject.startsWith("jg daily job summary")) return "daily_job_summary";
+  if (subject.includes("new job assignment") || subject.includes("assignment")) return "assignment_notification";
+  if (subject.includes("extra charge") && subject.includes("approval")) return "extra_charge_approval";
+  if (subject.includes("sprinkler")) return "sprinkler_notification";
+  if (subject.includes("drywall")) return "drywall_notification";
+  if (subject.includes("work order update")) return "general_work_order";
+  if (subject.includes("approval receipt") || subject.includes("approval confirmation")) return "approval_receipt";
+  if (subject.includes("password")) return "password_reset";
+  if (subject.includes("welcome") || subject.includes("account created")) return "user_onboarding";
+  if (subject.includes("support")) return "support_notification";
+  return "other";
 }
 
 function normalizeRecipients(to: AddressInput, cc: AddressInput, bcc: AddressInput): NormalizedRecipients {
@@ -359,7 +382,7 @@ Deno.serve(async (req) => {
 
     auditId = await createAuditRecord({
       provider,
-      email_type: body.emailType || body.notificationType || "general",
+      email_type: inferEmailType(body),
       job_id: body.jobId || body.job_id || null,
       to_emails: recipients.to,
       cc_emails: recipients.cc,

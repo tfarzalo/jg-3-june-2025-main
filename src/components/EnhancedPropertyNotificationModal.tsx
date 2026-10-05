@@ -1588,6 +1588,14 @@ export function EnhancedPropertyNotificationModal({
           bcc: allBcc.filter(Boolean),
           from: emailConfig ? `${emailConfig.from_name} <${emailConfig.from_email}>` : undefined,
           attachments: inlineAttachments.length > 0 ? inlineAttachments : undefined,
+          emailType: effectiveNotificationType === 'extra_charges'
+            ? 'extra_charge_approval'
+            : effectiveNotificationType === 'sprinkler_paint'
+              ? 'sprinkler_notification'
+              : effectiveNotificationType === 'drywall_repairs'
+                ? 'drywall_notification'
+                : 'general_work_order',
+          jobId: job.id,
         },
       });
 

@@ -35,6 +35,7 @@ import { SmsNotificationLogs } from './SmsNotificationLogs';
 import { WhatsNewManager } from './admin/WhatsNewManager';
 import { QualityControlLeaderboard } from './admin/QualityControlLeaderboard';
 import { JobPhaseColorManager } from './admin/JobPhaseColorManager';
+import { EmailDeliveryLog } from './admin/EmailDeliveryLog';
 
 interface AppSettingsData {
   id: string;
@@ -50,7 +51,7 @@ export function AppSettings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const [activeTab, setActiveTab] = useState<'overview' | 'email-templates' | 'lead-forms' | 'qc-leaderboard' | 'daily-agenda' | 'users' | 'sub-assignment-alerts' | 'sms-notifications' | 'sms-logs' | 'bulk-schedule' | 'job-categories' | 'unit-sizes' | 'job-phase-colors' | 'maintenance' | 'whats-new'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'email-templates' | 'email-delivery' | 'lead-forms' | 'qc-leaderboard' | 'daily-agenda' | 'users' | 'sub-assignment-alerts' | 'sms-notifications' | 'sms-logs' | 'bulk-schedule' | 'job-categories' | 'unit-sizes' | 'job-phase-colors' | 'maintenance' | 'whats-new'>('overview');
   const [subAssignmentRecipients, setSubAssignmentRecipients] = useState<string[]>([]);
   const [adminOptions, setAdminOptions] = useState<AppSettingsData[]>([]);
 
@@ -320,6 +321,20 @@ export function AppSettings() {
               </button>
 
               <button
+                onClick={() => setActiveTab('email-delivery')}
+                className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'email-delivery'
+                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white'
+                }`}
+              >
+                <Mail className={`flex-shrink-0 -ml-1 mr-3 h-6 w-6 ${
+                  activeTab === 'email-delivery' ? 'text-blue-700 dark:text-blue-200' : 'text-gray-400 group-hover:text-gray-500'
+                }`} />
+                <span className="truncate">Email Delivery</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab('lead-forms')}
                 className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                   activeTab === 'lead-forms'
@@ -542,6 +557,11 @@ export function AppSettings() {
             {/* Email Templates Tab */}
             {activeTab === 'email-templates' && (
               <EmailTemplateManager />
+            )}
+
+            {/* Email Delivery Tab */}
+            {activeTab === 'email-delivery' && (
+              <EmailDeliveryLog />
             )}
 
             {/* Lead Forms Tab */}

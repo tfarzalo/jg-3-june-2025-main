@@ -365,7 +365,7 @@ async function sendEmail(to: string, subject: string, html: string) {
         to,
         subject,
         html,
-        text: `Please view this email in an HTML-enabled email client.` // Fallback text
+        emailType: 'daily_job_summary'
       }
     });
     

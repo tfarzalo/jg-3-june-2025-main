@@ -119,7 +119,12 @@ Deno.serve(async (req) => {
         const response = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ to: recipient, ...message }),
+          body: JSON.stringify({
+            to: recipient,
+            ...message,
+            emailType: 'assignment_notification',
+            metadata: { job_ids: group.map((row) => row.job.id) },
+          }),
         });
         const emailResult = await response.json();
         if (!response.ok || !emailResult.success) throw new Error(emailResult.error || 'Email service rejected the message');
