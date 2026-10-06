@@ -18,6 +18,10 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
   });
 }
 
+function isSuperAdminRole(role: string | null | undefined) {
+  return role === "is_super_admin" || role === "super_admin" || role === "superadmin";
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
@@ -107,6 +111,8 @@ serve(async (req) => {
       "assistant_manager",
       "jg_management",
       "is_super_admin",
+      "super_admin",
+      "superadmin",
     ]);
 
     if (!currentUserRole || !administrativeRoles.has(currentUserRole)) {
@@ -142,7 +148,7 @@ serve(async (req) => {
       );
     }
 
-    if (targetProfile.role === "is_super_admin" && currentUserRole !== "is_super_admin") {
+    if (isSuperAdminRole(targetProfile.role) && !isSuperAdminRole(currentUserRole)) {
       return jsonResponse(
         {
           success: false,

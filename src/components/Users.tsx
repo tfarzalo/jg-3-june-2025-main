@@ -135,8 +135,10 @@ export function Users() {
   const { role: currentUserRole, isAdmin } = useUserRole();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const canDeleteUsers = Boolean(currentUserRole && currentUserRole !== 'subcontractor');
+  const isSuperAdminRole = (role: string | null | undefined) =>
+    role === 'is_super_admin' || role === 'super_admin' || role === 'superadmin';
   const canManageLoginFor = (user: User) =>
-    user.role !== 'is_super_admin' || currentUserRole === 'is_super_admin';
+    !isSuperAdminRole(user.role) || isSuperAdminRole(currentUserRole);
   
   // Form state for adding/editing users
   const [formData, setFormData] = useState({
