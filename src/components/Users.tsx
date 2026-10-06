@@ -135,6 +135,8 @@ export function Users() {
   const { role: currentUserRole, isAdmin } = useUserRole();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const canDeleteUsers = Boolean(currentUserRole && currentUserRole !== 'subcontractor');
+  const canManageLoginFor = (user: User) =>
+    user.role !== 'is_super_admin' || currentUserRole === 'is_super_admin';
   
   // Form state for adding/editing users
   const [formData, setFormData] = useState({
@@ -400,6 +402,11 @@ export function Users() {
     
     if (!selectedUser) return;
 
+    if (!canManageLoginFor(selectedUser)) {
+      toast.error('Only a super admin can edit a super admin account');
+      return;
+    }
+
     try {
       // Update profile
       const updateData: any = {
@@ -648,6 +655,11 @@ export function Users() {
     e.preventDefault();
     
     if (!selectedUser) return;
+
+    if (!canManageLoginFor(selectedUser)) {
+      toast.error('Only a super admin can change a super admin password');
+      return;
+    }
     
     if (!passwordData.password) {
       toast.error('Please enter a password');
@@ -667,35 +679,56 @@ export function Users() {
     try {
       setChangingPassword(true);
 
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-      if (sessionError || !session) {
-        throw new Error('You must be logged in to change passwords');
-      }
-
       const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user-password`;
 
-      const response = await fetch(functionUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          userId: selectedUser.id,
-          password: passwordData.password,
-        }),
-      });
+      const submitPasswordChange = async (accessToken: string) => {
+        const response = await fetch(functionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            userId: selectedUser.id,
+            password: passwordData.password,
+          }),
+        });
 
-      const responseText = await response.text();
-      let result: { success?: boolean; error?: string; message?: string } = {};
+        const responseText = await response.text();
+        let result: { success?: boolean; error?: string; message?: string } = {};
 
-      if (responseText) {
-        try {
-          result = JSON.parse(responseText);
-        } catch {
-          result = { error: responseText };
+        if (responseText) {
+          try {
+            result = JSON.parse(responseText);
+          } catch {
+            result = { error: responseText };
+          }
         }
+
+        return { response, result };
+      };
+
+      let { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !session) {
+        const refreshResult = await supabase.auth.refreshSession();
+        session = refreshResult.data.session;
+        sessionError = refreshResult.error;
+      }
+
+      if (sessionError || !session) {
+        throw new Error('Your session has expired. Please sign in again before changing a password.');
+      }
+
+      let { response, result } = await submitPasswordChange(session.access_token);
+
+      if (response.status === 401) {
+        const refreshResult = await supabase.auth.refreshSession();
+        if (!refreshResult.data.session || refreshResult.error) {
+          throw new Error('Your session has expired. Please sign in again before changing a password.');
+        }
+
+        ({ response, result } = await submitPasswordChange(refreshResult.data.session.access_token));
       }
 
       if (!response.ok || !result.success) {
@@ -983,21 +1016,23 @@ export function Users() {
           </button>
         )}
         
-        {/* Change Password - Allow for all users */}
-        <button
-          onClick={() => {
-            setSelectedUser(user);
-            setPasswordData({
-              password: '',
-              confirmPassword: ''
-            });
-            setShowChangePasswordModal(true);
-          }}
-          className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"
-          title="Change Password"
-        >
-          <Key className="h-5 w-5" />
-        </button>
+        {/* Super-admin login credentials are protected from regular admins. */}
+        {canManageLoginFor(user) && (
+          <button
+            onClick={() => {
+              setSelectedUser(user);
+              setPasswordData({
+                password: '',
+                confirmPassword: ''
+              });
+              setShowChangePasswordModal(true);
+            }}
+            className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"
+            title="Change Password"
+          >
+            <Key className="h-5 w-5" />
+          </button>
+        )}
         
         {/* Edit Profile - Allow for all users */}
         {user.role === 'subcontractor' ? (
@@ -1008,7 +1043,7 @@ export function Users() {
           >
             <Edit className="h-5 w-5" />
           </Link>
-        ) : (
+        ) : canManageLoginFor(user) ? (
           <button
             onClick={() => {
               setSelectedUser(user);
@@ -1035,7 +1070,7 @@ export function Users() {
           >
             <Edit className="h-5 w-5" />
           </button>
-        )}
+        ) : null}
         
         {/* Archive active subcontractors before any permanent delete */}
         {canDeleteUsers && user.role === 'subcontractor' ? (

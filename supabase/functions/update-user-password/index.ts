@@ -102,12 +102,19 @@ serve(async (req) => {
       currentUserRole = String((user.app_metadata as Record<string, unknown>).role);
     }
     
-    if (!currentUserRole || currentUserRole === "subcontractor") {
+    const administrativeRoles = new Set([
+      "admin",
+      "assistant_manager",
+      "jg_management",
+      "is_super_admin",
+    ]);
+
+    if (!currentUserRole || !administrativeRoles.has(currentUserRole)) {
       return jsonResponse(
         {
           success: false,
           code: "not_admin",
-          error: "Only non-subcontractor users can change subcontractor passwords",
+          error: "Only authorized administrative users can update login credentials",
           requesterRole: currentUserRole,
         },
         403,
@@ -135,12 +142,12 @@ serve(async (req) => {
       );
     }
 
-    if (targetProfile.role !== "subcontractor") {
+    if (targetProfile.role === "is_super_admin" && currentUserRole !== "is_super_admin") {
       return jsonResponse(
         {
           success: false,
-          code: "target_not_subcontractor",
-          error: "This function can only change subcontractor passwords",
+          code: "super_admin_protected",
+          error: "Only a super admin can change a super admin's login credentials",
         },
         403,
       );
