@@ -205,6 +205,7 @@ const EMAIL_SIZE_INFO_BYTES = 5 * 1024 * 1024;
 const EMAIL_SIZE_WARNING_BYTES = 8 * 1024 * 1024;
 const EMAIL_SIZE_STRONG_WARNING_BYTES = 12 * 1024 * 1024;
 const EMAIL_SIZE_MAX_BYTES = 18 * 1024 * 1024;
+const ADMIN_COPY_EMAIL = 'admin@jgpaintingprosinc.com';
 
 const formatFileSize = (bytes: number) => {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -341,9 +342,8 @@ export function EnhancedPropertyNotificationModal({
   const [emailSignature, setEmailSignature] = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [ccEmails, setCcEmails] = useState('');
-  const [bccEmails, setBccEmails] = useState('');
   const [ccRecipientOptions, setCcRecipientOptions] = useState<SelectableEmailRecipient[]>([]);
-  const [bccRecipientOptions, setBccRecipientOptions] = useState<SelectableEmailRecipient[]>([]);
+  const [sendAdminCopy, setSendAdminCopy] = useState(true);
   const [showCCBCC, setShowCCBCC] = useState(false);
   const [emailConfig, setEmailConfig] = useState<EmailConfiguration | null>(null);
   const [jobImages, setJobImages] = useState<JobImageWithMeta[]>([]);
@@ -415,12 +415,9 @@ export function EnhancedPropertyNotificationModal({
       ...ccRecipientOptions.filter((recipient) => recipient.selected).map((recipient) => recipient.email),
       ...parseEmailList(ccEmails),
     ]);
-    const bcc = unique([
-      ...bccRecipientOptions.filter((recipient) => recipient.selected).map((recipient) => recipient.email),
-      ...parseEmailList(bccEmails),
-    ]);
+    const bcc = unique(sendAdminCopy ? [ADMIN_COPY_EMAIL] : []);
     return { cc, bcc };
-  }, [bccEmails, bccRecipientOptions, ccEmails, ccRecipientOptions, recipientEmail]);
+  }, [ccEmails, ccRecipientOptions, recipientEmail, sendAdminCopy]);
   const additionalComments = useMemo(
     () => (job?.work_order?.additional_comments || '').trim(),
     [job?.work_order?.additional_comments]
@@ -541,10 +538,9 @@ export function EnhancedPropertyNotificationModal({
       }
       
       setCcRecipientOptions((current) => mergeRecipientOptions(current, recipients.cc, 'property'));
-      setBccRecipientOptions((current) => mergeRecipientOptions(current, recipients.bcc, 'property'));
       
       // Show CC/BCC fields if there are any
-      if (recipients.cc.length > 0 || recipients.bcc.length > 0) {
+      if (recipients.cc.length > 0) {
         setShowCCBCC(true);
       }
       
@@ -773,11 +769,6 @@ export function EnhancedPropertyNotificationModal({
       const { data: configData, error: configError } = await supabase.rpc('get_active_email_configuration');
       if (configError) throw configError;
       setEmailConfig(configData);
-      setBccRecipientOptions((current) => mergeRecipientOptions(
-        current,
-        configData?.default_bcc_emails || [],
-        'configuration',
-      ));
     } catch (error) {
       console.error('Error loading modal data:', error);
       toast.error('Failed to load email data. Please try again.');
@@ -981,9 +972,9 @@ export function EnhancedPropertyNotificationModal({
       setSelectedTemplate(null);
       setRecipientEmail('');
       setCcEmails('');
-      setBccEmails('');
       setCcRecipientOptions([]);
-      setBccRecipientOptions([]);
+      setSendAdminCopy(true);
+      setShowCCBCC(true);
     }
   }, [isOpen, job, fetchModalData, initializeRecipient, fetchAssignedSubcontractor, fetchSentEmailHistory]);
 
@@ -1016,17 +1007,15 @@ export function EnhancedPropertyNotificationModal({
     setSelectedImageIds(ids);
   }, [selectedTemplate, jobImages]);
 
-  // Auto-expand CC/BCC section when there are CC or BCC emails
+  // Keep the recipient controls visible when automatic CC recipients exist.
   useEffect(() => {
     if (
       (ccEmails && ccEmails.trim()) ||
-      (bccEmails && bccEmails.trim()) ||
-      ccRecipientOptions.length > 0 ||
-      bccRecipientOptions.length > 0
+      ccRecipientOptions.length > 0
     ) {
       setShowCCBCC(true);
     }
-  }, [ccEmails, bccEmails, ccRecipientOptions.length, bccRecipientOptions.length]);
+  }, [ccEmails, ccRecipientOptions.length]);
 
   const toggleImageSelection = (imageId: string) => {
     setSelectedImageIds((prev) =>
@@ -2144,14 +2133,23 @@ export function EnhancedPropertyNotificationModal({
                   setCcEmails,
                   finalRecipientLists.cc.length,
                 )}
-                {renderSelectableRecipients(
-                  'BCC',
-                  bccRecipientOptions,
-                  setBccRecipientOptions,
-                  bccEmails,
-                  setBccEmails,
-                  finalRecipientLists.bcc.length,
-                )}
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/40">
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">BCC copy</p>
+                  <label className="mt-3 flex cursor-pointer items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-3 text-xs dark:border-gray-700 dark:bg-gray-900">
+                    <span className="text-gray-700 dark:text-gray-200">
+                      Copy sent to <span className="font-semibold">{ADMIN_COPY_EMAIL}</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={sendAdminCopy}
+                      onChange={(event) => setSendAdminCopy(event.target.checked)}
+                      className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </label>
+                  <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
+                    Checked by default. Deselect it when no internal copy is needed.
+                  </p>
+                </div>
               </div>
             )}
           </div>
