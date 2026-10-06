@@ -32,6 +32,8 @@ import { formatDistanceToNow } from 'date-fns';
 import { getAvailableWorkingDays, getWorkingDaysCount } from '../lib/availabilityUtils';
 import { useUserRole } from '../contexts/UserRoleContext';
 import { config } from '../config/environment';
+import { EmailVerificationControl } from './email-verification/EmailVerificationControl';
+import { useEmailVerificationStatuses } from '../lib/emailVerification';
 
 interface User {
   id: string;
@@ -115,6 +117,8 @@ export function Users() {
   // Resend welcome email (no password — portal link only)
   const [resendingEmailForUserId, setResendingEmailForUserId] = useState<string | null>(null);
   const [showResendConfirm, setShowResendConfirm] = useState<User | null>(null);
+  const { statusFor: verificationStatusFor, refresh: refreshVerificationStatuses } =
+    useEmailVerificationStatuses(users.map(user => user.email));
 
   // ── Temp password generator ────────────────────────────────────────────────
   const generateTempPassword = (): string => {
@@ -1109,6 +1113,24 @@ export function Users() {
     setRoleFilter([]);
   };
 
+  const renderUserEmail = (user: User) => (
+    <div className="space-y-2">
+      <div className="text-sm text-gray-900 dark:text-white">{user.email}</div>
+      <EmailVerificationControl
+        recipient={{
+          recipientType: 'profile',
+          recipientId: user.id,
+          name: user.full_name || user.email,
+          email: user.email,
+        }}
+        status={verificationStatusFor(user.email)}
+        onSent={refreshVerificationStatuses}
+        disabled={Boolean(user.archived_at)}
+        compact
+      />
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1287,7 +1309,7 @@ export function Users() {
                               <UserChip user={user} isOnline={false} size="lg" />
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm text-gray-900 dark:text-white">{user.email}</div>
+                              {renderUserEmail(user)}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-gray-700 dark:text-gray-300">
@@ -1373,7 +1395,7 @@ export function Users() {
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900 dark:text-white">{user.email}</div>
+                          {renderUserEmail(user)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-gray-700 dark:text-gray-300">
@@ -1466,7 +1488,7 @@ export function Users() {
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900 dark:text-white">{user.email}</div>
+                          {renderUserEmail(user)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-gray-700 dark:text-gray-300">

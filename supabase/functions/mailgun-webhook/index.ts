@@ -2,7 +2,18 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 interface MailgunPayload {
   signature?: { timestamp?: string; token?: string; signature?: string };
-  "event-data"?: Record<string, any>;
+  "event-data"?: {
+    id?: string;
+    event?: string;
+    severity?: string;
+    reason?: string;
+    description?: string;
+    recipient?: string;
+    timestamp?: number | string;
+    message?: { headers?: { "message-id"?: string } };
+    "delivery-status"?: { message?: string };
+    [key: string]: unknown;
+  };
 }
 
 const encoder = new TextEncoder();
@@ -136,6 +147,43 @@ Deno.serve(async (req) => {
           update.last_error = reason ? String(reason) : eventType;
         }
         await supabase.from("outbound_email_sends").update(update).eq("id", sendId);
+      }
+
+      // Verification delivery state is intentionally separate from ordinary
+      // outbound-email state. Only messages explicitly linked to a verification
+      // attempt can update these records; delivery never means address verified.
+      const { data: verificationAttempt } = await supabase
+        .from("recipient_email_verification_attempts")
+        .select("id,verification_id,status")
+        .eq("outbound_email_send_id", sendId)
+        .maybeSingle();
+      if (verificationAttempt) {
+        const verificationUpdate: Record<string, unknown> = {
+          last_mailgun_event: eventType,
+          updated_at: new Date().toISOString(),
+        };
+        const attemptUpdate: Record<string, unknown> = {
+          last_mailgun_event: eventType,
+          updated_at: new Date().toISOString(),
+        };
+        const permanentProblem = eventType === "complained" ||
+          (eventType === "failed" && severity !== "temporary");
+        if (permanentProblem && verificationAttempt.status !== "verified") {
+          verificationUpdate.status = "delivery_problem";
+          verificationUpdate.last_delivery_error = reason ? String(reason) : eventType;
+          attemptUpdate.status = "delivery_problem";
+          attemptUpdate.delivery_error = reason ? String(reason) : eventType;
+        }
+        let verificationQuery = supabase.from("recipient_email_verifications")
+          .update(verificationUpdate)
+          .eq("id", verificationAttempt.verification_id)
+          .eq("last_outbound_email_send_id", sendId);
+        if (permanentProblem) verificationQuery = verificationQuery.neq("status", "verified");
+        await Promise.all([
+          verificationQuery,
+          supabase.from("recipient_email_verification_attempts").update(attemptUpdate)
+            .eq("id", verificationAttempt.id),
+        ]);
       }
     }
 

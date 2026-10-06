@@ -42,6 +42,7 @@ const SmsOptInExamplePage = lazy(() => import('./pages/SmsOptInExamplePage'));
 const FileEditorPage = lazy(() => import('./pages/FileEditorPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
 const EmployeeOnboardingPage = lazy(() => import('./pages/EmployeeOnboardingPage'));
+const EmailVerificationPage = lazy(() => import('./pages/EmailVerificationPage'));
 
 // Loading spinner component
 const LoadingSpinner = () => (
@@ -138,6 +139,11 @@ const ProtectedLayout = () => (
         <Route path="/employee-onboarding/:token" element={
           <Suspense fallback={<LoadingSpinner />}>
             <EmployeeOnboardingPage />
+          </Suspense>
+        } />
+        <Route path="/email-verification/:token" element={
+          <Suspense fallback={<LoadingSpinner />}>
+            <EmailVerificationPage />
           </Suspense>
         } />
         

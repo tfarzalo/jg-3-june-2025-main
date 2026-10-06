@@ -1820,6 +1820,7 @@ export function PropertyDetails() {
             </div>
           )}
           <PropertyContactsViewer
+            propertyId={property.id}
             systemContacts={{
               community_manager: {
                 name: property.community_manager_name || '',
