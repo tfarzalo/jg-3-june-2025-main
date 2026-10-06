@@ -35,6 +35,9 @@ interface EmailRequestBody {
   jobId?: string;
   job_id?: string;
   metadata?: Record<string, unknown>;
+  _queueDirect?: boolean;
+  _queueDeliveryId?: string;
+  _queueAuditId?: string;
 }
 
 interface NormalizedRecipients {
@@ -382,6 +385,11 @@ Deno.serve(async (req) => {
     const config = providerConfiguration(provider);
     const body = await req.json() as EmailRequestBody;
 
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const isServiceRoleRequest = Boolean(serviceRoleKey) &&
+      req.headers.get("Authorization") === `Bearer ${serviceRoleKey}`;
+    const queueDirect = body._queueDirect === true && isServiceRoleRequest;
+
     if (!body.subject || (!body.text && !body.html)) throw new Error("Missing required email fields");
 
     const recipients = normalizeRecipients(body.to, body.cc, body.bcc);
@@ -448,14 +456,15 @@ Deno.serve(async (req) => {
 
     const requestedFrom = provider === "zoho" ? body.from : undefined;
     const requestedReplyTo = normalizeReplyTo(body.replyTo, config.replyTo);
+    const emailType = inferEmailType(body);
     const auditValuesFor = (
       recipient: IsolatedRecipient,
       index: number,
-      status: "sending" | "failed" = "sending",
+      status: "queued" | "sending" | "failed" = "sending",
       lastError: string | null = null,
     ) => ({
       provider,
-      email_type: inferEmailType(body),
+      email_type: emailType,
       job_id: body.jobId || body.job_id || null,
       to_emails: [recipient.address],
       cc_emails: [],
@@ -493,6 +502,102 @@ Deno.serve(async (req) => {
       throw new Error(sizeError);
     }
 
+    const queueEnabled = (Deno.env.get("OUTBOUND_EMAIL_QUEUE_ENABLED") || "true").toLowerCase() !== "false";
+    const immediateEmailTypes = new Set(["password_reset"]);
+    const shouldQueue = queueEnabled && !queueDirect && !immediateEmailTypes.has(emailType);
+
+    if (shouldQueue) {
+      const admin = auditClient();
+      const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+      if (!admin || !supabaseUrl || !serviceRoleKey) {
+        console.warn("Email queue is unavailable; using the direct-send fallback");
+      } else {
+        const queuePayload = {
+          subject: body.subject,
+          text: textContent,
+          html: body.html,
+          from: body.from,
+          replyTo: requestedReplyTo,
+          attachments,
+          emailType,
+          notificationType: body.notificationType,
+          jobId: body.jobId || body.job_id,
+          metadata: body.metadata || {},
+        };
+        const { data: queueMessage, error: queueMessageError } = await admin
+          .from("outbound_email_queue_messages")
+          .insert({ payload: queuePayload })
+          .select("id")
+          .single();
+
+        if (queueMessageError || !queueMessage?.id) {
+          console.warn("Unable to create email queue message; using direct-send fallback:", queueMessageError?.message);
+        } else {
+          const queuedDeliveries: Array<Record<string, unknown>> = [];
+          const auditIds: string[] = [];
+          for (const [index, recipient] of isolatedRecipients.entries()) {
+            const auditId = await createAuditRecord(auditValuesFor(recipient, index, "queued"));
+            if (!auditId) continue;
+            auditIds.push(auditId);
+            queuedDeliveries.push({
+              message_id: queueMessage.id,
+              audit_id: auditId,
+              recipient: recipient.address,
+              original_recipient_field: recipient.originalField,
+              status: "queued",
+              available_at: new Date().toISOString(),
+            });
+          }
+
+          const { error: deliveriesError } = queuedDeliveries.length
+            ? await admin.from("outbound_email_queue_deliveries").insert(queuedDeliveries)
+            : { error: new Error("No queue audit records could be created") };
+
+          if (!deliveriesError) {
+            const workerRequest = fetch(`${supabaseUrl}/functions/v1/process-email-queue`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${serviceRoleKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ source: "send-email", queueMessageId: queueMessage.id }),
+            }).catch((workerError) => console.warn("Unable to start email queue worker:", errorMessage(workerError)));
+            // Keep the worker invocation alive after returning the fast queued response.
+            // deno-lint-ignore no-explicit-any
+            const edgeRuntime = (globalThis as any).EdgeRuntime;
+            if (edgeRuntime?.waitUntil) edgeRuntime.waitUntil(workerRequest);
+
+            console.log("Outbound emails queued", {
+              provider,
+              queueMessageId: queueMessage.id,
+              recipientCount: queuedDeliveries.length,
+            });
+            return jsonResponse({
+              success: true,
+              provider,
+              queued: true,
+              status: "queued",
+              auditId: auditIds[0] || null,
+              auditIds,
+              messageId: null,
+              accepted: [],
+              rejected: [],
+              pending: isolatedRecipients.map((recipient) => recipient.address),
+              isolated: true,
+              sizeMetrics: {
+                htmlBytes, textBytes, attachmentBytes, estimatedEncodedAttachmentBytes,
+                estimatedMessageBytes, imageAttachmentCount, warnings: sizeWarnings,
+              },
+            });
+          }
+
+          console.warn("Unable to create queue deliveries; using direct-send fallback:", deliveriesError.message);
+          await admin.from("outbound_email_queue_messages").delete().eq("id", queueMessage.id);
+          if (auditIds.length) await admin.from("outbound_email_sends").delete().in("id", auditIds);
+        }
+      }
+    }
+
     console.log("Submitting outbound email", {
       provider,
       toCount: recipients.to.length,
@@ -513,7 +618,9 @@ Deno.serve(async (req) => {
     // Submit sequentially so every address receives a genuinely independent
     // message and provider message ID without creating a sudden SMTP burst.
     for (const [index, recipient] of isolatedRecipients.entries()) {
-      const auditId = await createAuditRecord(auditValuesFor(recipient, index));
+      const auditId = queueDirect && index === 0 && body._queueAuditId
+        ? body._queueAuditId
+        : await createAuditRecord(auditValuesFor(recipient, index));
 
       try {
         const info = await transporter.sendMail({

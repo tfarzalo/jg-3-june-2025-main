@@ -764,7 +764,9 @@ export function EnhancedPropertyNotificationModal({
       ]);
       const combined = [...jobImageResults, ...workOrderImageResults];
       setJobImages(combined);
-      setSelectedImageIds(combined.map((img) => img.id));
+      // Images are intentionally opt-in. Selecting every available image by
+      // default can increase attachment scanning and quarantine risk.
+      setSelectedImageIds([]);
 
       const { data: configData, error: configError } = await supabase.rpc('get_active_email_configuration');
       if (configError) throw configError;
@@ -986,26 +988,6 @@ export function EnhancedPropertyNotificationModal({
       setEmailSignature(processed.signature);
     }
   }, [selectedTemplate, processTemplate]);
-
-  useEffect(() => {
-    if (!selectedTemplate) return;
-    const sections = selectedTemplate.included_sections ?? [];
-    const buckets: ImageBucket[] = [];
-    if (sections.includes('before_images')) buckets.push('before');
-    if (sections.includes('after_images')) buckets.push('after');
-    if (sections.includes('sprinkler_images')) buckets.push('sprinkler');
-    if (sections.includes('other_images')) buckets.push('other');
-
-    if (buckets.length === 0) {
-      setSelectedImageIds([]);
-      return;
-    }
-
-    const ids = jobImages
-      .filter((img) => buckets.includes(img.normalizedType))
-      .map((img) => img.id);
-    setSelectedImageIds(ids);
-  }, [selectedTemplate, jobImages]);
 
   // Keep the recipient controls visible when automatic CC recipients exist.
   useEffect(() => {
@@ -1852,7 +1834,37 @@ export function EnhancedPropertyNotificationModal({
     }
   };
 
-  const renderImageSelection = () => (
+  const renderImageSelection = () => {
+    const selectedCount = selectedImageIds.length;
+    const attachmentGuidance = selectedCount === 0
+      ? {
+          label: 'No images selected',
+          detail: 'Choose only the images needed for this message.',
+          classes: 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-200',
+          markerPosition: '2%',
+        }
+      : selectedCount <= 4
+        ? {
+            label: 'Recommended',
+            detail: '1–4 images is the preferred range for email delivery.',
+            classes: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200',
+            markerPosition: `${Math.min(30, 7 + ((selectedCount - 1) * 7))}%`,
+          }
+        : selectedCount <= 7
+          ? {
+              label: 'Use caution',
+              detail: 'More images can increase attachment scanning or filtering.',
+              classes: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200',
+              markerPosition: `${42 + ((selectedCount - 5) * 10)}%`,
+            }
+          : {
+              label: 'Higher filtering risk',
+              detail: 'Consider removing images and directing recipients to the approval page.',
+              classes: 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200',
+              markerPosition: `${Math.min(96, 75 + ((selectedCount - 8) * 4))}%`,
+            };
+
+    return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
@@ -1869,6 +1881,25 @@ export function EnhancedPropertyNotificationModal({
             <button onClick={clearImages} type="button" className="text-xs font-medium text-gray-500 dark:text-gray-300">Clear</button>
           </div>
         )}
+      </div>
+      <div className={`rounded-lg border p-3 ${attachmentGuidance.classes}`}>
+        <div className="flex items-center justify-between gap-3 text-xs">
+          <span className="font-semibold">{selectedCount} image{selectedCount === 1 ? '' : 's'} selected</span>
+          <span className="font-semibold">{attachmentGuidance.label}</span>
+        </div>
+        <div className="relative mt-2 h-2 overflow-visible rounded-full bg-gradient-to-r from-emerald-500 from-0% via-amber-400 via-55% to-red-500 to-100%">
+          <span
+            className="absolute top-1/2 h-4 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-gray-900 shadow dark:bg-white"
+            style={{ left: attachmentGuidance.markerPosition }}
+            aria-hidden="true"
+          />
+        </div>
+        <div className="mt-1 flex justify-between text-[10px] font-medium opacity-75">
+          <span>1–4 recommended</span>
+          <span>5–7 caution</span>
+          <span>8+ higher risk</span>
+        </div>
+        <p className="mt-2 text-xs">{attachmentGuidance.detail} Images remain available in the application even when not attached.</p>
       </div>
       {jobImages.length > 0 && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -1957,7 +1988,8 @@ export function EnhancedPropertyNotificationModal({
         </div>
       )}
     </div>
-  );
+    );
+  };
 
   const renderTemplateStep = () => (
     <div className="space-y-6">
