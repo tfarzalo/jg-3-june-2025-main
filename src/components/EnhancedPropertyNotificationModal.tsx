@@ -368,15 +368,6 @@ export function EnhancedPropertyNotificationModal({
     stepContentRef.current?.scrollTo({ top: 0, behavior: 'auto' });
   }, [currentStep]);
 
-  const steps = useMemo(
-    () => [
-      { id: 1, title: 'Select Template' },
-      { id: 2, title: 'Customize Email' },
-      { id: 3, title: 'Review & Send' },
-    ],
-    []
-  );
-
   const safeSections = useMemo(() => selectedTemplate?.included_sections ?? [], [selectedTemplate]);
   const isSelectedApprovalTemplate = useMemo(() => {
     if (!selectedTemplate) return false;
@@ -385,6 +376,22 @@ export function EnhancedPropertyNotificationModal({
     return templateType === 'approval' || triggerPhase.includes('extra_charges');
   }, [selectedTemplate]);
   const isApprovalEmail = notificationType === 'extra_charges' || isSelectedApprovalTemplate;
+  const steps = useMemo(
+    () => isApprovalEmail
+      ? [
+          { id: 1, title: 'Select Template' },
+          { id: 2, title: 'Customize Email' },
+          { id: 3, title: 'Approval Page Images' },
+          { id: 4, title: 'Review & Send' },
+        ]
+      : [
+          { id: 1, title: 'Select Template' },
+          { id: 2, title: 'Customize Email' },
+          { id: 3, title: 'Review & Send' },
+        ],
+    [isApprovalEmail]
+  );
+  const reviewStepId = isApprovalEmail ? 4 : 3;
   const hasSection = useCallback(
     (...keys: string[]) => keys.some((key) => safeSections.includes(key)),
     [safeSections]
@@ -1596,7 +1603,7 @@ export function EnhancedPropertyNotificationModal({
   };
 
   useEffect(() => {
-    if (!isOpen || currentStep !== 3 || !selectedTemplate) return;
+    if (!isOpen || currentStep !== reviewStepId || !selectedTemplate) return;
     let cancelled = false;
 
     const calculateReviewSize = async () => {
@@ -1628,7 +1635,7 @@ export function EnhancedPropertyNotificationModal({
     return () => { cancelled = true; };
     // The preparation key captures image changes. Content fields are included
     // so the body estimate refreshes when the user returns and edits the email.
-  }, [currentStep, emailContent, emailSignature, emailSubject, imagePreparationKey, isOpen, selectedTemplate?.id]);
+  }, [currentStep, emailContent, emailSignature, emailSubject, imagePreparationKey, isOpen, reviewStepId, selectedTemplate?.id]);
 
   const handlePreview = async () => {
     if (!isApprovalEmail) {
@@ -2359,7 +2366,6 @@ export function EnhancedPropertyNotificationModal({
         </div>
 
         {isApprovalEmail && renderImageSelection()}
-        {isApprovalEmail && renderApprovalPageImageSelection()}
         {!isApprovalEmail && safeSections.some(s => ['before_images', 'after_images', 'sprinkler_images', 'other_images'].includes(s)) && renderImageSelection()}
       </div>
     );
@@ -2515,7 +2521,7 @@ export function EnhancedPropertyNotificationModal({
     ? Boolean(selectedTemplate)
     : currentStep === 2
       ? Boolean(selectedTemplate && recipientEmail.trim() && emailSubject.trim())
-      : false;
+      : currentStep === 3 && isApprovalEmail;
   const isFinalStep = currentStep === totalSteps;
 
   return (
@@ -2531,8 +2537,8 @@ export function EnhancedPropertyNotificationModal({
           </button>
         </div>
 
-        <div className="border-b border-gray-200 px-6 py-4 dark:border-gray-700">
-          <ol className="flex items-center space-x-4 text-sm">
+        <div className="overflow-x-auto border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+          <ol className="flex min-w-max items-center space-x-4 text-sm">
             {steps.map((step, index) => (
               <li key={step.id} className="flex items-center">
                 <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${currentStep >= step.id ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-300'}`}>
@@ -2552,7 +2558,8 @@ export function EnhancedPropertyNotificationModal({
         <div ref={stepContentRef} className="flex-1 overflow-y-auto p-6">
           {currentStep === 1 && renderTemplateStep()}
           {currentStep === 2 && renderComposeStep()}
-          {currentStep === 3 && renderReviewStep()}
+          {isApprovalEmail && currentStep === 3 && renderApprovalPageImageSelection()}
+          {currentStep === reviewStepId && renderReviewStep()}
         </div>
 
         <div className="flex items-center justify-between border-t border-gray-200 p-4 dark:border-gray-700">
