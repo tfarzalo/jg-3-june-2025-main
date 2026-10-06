@@ -957,10 +957,12 @@ export function SubcontractorDashboard() {
     if (tab === 'pending') {
       return jobs.filter(j => j.assignment_status === 'pending' || !j.assignment_status);
     }
-    // Accepted tab: accepted/active jobs + jobs that already have a WO submitted today (for After Photos)
+    // Assignment status is authoritative. Work-order activity must never imply
+    // that a still-pending assignment has been accepted.
     return jobs.filter(j =>
-      (j.assignment_status && j.assignment_status !== 'pending' && j.assignment_status !== 'declined') ||
-      j.hasWorkOrderSubmittedToday
+      Boolean(j.assignment_status) &&
+      j.assignment_status !== 'pending' &&
+      j.assignment_status !== 'declined'
     );
   };
 
@@ -1655,7 +1657,7 @@ export function SubcontractorDashboard() {
                         )}
                       </button>
                       
-                      {activeTab === 'pending' ? (
+                      {(!job.assignment_status || job.assignment_status === 'pending') ? (
                         <div className="flex justify-end sm:justify-start">
                           <SubcontractorDashboardActions
                             jobId={job.id}

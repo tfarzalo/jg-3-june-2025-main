@@ -20,22 +20,15 @@ import { useSubcontractorPreview } from '../contexts/SubcontractorPreviewContext
 import { toast as hotToast } from 'react-hot-toast';
 import { withSubcontractorAccessCheck } from './withSubcontractorAccessCheck';
 import { useUserRole } from '../contexts/UserRoleContext';
-import { formatCurrency } from '../lib/utils/formatUtils';
 import { prepareCeilingAccentUpdate } from '../lib/workOrders/prepareCeilingAccentUpdate';
-import ExtraChargesSection from './ExtraChargesSection';
+import ExtraChargesSection, { createExtraChargeDraftState } from './ExtraChargesSection';
+import MiscAdditionalCostsSection, { MiscAdditionalCostItem } from './MiscAdditionalCostsSection';
 import { ExtraChargeLineItem } from '../types/extraCharges';
 import { validateAllExtraCharges } from '../utils/extraChargesValidation';
 import { isFrozenHistoricalSnapshot } from '../lib/jobs/historicalDataMode';
 import { dispatchSmsNotification, dispatchSmsNotificationBatch } from '../lib/sms/dispatchSmsNotification';
 import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
 import { deleteFilesByStoragePaths } from '../lib/utils/fileUpload';
-
-interface MiscAdditionalCostItem {
-  id: string;
-  description: string;
-  price: number;
-  subPay?: number | null;
-}
 
 interface Job {
   id: string;
@@ -1091,6 +1084,7 @@ const NewWorkOrder = () => {
   const [sprinklerFormImagesUploaded, setSprinklerFormImagesUploaded] = useState(false);
   const [accentWallDisplayLabel, setAccentWallDisplayLabel] = useState<string | null>(null);
   const [extraChargesItems, setExtraChargesItems] = useState<ExtraChargeLineItem[]>([]);
+  const [extraChargeDraft, setExtraChargeDraft] = useState(createExtraChargeDraftState);
 
   useEffect(() => {
     if (!jobId) {
@@ -1358,12 +1352,69 @@ const NewWorkOrder = () => {
     }
   };
 
+  const handleOccupiedChange = (checked: boolean) => {
+    setFormData(prev => ({ ...prev, is_occupied: checked }));
+  };
+
+  const handleSprinklersChange = (checked: boolean) => {
+    setFormData(prev => ({
+      ...prev,
+      sprinklers: checked,
+      has_sprinklers: checked,
+      sprinkler_form_left_in_unit: checked ? prev.sprinkler_form_left_in_unit : false,
+    }));
+    if (!checked) {
+      setSprinklerFormImagesUploaded(false);
+    }
+  };
+
+  const handleSprinklersPaintedChange = (painted: boolean) => {
+    setFormData(prev => ({ ...prev, sprinklers_painted: painted }));
+  };
+
+  const handleSprinklerFormChange = (checked: boolean) => {
+    setFormData(prev => ({ ...prev, sprinkler_form_left_in_unit: checked }));
+    if (!checked) {
+      setSprinklerFormImagesUploaded(false);
+    }
+  };
+
+  const handleExtraChargesEnabledChange = (checked: boolean) => {
+    setFormData(prev => ({ ...prev, has_extra_charges: checked }));
+  };
+
   const handleAddExtraCharge = (item: ExtraChargeLineItem) => {
     setExtraChargesItems(prev => [...prev, item]);
   };
 
   const handleRemoveExtraCharge = (id: string) => {
     setExtraChargesItems(prev => prev.filter(item => item.id !== id));
+  };
+
+  const handleAddMiscAdditionalCost = () => {
+    setFormData(prev => ({
+      ...prev,
+      misc_additional_cost_items: [...prev.misc_additional_cost_items, createMiscAdditionalCostItem()],
+    }));
+  };
+
+  const handleChangeMiscAdditionalCost = (
+    id: string,
+    patch: Partial<Pick<MiscAdditionalCostItem, 'description' | 'subPay'>>,
+  ) => {
+    setFormData(prev => ({
+      ...prev,
+      misc_additional_cost_items: prev.misc_additional_cost_items.map(item =>
+        item.id === id ? { ...item, ...patch } : item
+      ),
+    }));
+  };
+
+  const handleRemoveMiscAdditionalCost = (id: string) => {
+    setFormData(prev => ({
+      ...prev,
+      misc_additional_cost_items: prev.misc_additional_cost_items.filter(item => item.id !== id),
+    }));
   };
 
   // Fetch property billing options for dynamic dropdowns
@@ -1645,6 +1696,12 @@ const NewWorkOrder = () => {
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isAnyFileUploading) {
+      setError(language === 'es'
+        ? 'Espere a que todas las imágenes terminen de cargarse antes de enviar la orden de trabajo.'
+        : 'Please wait for all images to finish uploading before submitting the work order.');
+      return;
+    }
     setSaving(true);
     setError(null);
     
@@ -2167,6 +2224,17 @@ const NewWorkOrder = () => {
     // Optionally refresh the images list if needed
   };
 
+  const handleUploadingChange = (folder: string) => (
+    isUploading: boolean,
+    uploadCount: number,
+    totalCount: number,
+  ) => {
+    setUploadStatus(previous => ({
+      ...previous,
+      [folder]: { isUploading, uploadedCount: uploadCount, totalCount },
+    }));
+  };
+
   const handleUploadError = (error: string) => {
     toast.error(error);
   };
@@ -2358,12 +2426,26 @@ const NewWorkOrder = () => {
                 ceilingPaintOptions={ceilingPaintOptions}
                 accentWallOptions={accentWallOptions}
                 billingOptionsLoading={false}
+                unitSizes={unitSizes}
                 dynamicServices={dynamicServices}
                 dynamicFormValues={dynamicFormValues}
                 setDynamicFormValues={setDynamicFormValues}
                 extraChargesItems={extraChargesItems}
                 handleAddExtraCharge={handleAddExtraCharge}
                 handleRemoveExtraCharge={handleRemoveExtraCharge}
+                extraChargeDraft={extraChargeDraft}
+                setExtraChargeDraft={setExtraChargeDraft}
+                requiredFieldsFilled={requiredFieldsFilled}
+                isAnyFileUploading={isAnyFileUploading}
+                handleUploadingChange={handleUploadingChange}
+                handleOccupiedChange={handleOccupiedChange}
+                handleSprinklersChange={handleSprinklersChange}
+                handleSprinklersPaintedChange={handleSprinklersPaintedChange}
+                handleSprinklerFormChange={handleSprinklerFormChange}
+                handleExtraChargesEnabledChange={handleExtraChargesEnabledChange}
+                handleAddMiscAdditionalCost={handleAddMiscAdditionalCost}
+                handleChangeMiscAdditionalCost={handleChangeMiscAdditionalCost}
+                handleRemoveMiscAdditionalCost={handleRemoveMiscAdditionalCost}
               />
             ) : (
           <>
@@ -2537,7 +2619,7 @@ const NewWorkOrder = () => {
                       id="is_occupied"
                       name="is_occupied"
                       checked={formData.is_occupied}
-                      onChange={(e) => setFormData(prev => ({ ...prev, is_occupied: e.target.checked }))}
+                      onChange={(e) => handleOccupiedChange(e.target.checked)}
                       className="h-5 w-5 sm:h-4 sm:w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
                     <label htmlFor="is_occupied" className="ml-2 block text-sm text-gray-900 dark:text-white">
@@ -2563,12 +2645,7 @@ const NewWorkOrder = () => {
                       type="checkbox"
                       id="sprinklers"
                       checked={formData.sprinklers}
-                      onChange={(e) => setFormData(prev => ({ 
-                        ...prev, 
-                        sprinklers: e.target.checked,
-                        has_sprinklers: e.target.checked,
-                        sprinkler_form_left_in_unit: e.target.checked ? prev.sprinkler_form_left_in_unit : false
-                      }))}
+                      onChange={(e) => handleSprinklersChange(e.target.checked)}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
                     <label htmlFor="sprinklers" className="ml-2 block text-sm text-gray-900 dark:text-white">
@@ -2586,7 +2663,7 @@ const NewWorkOrder = () => {
                           id="sprinklers_painted"
                           name="sprinklers_painted"
                           value={formData.sprinklers_painted ? 'yes' : 'no'}
-                          onChange={(e) => setFormData(prev => ({ ...prev, sprinklers_painted: e.target.value === 'yes' }))}
+                          onChange={(e) => handleSprinklersPaintedChange(e.target.value === 'yes')}
                           className="w-full h-12 sm:h-11 px-4 border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-gray-50 dark:bg-[#0F172A]"
                         >
                           <option value="no">No</option>
@@ -2605,6 +2682,7 @@ const NewWorkOrder = () => {
                             onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_without_cover')}
                             onError={handleUploadError}
                             onImageDelete={handleImageDelete}
+                            onUploadingChange={handleUploadingChange('sprinkler_without_cover')}
                             required={isSubcontractor}
                           />
                         </div>
@@ -2619,6 +2697,7 @@ const NewWorkOrder = () => {
                             onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_with_cover')}
                             onError={handleUploadError}
                             onImageDelete={handleImageDelete}
+                            onUploadingChange={handleUploadingChange('sprinkler_with_cover')}
                             required={isSubcontractor}
                           />
                         </div>
@@ -2634,12 +2713,7 @@ const NewWorkOrder = () => {
                               id="sprinkler_form_left_in_unit"
                               name="sprinkler_form_left_in_unit"
                               checked={formData.sprinkler_form_left_in_unit}
-                              onChange={(e) => {
-                                setFormData(prev => ({ ...prev, sprinkler_form_left_in_unit: e.target.checked }));
-                                if (!e.target.checked) {
-                                  setSprinklerFormImagesUploaded(false);
-                                }
-                              }}
+                              onChange={(e) => handleSprinklerFormChange(e.target.checked)}
                               className="mt-0.5 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                             />
                             <label htmlFor="sprinkler_form_left_in_unit" className="ml-2 block text-sm font-medium text-gray-900 dark:text-white">
@@ -2658,6 +2732,7 @@ const NewWorkOrder = () => {
                                 onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_form')}
                                 onError={handleUploadError}
                                 onImageDelete={handleImageDelete}
+                                onUploadingChange={handleUploadingChange('sprinkler_form')}
                                 required
                               />
                               {sprinklerFormImagesUploaded && (
@@ -2690,7 +2765,7 @@ const NewWorkOrder = () => {
                     id="has_extra_charges"
                     name="has_extra_charges"
                     checked={formData.has_extra_charges}
-                    onChange={(e) => setFormData(prev => ({ ...prev, has_extra_charges: e.target.checked }))}
+                    onChange={(e) => handleExtraChargesEnabledChange(e.target.checked)}
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
                   <label htmlFor="has_extra_charges" className="ml-2 text-lg font-semibold text-gray-900 dark:text-white">
@@ -2720,6 +2795,8 @@ const NewWorkOrder = () => {
                       onRemoveLineItem={handleRemoveExtraCharge}
                       language="en"
                       disabled={saving}
+                      draft={extraChargeDraft}
+                      onDraftChange={setExtraChargeDraft}
                     />
                   </div>
                 )}
@@ -2727,107 +2804,14 @@ const NewWorkOrder = () => {
             </div>
 
               {/* Miscellaneous Additional Cost */}
-              <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
-                {/* Header */}
-                <div className="bg-gradient-to-r from-red-600 to-red-700 dark:from-red-700 dark:to-red-800 px-6 py-4">
-                  <h2 className="text-xl font-semibold text-white">Miscellaneous Additional Cost</h2>
-                </div>
-                {/* Content */}
-                <div className="p-6 space-y-4">
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    If any miscellaneous additional costs apply to this job, add each item below with a description and amount.
-                  </p>
-
-                  {formData.misc_additional_cost_items.length === 0 ? (
-                    <div className="rounded-lg border border-dashed border-gray-300 dark:border-[#2D3B4E] p-4 text-sm text-gray-500 dark:text-gray-400">
-                      No miscellaneous additional costs added.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {formData.misc_additional_cost_items.map((item, index) => (
-                        <div key={item.id} className="rounded-lg border border-gray-200 dark:border-[#2D3B4E] p-3 space-y-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">Item {index + 1}</span>
-                            <button
-                              type="button"
-                              onClick={() => setFormData(prev => ({
-                                ...prev,
-                                misc_additional_cost_items: prev.misc_additional_cost_items.filter(existing => existing.id !== item.id)
-                              }))}
-                              className="px-2 py-1 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-[1fr_160px] gap-3">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                                Description
-                              </label>
-                              <input
-                                type="text"
-                                value={item.description}
-                                onChange={(e) => setFormData(prev => ({
-                                  ...prev,
-                                  misc_additional_cost_items: prev.misc_additional_cost_items.map(existing =>
-                                    existing.id === item.id ? { ...existing, description: e.target.value } : existing
-                                  )
-                                }))}
-                                placeholder="Describe the additional cost"
-                                className="w-full px-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                                Amount
-                              </label>
-                              <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 dark:text-gray-400 font-medium">$</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={(item.subPay ?? item.price) === 0 ? '' : (item.subPay ?? item.price)}
-                                  onChange={(e) => setFormData(prev => ({
-                                    ...prev,
-                                    misc_additional_cost_items: prev.misc_additional_cost_items.map(existing =>
-                                      existing.id === item.id ? { ...existing, subPay: e.target.value === '' ? 0 : parseFloat(e.target.value) || 0 } : existing
-                                    )
-                                  }))}
-                                  placeholder="0.00"
-                                  className="w-full pl-7 pr-4 py-3 bg-gray-50 dark:bg-[#0F172A] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      <div className="flex items-center justify-between text-sm font-semibold text-gray-700 dark:text-gray-200 border-t border-gray-200 dark:border-[#2D3B4E] pt-3">
-                        <span>Total</span>
-                        <span>{formatCurrency(formData.misc_additional_cost_items.reduce((sum, item) => sum + (Number(item.subPay ?? item.price) || 0), 0))}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => setFormData(prev => ({
-                      ...prev,
-                      misc_additional_cost_items: [...prev.misc_additional_cost_items, createMiscAdditionalCostItem()]
-                    }))}
-                    className="inline-flex items-center px-4 py-2 text-sm font-semibold bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800/60 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-                  >
-                    Add Miscellaneous Cost
-                  </button>
-
-                  {formData.misc_additional_cost_items.length > 0 && (
-                    <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                      <span>ℹ</span>
-                      <span>Miscellaneous additional costs will be reviewed by admin. They will set billing amounts and send approval if needed.</span>
-                    </p>
-                  )}
-                </div>
-              </div>
+              <MiscAdditionalCostsSection
+                items={formData.misc_additional_cost_items}
+                language="en"
+                disabled={saving}
+                onAdd={handleAddMiscAdditionalCost}
+                onChange={handleChangeMiscAdditionalCost}
+                onRemove={handleRemoveMiscAdditionalCost}
+              />
 
               {/* Before Images */}
               <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
@@ -2850,6 +2834,7 @@ const NewWorkOrder = () => {
                       onUploadComplete={(filePath) => handleUploadComplete(filePath, 'before')}
                       onError={handleUploadError}
                       onImageDelete={handleImageDelete}
+                      onUploadingChange={handleUploadingChange('before')}
                       required={isSubcontractor}
                     />
                     {isSubcontractor && (
@@ -2881,9 +2866,10 @@ const NewWorkOrder = () => {
                       jobId={jobId || ''}
                       workOrderId={existingWorkOrder?.id || ''}
                       folder="other"
-                      onUploadComplete={handleUploadComplete}
+                      onUploadComplete={(filePath) => handleUploadComplete(filePath, 'other')}
                       onError={handleUploadError}
                       onImageDelete={handleImageDelete}
+                      onUploadingChange={handleUploadingChange('other')}
                     />
                   </div>
                 </div>
@@ -2925,9 +2911,9 @@ const NewWorkOrder = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={saving || !requiredFieldsFilled}
+                  disabled={saving || isAnyFileUploading || !requiredFieldsFilled}
                   className={`flex-1 sm:flex-none sm:w-auto px-6 py-3 sm:px-4 sm:py-2 text-base sm:text-sm font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
-                    requiredFieldsFilled && !saving
+                    requiredFieldsFilled && !saving && !isAnyFileUploading
                       ? 'text-white bg-blue-600 hover:bg-blue-700'
                       : 'text-gray-400 bg-gray-300 dark:bg-gray-600 cursor-not-allowed'
                   }`}

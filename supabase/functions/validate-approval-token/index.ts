@@ -1,6 +1,32 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+type ApprovalUnavailableReason =
+  | 'completed'
+  | 'preview'
+  | 'invalidated'
+  | 'cancelled'
+  | 'job_changed'
+  | 'superseded'
+  | null;
+
+function getApprovalUnavailableReason(input: {
+  approvalType: string;
+  usedAt?: string | null;
+  decision?: string | null;
+  invalidatedAt?: string | null;
+  jobPhase?: string | null;
+  hasNewerRequest: boolean;
+}): ApprovalUnavailableReason {
+  if (input.usedAt || input.decision) return 'completed';
+  if (input.approvalType !== 'extra_charges') return 'preview';
+  if (input.invalidatedAt) return 'invalidated';
+  if (input.jobPhase === 'Cancelled') return 'cancelled';
+  if (input.jobPhase !== 'Pending Work Order') return 'job_changed';
+  if (input.hasNewerRequest) return 'superseded';
+  return null;
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -89,9 +115,19 @@ serve(async (req) => {
       );
     }
 
-    const now = new Date();
-    const expiresAt = new Date(approval.expires_at);
-    const actionExpired = !approval.used_at && now > expiresAt;
+    const { data: newerApproval, error: newerApprovalError } = await supabase
+      .from('approval_tokens')
+      .select('id')
+      .eq('job_id', approval.job_id)
+      .eq('approval_type', approval.approval_type)
+      .gt('created_at', approval.created_at)
+      .is('invalidated_at', null)
+      .limit(1)
+      .maybeSingle();
+
+    if (newerApprovalError) {
+      throw new Error(`Error checking approval request history: ${newerApprovalError.message}`);
+    }
 
     const extraChargesData = approval.extra_charges_data || {};
     const hasDedicatedApprovalSelection = Object.prototype.hasOwnProperty.call(
@@ -129,6 +165,16 @@ serve(async (req) => {
     if (jobError) {
       throw new Error(`Error fetching job: ${jobError.message}`);
     }
+
+    const actionUnavailableReason = getApprovalUnavailableReason({
+      approvalType: approval.approval_type,
+      usedAt: approval.used_at,
+      decision: approval.decision,
+      invalidatedAt: approval.invalidated_at,
+      jobPhase: job?.job_phase?.job_phase_label,
+      hasNewerRequest: Boolean(newerApproval),
+    });
+    const actionAvailable = actionUnavailableReason === null;
 
     const { data: workOrders, error: workOrderError } = await supabase
       .from('work_orders')
@@ -235,8 +281,14 @@ serve(async (req) => {
         .limit(1)
         .maybeSingle();
       resolvedStatus = approvalRecord?.status || 'approved';
-    } else if (actionExpired) {
-      resolvedStatus = 'expired';
+    } else if (actionUnavailableReason === 'cancelled') {
+      resolvedStatus = 'cancelled';
+    } else if (actionUnavailableReason === 'superseded') {
+      resolvedStatus = 'superseded';
+    } else if (actionUnavailableReason === 'invalidated') {
+      resolvedStatus = 'invalidated';
+    } else if (actionUnavailableReason === 'job_changed') {
+      resolvedStatus = 'invalidated';
     } else {
       resolvedStatus = 'pending';
     }
@@ -271,11 +323,16 @@ serve(async (req) => {
           recipientEmail: approval.approver_email,
           approverName: approval.decision_maker_name || approval.approver_name,
           approverEmail: approval.decision_maker_email || approval.approver_email,
-          actionExpired,
+          actionAvailable,
+          actionUnavailableReason,
           amount: approval.extra_charges_data?.total,
           description: approval.extra_charges_data?.items?.[0]?.description
         },
-        token: approval,
+        token: {
+          ...approval,
+          action_available: actionAvailable,
+          action_unavailable_reason: actionUnavailableReason,
+        },
         job: normalizedJob,
         images: imagesWithSignedUrls
       }),

@@ -12,7 +12,7 @@ interface ImageUploadProps {
   jobId: string;
   workOrderId?: string;
   folder: 'before' | 'after' | 'sprinkler' | 'sprinkler_with_cover' | 'sprinkler_without_cover' | 'sprinkler_form' | 'other';
-  onUploadComplete?: (filePath: string) => void;
+  onUploadComplete?: (filePath: string, fileId?: string) => void;
   onError?: (error: string) => void;
   readOnly?: boolean;
   required?: boolean;
@@ -31,6 +31,7 @@ interface ImageUploadProps {
    * Use this to disable form submission while files are uploading.
    */
   onUploadingChange?: (isUploading: boolean, uploadCount: number, totalCount: number) => void;
+  language?: 'en' | 'es';
 }
 
 interface UploadedFile {
@@ -73,7 +74,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   required = false,
   resetTrigger,
   onImageDelete,
-  onUploadingChange
+  onUploadingChange,
+  language = 'en'
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -86,6 +88,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const revokeRef = useRef<(() => void) | null>(null);
   const [lastUploadedPath, setLastUploadedPath] = useState<string | null>(null);
   const [totalFilesToUpload, setTotalFilesToUpload] = useState(0);
+  const [completedFilesCount, setCompletedFilesCount] = useState(0);
+  const [failedFiles, setFailedFiles] = useState<File[]>([]);
  
   // Component mount logging
   useEffect(() => {
@@ -111,10 +115,9 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   // Notify parent when upload status changes
   useEffect(() => {
     if (onUploadingChange) {
-      const uploadedCount = totalFilesToUpload - uploadingFiles.length;
-      onUploadingChange(isUploading, uploadedCount, totalFilesToUpload);
+      onUploadingChange(isUploading, completedFilesCount, totalFilesToUpload);
     }
-  }, [isUploading, uploadingFiles.length, totalFilesToUpload, onUploadingChange]);
+  }, [isUploading, completedFilesCount, totalFilesToUpload, onUploadingChange]);
 
   // Fetch images on mount or when resetTrigger changes
   useEffect(() => {
@@ -128,6 +131,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       .from('files')
       .select('*')
       .in('category', categoryAliases)
+      .is('removed_from_current_work_order_at', null)
       .order('created_at', { ascending: false });
 
     if (workOrderId && jobId) {
@@ -343,6 +347,9 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     
     // Set total files to upload for progress tracking
     setTotalFilesToUpload(files.length);
+    setCompletedFilesCount(0);
+    setFailedFiles([]);
+    const failures: File[] = [];
     
     // Preview the selected originals. Each file is optimized exactly once in the
     // upload loop below, avoiding duplicate canvas work and inconsistent results.
@@ -509,7 +516,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             bucket: 'files'
           };
 
-          let { error: dbError } = await supabase
+          let { data: insertedFile, error: dbError } = await supabase
             .from('files')
             .insert(fileRecord)
             .select()
@@ -527,6 +534,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               .select()
               .single();
             dbError = retry.error;
+            insertedFile = retry.data;
           }
 
           if (
@@ -541,6 +549,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               .select()
               .single();
             dbError = retry.error;
+            insertedFile = retry.data;
           }
 
           if (
@@ -555,6 +564,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               .select()
               .single();
             dbError = retry.error;
+            insertedFile = retry.data;
           }
 
           if (
@@ -569,6 +579,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               .select()
               .single();
             dbError = retry.error;
+            insertedFile = retry.data;
           }
 
           if (dbError) {
@@ -611,12 +622,22 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             previewResult
           }]);
           setLastUploadedPath(fileStoragePath);
-          if (onUploadComplete) onUploadComplete(filePath);
+          setCompletedFilesCount(count => count + 1);
+          if (onUploadComplete) onUploadComplete(filePath, insertedFile?.id);
 
         } catch (fileError) {
+          failures.push(originalFile);
           const errorMsg = fileError instanceof Error ? fileError.message : 'Unknown error';
           console.error(`  ❌ Failed to upload ${originalFile.name}:`, fileError);
           if (onError) onError(`${originalFile.name}: ${errorMsg}`);
+        }
+      }
+      if (failures.length > 0) {
+        setFailedFiles(failures);
+        if (onError) {
+          onError(language === 'es'
+            ? `${failures.length} archivo(s) no se pudieron cargar. Puede volver a intentar solo esos archivos.`
+            : `${failures.length} file(s) failed to upload. You can retry only those files.`);
         }
       }
     } catch (error) {
@@ -627,6 +648,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       setIsUploading(false);
       setUploadingFiles([]);
       setTotalFilesToUpload(0); // Reset the counter
+      setCompletedFilesCount(0);
       console.log('📤 Upload process finished');
     }
   };
@@ -759,12 +781,12 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             </div>
             <div>
               <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">
-                Tap to add photos
+                {language === 'es' ? 'Toque para agregar fotos' : 'Tap to add photos'}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {folder === 'other'
-                  ? 'All file types supported'
-                  : 'JPG · PNG · WebP · multiple allowed (HEIC is stored in its original format)'}
+                  ? (language === 'es' ? 'Se admiten todos los tipos de archivo' : 'All file types supported')
+                  : (language === 'es' ? 'JPG · PNG · WebP · se permiten varios (HEIC se guarda en su formato original)' : 'JPG · PNG · WebP · multiple allowed (HEIC is stored in its original format)')}
               </p>
             </div>
           </label>
@@ -776,10 +798,10 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         <div className="mt-4">
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
-              Uploading files...
+              {language === 'es' ? 'Cargando archivos...' : 'Uploading files...'}
             </h4>
             <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">
-              {totalFilesToUpload - uploadingFiles.length} / {totalFilesToUpload} complete
+              {completedFilesCount} / {totalFilesToUpload} {language === 'es' ? 'completos' : 'complete'}
             </span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -800,10 +822,22 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
             <p className="text-xs text-yellow-700 dark:text-yellow-300 font-medium">
-              Please wait for all files to finish uploading before submitting the form.
+              {language === 'es'
+                ? 'Espere a que todos los archivos terminen de cargarse antes de enviar el formulario.'
+                : 'Please wait for all files to finish uploading before submitting the form.'}
             </p>
           </div>
         </div>
+      )}
+
+      {!isUploading && failedFiles.length > 0 && (
+        <button
+          type="button"
+          onClick={() => void handleFiles(failedFiles)}
+          className="mt-3 rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+        >
+          {language === 'es' ? `Reintentar ${failedFiles.length} archivo(s)` : `Retry ${failedFiles.length} failed file(s)`}
+        </button>
       )}
 
       {/* Uploaded files list - 3 columns */}

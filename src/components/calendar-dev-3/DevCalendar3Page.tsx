@@ -34,6 +34,7 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Printer,
   Plus,
   RefreshCw,
   User,
@@ -63,6 +64,8 @@ import {
   sendAssignmentNotifications,
 } from '../../services/assignmentNotifications';
 import { isJobActiveOnDate, getJobSpanDayLabel, formatJobDateRange } from '../../utils/jobScheduling';
+import { assignmentStatusPresentation, notificationStatusPresentation } from './calendarStatus';
+import { CalendarPrintView, type CalendarPrintSnapshot, type PrintCalendarItem } from './CalendarPrintView';
 
 const TZ = 'America/New_York';
 const VISIBILITY_KEY = 'jg-dev-calendar-3-visibility';
@@ -584,6 +587,7 @@ export default function DevCalendar3Page() {
   const [assignmentSubId, setAssignmentSubId] = useState('');
   const [pendingNotifications, setPendingNotifications] = useState<PendingNotification[]>([]);
   const [notificationRows, setNotificationRows] = useState<AssignmentNotificationRow[]>([]);
+  const [printSnapshot, setPrintSnapshot] = useState<CalendarPrintSnapshot | null>(null);
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
   const [batchSending, setBatchSending] = useState(false);
   const [sessionStartedAt] = useState(() => new Date().toISOString());
@@ -748,6 +752,26 @@ export default function DevCalendar3Page() {
   useEffect(() => {
     loadNotificationRows();
   }, [loadNotificationRows]);
+
+  useEffect(() => {
+    if (!canManage) return undefined;
+
+    const notificationChannel = supabase
+      .channel('dev-calendar-3-assignment-notifications')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_assignment_notifications' }, () => {
+        void loadNotificationRows();
+      })
+      .subscribe((status) => {
+        console.log('[DevCalendar3] assignment notification realtime status:', status);
+      });
+    const refreshOnFocus = () => void loadNotificationRows();
+    window.addEventListener('focus', refreshOnFocus);
+
+    return () => {
+      window.removeEventListener('focus', refreshOnFocus);
+      void supabase.removeChannel(notificationChannel);
+    };
+  }, [canManage, loadNotificationRows]);
 
   useEffect(() => {
     let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -1052,6 +1076,62 @@ export default function DevCalendar3Page() {
   }, [visibleRange.end, visibleRange.start]);
 
   const selectedDayItems = itemsByDate[selectedDate] || [];
+
+  const handlePrintCalendar = () => {
+    const printDates = viewMode === 'week'
+      ? weekDays.map(dateOnlyFromDate)
+      : viewMode === 'day'
+        ? [dateOnlyFromDate(currentDate)]
+        : agendaDays.map(dateOnlyFromDate);
+    const printItemsByDate: Record<string, PrintCalendarItem[]> = {};
+    printDates.forEach((date) => {
+      printItemsByDate[date] = (itemsByDate[date] || []).map((item) => {
+        if (item.type === 'event') {
+          const event = item.raw as CalendarEvent;
+          return {
+            id: item.id, type: 'event', date: item.date, title: item.title, color: item.color,
+            eventTime: event.is_all_day ? 'All day' : `${formatInTimeZone(parseISO(event.start_at), TZ, 'h:mm a')} – ${formatInTimeZone(parseISO(event.end_at), TZ, 'h:mm a')}`,
+            eventDetails: event.details || null,
+          };
+        }
+        const job = item.raw as CalendarJob;
+        const notification = notificationRows.find(row => row.job_id === job.id && row.assignment_assigned_at === job.assigned_at) || null;
+        return {
+          id: item.id, type: 'job', date: item.date, title: item.title, color: item.color,
+          workOrder: formatWorkOrderNumber(job.work_order_num), property: job.property_name,
+          unit: job.unit_number, unitSize: job.unit_size_label, jobType: job.job_type_label,
+          subcontractor: job.assigned_to_name, jobPhase: job.job_phase?.job_phase_label,
+          assignmentStatus: assignmentStatusPresentation(job.assignment_status)?.label || (job.assignment_status === null ? 'Unassigned' : job.assignment_status),
+          notificationStatus: notificationStatusPresentation(notification?.status, notification?.sent_at)?.label || null,
+          purchaseOrder: job.purchase_order, address: formatAddress(job), notes: job.description,
+          schedule: formatJobDateRange(job, (date) => formatDisplayDate(dateOnlyFromJob(date))),
+        };
+      });
+    });
+    const visiblePhaseLabels = phases
+      .filter(phase => visibility.statuses[phase.job_phase_label] !== false)
+      .map(phase => formatJobPhaseLabel(phase.job_phase_label));
+    const rangeLabel = viewMode === 'day'
+      ? format(currentDate, 'EEEE, MMMM d, yyyy')
+      : `${format(visibleRange.start, 'MMMM d, yyyy')} – ${format(visibleRange.end, 'MMMM d, yyyy')}`;
+    setPrintSnapshot({
+      view: viewMode,
+      heading: `${viewMode.charAt(0).toUpperCase()}${viewMode.slice(1)} Schedule — ${calendarHeading}`,
+      rangeLabel,
+      printedAt: new Date().toISOString(),
+      filterLabel: `Jobs: ${visibility.allJobs ? visiblePhaseLabels.join(', ') || 'Visible phases' : 'Hidden'} · Events: ${visibility.allEvents ? 'Shown' : 'Hidden'}`,
+      sortLabel: sortBySubcontractor ? 'Sorted by subcontractor' : 'Calendar order',
+      dates: printDates,
+      itemsByDate: printItemsByDate,
+    });
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => window.print()));
+  };
+
+  useEffect(() => {
+    const clearPrintSnapshot = () => setPrintSnapshot(null);
+    window.addEventListener('afterprint', clearPrintSnapshot);
+    return () => window.removeEventListener('afterprint', clearPrintSnapshot);
+  }, []);
 
   const scrollAgendaToDate = useCallback((date: string, behavior: ScrollBehavior = 'smooth') => {
     window.requestAnimationFrame(() => {
@@ -1654,6 +1734,9 @@ JG Painting Pros Inc.`,
   const renderItemPill = (item: CalendarItem, date: string, className = '') => {
     const span = item.spanInfo;
     const assignmentNotification = notificationForItem(item);
+    const job = item.type === 'job' ? item.raw as CalendarJob : null;
+    const acceptance = assignmentStatusPresentation(job?.assignment_status);
+    const delivery = notificationStatusPresentation(assignmentNotification?.status, assignmentNotification?.sent_at);
     const spanRoundingClass = span
       ? `${span.isSpanStart ? '' : 'rounded-l-none border-l-2 border-l-white/40'} ${span.isSpanEnd ? '' : 'rounded-r-none'}`
       : '';
@@ -1682,12 +1765,18 @@ JG Painting Pros Inc.`,
       >
         {(!span || span.isSpanStart) && <GripVertical className="h-3 w-3 shrink-0 opacity-75" />}
         <span className="truncate">{item.title}</span>
+        {acceptance && (!span || span.isSpanStart) && (
+          <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${acceptance.className}`} title={`Assignment: ${acceptance.label}`} aria-label={`Assignment: ${acceptance.label}`}>
+            {viewMode === 'month' ? '●' : acceptance.shortLabel}
+          </span>
+        )}
         {assignmentNotification && (!span || span.isSpanStart) && (
           <span
-            className={`shrink-0 ${assignmentNotification.status === 'sent' ? 'text-green-100' : assignmentNotification.status === 'failed' ? 'text-red-100' : 'text-amber-100'}`}
-            title={assignmentNotification.status === 'sent' && assignmentNotification.sent_at ? `Assignment email sent ${new Date(assignmentNotification.sent_at).toLocaleString()}` : assignmentNotification.status === 'failed' ? 'Assignment email failed — open Assignment Notifications' : 'Assignment notification pending'}
+            className={`shrink-0 ${assignmentNotification.status === 'sent' ? 'text-green-100' : assignmentNotification.status === 'failed' ? 'text-red-100' : assignmentNotification.status === 'processing' ? 'text-blue-100' : 'text-amber-100'}`}
+            title={`Notification: ${delivery?.label || 'Status unavailable'}`}
+            aria-label={`Notification: ${delivery?.label || 'Status unavailable'}`}
           >
-            {assignmentNotification.status === 'sent' ? <MailCheck className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}
+            {assignmentNotification.status === 'sent' ? <MailCheck className="h-3.5 w-3.5" /> : assignmentNotification.status === 'failed' ? <AlertTriangle className="h-3.5 w-3.5" /> : assignmentNotification.status === 'processing' ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Clock className="h-3.5 w-3.5" />}
           </span>
         )}
         {span && (
@@ -1764,6 +1853,11 @@ JG Painting Pros Inc.`,
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{item.title}</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">{item.type === 'job' ? item.status : item.allDay ? 'All day event' : 'Timed event'}</p>
+                  {item.type === 'job' && assignmentStatusPresentation((item.raw as CalendarJob).assignment_status) && (
+                    <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${assignmentStatusPresentation((item.raw as CalendarJob).assignment_status)!.className}`}>
+                      {assignmentStatusPresentation((item.raw as CalendarJob).assignment_status)!.label}
+                    </span>
+                  )}
                 </div>
               </div>
             </button>
@@ -2096,6 +2190,10 @@ JG Painting Pros Inc.`,
                     {pendingNotificationCount > 0 && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white">{pendingNotificationCount}</span>}
                   </button>
                 )}
+                <button onClick={handlePrintCalendar} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#2D3B4E] dark:bg-[#1E293B] dark:text-gray-200 dark:hover:bg-[#0F172A]" aria-label="Print current calendar view" title="Print current calendar view">
+                  <Printer className="h-4 w-4" />
+                  <span className="hidden sm:inline">Print</span>
+                </button>
                 <button onClick={loadData} className="p-2 rounded-lg border border-gray-200 dark:border-[#2D3B4E] bg-white dark:bg-[#1E293B]" aria-label="Refresh calendar">
                   <RefreshCw className="h-4 w-4" />
                 </button>
@@ -2164,6 +2262,16 @@ JG Painting Pros Inc.`,
                   </button>
                 </div>
               </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-600 dark:text-gray-300" aria-label="Calendar status legend">
+                <span className="font-semibold text-gray-700 dark:text-gray-200">Assignment:</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" />Pending Acceptance</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-green-500" />Accepted</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" />Declined</span>
+                <span className="ml-1 font-semibold text-gray-700 dark:text-gray-200">Notification:</span>
+                <span className="inline-flex items-center gap-1"><MailCheck className="h-3.5 w-3.5 text-green-600" />Sent</span>
+                <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5 text-amber-600" />Send later</span>
+                <span className="inline-flex items-center gap-1"><AlertTriangle className="h-3.5 w-3.5 text-red-600" />Failed</span>
+              </div>
             </div>
           </header>
 
@@ -2223,6 +2331,7 @@ JG Painting Pros Inc.`,
           </div>
         </main>
       </div>
+      <CalendarPrintView snapshot={printSnapshot} />
 
       {pendingJobMove && (() => {
         const spanDays = Math.round(
@@ -2361,6 +2470,8 @@ JG Painting Pros Inc.`,
                 const assignmentChanged = (assignmentSubId || null) !== (job.assigned_to || null);
                 const notificationSent = currentAssignmentNotification?.status === 'sent';
                 const notificationActionable = currentAssignmentNotification?.status === 'pending' || currentAssignmentNotification?.status === 'failed';
+                const assignmentPresentation = assignmentStatusPresentation(job.assignment_status);
+                const notificationPresentation = notificationStatusPresentation(currentAssignmentNotification?.status, currentAssignmentNotification?.sent_at);
                 return (
                   <>
                     <dl className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
@@ -2384,9 +2495,9 @@ JG Painting Pros Inc.`,
                       {job.purchase_order && <div><dt className="text-gray-500">Purchase Order</dt><dd className="font-medium">{job.purchase_order}</dd></div>}
                       {formatAddress(job) && <div className="sm:col-span-2"><dt className="text-gray-500">Address</dt><dd className="font-medium">{formatAddress(job)}</dd></div>}
                       {job.description && <div className="sm:col-span-2"><dt className="text-gray-500">Notes</dt><dd className="font-medium whitespace-pre-wrap">{job.description}</dd></div>}
-                      {job.assignment_status && <div><dt className="text-gray-500">Assignment Status</dt><dd className="font-medium capitalize">{job.assignment_status.replace('_', ' ')}</dd></div>}
+                      {assignmentPresentation && <div><dt className="text-gray-500">Assignment Status</dt><dd className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${assignmentPresentation.className}`}>{assignmentPresentation.label}</dd></div>}
                       {job.assigned_to_name && <div><dt className="text-gray-500">Assigned Subcontractor</dt><dd className="font-medium">{job.assigned_to_name}</dd></div>}
-                      {job.assigned_to && <div className="sm:col-span-2"><dt className="text-gray-500">Assignment Notification</dt><dd className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${notificationSent ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : currentAssignmentNotification?.status === 'failed' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>{notificationSent ? <MailCheck className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}{notificationSent ? `Sent${currentAssignmentNotification?.sent_at ? ` ${new Date(currentAssignmentNotification.sent_at).toLocaleString()}` : ''}` : currentAssignmentNotification?.status === 'failed' ? 'Send failed — retry available' : currentAssignmentNotification?.status === 'processing' ? 'Sending' : currentAssignmentNotification ? 'Not sent' : 'Status unavailable'}</dd></div>}
+                      {job.assigned_to && <div className="sm:col-span-2"><dt className="text-gray-500">Assignment Notification</dt><dd className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${notificationPresentation?.className || 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>{currentAssignmentNotification?.status === 'sent' ? <MailCheck className="h-3.5 w-3.5" /> : currentAssignmentNotification?.status === 'failed' ? <AlertTriangle className="h-3.5 w-3.5" /> : currentAssignmentNotification?.status === 'processing' ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : currentAssignmentNotification?.status === 'pending' ? <Clock className="h-3.5 w-3.5" /> : null}{notificationPresentation?.label || 'Status unavailable'}</dd></div>}
                     </dl>
 
                     <div className="rounded-lg border border-gray-200 dark:border-[#2D3B4E] p-4">

@@ -92,6 +92,7 @@ import {
 import { isFrozenHistoricalSnapshot } from '../lib/jobs/historicalDataMode';
 import { logJobActivity } from '../lib/jobActivity';
 import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
+import { OriginalWorkOrderSubmission } from './OriginalWorkOrderSubmission';
 import {
   QUALITY_CONTROL_LIKERT_VALUES,
   QUALITY_CONTROL_SCORE_SECTIONS,
@@ -434,6 +435,7 @@ export function JobDetails() {
   const [reactivatingJob, setReactivatingJob] = useState(false);
   const [activityFilter, setActivityFilter] = useState<'all' | JobActivityCategory>('all');
   const [showWorkOrderDetails, setShowWorkOrderDetails] = useState(false);
+  const [workOrderDetailTab, setWorkOrderDetailTab] = useState<'current' | 'original'>('current');
   const [subcontractors, setSubcontractors] = useState<{id: string, full_name: string}[]>([]);
   const [selectedSubcontractor, setSelectedSubcontractor] = useState<string | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -711,6 +713,8 @@ export function JobDetails() {
     decision_at: string | null;
     approver_name: string | null;
     approver_email: string | null;
+    decision_maker_name?: string | null;
+    decision_maker_email?: string | null;
     decline_reason: string | null;
   } | null>(null);
   const [pendingApproval, setPendingApproval] = useState<{
@@ -724,8 +728,11 @@ export function JobDetails() {
   }, []);
   const effectiveApprovalDecision = useMemo(() => {
     if (reactivatedFromDecline) return null;
-    // Prefer explicit approval_tokens decision
-    if (approvalTokenDecision?.decision) return approvalTokenDecision;
+    // The latest token is authoritative. A latest pending token must not fall
+    // back to an older approved/declined phase-history entry.
+    if (approvalTokenDecision) {
+      return approvalTokenDecision.decision ? approvalTokenDecision : null;
+    }
 
     // Fallback: derive from most recent phase change mentioning extra charges
     if (!phaseChanges || phaseChanges.length === 0) return null;
@@ -1376,14 +1383,13 @@ export function JobDetails() {
     if (!jobId) return;
 
     try {
-      // Get the most recent approval token for this job with a decision
+      // The newest request is authoritative, including when it is pending.
       const { data, error } = await supabase
         .from('approval_tokens')
-        .select('decision, decision_at, approver_name, approver_email, decline_reason')
+        .select('decision, decision_at, approver_name, approver_email, decision_maker_name, decision_maker_email, decline_reason')
         .eq('job_id', jobId)
         .eq('approval_type', 'extra_charges')
-        .not('decision', 'is', null)
-        .order('decision_at', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
@@ -1393,7 +1399,11 @@ export function JobDetails() {
       }
 
       if (data) {
-        setApprovalTokenDecision(data);
+        setApprovalTokenDecision({
+          ...data,
+          approver_name: data.decision_maker_name || data.approver_name,
+          approver_email: data.decision_maker_email || data.approver_email,
+        });
       } else {
         // Clear the decision if no data found
         setApprovalTokenDecision(null);
@@ -5730,6 +5740,30 @@ export function JobDetails() {
               </h2>
             </div>
 
+            {canInternalEdit && (
+              <div className="flex border-b border-gray-200 bg-gray-50 px-6 dark:border-gray-700 dark:bg-[#0F172A]">
+                <button
+                  type="button"
+                  onClick={() => setWorkOrderDetailTab('current')}
+                  className={`border-b-2 px-4 py-3 text-sm font-semibold ${workOrderDetailTab === 'current' ? 'border-blue-600 text-blue-700 dark:text-blue-300' : 'border-transparent text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'}`}
+                >
+                  Current Work Order
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWorkOrderDetailTab('original')}
+                  className={`border-b-2 px-4 py-3 text-sm font-semibold ${workOrderDetailTab === 'original' ? 'border-blue-600 text-blue-700 dark:text-blue-300' : 'border-transparent text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'}`}
+                >
+                  Original Submission
+                </button>
+              </div>
+            )}
+
+            {canInternalEdit && workOrderDetailTab === 'original' ? (
+              <OriginalWorkOrderSubmission workOrderId={job.work_order.id} />
+            ) : (
+              <>
+
             {/* Extra Charges Status - Shows different UI based on approval decision */}
             {hasExtraChargesForApproval && (
               <div>
@@ -6244,6 +6278,8 @@ export function JobDetails() {
                 </div>
               )}
             </div>
+              </>
+            )}
           </div>
 
         )}

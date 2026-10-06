@@ -22,7 +22,33 @@ interface ExtraChargesSectionProps {
   onRemoveLineItem: (id: string) => void;
   language?: 'en' | 'es';
   disabled?: boolean;
+  draft?: ExtraChargeDraftState;
+  onDraftChange?: React.Dispatch<React.SetStateAction<ExtraChargeDraftState>>;
 }
+
+export interface ExtraChargeDraftState {
+  isAddingNew: boolean;
+  selectedCategoryId: string;
+  selectedDetailId: string;
+  quantity: string;
+  customizeHours: boolean;
+  billHours: string;
+  subPayHours: string;
+  notes: string;
+  formErrors: string[];
+}
+
+export const createExtraChargeDraftState = (): ExtraChargeDraftState => ({
+  isAddingNew: false,
+  selectedCategoryId: '',
+  selectedDetailId: '',
+  quantity: '1',
+  customizeHours: false,
+  billHours: '',
+  subPayHours: '',
+  notes: '',
+  formErrors: [],
+});
 
 export default function ExtraChargesSection({
   propertyId,
@@ -31,6 +57,8 @@ export default function ExtraChargesSection({
   onRemoveLineItem,
   language = 'en',
   disabled = false,
+  draft,
+  onDraftChange,
 }: ExtraChargesSectionProps) {
   const text = {
     en: {
@@ -106,16 +134,32 @@ export default function ExtraChargesSection({
   }[language];
   const { categories, isLoading, error } = useExtraCharges(propertyId);
 
-  // Form state for adding new charge
-  const [isAddingNew, setIsAddingNew] = useState(false);
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
-  const [selectedDetailId, setSelectedDetailId] = useState<string>('');
-  const [quantity, setQuantity] = useState<string>('1');
-  const [customizeHours, setCustomizeHours] = useState(false);
-  const [billHours, setBillHours] = useState<string>('');
-  const [subPayHours, setSubPayHours] = useState<string>('');
-  const [notes, setNotes] = useState<string>('');
-  const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [localDraft, setLocalDraft] = useState(createExtraChargeDraftState);
+  const activeDraft = draft ?? localDraft;
+  const updateDraft = onDraftChange ?? setLocalDraft;
+  const {
+    isAddingNew,
+    selectedCategoryId,
+    selectedDetailId,
+    quantity,
+    customizeHours,
+    billHours,
+    subPayHours,
+    notes,
+    formErrors,
+  } = activeDraft;
+  const setDraftField = <K extends keyof ExtraChargeDraftState>(key: K, value: ExtraChargeDraftState[K]) => {
+    updateDraft((current) => ({ ...current, [key]: value }));
+  };
+  const setIsAddingNew = (value: boolean) => setDraftField('isAddingNew', value);
+  const setSelectedCategoryId = (value: string) => setDraftField('selectedCategoryId', value);
+  const setSelectedDetailId = (value: string) => setDraftField('selectedDetailId', value);
+  const setQuantity = (value: string) => setDraftField('quantity', value);
+  const setCustomizeHours = (value: boolean) => setDraftField('customizeHours', value);
+  const setBillHours = (value: string) => setDraftField('billHours', value);
+  const setSubPayHours = (value: string) => setDraftField('subPayHours', value);
+  const setNotes = (value: string) => setDraftField('notes', value);
+  const setFormErrors = (value: string[]) => setDraftField('formErrors', value);
 
   // Get selected category and detail
   const selectedCategory = categories.find((cat) => cat.categoryId === selectedCategoryId);

@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react';
 import { Lightbox } from './Lightbox';
 import { supabase } from '../utils/supabase';
 import { getPreviewUrl, PreviewResult } from '../utils/storagePreviews';
+import { deleteFilesByStoragePaths } from '../lib/utils/fileUpload';
 import { FILE_CATEGORY_LABELS, FOLDER_KEY_TO_CATEGORY, LEGACY_CATEGORY_ALIASES } from '../utils/fileCategories';
 
 interface WorkOrderFile {
@@ -62,6 +63,7 @@ export function ImageGallery({ workOrderId, jobId, folder, allowDelete = false }
         .from('files')
         .select('*')
         .in('category', categoryAliases)
+        .is('removed_from_current_work_order_at', null)
         .order('created_at', { ascending: false });
 
       if (workOrderId && jobId) {
@@ -171,22 +173,10 @@ export function ImageGallery({ workOrderId, jobId, folder, allowDelete = false }
     }
   };
 
-  const handleDelete = async (fileId: string, filePath: string) => {
+  const handleDelete = async (_fileId: string, filePath: string) => {
     try {
-      // Delete from storage
-      const { error: storageError } = await supabase.storage
-        .from('files')
-        .remove([filePath]);
-
-      if (storageError) throw storageError;
-
-      // Delete from database
-      const { error: dbError } = await supabase
-        .from('files')
-        .delete()
-        .eq('id', fileId);
-
-      if (dbError) throw dbError;
+      const result = await deleteFilesByStoragePaths([filePath]);
+      if (result.errors.length > 0) throw new Error(result.errors.join(' '));
 
       // Refresh the file list
       fetchFiles();

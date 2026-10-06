@@ -2217,6 +2217,7 @@ const NewWorkOrderPreview = () => {
                 ceilingPaintOptions={ceilingPaintOptions}
                 accentWallOptions={accentWallOptions}
                 billingOptionsLoading={false}
+                unitSizes={unitSizes}
                 dynamicServices={dynamicServices}
                 dynamicFormValues={dynamicFormValues}
                 setDynamicFormValues={setDynamicFormValues}

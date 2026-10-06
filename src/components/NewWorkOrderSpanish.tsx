@@ -9,11 +9,9 @@ import {
 import { formatDate } from '../lib/dateUtils';
 import ImageUpload from './ImageUpload';
 import { ImageGallery } from './ImageGallery';
-import { WorkOrderLink } from './shared/WorkOrderLink';
-import { PropertyLink } from './shared/PropertyLink';
-import { formatCurrency } from '../lib/utils/formatUtils';
 import { supabase } from '../utils/supabase';
-import ExtraChargesSection from './ExtraChargesSection';
+import ExtraChargesSection, { ExtraChargeDraftState } from './ExtraChargesSection';
+import MiscAdditionalCostsSection, { MiscAdditionalCostItem } from './MiscAdditionalCostsSection';
 import { ExtraChargeLineItem } from '../types/extraCharges';
 
 
@@ -145,6 +143,22 @@ interface NewWorkOrderSpanishProps {
   extraChargesItems: ExtraChargeLineItem[];
   handleAddExtraCharge: (item: ExtraChargeLineItem) => void;
   handleRemoveExtraCharge: (id: string) => void;
+  extraChargeDraft?: ExtraChargeDraftState;
+  setExtraChargeDraft?: React.Dispatch<React.SetStateAction<ExtraChargeDraftState>>;
+  requiredFieldsFilled?: boolean;
+  isAnyFileUploading?: boolean;
+  handleUploadingChange?: (folder: string) => (isUploading: boolean, uploadCount: number, totalCount: number) => void;
+  handleOccupiedChange?: (checked: boolean) => void;
+  handleSprinklersChange?: (checked: boolean) => void;
+  handleSprinklersPaintedChange?: (painted: boolean) => void;
+  handleSprinklerFormChange?: (checked: boolean) => void;
+  handleExtraChargesEnabledChange?: (checked: boolean) => void;
+  handleAddMiscAdditionalCost?: () => void;
+  handleChangeMiscAdditionalCost?: (
+    id: string,
+    patch: Partial<Pick<MiscAdditionalCostItem, 'description' | 'subPay'>>,
+  ) => void;
+  handleRemoveMiscAdditionalCost?: (id: string) => void;
 }
 
 const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
@@ -178,7 +192,20 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
   setDynamicFormValues,
   extraChargesItems,
   handleAddExtraCharge,
-  handleRemoveExtraCharge
+  handleRemoveExtraCharge,
+  extraChargeDraft,
+  setExtraChargeDraft,
+  requiredFieldsFilled,
+  isAnyFileUploading = false,
+  handleUploadingChange,
+  handleOccupiedChange,
+  handleSprinklersChange,
+  handleSprinklersPaintedChange,
+  handleSprinklerFormChange,
+  handleExtraChargesEnabledChange,
+  handleAddMiscAdditionalCost,
+  handleChangeMiscAdditionalCost,
+  handleRemoveMiscAdditionalCost,
 }) => {
   // Debug logging
   console.log('NewWorkOrderSpanish - Props Debug:', {
@@ -186,23 +213,33 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
     sprinklerImagesUploaded,
     formData: formData.has_extra_charges
   });
-  
+
+  const dispatchCheckboxChange = (name: string, checked: boolean) => {
+    handleInputChange({
+      target: { name, value: checked.toString(), type: 'checkbox', checked },
+    } as React.ChangeEvent<HTMLInputElement>);
+  };
+  const onOccupiedChange = handleOccupiedChange ?? ((checked: boolean) => dispatchCheckboxChange('is_occupied', checked));
+  const onSprinklersChange = handleSprinklersChange ?? ((checked: boolean) => {
+    dispatchCheckboxChange('sprinklers', checked);
+    dispatchCheckboxChange('has_sprinklers', checked);
+    if (!checked) dispatchCheckboxChange('sprinkler_form_left_in_unit', false);
+  });
+  const onSprinklersPaintedChange = handleSprinklersPaintedChange ?? ((checked: boolean) => dispatchCheckboxChange('sprinklers_painted', checked));
+  const onSprinklerFormChange = handleSprinklerFormChange ?? ((checked: boolean) => dispatchCheckboxChange('sprinkler_form_left_in_unit', checked));
+  const onExtraChargesEnabledChange = handleExtraChargesEnabledChange ?? ((checked: boolean) => dispatchCheckboxChange('has_extra_charges', checked));
+  const canSubmit = requiredFieldsFilled ?? Boolean(
+    formData.unit_number &&
+    formData.job_category_id &&
+    (!isSubcontractor || beforeImagesUploaded) &&
+    (!isSubcontractor || !formData.has_sprinklers || sprinklerImagesUploaded) &&
+    (!formData.sprinkler_form_left_in_unit || sprinklerFormImagesUploaded) &&
+    (!formData.has_extra_charges || extraChargesItems.length > 0)
+  );
+
   const formatWorkOrderNumber = (num: number) => {
     return `WO-${String(num).padStart(6, '0')}`;
   };
-
-  const requiredFieldsFilled = Boolean(
-    formData.unit_number &&
-    formData.job_category_id &&
-    // For subcontractors, also require before images
-    (!isSubcontractor || beforeImagesUploaded) &&
-    // For subcontractors with sprinklers, require sprinkler images
-    (!isSubcontractor || !formData.sprinklers || sprinklerImagesUploaded) &&
-    // If a sprinkler form was left in the unit, require a photo of it
-    (!formData.sprinkler_form_left_in_unit || sprinklerFormImagesUploaded) &&
-    // Extra Charges requirements - at least one line item when checkbox is checked
-    (!formData.has_extra_charges || extraChargesItems.length > 0)
-  );
 
   if (loading) {
     return (
@@ -293,28 +330,20 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
               </label>
               <div className="text-gray-900 dark:text-white font-medium flex items-center">
                 <Building2 className="h-4 w-4 mr-2 text-gray-500 dark:text-gray-400" />
-                {job.property ? (
-                  <PropertyLink 
-                    propertyId={job.property.id}
-                    propertyName={job.property.property_name}
-                  />
-                ) : 'Unknown Property'}
+                {job.property?.property_name || 'Propiedad desconocida'}
               </div>
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
                 Orden de Trabajo #
               </label>
               <div className="text-gray-900 dark:text-white font-medium flex items-center">
                 <FileText className="h-4 w-4 mr-2 text-gray-500 dark:text-gray-400" />
-                <WorkOrderLink 
-                  jobId={job.id}
-                  workOrderNum={job.work_order_num}
-                />
+                {formatWorkOrderNumber(job.work_order_num)}
               </div>
             </div>
-            
+
             <div>
               <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
                 Unidad #
@@ -442,15 +471,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                   id="is_occupied"
                   name="is_occupied"
                   checked={formData.is_occupied}
-                  onChange={(e) => {
-                    const target = e.target as HTMLInputElement;
-                    const newFormData = { ...formData, is_occupied: target.checked };
-                    // Simulate the handleInputChange behavior
-                    const syntheticEvent = {
-                      target: { name: 'is_occupied', value: target.checked.toString(), type: 'checkbox', checked: target.checked }
-                    } as React.ChangeEvent<HTMLInputElement>;
-                    handleInputChange(syntheticEvent);
-                  }}
+                  onChange={(e) => onOccupiedChange(e.target.checked)}
                   className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="is_occupied" className="ml-2 block text-sm text-gray-900 dark:text-white">
@@ -470,28 +491,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                       type="checkbox"
                       id="sprinklers"
                       checked={formData.sprinklers}
-                      onChange={(e) => {
-                        const target = e.target as HTMLInputElement;
-                        const checked = target.checked;
-                        // Use the same direct state update pattern as English version
-                        const syntheticEvent = {
-                          target: { name: 'sprinklers', value: checked.toString(), type: 'checkbox', checked }
-                        } as React.ChangeEvent<HTMLInputElement>;
-                        handleInputChange(syntheticEvent);
-                        
-                        // Also update has_sprinklers to keep them in sync
-                        const hasSprinklersEvent = {
-                          target: { name: 'has_sprinklers', value: checked.toString(), type: 'checkbox', checked }
-                        } as React.ChangeEvent<HTMLInputElement>;
-                        handleInputChange(hasSprinklersEvent);
-
-                        if (!checked) {
-                          const sprinklerFormEvent = {
-                            target: { name: 'sprinkler_form_left_in_unit', value: 'false', type: 'checkbox', checked: false }
-                          } as React.ChangeEvent<HTMLInputElement>;
-                          handleInputChange(sprinklerFormEvent);
-                        }
-                      }}
+                      onChange={(e) => onSprinklersChange(e.target.checked)}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
                     <label htmlFor="sprinklers" className="ml-2 block text-sm text-gray-900 dark:text-white">
@@ -509,13 +509,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                       id="sprinklers_painted"
                       name="sprinklers_painted"
                       value={formData.sprinklers_painted ? 'yes' : 'no'}
-                      onChange={(e) => {
-                        const isPainted = e.target.value === 'yes';
-                        const syntheticEvent = {
-                          target: { name: 'sprinklers_painted', value: isPainted.toString(), type: 'checkbox', checked: isPainted }
-                        } as React.ChangeEvent<HTMLInputElement>;
-                        handleInputChange(syntheticEvent);
-                      }}
+                      onChange={(e) => onSprinklersPaintedChange(e.target.value === 'yes')}
                       className="w-full h-12 sm:h-11 px-4 border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-base bg-gray-50 dark:bg-[#0F172A]"
                     >
                       <option value="no">No</option>
@@ -535,6 +529,8 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                         onError={handleUploadError}
                         onImageDelete={handleImageDelete}
                         required={isSubcontractor}
+                        language="es"
+                        onUploadingChange={handleUploadingChange?.('sprinkler_without_cover')}
                       />
                     </div>
                     <div>
@@ -549,6 +545,8 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                         onError={handleUploadError}
                         onImageDelete={handleImageDelete}
                         required={isSubcontractor}
+                        language="es"
+                        onUploadingChange={handleUploadingChange?.('sprinkler_with_cover')}
                       />
                     </div>
                     {isSubcontractor && (
@@ -563,7 +561,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                           id="sprinkler_form_left_in_unit"
                           name="sprinkler_form_left_in_unit"
                           checked={formData.sprinkler_form_left_in_unit}
-                          onChange={handleInputChange}
+                          onChange={(e) => onSprinklerFormChange(e.target.checked)}
                           className="mt-0.5 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
                         <label htmlFor="sprinkler_form_left_in_unit" className="ml-2 block text-sm font-medium text-gray-900 dark:text-white">
@@ -583,60 +581,20 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                             onError={handleUploadError}
                             onImageDelete={handleImageDelete}
                             required
+                            language="es"
+                            onUploadingChange={handleUploadingChange?.('sprinkler_form')}
                           />
+                          {sprinklerFormImagesUploaded && (
+                            <p className="mt-2 text-xs text-green-700 dark:text-green-300">
+                              Se cargó la foto del formulario firmado de cabezales de aspersores.
+                            </p>
+                          )}
                         </div>
                       )}
                     </fieldset>
                   </div>
                 </>
               )}
-            </div>
-          </div>
-
-          {/* Before Images */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
-              Imágenes de Antes {isSubcontractor && <span className="text-red-500">*</span>}
-            </h2>
-            
-            <div className="space-y-4">
-              <div>
-                <ImageUpload
-                  jobId={job.id}
-                  workOrderId={existingWorkOrder?.id || ''}
-                  folder="before"
-                  onUploadComplete={(filePath) => handleUploadComplete(filePath, 'before')}
-                  onError={handleUploadError}
-                  onImageDelete={handleImageDelete}
-                  required={isSubcontractor}
-                />
-                {isSubcontractor && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Las imágenes de antes son requeridas para todas las órdenes de trabajo.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Other Files */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Otros Archivos</h2>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Archivos Adicionales (Todos los Tipos de Archivo)
-                </label>
-                <ImageUpload
-                  jobId={job.id}
-                  workOrderId={existingWorkOrder?.id || ''}
-                  folder="other"
-                  onUploadComplete={(filePath) => handleUploadComplete(filePath, 'other')}
-                  onError={handleUploadError}
-                  onImageDelete={handleImageDelete}
-                />
-              </div>
             </div>
           </div>
 
@@ -648,14 +606,14 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                 id="has_extra_charges"
                 name="has_extra_charges"
                 checked={formData.has_extra_charges}
-                onChange={(e) => setFormData(prev => ({ ...prev, has_extra_charges: e.target.checked }))}
+                onChange={(e) => onExtraChargesEnabledChange(e.target.checked)}
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
               <label htmlFor="has_extra_charges" className="ml-2 text-lg font-semibold text-gray-900 dark:text-white">
                 Cargos Adicionales
               </label>
             </div>
-            
+
             {formData.has_extra_charges && (
               <div className="space-y-6">
                 {!isSubcontractor && (
@@ -677,9 +635,73 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                   onRemoveLineItem={handleRemoveExtraCharge}
                   language="es"
                   disabled={saving}
+                  draft={extraChargeDraft}
+                  onDraftChange={setExtraChargeDraft}
                 />
               </div>
             )}
+          </div>
+
+          {handleAddMiscAdditionalCost && handleChangeMiscAdditionalCost && handleRemoveMiscAdditionalCost && (
+            <MiscAdditionalCostsSection
+              items={formData.misc_additional_cost_items ?? []}
+              language="es"
+              disabled={saving}
+              onAdd={handleAddMiscAdditionalCost}
+              onChange={handleChangeMiscAdditionalCost}
+              onRemove={handleRemoveMiscAdditionalCost}
+            />
+          )}
+
+          {/* Before Images */}
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
+              Imágenes de Antes {isSubcontractor && <span className="text-red-500">*</span>}
+            </h2>
+
+            <div className="space-y-4">
+              <div>
+                <ImageUpload
+                  jobId={job.id}
+                  workOrderId={existingWorkOrder?.id || ''}
+                  folder="before"
+                  onUploadComplete={(filePath) => handleUploadComplete(filePath, 'before')}
+                  onError={handleUploadError}
+                  onImageDelete={handleImageDelete}
+                  required={isSubcontractor}
+                  language="es"
+                  onUploadingChange={handleUploadingChange?.('before')}
+                />
+                {isSubcontractor && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Las imágenes de antes son requeridas para todas las órdenes de trabajo.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Other Files */}
+          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Otros Archivos</h2>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Archivos Adicionales (Todos los Tipos de Archivo)
+                </label>
+                <ImageUpload
+                  jobId={job.id}
+                  workOrderId={existingWorkOrder?.id || ''}
+                  folder="other"
+                  onUploadComplete={(filePath) => handleUploadComplete(filePath, 'other')}
+                  onError={handleUploadError}
+                  onImageDelete={handleImageDelete}
+                  language="es"
+                  onUploadingChange={handleUploadingChange?.('other')}
+                />
+              </div>
+            </div>
           </div>
 
           {/* Additional Comments */}
@@ -710,9 +732,9 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
             </button>
             <button
               type="submit"
-              disabled={saving || !requiredFieldsFilled}
+              disabled={saving || isAnyFileUploading || !canSubmit}
               className={`flex-1 sm:flex-none sm:w-auto px-6 py-3 sm:px-4 sm:py-2 text-base sm:text-sm font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
-                requiredFieldsFilled && !saving
+                canSubmit && !saving && !isAnyFileUploading
                   ? 'text-white bg-blue-600 hover:bg-blue-700'
                   : 'text-gray-400 bg-gray-300 dark:bg-gray-600 cursor-not-allowed'
               }`}
@@ -744,7 +766,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
             
             <ImageGallery
               workOrderId={workOrderId}
-              jobId={jobId || null}
+              jobId={job.id || null}
               folder="before"
               key={refreshImages}
             />

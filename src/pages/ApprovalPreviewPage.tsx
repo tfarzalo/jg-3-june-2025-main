@@ -183,7 +183,7 @@ const ApprovalPreviewPage: React.FC = () => {
           <div className="mt-6 mx-auto max-w-2xl bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-300 rounded-lg p-4 shadow-md">
             <p className="text-red-800 font-semibold flex items-center justify-center">
               <span className="text-2xl mr-2">⏰</span>
-              This approval link expires in 30 minutes - please review and respond promptly
+              This approval request remains available until it is completed, cancelled, or replaced
             </p>
           </div>
         </div>
@@ -254,7 +254,7 @@ const ApprovalPreviewPage: React.FC = () => {
             {/* Footer Info */}
             <div className="mt-8 pt-6 border-t border-gray-200">
               <p className="text-xs text-gray-400">
-                Preview Mode • Actual link will expire 30 minutes after sending
+                Preview Mode • Customer approval remains available while the request is outstanding
               </p>
               <p className="text-xs text-gray-400 mt-1">
                 Questions? Contact JG Painting Pros Inc.

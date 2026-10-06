@@ -25,7 +25,8 @@ serve(async (req) => {
 
     const token = crypto.randomUUID()
     const now = new Date()
-    // Previews last 1 hour, real approvals last 30 minutes
+    // This timestamp controls the internal pending/processing window. Customer
+    // action eligibility is state-based and is enforced by the approval RPC.
     const expires_at = new Date(now.getTime() + (is_preview ? 60 * 60 * 1000 : 30 * 60 * 1000)).toISOString()
     const sent_at = is_preview ? null : now.toISOString()
 

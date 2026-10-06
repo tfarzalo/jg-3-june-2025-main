@@ -1600,18 +1600,22 @@ export function EnhancedPropertyNotificationModal({
     const token = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + (params.isPreview ? 10 : 30) * 60 * 1000).toISOString();
 
-    const { error } = await supabase.from('approval_tokens').insert({
-      job_id: job.id,
-      token,
-      approval_type: params.isPreview ? 'extra_charges_preview' : 'extra_charges',
-      approver_email: recipientEmail,
-      approver_name: primaryRecipientName || apContactName || null,
-      expires_at: expiresAt,
-      extra_charges_data: extraData,
-    });
+    const { data, error } = await supabase
+      .from('approval_tokens')
+      .insert({
+        job_id: job.id,
+        token,
+        approval_type: params.isPreview ? 'extra_charges_preview' : 'extra_charges',
+        approver_email: recipientEmail,
+        approver_name: primaryRecipientName || apContactName || null,
+        expires_at: expiresAt,
+        extra_charges_data: extraData,
+      })
+      .select('id')
+      .single();
 
     if (error) throw error;
-    return { token, expiresAt };
+    return { id: data.id, token, expiresAt };
   };
 
   const buildFinalEmailHtml = (approvalLink?: string, cidMap?: Record<string, string>) => {
@@ -1717,6 +1721,7 @@ export function EnhancedPropertyNotificationModal({
     try {
       setSending(true);
       let approvalLink: string | undefined;
+      let approvalTokenId: string | undefined;
       const effectiveNotificationType = isApprovalEmail ? 'extra_charges' : notificationType;
       const effectiveEmailPurpose = NOTIFICATION_TYPE_LABELS[effectiveNotificationType];
 
@@ -1770,6 +1775,7 @@ export function EnhancedPropertyNotificationModal({
 
       if (isApprovalEmail) {
         const tokenRecord = await createApprovalToken({ isPreview: false });
+        approvalTokenId = tokenRecord.id;
         approvalLink = `${config.portalBaseUrl}/approval/${tokenRecord.token}`;
       }
 
@@ -1801,7 +1807,24 @@ export function EnhancedPropertyNotificationModal({
         },
       });
 
-      if (error) throw error;
+      const directDeliveries = Array.isArray(sendResult?.deliveryResults)
+        ? sendResult.deliveryResults as Array<{ success?: boolean; originalField?: string }>
+        : null;
+      const customerCopyAccepted = !directDeliveries
+        || directDeliveries.some((result) => result.originalField === 'to' && result.success === true);
+      const sendSucceeded = sendResult?.success === true;
+
+      if (error || !sendSucceeded || !customerCopyAccepted) {
+        if (approvalTokenId) {
+          const { error: discardError } = await supabase.rpc('invalidate_unsent_approval_token', {
+            p_token_id: approvalTokenId,
+          });
+          if (discardError) console.error('Unable to discard unsent approval token:', discardError);
+        }
+        if (error) throw error;
+        if (!sendSucceeded) throw new Error(sendResult?.error || 'The approval email could not be sent.');
+        throw new Error('The customer approval email was not accepted for delivery. No active approval request was created.');
+      }
       const failedCopies = Array.isArray(sendResult?.deliveryResults)
         ? sendResult.deliveryResults.filter((result: { success?: boolean }) => result.success !== true)
         : [];

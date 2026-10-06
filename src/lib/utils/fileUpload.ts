@@ -50,6 +50,34 @@ export async function deleteFilesByStoragePaths(filePaths: Iterable<string>): Pr
         if (record.storage_path) storagePaths.add(record.storage_path.replace(/^\/+/, ''));
       }
 
+      const protectedQuery = supabase
+        .from('work_order_original_submission_files')
+        .select('id')
+        .in('storage_path', Array.from(storagePaths))
+        .limit(1);
+      const { data: protectedReferences, error: protectedError } = await protectedQuery;
+
+      if (protectedError) {
+        errors.push(`Unable to verify historical protection for ${filePath}: ${protectedError.message}`);
+        continue;
+      }
+      if (protectedReferences && protectedReferences.length > 0) {
+        if (recordIds.length === 0) {
+          errors.push(`Unable to remove ${filePath} from the current work order: its file record was not found.`);
+          continue;
+        }
+        const { error: hideError } = await supabase
+          .from('files')
+          .update({ removed_from_current_work_order_at: new Date().toISOString() })
+          .in('id', recordIds);
+        if (hideError) {
+          errors.push(`Unable to remove ${filePath} from the current work order: ${hideError.message}`);
+          continue;
+        }
+        deleted += 1;
+        continue;
+      }
+
       const { error: storageError } = await supabase.storage
         .from('files')
         .remove(Array.from(storagePaths));

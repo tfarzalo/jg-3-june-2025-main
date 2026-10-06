@@ -70,6 +70,8 @@ interface ApprovalData {
   used_at?: string | null;
   decision?: 'approved' | 'declined' | null;
   decision_at?: string | null;
+  action_available?: boolean;
+  action_unavailable_reason?: 'completed' | 'preview' | 'invalidated' | 'cancelled' | 'job_changed' | 'superseded' | null;
   job: {
     id: string;
     work_order_num: number;
@@ -507,8 +509,17 @@ const ApprovalPage: React.FC = () => {
 
   // Helper function to provide user-friendly error messages
   const getUserFriendlyError = (error: string): string => {
-    if (error.includes('already been used')) {
+    if (error.includes('already been used') || error.includes('already been completed')) {
       return 'This approval link has already been used. If you believe this is an error, please contact JG Painting Pros Inc.';
+    }
+    if (error.includes('superseded')) {
+      return 'A newer approval request has replaced this link. Please use the most recent approval email.';
+    }
+    if (error.includes('cancelled')) {
+      return 'This approval request is no longer available because the related job was cancelled.';
+    }
+    if (error.includes('no longer awaiting') || error.includes('no longer active')) {
+      return 'This approval request is no longer active. Please contact JG Painting Pros Inc. if you need a current approval request.';
     }
     if (error.includes('expired')) {
       return 'This approval link has expired. Please request a new approval link from JG Painting Pros Inc.';
@@ -792,9 +803,8 @@ const ApprovalPage: React.FC = () => {
 
   if (!approvalData) return null;
 
-  const isActionExpired = new Date(approvalData.expires_at).getTime() <= Date.now();
-  const isExpiringSoon = !isActionExpired && new Date(approvalData.expires_at).getTime() - Date.now() < 24 * 60 * 60 * 1000; // 24 hours
-  const isReadOnly = Boolean(postDecisionView) || isActionExpired;
+  const isActionUnavailable = approvalData.action_available === false;
+  const isReadOnly = Boolean(postDecisionView) || isActionUnavailable;
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -816,16 +826,6 @@ const ApprovalPage: React.FC = () => {
             {approvalData.job.property.name}
           </p>
           
-          {/* Expiration Warning */}
-          {isExpiringSoon && (
-            <div className="mt-6 mx-auto max-w-2xl bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-300 rounded-lg p-4 shadow-md">
-              <p className="text-red-800 font-semibold flex items-center justify-center">
-                <span className="text-2xl mr-2">⏰</span>
-                This approval link expires soon - please review and respond promptly
-              </p>
-            </div>
-          )}
-
           {postDecisionView && (
             <div className={`mt-6 mx-auto max-w-2xl border-2 rounded-lg p-4 shadow-md ${
               postDecisionView.decision === 'approved'
@@ -845,13 +845,21 @@ const ApprovalPage: React.FC = () => {
             </div>
           )}
 
-          {!postDecisionView && isActionExpired && (
+          {!postDecisionView && isActionUnavailable && (
             <div className="mt-6 mx-auto max-w-2xl bg-amber-50 border-2 border-amber-300 rounded-lg p-4 shadow-md">
               <p className="text-amber-800 font-semibold">
-                The approval response window has closed.
+                This approval request is no longer actionable.
               </p>
               <p className="text-sm text-amber-700 mt-1">
-                The charge details and photos remain available here for reference.
+                {approvalData.action_unavailable_reason === 'superseded'
+                  ? 'A newer approval request replaced this one.'
+                  : approvalData.action_unavailable_reason === 'cancelled'
+                    ? 'The related job was cancelled.'
+                    : approvalData.action_unavailable_reason === 'job_changed'
+                      ? 'The related job is no longer awaiting this approval.'
+                      : approvalData.action_unavailable_reason === 'invalidated'
+                        ? 'This request was not successfully sent and is no longer active.'
+                    : 'The charge details and photos remain available here for reference.'}
               </p>
             </div>
           )}
@@ -965,9 +973,7 @@ const ApprovalPage: React.FC = () => {
             {/* Footer Info */}
             <div className="mt-8 pt-6 border-t border-gray-200">
               <p className="text-xs text-gray-400">
-                {isReadOnly
-                  ? 'Secure approval record'
-                  : `Secure approval link • Response deadline: ${new Date(approvalData.expires_at).toLocaleString()}`}
+                {isReadOnly ? 'Secure approval record' : 'Secure outstanding approval request'}
               </p>
               <p className="text-xs text-gray-400 mt-1">
                 Questions? Contact JG Painting Pros Inc.
