@@ -41,29 +41,33 @@ async function resolveRecipient(admin: ReturnType<typeof createClient>, body: Re
 
   if (body.recipientType === "property_contact") {
     const { data, error } = await admin.from("property_contacts")
-      .select("id,name,email").eq("id", id).single();
+      .select("id,name,email,secondary_email").eq("id", id).single();
     if (error || !data) throw new Error("Recipient was not found.");
-    return { name: data.name || data.email, email: data.email, key: null };
+    const key = body.recipientKey === "secondary" ? "secondary" : "primary";
+    const email = key === "secondary" ? data.secondary_email : data.email;
+    return { name: data.name || email, email, key };
   }
 
   if (body.recipientType === "property_system_contact") {
-    const fields: Record<string, { name: string; email: string }> = {
-      community_manager: { name: "community_manager_name", email: "community_manager_email" },
-      maintenance_supervisor: { name: "maintenance_supervisor_name", email: "maintenance_supervisor_email" },
-      primary_contact: { name: "primary_contact_name", email: "primary_contact_email" },
-      ap: { name: "ap_name", email: "ap_email" },
+    const fields: Record<string, { name: string; primary: string; secondary: string }> = {
+      community_manager: { name: "community_manager_name", primary: "community_manager_email", secondary: "community_manager_secondary_email" },
+      maintenance_supervisor: { name: "maintenance_supervisor_name", primary: "maintenance_supervisor_email", secondary: "maintenance_supervisor_secondary_email" },
+      primary_contact: { name: "primary_contact_name", primary: "primary_contact_email", secondary: "primary_contact_secondary_email" },
+      ap: { name: "ap_name", primary: "ap_email", secondary: "ap_secondary_email" },
     };
-    const key = body.recipientKey || "";
-    const field = fields[key];
+    const [slot, addressKind = "primary"] = (body.recipientKey || "").split(":");
+    const field = fields[slot];
     if (!field) throw new Error("Recipient source is invalid.");
+    if (addressKind !== "primary" && addressKind !== "secondary") throw new Error("Recipient source is invalid.");
     const { data, error } = await admin.from("properties").select(
-      "id,community_manager_name,community_manager_email,maintenance_supervisor_name,maintenance_supervisor_email,primary_contact_name,primary_contact_email,ap_name,ap_email",
+      "id,community_manager_name,community_manager_email,community_manager_secondary_email,maintenance_supervisor_name,maintenance_supervisor_email,maintenance_supervisor_secondary_email,primary_contact_name,primary_contact_email,primary_contact_secondary_email,ap_name,ap_email,ap_secondary_email",
     ).eq("id", id).single();
     if (error || !data) throw new Error("Recipient was not found.");
+    const emailField = addressKind === "secondary" ? field.secondary : field.primary;
     return {
-      name: String((data as Record<string, unknown>)[field.name] || (data as Record<string, unknown>)[field.email] || "Recipient"),
-      email: String((data as Record<string, unknown>)[field.email] || ""),
-      key,
+      name: String((data as Record<string, unknown>)[field.name] || (data as Record<string, unknown>)[emailField] || "Recipient"),
+      email: String((data as Record<string, unknown>)[emailField] || ""),
+      key: `${slot}:${addressKind}`,
     };
   }
 

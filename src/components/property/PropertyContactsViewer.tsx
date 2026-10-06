@@ -92,6 +92,11 @@ interface PersonCard {
   key: string;
   name: string;
   email: string;
+  emailAddresses: Array<{
+    email: string;
+    label: string;
+    verificationRecipient: Omit<VerificationRecipient, 'name' | 'email'>;
+  }>;
   phones: string[];
   roles: string[];            // display labels e.g. "Community Manager", "Accounts Payable"
   isPrimaryContact: boolean;
@@ -102,7 +107,6 @@ interface PersonCard {
   isPrimaryNotification: boolean;
   receivesApproval: boolean;
   receivesNotifications: boolean;
-  verificationRecipient: Omit<VerificationRecipient, 'name' | 'email'>;
 }
 
 function normalizeKeyText(value: string | null | undefined): string {
@@ -142,6 +146,7 @@ function buildCards(
   const addPerson = (
     name: string,
     email: string,
+    secondaryEmail: string | null | undefined,
     phone: string,
     additionalPhones: string[] | null | undefined,
     role: string,
@@ -155,8 +160,16 @@ function buildCards(
     receivesNotifications: boolean,
     verificationRecipient: Omit<VerificationRecipient, 'name' | 'email'>,
   ) => {
-    if (!name && !email) return;
+    if (!name && !email && !secondaryEmail) return;
     const key = buildPersonKey(name, email, phone, additionalPhones);
+    const addressKey = (kind: 'primary' | 'secondary') =>
+      verificationRecipient.recipientType === 'property_system_contact'
+        ? `${verificationRecipient.recipientKey}:${kind}`
+        : kind;
+    const makeAddresses = () => [
+      email ? { email, label: 'Primary email', verificationRecipient: { ...verificationRecipient, recipientKey: addressKey('primary') } } : null,
+      secondaryEmail ? { email: secondaryEmail, label: 'Secondary email', verificationRecipient: { ...verificationRecipient, recipientKey: addressKey('secondary') } } : null,
+    ].filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
     if (map.has(key)) {
       const card = map.get(key)!;
       if (role && !card.roles.includes(role)) card.roles.push(role);
@@ -169,11 +182,17 @@ function buildCards(
       card.isPrimaryNotification = card.isPrimaryNotification || isPrimaryNotification;
       card.receivesApproval = card.receivesApproval || receivesApproval;
       card.receivesNotifications = card.receivesNotifications || receivesNotifications;
+      for (const address of makeAddresses()) {
+        if (!card.emailAddresses.some(existing => normalizeKeyText(existing.email) === normalizeKeyText(address.email))) {
+          card.emailAddresses.push(address);
+        }
+      }
     } else {
       map.set(key, {
         key,
         name: name || '',
         email: email || '',
+        emailAddresses: makeAddresses(),
         phones: normalizePhoneList([phone, ...(additionalPhones || [])]),
         roles: role ? [role] : [],
         isPrimaryContact,
@@ -184,7 +203,6 @@ function buildCards(
         isPrimaryNotification,
         receivesApproval,
         receivesNotifications,
-        verificationRecipient,
       });
     }
   };
@@ -193,7 +211,7 @@ function buildCards(
   const sys = systemContacts;
   const sysRoles = systemContactRoles;
   addPerson(
-    sys.community_manager.name, sys.community_manager.email, sys.community_manager.phone, sys.community_manager.additional_phones,
+    sys.community_manager.name, sys.community_manager.email, sys.community_manager.secondary_email, sys.community_manager.phone, sys.community_manager.additional_phones,
     sys.community_manager.title || 'Community Manager',
     false,
     !!sysRoles.community_manager?.subcontractor,
@@ -206,7 +224,7 @@ function buildCards(
     { recipientType: 'property_system_contact', recipientId: '', recipientKey: 'community_manager' },
   );
   addPerson(
-    sys.maintenance_supervisor.name, sys.maintenance_supervisor.email, sys.maintenance_supervisor.phone, sys.maintenance_supervisor.additional_phones,
+    sys.maintenance_supervisor.name, sys.maintenance_supervisor.email, sys.maintenance_supervisor.secondary_email, sys.maintenance_supervisor.phone, sys.maintenance_supervisor.additional_phones,
     sys.maintenance_supervisor.title || 'Maintenance Supervisor',
     false,
     !!sysRoles.maintenance_supervisor?.subcontractor,
@@ -220,7 +238,7 @@ function buildCards(
   );
   // primary_contact is a derived slot and may intentionally match another contact.
   addPerson(
-    sys.primary_contact.name, sys.primary_contact.email, sys.primary_contact.phone, sys.primary_contact.additional_phones,
+    sys.primary_contact.name, sys.primary_contact.email, sys.primary_contact.secondary_email, sys.primary_contact.phone, sys.primary_contact.additional_phones,
     sys.primary_contact.title || 'Primary Contact',
     true,
     !!sysRoles.primary_contact?.subcontractor,
@@ -233,7 +251,7 @@ function buildCards(
     { recipientType: 'property_system_contact', recipientId: '', recipientKey: 'primary_contact' },
   );
   addPerson(
-    sys.ap.name, sys.ap.email, sys.ap.phone, sys.ap.additional_phones,
+    sys.ap.name, sys.ap.email, sys.ap.secondary_email, sys.ap.phone, sys.ap.additional_phones,
     sys.ap.title || 'Accounts Payable',
     false,
     !!sysRoles.ap?.subcontractor,
@@ -255,7 +273,7 @@ function buildCards(
       buildPersonKey(c.name, c.email, c.phone, c.additional_phones) ===
         buildPersonKey(sys.ap.name, sys.ap.email, sys.ap.phone, sys.ap.additional_phones);
     addPerson(
-      c.name, c.email, c.phone, c.additional_phones,
+      c.name, c.email, c.secondary_email, c.phone, c.additional_phones,
       displayRole,
       c.is_primary_contact || false,
       c.is_subcontractor_contact || false,
@@ -326,28 +344,14 @@ const ContactCard: React.FC<{
 
       {/* Contact details */}
       <div className="space-y-1 flex-1 mb-3">
-        {card.email && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 min-w-0">
+        {card.emailAddresses.map(address => (
+          <div key={normalizeKeyText(address.email)} className="flex items-center gap-1.5 min-w-0">
               <Mail className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
-              <a href={`mailto:${card.email}`} className="min-w-0 text-xs text-blue-600 dark:text-blue-400 hover:underline break-all whitespace-normal">
-                {card.email}
+              <a href={`mailto:${address.email}`} className="min-w-0 text-xs text-blue-600 dark:text-blue-400 hover:underline break-all whitespace-normal">
+                {address.email}
               </a>
-            </div>
-            <EmailVerificationControl
-              recipient={{
-                ...card.verificationRecipient,
-                recipientId: card.verificationRecipient.recipientType === 'property_system_contact'
-                  ? propertyId
-                  : card.verificationRecipient.recipientId,
-                name: card.name,
-                email: card.email,
-              }}
-              status={statusFor(card.email)}
-              onSent={refresh}
-            />
           </div>
-        )}
+        ))}
         {card.phones.map((phone, index) => (
           <div key={`${card.key}-phone-${index}`} className="flex items-center gap-1.5 min-w-0">
             <Phone className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
@@ -401,6 +405,27 @@ const ContactCard: React.FC<{
           />
         </div>
       )}
+
+      {card.emailAddresses.length > 0 && (
+        <div className={`mt-3 ${hasActiveStatus ? '' : 'border-t border-gray-100 pt-3 dark:border-[#2D3B4E]'}`}>
+          <EmailVerificationControl
+            entries={card.emailAddresses.map(address => ({
+              recipient: {
+                ...address.verificationRecipient,
+                recipientId: address.verificationRecipient.recipientType === 'property_system_contact'
+                  ? propertyId
+                  : address.verificationRecipient.recipientId,
+                name: card.name,
+                email: address.email,
+              },
+              status: statusFor(address.email),
+              label: address.label,
+            }))}
+            onSent={refresh}
+            propertyCard
+          />
+        </div>
+      )}
     </div>
   );
 };
@@ -415,7 +440,9 @@ export function PropertyContactsViewer({
   onAddContact,
 }: PropertyContactsViewerProps) {
   const cards = buildCards(systemContacts, systemContactRoles, customContacts);
-  const { statusFor, refresh } = useEmailVerificationStatuses(cards.map(card => card.email));
+  const { statusFor, refresh } = useEmailVerificationStatuses(
+    cards.flatMap(card => card.emailAddresses.map(address => address.email)),
+  );
   const totalCount = cards.length;
 
   return (
