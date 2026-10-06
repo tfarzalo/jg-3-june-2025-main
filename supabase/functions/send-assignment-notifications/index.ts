@@ -86,12 +86,20 @@ Deno.serve(async (req) => {
     const claimedIds = claimed.map((row: any) => row.id);
     const { data: rows, error: rowsError } = await admin
       .from('job_assignment_notifications')
-      .select(`*, job:jobs(id, work_order_num, unit_number, scheduled_date, assigned_to, assigned_at, property:properties(property_name)), subcontractor:profiles!job_assignment_notifications_subcontractor_id_fkey(id, full_name, email)`)
+      .select(`*, job:jobs(id, work_order_num, unit_number, scheduled_date, assigned_to, assigned_at, assignment_status, property:properties(property_name)), subcontractor:profiles!job_assignment_notifications_subcontractor_id_fkey(id, full_name, email)`)
       .in('id', claimedIds);
     if (rowsError) throw rowsError;
 
     const groups = new Map<string, any[]>();
     for (const row of rows || []) {
+      if (row.job?.assignment_status !== 'pending'
+          || row.job?.assigned_to !== row.subcontractor_id
+          || row.job?.assigned_at !== row.assignment_assigned_at) {
+        await admin.from('job_assignment_notifications').update({
+          status: 'cancelled', updated_at: new Date().toISOString(), last_error: null,
+        }).eq('id', row.id).eq('status', 'processing');
+        continue;
+      }
       const key = groupBySubcontractor ? row.subcontractor_id : row.id;
       groups.set(key, [...(groups.get(key) || []), row]);
     }

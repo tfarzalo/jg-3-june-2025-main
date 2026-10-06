@@ -24,6 +24,7 @@ export interface AssignmentNotificationRow {
     scheduled_end_date: string | null;
     assigned_to: string | null;
     assigned_at: string | null;
+    assignment_status: string | null;
     property: { property_name: string } | { property_name: string }[] | null;
     subcontractor: { full_name: string | null; email: string | null } | { full_name: string | null; email: string | null }[] | null;
   } | null;
@@ -38,7 +39,7 @@ export async function listAssignmentNotifications() {
       scheduled_date_snapshot, scheduled_end_date_snapshot,
       job:jobs!job_assignment_notifications_job_id_fkey (
         id, work_order_num, unit_number, scheduled_date, scheduled_end_date,
-        assigned_to, assigned_at,
+        assigned_to, assigned_at, assignment_status,
         property:properties (property_name),
         subcontractor:profiles!jobs_assigned_to_fkey (full_name, email)
       )
@@ -46,7 +47,9 @@ export async function listAssignmentNotifications() {
     .neq('status', 'cancelled')
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data || []) as unknown as AssignmentNotificationRow[];
+  return ((data || []) as unknown as AssignmentNotificationRow[]).filter((row) => (
+    row.status === 'sent' || row.job?.assignment_status === 'pending'
+  ));
 }
 
 export async function sendAssignmentNotifications(notificationIds: string[], groupBySubcontractor = true) {
