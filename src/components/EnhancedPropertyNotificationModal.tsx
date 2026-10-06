@@ -335,6 +335,7 @@ export function EnhancedPropertyNotificationModal({
   additionalServices = [],
 }: EnhancedPropertyNotificationModalProps) {
   const subjectInputRef = useRef<HTMLInputElement>(null);
+  const stepContentRef = useRef<HTMLDivElement>(null);
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null);
   const [emailSubject, setEmailSubject] = useState('');
@@ -362,6 +363,10 @@ export function EnhancedPropertyNotificationModal({
   const [reviewSizeEstimate, setReviewSizeEstimate] = useState<ReviewSizeEstimate | null>(null);
   const [reviewSizeLoading, setReviewSizeLoading] = useState(false);
   const isGeneralWorkOrderEmail = notificationType === 'general_work_order';
+
+  useEffect(() => {
+    stepContentRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+  }, [currentStep]);
 
   const steps = useMemo(
     () => [
@@ -2544,7 +2549,7 @@ export function EnhancedPropertyNotificationModal({
           </ol>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div ref={stepContentRef} className="flex-1 overflow-y-auto p-6">
           {currentStep === 1 && renderTemplateStep()}
           {currentStep === 2 && renderComposeStep()}
           {currentStep === 3 && renderReviewStep()}
