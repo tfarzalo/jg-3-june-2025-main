@@ -126,14 +126,12 @@ Deno.serve(async (req) => {
     const firstName = (String(recipient.name || "there").replace(/[\r\n]/g, " ").trim().split(/\s+/)[0] || "there");
     const text = `Hello ${firstName},
 
-JG Painting Pros may use this email address to send relevant project, scheduling, assignment, account, or other operational notifications.
-
-Please verify that this is the correct email address:
+Please verify your email address by clicking the link below:
 ${verificationUrl}
 
-If your email provider or organization uses strict filtering, you may add the sender to your contacts or Safe Senders list, ask your email administrator to allow the sender, or mark this message as Not Spam if it was filtered incorrectly. Verifying your address and recognizing the sender can help establish JG Painting Pros as a legitimate sender, but does not guarantee inbox placement.
+JG Painting Pros Inc. may send important notifications and updates to this email address.
 
-If you were not expecting this message, you can ignore it.
+Please mark this message as Not Spam if it was filtered incorrectly. Where possible, add the sender to your Safe Senders list or email allowlist to help ensure inbox deliverability.
 
 JG Painting Pros Inc.`;
 

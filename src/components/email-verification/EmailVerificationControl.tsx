@@ -11,7 +11,7 @@ type Props = {
   onSent: () => void | Promise<void>;
   disabled?: boolean;
   compact?: boolean;
-  propertyCard?: boolean;
+  smallButton?: boolean;
 };
 
 const statusStyle: Record<EmailVerificationStatus, string> = {
@@ -38,7 +38,7 @@ function StatusIcon({ status }: { status: EmailVerificationStatus }) {
 const entryKey = (recipient: VerificationRecipient) =>
   `${recipient.recipientType}:${recipient.recipientId}:${recipient.recipientKey || ''}:${recipient.email.toLowerCase()}`;
 
-export function EmailVerificationControl({ recipient, status, entries, onSent, disabled, compact, propertyCard }: Props) {
+export function EmailVerificationControl({ recipient, status, entries, onSent, disabled, compact, smallButton }: Props) {
   const [open, setOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -122,7 +122,7 @@ export function EmailVerificationControl({ recipient, status, entries, onSent, d
           <button
             type="button"
             onClick={openModal}
-            className={propertyCard
+            className={smallButton
               ? 'inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 transition-colors hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-300 dark:hover:bg-blue-900/50'
               : 'text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline dark:text-blue-400 dark:hover:text-blue-300'}
           >

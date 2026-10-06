@@ -1009,12 +1009,12 @@ export function Users() {
           </button>
         )}
 
-        {user.role === 'subcontractor' && (
+        {user.role === 'subcontractor' && verificationStatusFor(user.email) === 'verified' && (
           <button
             onClick={() => setShowResendConfirm(user)}
             disabled={resendingEmailForUserId === user.id}
             className="text-teal-600 dark:text-teal-400 hover:text-teal-800 dark:hover:text-teal-200 disabled:opacity-40"
-            title="Resend Welcome Email"
+            title="Resend Welcome Email (verified address)"
           >
             {resendingEmailForUserId === user.id
               ? <Send className="h-5 w-5 animate-pulse" />
@@ -1127,6 +1127,7 @@ export function Users() {
         onSent={refreshVerificationStatuses}
         disabled={Boolean(user.archived_at)}
         compact
+        smallButton
       />
     </div>
   );

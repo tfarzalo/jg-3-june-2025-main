@@ -422,7 +422,7 @@ const ContactCard: React.FC<{
               label: address.label,
             }))}
             onSent={refresh}
-            propertyCard
+            smallButton
           />
         </div>
       )}
