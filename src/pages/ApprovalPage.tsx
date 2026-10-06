@@ -64,6 +64,8 @@ interface ApprovalData {
   };
   approver_email: string;
   approver_name: string;
+  decision_maker_email?: string | null;
+  decision_maker_name?: string | null;
   expires_at: string;
   used_at?: string | null;
   decision?: 'approved' | 'declined' | null;
@@ -213,8 +215,8 @@ const ApprovalPage: React.FC = () => {
           ? {
               decision: tokenData.decision,
               decision_at: tokenData.decision_at,
-              approver_name: tokenData.approver_name,
-              approver_email: tokenData.approver_email,
+              approver_name: tokenData.decision_maker_name || tokenData.approver_name,
+              approver_email: tokenData.decision_maker_email || tokenData.approver_email,
             }
           : null
       );
@@ -286,8 +288,8 @@ const ApprovalPage: React.FC = () => {
       console.log('Approval processed successfully');
       setApprovalData(prev => prev ? {
         ...prev,
-        approver_name: submittedApproverName || prev.approver_name,
-        approver_email: submittedApproverEmail || prev.approver_email,
+        decision_maker_name: submittedApproverName,
+        decision_maker_email: submittedApproverEmail.toLowerCase(),
         decision: 'approved',
         decision_at: new Date().toISOString(),
         used_at: new Date().toISOString(),
@@ -436,8 +438,8 @@ const ApprovalPage: React.FC = () => {
       console.log('Decline processed successfully');
       setApprovalData(prev => prev ? {
         ...prev,
-        approver_name: submittedApproverName || prev.approver_name,
-        approver_email: submittedApproverEmail || prev.approver_email,
+        decision_maker_name: submittedApproverName,
+        decision_maker_email: submittedApproverEmail.toLowerCase(),
         decision: 'declined',
         decision_at: new Date().toISOString(),
         used_at: new Date().toISOString(),

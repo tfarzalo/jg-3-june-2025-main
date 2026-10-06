@@ -1,3 +1,7 @@
+const defaultPortalBaseUrl = import.meta.env.DEV && typeof window !== 'undefined'
+  ? window.location.origin
+  : 'https://portal.jgpaintingprosinc.com';
+
 // Environment configuration with validation
 export const config = {
   supabase: {
@@ -9,7 +13,7 @@ export const config = {
   isBrowser: typeof window !== 'undefined',
   mode: import.meta.env.MODE,
   baseUrl: import.meta.env.BASE_URL,
-  portalBaseUrl: (import.meta.env.VITE_PORTAL_BASE_URL || 'https://portal.jgpaintingprosinc.com').replace(/\/$/, ''),
+  portalBaseUrl: (import.meta.env.VITE_PORTAL_BASE_URL || defaultPortalBaseUrl).replace(/\/$/, ''),
 };
 
 // Get detailed environment status

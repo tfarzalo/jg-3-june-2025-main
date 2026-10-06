@@ -23,11 +23,16 @@ export function ApprovalImageGallery({ images, supabaseUrl }: ApprovalImageGalle
     return null;
   }
 
-  const normalizeBucket = (imageType?: string) => {
-    const lowered = (imageType || '').toLowerCase();
+  const normalizeBucket = (imageType?: string, filePath?: string, fileName?: string) => {
+    const lowered = `${imageType || ''} ${filePath || ''} ${fileName || ''}`.toLowerCase();
     if (lowered.includes('before')) return 'before';
+    if (lowered.includes('sprinkler') && lowered.includes('without') && lowered.includes('cover')) {
+      return 'sprinkler_without_cover';
+    }
+    if (lowered.includes('sprinkler') && lowered.includes('with') && lowered.includes('cover')) {
+      return 'sprinkler_with_cover';
+    }
     if (lowered.includes('sprinkler')) return 'sprinkler';
-    if (lowered.includes('other')) return 'other';
     return 'other';
   };
 
@@ -38,10 +43,22 @@ export function ApprovalImageGallery({ images, supabaseUrl }: ApprovalImageGalle
     other: 'Other Files'
   };
 
+  const getSprinklerLabel = (image: JobImage) => {
+    const bucket = normalizeBucket(image.image_type, image.file_path, image.file_name);
+    if (bucket === 'sprinkler_without_cover') return 'Sprinkler Images without Cover';
+    if (bucket === 'sprinkler_with_cover') return 'Sprinkler Images with Cover';
+    return 'Sprinkler Image';
+  };
+
   const imagesByBucket = bucketOrder.map((bucket) => ({
     bucket,
     label: bucketLabels[bucket],
-    items: images.filter((image) => normalizeBucket(image.image_type) === bucket)
+    items: images.filter((image) => {
+      const imageBucket = normalizeBucket(image.image_type, image.file_path, image.file_name);
+      return bucket === 'sprinkler'
+        ? imageBucket.startsWith('sprinkler')
+        : imageBucket === bucket;
+    })
   }));
 
   const orderedImages = imagesByBucket.flatMap((group) => group.items);
@@ -80,35 +97,41 @@ export function ApprovalImageGallery({ images, supabaseUrl }: ApprovalImageGalle
                     const imageUrl = image.public_url || `${supabaseUrl}/storage/v1/object/public/job-images/${image.file_path}`;
                     const index = indexById.get(image.id) ?? 0;
                     return (
-                      <div
-                        key={image.id}
-                        className="relative group cursor-pointer overflow-hidden rounded-lg border-2 border-gray-200 hover:border-blue-500 transition-all duration-200"
-                        onClick={() => handleImageClick(index)}
-                      >
-                        <div className="aspect-square relative">
-                          <img
-                            src={imageUrl}
-                            alt={image.file_name || image.image_type || 'Job photo'}
-                            className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
-                            loading="lazy"
-                          />
-                          
-                          {/* Overlay on hover */}
-                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity duration-200 flex items-center justify-center">
-                            <div className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-center">
-                              <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                              </svg>
-                              <p className="text-sm font-medium">Click to enlarge</p>
+                      <div key={image.id}>
+                        {group.bucket === 'sprinkler' && (
+                          <h4 className="mb-2 text-sm font-semibold text-gray-700">
+                            {getSprinklerLabel(image)}
+                          </h4>
+                        )}
+                        <div
+                          className="relative group cursor-pointer overflow-hidden rounded-lg border-2 border-gray-200 hover:border-blue-500 transition-all duration-200"
+                          onClick={() => handleImageClick(index)}
+                        >
+                          <div className="aspect-square relative">
+                            <img
+                              src={imageUrl}
+                              alt={image.file_name || image.image_type || 'Job photo'}
+                              className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                              loading="lazy"
+                            />
+
+                            {/* Overlay on hover */}
+                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity duration-200 flex items-center justify-center">
+                              <div className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-center">
+                                <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                                </svg>
+                                <p className="text-sm font-medium">Click to enlarge</p>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        
-                        {/* Image label */}
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
-                          <p className="text-white text-sm font-medium truncate">
-                            {image.file_name || image.image_type || 'Photo'}
-                          </p>
+
+                          {/* Image label */}
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
+                            <p className="text-white text-sm font-medium truncate">
+                              {image.file_name || image.image_type || 'Photo'}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     );

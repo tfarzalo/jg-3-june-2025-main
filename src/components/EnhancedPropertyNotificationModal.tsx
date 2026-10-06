@@ -109,9 +109,11 @@ interface JobImage {
 }
 
 type ImageBucket = 'before' | 'after' | 'sprinkler' | 'other';
+type ApprovalImageType = 'before' | 'sprinkler_without_cover' | 'sprinkler_with_cover' | null;
 
 interface JobImageWithMeta extends JobImage {
   normalizedType: ImageBucket;
+  approvalType: ApprovalImageType;
   publicUrl: string;
   source: 'job_images' | 'files';
 }
@@ -186,7 +188,7 @@ const IMAGE_TYPE_LABELS: Record<ImageBucket, string> = {
 };
 
 const IMAGE_PREVIEW_DISCLAIMER =
-  'Images shown in this email are quick previews. The approval page includes only the images specifically selected for that page.';
+  'Images shown in this email are quick previews. The approval page automatically includes all Before Images and sprinkler images with or without a cover.';
 const NOTIFICATION_TYPE_LABELS: Record<EnhancedPropertyNotificationModalProps['notificationType'], string> = {
   extra_charges: 'Extra Charges Approval',
   sprinkler_paint: 'Sprinkler Paint Notification',
@@ -350,8 +352,6 @@ export function EnhancedPropertyNotificationModal({
   const [jobImages, setJobImages] = useState<JobImageWithMeta[]>([]);
   const [selectedImageIds, setSelectedImageIds] = useState<string[]>([]);
   const [emailImageChoiceMade, setEmailImageChoiceMade] = useState(false);
-  const [approvalPageImageIds, setApprovalPageImageIds] = useState<string[]>([]);
-  const [approvalPageImageChoiceMade, setApprovalPageImageChoiceMade] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -386,8 +386,7 @@ export function EnhancedPropertyNotificationModal({
       ? [
           { id: 1, title: 'Select Template' },
           { id: 2, title: 'Email Details' },
-          { id: 3, title: 'Approval Images' },
-          { id: 4, title: 'Review & Send' },
+          { id: 3, title: 'Review & Send' },
         ]
       : [
           { id: 1, title: 'Select Template' },
@@ -396,7 +395,7 @@ export function EnhancedPropertyNotificationModal({
         ],
     [isApprovalEmail]
   );
-  const reviewStepId = isApprovalEmail ? 4 : 3;
+  const reviewStepId = 3;
   const hasSection = useCallback(
     (...keys: string[]) => keys.some((key) => safeSections.includes(key)),
     [safeSections]
@@ -406,8 +405,8 @@ export function EnhancedPropertyNotificationModal({
     [jobImages, selectedImageIds]
   );
   const approvalPageImages = useMemo(
-    () => jobImages.filter((img) => approvalPageImageIds.includes(img.id)),
-    [approvalPageImageIds, jobImages]
+    () => jobImages.filter((img) => img.approvalType !== null),
+    [jobImages]
   );
   const imagesToEmbed = useMemo(() => selectedImages.filter((img) => {
     if (isApprovalEmail) return true;
@@ -627,6 +626,23 @@ export function EnhancedPropertyNotificationModal({
     return 'other';
   };
 
+  const normalizeApprovalImageType = (image: JobImage): ApprovalImageType => {
+    const category = normalizeCategory(image.category);
+    if (category === 'before_images') return 'before';
+    if (category === 'sprinkler_without_cover_images') return 'sprinkler_without_cover';
+    if (category === 'sprinkler_with_cover_images') return 'sprinkler_with_cover';
+
+    const source = `${image.image_type || ''} ${image.file_name || ''} ${image.file_path || ''}`.toLowerCase();
+    if (source.includes('before')) return 'before';
+    if (source.includes('sprinkler') && source.includes('without') && source.includes('cover')) {
+      return 'sprinkler_without_cover';
+    }
+    if (source.includes('sprinkler') && source.includes('with') && source.includes('cover')) {
+      return 'sprinkler_with_cover';
+    }
+    return null;
+  };
+
   const getPublicUrl = (bucket: string, filePath: string) => {
     if (!filePath) return '';
     const { data } = supabase.storage.from(bucket).getPublicUrl(filePath);
@@ -645,6 +661,7 @@ export function EnhancedPropertyNotificationModal({
       return (data || []).map((image) => ({
         ...image,
         normalizedType: normalizeImageType(image),
+        approvalType: normalizeApprovalImageType(image),
         publicUrl: getPublicUrl(STORAGE_BUCKET, image.file_path),
         source: 'job_images'
       }));
@@ -707,6 +724,14 @@ export function EnhancedPropertyNotificationModal({
                 category: file.category,
                 created_at: file.created_at,
               }),
+              approvalType: normalizeApprovalImageType({
+                id: file.id,
+                file_path: storagePath,
+                file_name: file.name,
+                image_type: file.category || file.name,
+                category: file.category,
+                created_at: file.created_at,
+              }),
               publicUrl: previewResult.url,
               source: 'files' as const,
             };
@@ -721,6 +746,14 @@ export function EnhancedPropertyNotificationModal({
               category: file.category,
               created_at: file.created_at,
               normalizedType: normalizeImageType({
+                id: file.id,
+                file_path: storagePath,
+                file_name: file.name,
+                image_type: file.category || file.name,
+                category: file.category,
+                created_at: file.created_at,
+              }),
+              approvalType: normalizeApprovalImageType({
                 id: file.id,
                 file_path: storagePath,
                 file_name: file.name,
@@ -790,8 +823,6 @@ export function EnhancedPropertyNotificationModal({
       // default can increase attachment scanning and quarantine risk.
       setSelectedImageIds([]);
       setEmailImageChoiceMade(false);
-      setApprovalPageImageIds([]);
-      setApprovalPageImageChoiceMade(false);
 
       const { data: configData, error: configError } = await supabase.rpc('get_active_email_configuration');
       if (configError) throw configError;
@@ -1546,15 +1577,15 @@ export function EnhancedPropertyNotificationModal({
       bucket: img.source === 'files' ? 'files' : STORAGE_BUCKET,
       normalized_type: img.normalizedType,
     })),
-    approval_page_images: approvalPageImageIds,
-    approval_page_image_types: approvalPageImages.map((img) => img.normalizedType),
+    approval_page_images: approvalPageImages.map((img) => img.id),
+    approval_page_image_types: approvalPageImages.map((img) => img.approvalType),
     approval_page_image_entries: approvalPageImages.map((img) => ({
       id: img.id,
       source: img.source,
       file_path: img.file_path,
       file_name: img.file_name,
       bucket: img.source === 'files' ? 'files' : STORAGE_BUCKET,
-      normalized_type: img.normalizedType,
+      normalized_type: img.approvalType,
     })),
   };
 };
@@ -1702,7 +1733,7 @@ export function EnhancedPropertyNotificationModal({
         const detail = remainingCount > 0 ? `${skippedSummary}, and ${remainingCount} more` : skippedSummary;
         const shouldContinue = window.confirm(
           `${skippedInlineImages.length} selected image${skippedInlineImages.length === 1 ? '' : 's'} could not be embedded (${detail}). ` +
-          'Any separately selected approval-page images will remain available there. Send the email with the remaining attachments?',
+          'Automatically included approval-page images will remain available there. Send the email with the remaining attachments?',
         );
         if (!shouldContinue) return;
       }
@@ -2048,94 +2079,6 @@ export function EnhancedPropertyNotificationModal({
     );
   };
 
-  const renderApprovalPageImageSelection = () => {
-    if (!isApprovalEmail) return null;
-
-    const useEmailSelections = () => {
-      setApprovalPageImageChoiceMade(true);
-      setApprovalPageImageIds([...selectedImageIds]);
-    };
-    const toggleApprovalPageImage = (imageId: string) => {
-      setApprovalPageImageChoiceMade(true);
-      setApprovalPageImageIds((current) =>
-        current.includes(imageId)
-          ? current.filter((id) => id !== imageId)
-          : [...current, imageId]
-      );
-    };
-
-    return (
-      <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/50 p-4 dark:border-blue-800 dark:bg-blue-950/20">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h4 className="text-sm font-medium text-gray-900 dark:text-white">
-              Images visible on the approval page <span className="text-red-600">*</span>
-            </h4>
-            <p className="text-xs text-gray-600 dark:text-gray-300">
-              Select only the images the approving contact should be allowed to view. These choices do not affect email attachments.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs font-medium">
-            {jobImages.length > 0 && (
-              <>
-              <button onClick={useEmailSelections} type="button" className="text-blue-700 hover:underline dark:text-blue-300">
-                Use email selections
-              </button>
-              <button onClick={() => { setApprovalPageImageChoiceMade(true); setApprovalPageImageIds(jobImages.map((image) => image.id)); }} type="button" className="text-blue-700 hover:underline dark:text-blue-300">
-                Select all
-              </button>
-              </>
-            )}
-            <button
-              onClick={() => { setApprovalPageImageChoiceMade(true); setApprovalPageImageIds([]); }}
-              type="button"
-              className={`rounded-full px-3 py-1 font-semibold ${approvalPageImageChoiceMade && approvalPageImageIds.length === 0 ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}
-            >
-              None
-            </button>
-          </div>
-        </div>
-
-        {!approvalPageImageChoiceMade && (
-          <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
-            Required: select one or more images, or choose None.
-          </p>
-        )}
-
-        <p className="text-xs font-semibold text-blue-800 dark:text-blue-200">
-          {approvalPageImageIds.length} image{approvalPageImageIds.length === 1 ? '' : 's'} selected for the approval page
-        </p>
-
-        {jobImages.length > 0 && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {jobImages.map((image) => {
-              const selected = approvalPageImageIds.includes(image.id);
-              return (
-                <button
-                  type="button"
-                  key={`approval-page-${image.id}`}
-                  onClick={() => toggleApprovalPageImage(image.id)}
-                  className={`relative overflow-hidden rounded-lg border bg-white text-left transition dark:bg-gray-900 ${selected ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800' : 'border-gray-200 dark:border-gray-700'}`}
-                >
-                  <img src={image.publicUrl} alt={image.file_name} className="h-28 w-full object-cover" />
-                  <div className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full border border-white bg-black/50">
-                    {selected ? <Check className="h-3 w-3 text-white" /> : <span className="h-2 w-2 rounded-full bg-white" />}
-                  </div>
-                  <div className="p-2">
-                    <p className="truncate text-xs font-medium text-gray-900 dark:text-white">{image.file_name}</p>
-                    <span className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      {IMAGE_TYPE_LABELS[image.normalizedType]}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   const renderTemplateStep = () => (
     <div className="space-y-6">
       <div>
@@ -2396,7 +2339,7 @@ export function EnhancedPropertyNotificationModal({
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
             These sections appear in the email.{' '}
             {notificationType === 'extra_charges'
-              ? 'Email attachments and approval-page images are selected separately below.'
+              ? 'Email attachments are selected below. Eligible approval-page images are included automatically.'
               : 'Image selection below controls which images are embedded in the email.'}
           </p>
           {safeSections.length === 0 ? (
@@ -2465,9 +2408,9 @@ export function EnhancedPropertyNotificationModal({
           <div className="mt-2 space-y-1 text-xs">
             <p><span className="font-medium">Estimated message size:</span> {formatFileSize(currentSizeEstimate.estimatedMessageBytes)}</p>
             <p><span className="font-medium">Images:</span> {selectedImages.length} selected · {currentSizeEstimate.inlineAttachments.length} ready to embed{currentSizeEstimate.skippedInlineImages.length ? ` · ${currentSizeEstimate.skippedInlineImages.length} unavailable for email embedding` : ''}</p>
-            <p>{sizeLevel.detail} Full-resolution job images remain available in the application; only approved selections appear on the approval page.</p>
+            <p>{sizeLevel.detail} The approval page automatically includes eligible Before and sprinkler cover-condition images.</p>
             {isApprovalEmail && (
-              <p><span className="font-medium">Approval page:</span> {approvalPageImages.length} image{approvalPageImages.length === 1 ? '' : 's'} selected</p>
+              <p><span className="font-medium">Approval page:</span> {approvalPageImages.length} eligible image{approvalPageImages.length === 1 ? '' : 's'} included automatically</p>
             )}
           </div>
         )}
@@ -2573,7 +2516,7 @@ export function EnhancedPropertyNotificationModal({
           emailSubject.trim() &&
           (!showsEmailImageSelection || emailImageChoiceMade)
         )
-      : currentStep === 3 && isApprovalEmail && approvalPageImageChoiceMade;
+      : false;
   const isFinalStep = currentStep === totalSteps;
 
   return (
@@ -2610,7 +2553,6 @@ export function EnhancedPropertyNotificationModal({
         <div ref={stepContentRef} className="flex-1 overflow-y-auto p-6">
           {currentStep === 1 && renderTemplateStep()}
           {currentStep === 2 && renderComposeStep()}
-          {isApprovalEmail && currentStep === 3 && renderApprovalPageImageSelection()}
           {currentStep === reviewStepId && renderReviewStep()}
         </div>
 

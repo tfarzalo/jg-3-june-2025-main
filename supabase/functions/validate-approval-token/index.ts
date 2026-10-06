@@ -24,10 +24,16 @@ function isImageFile(file: { type?: string | null; name?: string | null; path?: 
   return imageExtensionPattern.test(file.name || file.storage_path || file.path || '');
 }
 
-function normalizedImageType(category?: string | null, name?: string | null) {
-  const value = `${category || ''} ${name || ''}`.toLowerCase();
+function normalizedImageType(category?: string | null, name?: string | null, path?: string | null) {
+  const value = `${category || ''} ${name || ''} ${path || ''}`.toLowerCase();
   if (value.includes('before')) return 'before';
   if (value.includes('after')) return 'after';
+  if (value.includes('sprinkler') && value.includes('without') && value.includes('cover')) {
+    return 'sprinkler_without_cover';
+  }
+  if (value.includes('sprinkler') && value.includes('with') && value.includes('cover')) {
+    return 'sprinkler_with_cover';
+  }
   if (value.includes('sprinkler')) return 'sprinkler';
   return 'other';
 }
@@ -156,7 +162,7 @@ serve(async (req) => {
         id: image.id,
         file_path: image.file_path,
         file_name: image.file_name || image.file_path?.split('/').pop() || 'Job photo',
-        image_type: normalizedImageType(image.image_type, image.file_name),
+        image_type: normalizedImageType(image.image_type, image.file_name, image.file_path),
         mime_type: image.mime_type || 'image/jpeg',
         bucket: 'job-images',
         source: 'job_images',
@@ -168,7 +174,7 @@ serve(async (req) => {
           id: file.id,
           file_path: file.storage_path || file.path,
           file_name: file.name || file.storage_path?.split('/').pop() || file.path?.split('/').pop() || 'Job photo',
-          image_type: normalizedImageType(file.category, file.name),
+          image_type: normalizedImageType(file.category, file.name, file.storage_path || file.path),
           mime_type: file.type || 'image/jpeg',
           bucket: 'files',
           source: 'files',
@@ -261,8 +267,10 @@ serve(async (req) => {
           usedAt: approval.used_at,
           decision: approval.decision,
           decisionAt: approval.decision_at,
-          approverName: approval.approver_name,
-          approverEmail: approval.approver_email,
+          recipientName: approval.approver_name,
+          recipientEmail: approval.approver_email,
+          approverName: approval.decision_maker_name || approval.approver_name,
+          approverEmail: approval.decision_maker_email || approval.approver_email,
           actionExpired,
           amount: approval.extra_charges_data?.total,
           description: approval.extra_charges_data?.items?.[0]?.description

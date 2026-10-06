@@ -75,6 +75,8 @@ interface ApprovalTokenRow {
   approval_type?: string | null;
   approver_email?: string | null;
   approver_name?: string | null;
+  decision_maker_email?: string | null;
+  decision_maker_name?: string | null;
   extra_charges_data?: {
     total?: number | string | null;
     billing_total?: number | string | null;
@@ -139,10 +141,10 @@ function approvalDecisionActorFromChange(
     return Number.isFinite(decisionTime) && Math.abs(decisionTime - changeTime) <= 5000;
   });
 
-  if (matchingToken?.approver_name || matchingToken?.approver_email) {
+  if (matchingToken?.decision_maker_name || matchingToken?.decision_maker_email || matchingToken?.approver_name || matchingToken?.approver_email) {
     return {
-      actorName: matchingToken.approver_name || matchingToken.approver_email || UNKNOWN_ACTOR,
-      actorEmail: matchingToken.approver_email || null,
+      actorName: matchingToken.decision_maker_name || matchingToken.decision_maker_email || matchingToken.approver_name || matchingToken.approver_email || UNKNOWN_ACTOR,
+      actorEmail: matchingToken.decision_maker_email || matchingToken.approver_email || null,
     };
   }
 
@@ -225,7 +227,7 @@ export function useJobActivityLog({
           .limit(100),
         supabase
           .from('approval_tokens')
-          .select('id, approval_type, approver_email, approver_name, extra_charges_data, created_at, expires_at, used_at, decision, decision_at, decline_reason')
+          .select('id, approval_type, approver_email, approver_name, decision_maker_email, decision_maker_name, extra_charges_data, created_at, expires_at, used_at, decision, decision_at, decline_reason')
           .eq('job_id', jobId)
           .order('created_at', { ascending: false })
           .limit(50),
@@ -349,6 +351,7 @@ export function useJobActivityLog({
         const approvalAmount = Number(token.extra_charges_data?.total ?? token.extra_charges_data?.billing_total ?? 0);
         const amountText = approvalAmount > 0 ? ` for ${formatCurrency(approvalAmount)}` : '';
         const recipient = token.approver_name || token.approver_email || 'approval recipient';
+        const decisionMaker = token.decision_maker_name || token.decision_maker_email || recipient;
         const isPreviewToken = token.approval_type === 'extra_charges_preview';
 
         items.push({
@@ -377,14 +380,16 @@ export function useJobActivityLog({
             category: 'approval',
             title: approved ? 'Extra charges approved' : 'Extra charges declined',
             description: approved
-              ? `Approved by ${recipient}${amountText}`
-              : `Declined by ${recipient}${token.decline_reason ? `: ${token.decline_reason}` : ''}`,
-            actorName: recipient,
-            actorEmail: token.approver_email,
+              ? `Approved by ${decisionMaker}${amountText}`
+              : `Declined by ${decisionMaker}${token.decline_reason ? `: ${token.decline_reason}` : ''}`,
+            actorName: decisionMaker,
+            actorEmail: token.decision_maker_email || token.approver_email,
             timestamp: token.decision_at,
             metadata: {
               approval_type: token.approval_type,
               decision: token.decision,
+              decision_maker_name: token.decision_maker_name,
+              decision_maker_email: token.decision_maker_email,
               decline_reason: token.decline_reason,
             },
           });
