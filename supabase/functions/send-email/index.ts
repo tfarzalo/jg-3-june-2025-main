@@ -43,6 +43,13 @@ interface NormalizedRecipients {
   bcc: string[];
 }
 
+type OriginalRecipientField = "to" | "cc" | "bcc";
+
+interface IsolatedRecipient {
+  address: string;
+  originalField: OriginalRecipientField;
+}
+
 interface AttachmentMetric {
   filename: string;
   extension: string | null;
@@ -156,6 +163,14 @@ function normalizeRecipients(to: AddressInput, cc: AddressInput, bcc: AddressInp
   };
 
   return { to: normalize(to), cc: normalize(cc), bcc: normalize(bcc) };
+}
+
+function isolateRecipients(recipients: NormalizedRecipients): IsolatedRecipient[] {
+  return [
+    ...recipients.to.map((address) => ({ address, originalField: "to" as const })),
+    ...recipients.cc.map((address) => ({ address, originalField: "cc" as const })),
+    ...recipients.bcc.map((address) => ({ address, originalField: "bcc" as const })),
+  ];
 }
 
 function decodedContentBytes(attachment: EmailAttachment): number | null {
@@ -360,7 +375,6 @@ Deno.serve(async (req) => {
     }
   }
 
-  let auditId: string | null = null;
   let provider: EmailProvider | null = null;
 
   try {
@@ -372,6 +386,7 @@ Deno.serve(async (req) => {
 
     const recipients = normalizeRecipients(body.to, body.cc, body.bcc);
     if (!recipients.to.length) throw new Error("At least one valid To recipient is required");
+    const isolatedRecipients = isolateRecipients(recipients);
 
     const attachments = Array.isArray(body.attachments) ? body.attachments : [];
     const processedAttachments = attachments.map((attachment) => {
@@ -433,16 +448,20 @@ Deno.serve(async (req) => {
 
     const requestedFrom = provider === "zoho" ? body.from : undefined;
     const requestedReplyTo = normalizeReplyTo(body.replyTo, config.replyTo);
-
-    auditId = await createAuditRecord({
+    const auditValuesFor = (
+      recipient: IsolatedRecipient,
+      index: number,
+      status: "sending" | "failed" = "sending",
+      lastError: string | null = null,
+    ) => ({
       provider,
       email_type: inferEmailType(body),
       job_id: body.jobId || body.job_id || null,
-      to_emails: recipients.to,
-      cc_emails: recipients.cc,
-      bcc_emails: recipients.bcc,
+      to_emails: [recipient.address],
+      cc_emails: [],
+      bcc_emails: [],
       subject: body.subject,
-      status: "sending",
+      status,
       attachment_count: processedAttachments.length,
       attachment_bytes: attachmentBytes,
       html_bytes: htmlBytes,
@@ -453,22 +472,33 @@ Deno.serve(async (req) => {
       attachment_metadata: measuredAttachments,
       size_warnings: sizeWarnings,
       attempt_count: 1,
-      metadata: body.metadata || {},
+      last_error: lastError,
+      failed_at: status === "failed" ? new Date().toISOString() : null,
+      metadata: {
+        ...(body.metadata || {}),
+        isolated_delivery: true,
+        original_recipient_field: recipient.originalField,
+        isolated_recipient_index: index,
+        isolated_recipient_count: isolatedRecipients.length,
+      },
     });
 
     if (estimatedMessageBytes >= maximumMessageBytes) {
-      throw new Error(
+      const sizeError =
         `Estimated email size (${estimatedMessageBytes} bytes) exceeds the configured ${maximumMessageBytes} byte limit. ` +
-        "Remove attachments or provide the remaining images through the secure notification or approval page.",
-      );
+        "Remove attachments or provide the remaining images through the secure notification or approval page.";
+      await Promise.all(isolatedRecipients.map((recipient, index) =>
+        createAuditRecord(auditValuesFor(recipient, index, "failed", sizeError))
+      ));
+      throw new Error(sizeError);
     }
 
     console.log("Submitting outbound email", {
       provider,
-      auditId,
       toCount: recipients.to.length,
       ccCount: recipients.cc.length,
       bccCount: recipients.bcc.length,
+      isolatedMessageCount: isolatedRecipients.length,
       attachmentCount: processedAttachments.length,
       attachmentBytes,
       imageAttachmentCount,
@@ -478,46 +508,103 @@ Deno.serve(async (req) => {
     });
 
     const transporter = createTransport(config.transport);
-    const info = await transporter.sendMail({
-      from: requestedFrom || config.from,
-      replyTo: requestedReplyTo,
-      to: recipients.to,
-      cc: recipients.cc.length ? recipients.cc : undefined,
-      bcc: recipients.bcc.length ? recipients.bcc : undefined,
-      subject: body.subject,
-      text: textContent,
-      html: body.html,
-      attachments: processedAttachments.length ? processedAttachments : undefined,
-    });
+    const deliveryResults: Array<Record<string, unknown>> = [];
 
-    const accepted = (info.accepted || []).map(String);
-    const rejected = (info.rejected || []).map(String);
-    const status = rejected.length ? (accepted.length ? "partially_accepted" : "rejected") : "submitted";
-    const submittedAt = new Date().toISOString();
+    // Submit sequentially so every address receives a genuinely independent
+    // message and provider message ID without creating a sudden SMTP burst.
+    for (const [index, recipient] of isolatedRecipients.entries()) {
+      const auditId = await createAuditRecord(auditValuesFor(recipient, index));
 
-    await updateAuditRecord(auditId, {
+      try {
+        const info = await transporter.sendMail({
+          from: requestedFrom || config.from,
+          replyTo: requestedReplyTo,
+          to: recipient.address,
+          subject: body.subject,
+          text: textContent,
+          html: body.html,
+          attachments: processedAttachments.length ? processedAttachments : undefined,
+        });
+
+        const accepted = (info.accepted || []).map(String);
+        const rejected = (info.rejected || []).map(String);
+        const status = rejected.length ? (accepted.length ? "partially_accepted" : "rejected") : "submitted";
+        const submittedAt = new Date().toISOString();
+        await updateAuditRecord(auditId, {
+          status,
+          provider_message_id: info.messageId || null,
+          accepted_recipients: accepted,
+          rejected_recipients: rejected,
+          pending_recipients: info.pending || [],
+          smtp_response: info.response || null,
+          submitted_at: submittedAt,
+          last_error: null,
+          updated_at: submittedAt,
+        });
+        deliveryResults.push({
+          success: accepted.length > 0 && rejected.length === 0,
+          recipient: recipient.address,
+          originalField: recipient.originalField,
+          auditId,
+          messageId: info.messageId || null,
+          accepted,
+          rejected,
+          pending: info.pending || [],
+          response: info.response || null,
+          status,
+        });
+      } catch (deliveryError) {
+        const message = errorMessage(deliveryError);
+        const failedAt = new Date().toISOString();
+        await updateAuditRecord(auditId, {
+          status: "failed",
+          last_error: message,
+          failed_at: failedAt,
+          updated_at: failedAt,
+        });
+        deliveryResults.push({
+          success: false,
+          recipient: recipient.address,
+          originalField: recipient.originalField,
+          auditId,
+          messageId: null,
+          accepted: [],
+          rejected: [recipient.address],
+          pending: [],
+          response: null,
+          status: "failed",
+          error: message,
+        });
+      }
+    }
+
+    const successfulDeliveries = deliveryResults.filter((result) => result.success === true);
+    const failedDeliveries = deliveryResults.filter((result) => result.success !== true);
+    if (!successfulDeliveries.length) {
+      const firstError = String(failedDeliveries[0]?.error || "All isolated email submissions failed");
+      throw new Error(firstError);
+    }
+
+    const status = failedDeliveries.length ? "partially_accepted" : "submitted";
+    const primaryResult = deliveryResults[0];
+    console.log("Isolated outbound emails submitted", {
+      provider,
       status,
-      provider_message_id: info.messageId || null,
-      accepted_recipients: accepted,
-      rejected_recipients: rejected,
-      pending_recipients: info.pending || [],
-      smtp_response: info.response || null,
-      submitted_at: submittedAt,
-      last_error: null,
-      updated_at: submittedAt,
+      submitted: successfulDeliveries.length,
+      failed: failedDeliveries.length,
     });
-
-    console.log("Outbound email submitted", { provider, auditId, messageId: info.messageId, status });
     return jsonResponse({
       success: true,
       provider,
-      auditId,
-      messageId: info.messageId,
-      accepted,
-      rejected,
-      pending: info.pending || [],
-      response: info.response || null,
+      auditId: primaryResult?.auditId || null,
+      messageId: primaryResult?.messageId || null,
+      accepted: successfulDeliveries.flatMap((result) => result.accepted as string[]),
+      rejected: failedDeliveries.flatMap((result) => result.rejected as string[]),
+      pending: deliveryResults.flatMap((result) => result.pending as string[]),
+      response: primaryResult?.response || null,
       status,
+      isolated: true,
+      deliveryResults,
       sizeMetrics: {
         htmlBytes,
         textBytes,
@@ -530,13 +617,7 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     const message = errorMessage(error);
-    await updateAuditRecord(auditId, {
-      status: "failed",
-      last_error: message,
-      failed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
-    console.error("Outbound email submission failed", { provider, auditId, error: message });
-    return jsonResponse({ success: false, provider, auditId, error: message }, 500);
+    console.error("Outbound email submission failed", { provider, error: message });
+    return jsonResponse({ success: false, provider, auditId: null, error: message }, 500);
   }
 });

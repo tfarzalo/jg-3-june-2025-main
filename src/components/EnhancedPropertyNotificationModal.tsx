@@ -1717,7 +1717,7 @@ export function EnhancedPropertyNotificationModal({
       }
 
       const finalHtml = buildFinalEmailHtml(approvalLink, cidMap);
-      const { error } = await supabase.functions.invoke('send-email', {
+      const { data: sendResult, error } = await supabase.functions.invoke('send-email', {
         body: {
           to: recipientEmail,
           subject: applyEmailTokens(emailSubject),
@@ -1745,6 +1745,9 @@ export function EnhancedPropertyNotificationModal({
       });
 
       if (error) throw error;
+      const failedCopies = Array.isArray(sendResult?.deliveryResults)
+        ? sendResult.deliveryResults.filter((result: { success?: boolean }) => result.success !== true)
+        : [];
 
       await logJobActivity({
         jobId: job.id,
@@ -1831,7 +1834,14 @@ export function EnhancedPropertyNotificationModal({
         }
       }
 
-      toast.success('Email sent successfully');
+      if (failedCopies.length > 0) {
+        toast.warning(
+          `The email was submitted, but ${failedCopies.length} separate recipient cop${failedCopies.length === 1 ? 'y' : 'ies'} failed. Review Email Delivery for details.`,
+          { duration: 8000 },
+        );
+      } else {
+        toast.success('Email sent successfully');
+      }
       onSent?.();
       onClose();
     } catch (error) {
@@ -2137,7 +2147,7 @@ export function EnhancedPropertyNotificationModal({
                   <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">BCC copy</p>
                   <label className="mt-3 flex cursor-pointer items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-3 text-xs dark:border-gray-700 dark:bg-gray-900">
                     <span className="text-gray-700 dark:text-gray-200">
-                      Copy sent to <span className="font-semibold">{ADMIN_COPY_EMAIL}</span>
+                      Send a separate copy to <span className="font-semibold">{ADMIN_COPY_EMAIL}</span>
                     </span>
                     <input
                       type="checkbox"
@@ -2261,7 +2271,8 @@ export function EnhancedPropertyNotificationModal({
         <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
           <p><span className="font-medium">To:</span> {recipientEmail || '—'}</p>
           <p><span className="font-medium">CC ({finalRecipientLists.cc.length}):</span> {finalRecipientLists.cc.join(', ') || 'None'}</p>
-          <p><span className="font-medium">BCC ({finalRecipientLists.bcc.length}):</span> {finalRecipientLists.bcc.join(', ') || 'None'}</p>
+          <p><span className="font-medium">Admin copy:</span> {finalRecipientLists.bcc.join(', ') || 'None'}</p>
+          <p className="pt-1 text-gray-500 dark:text-gray-400">Each listed address will receive a separate, single-recipient email.</p>
         </div>
       </div>
       <div className={`rounded-lg border p-4 text-sm ${reviewSizeLoading || !currentSizeEstimate ? 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-200' : sizeLevel.classes}`}>
