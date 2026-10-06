@@ -205,7 +205,18 @@ async function sendAssignmentNotifications(
         "Content-Type": "application/json",
         "Authorization": `Bearer ${serviceKey}`,
       },
-      body: JSON.stringify({ to: subcontractor.email, subject, html, text }),
+      body: JSON.stringify({
+        to: subcontractor.email,
+        subject,
+        html,
+        text,
+        emailType: "assignment_notification",
+        jobId: jobs.length === 1 ? jobs[0].id : null,
+        metadata: {
+          job_ids: jobs.map((job) => job.id),
+          source: "archive_subcontractor_reassignment",
+        },
+      }),
     });
 
     if (!emailResponse.ok) {

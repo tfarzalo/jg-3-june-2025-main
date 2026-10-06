@@ -169,6 +169,8 @@ serve(async (req) => {
             body: JSON.stringify({
               to: email,
               subject: "Welcome to JG Painting Pros Portal",
+              emailType: "user_welcome",
+              metadata: { user_id: data.user.id, account_role: role },
               html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                   <h2 style="color: #2563eb;">Welcome to JG Painting Pros Portal</h2>

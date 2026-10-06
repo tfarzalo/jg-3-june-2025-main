@@ -123,6 +123,7 @@ Deno.serve(async (req) => {
             to: recipient,
             ...message,
             emailType: 'assignment_notification',
+            jobId: group.length === 1 ? group[0].job.id : null,
             metadata: { job_ids: group.map((row) => row.job.id) },
           }),
         });

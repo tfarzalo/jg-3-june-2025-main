@@ -106,6 +106,8 @@ serve(async (req) => {
         subject,
         html,
         text: `Reset your JG Portal password using this link: ${resetUrl}\nThis link expires in 1 hour.`,
+        emailType: "password_reset",
+        metadata: { profile_id: profile.id, account_role: profile.role },
       }),
     });
 

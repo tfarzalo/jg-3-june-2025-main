@@ -161,6 +161,12 @@ serve(async (req) => {
         subject,
         html: htmlBody,
         from: `${emailConfig.from_name} <${emailConfig.from_email}>`,
+        emailType: 'internal_approval_notification',
+        jobId: payload.jobId,
+        metadata: {
+          decision: payload.decision,
+          work_order_num: payload.workOrderNum,
+        },
       }),
     });
 

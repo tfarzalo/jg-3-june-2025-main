@@ -125,6 +125,9 @@ serve(async (req) => {
           body: JSON.stringify({
             to: requester.email,
             subject: `Approval ${status === 'approved' ? 'Approved' : 'Rejected'} - ${approval.job.property.property_name}`,
+            emailType: 'approval_decision',
+            jobId: approval.job_id || approval.job?.id || result.job_id || null,
+            metadata: { approval_id: result.approval_id, decision: status },
             html: `
               <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2 style="color: ${status === 'approved' ? '#10b981' : '#ef4444'};">

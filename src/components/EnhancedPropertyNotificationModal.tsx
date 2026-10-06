@@ -30,6 +30,7 @@ import { RichTextEditor } from './RichTextEditor';
 import { logJobActivity } from '../lib/jobActivity';
 import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
 import { config } from '../config/environment';
+import { detectImageMime, extensionForImageMime } from '../lib/utils/imageOptimization';
 
 interface Job {
   id: string;
@@ -1222,19 +1223,42 @@ export function EnhancedPropertyNotificationModal({
    * Fetch an image URL and return it as a base64-encoded data URI string,
    * along with the detected content type.  Returns null on failure.
    */
-  const fetchImageAsBase64 = async (url: string): Promise<{ base64: string; contentType: string } | null> => {
+  const fetchImageAsBase64 = async (url: string): Promise<{ base64: string; contentType: string; extension: string } | null> => {
     try {
       const response = await fetch(url);
       if (!response.ok) return null;
-      const contentType = response.headers.get('content-type') || 'image/jpeg';
+      const declaredContentType = (response.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
       const arrayBuffer = await response.arrayBuffer();
       const uint8 = new Uint8Array(arrayBuffer);
+      const detectedContentType = detectImageMime(uint8);
+      const supportedInlineTypes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+
+      // SVG and non-image data are never embedded. HEIC/HEIF and other formats
+      // remain safely stored in the application but are not broadly renderable
+      // as inline email images.
+      if (!detectedContentType || !supportedInlineTypes.has(detectedContentType)) return null;
+      if (
+        declaredContentType &&
+        declaredContentType !== 'application/octet-stream' &&
+        declaredContentType !== detectedContentType
+      ) {
+        console.warn('Skipping inline image with mismatched declared and detected MIME types', {
+          declaredContentType,
+          detectedContentType,
+        });
+        return null;
+      }
+
       let binary = '';
       for (let i = 0; i < uint8.byteLength; i++) {
         binary += String.fromCharCode(uint8[i]);
       }
       const base64 = btoa(binary);
-      return { base64, contentType };
+      return {
+        base64,
+        contentType: detectedContentType,
+        extension: extensionForImageMime(detectedContentType),
+      };
     } catch {
       return null;
     }
@@ -1522,11 +1546,9 @@ export function EnhancedPropertyNotificationModal({
           }
           const cid = `img_${img.id.replace(/-/g, '')}@jgpaintingprosinc.com`;
           cidMap[img.id] = cid;
-          // Derive a safe filename with a proper extension
-          const ext = data.contentType.split('/')[1]?.split('+')[0] || 'jpg';
-          const safeFilename = img.file_name.includes('.')
-            ? img.file_name
-            : `${img.file_name}.${ext}`;
+          // Normalize the attachment extension to the verified file signature.
+          const baseFilename = img.file_name.replace(/\.[^.]+$/, '') || `image_${img.id}`;
+          const safeFilename = `${baseFilename}.${data.extension}`;
           inlineAttachments.push({
             filename: safeFilename,
             content: data.base64,
@@ -1596,6 +1618,11 @@ export function EnhancedPropertyNotificationModal({
                 ? 'drywall_notification'
                 : 'general_work_order',
           jobId: job.id,
+          metadata: {
+            notification_type: effectiveNotificationType,
+            selected_image_count: selectedImages.length,
+            inline_attachment_count: inlineAttachments.length,
+          },
         },
       });
 

@@ -169,6 +169,59 @@ function decodedContentBytes(attachment: EmailAttachment): number | null {
   return Math.max(0, Math.floor(encoded.length * 3 / 4) - padding);
 }
 
+const INLINE_IMAGE_EXTENSIONS: Record<string, string[]> = {
+  "image/jpeg": ["jpg", "jpeg"],
+  "image/png": ["png"],
+  "image/gif": ["gif"],
+  "image/webp": ["webp"],
+};
+
+function detectInlineImageMime(base64Content: string): string | null {
+  try {
+    const normalized = base64Content.replace(/^data:[^,]*,/, "").replace(/\s/g, "");
+    const bytes = Uint8Array.from(atob(normalized.slice(0, 64)), (character) => character.charCodeAt(0));
+    if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+    if (bytes.length >= 8 && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value)) return "image/png";
+    if (bytes.length >= 6) {
+      const header = String.fromCharCode(...bytes.slice(0, 6));
+      if (header === "GIF87a" || header === "GIF89a") return "image/gif";
+    }
+    if (
+      bytes.length >= 12 &&
+      String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+      String.fromCharCode(...bytes.slice(8, 12)) === "WEBP"
+    ) return "image/webp";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function validateInlineImageAttachment(attachment: EmailAttachment): void {
+  if (!attachment.cid) return;
+  if (typeof attachment.content !== "string" || (attachment.encoding || "base64").toLowerCase() !== "base64") {
+    throw new Error(`Inline attachment ${attachment.filename} must contain base64 image data`);
+  }
+
+  const declaredMime = (attachment.contentType || "").toLowerCase().split(";")[0].trim();
+  if (declaredMime === "image/svg+xml") {
+    throw new Error(`Inline SVG attachment ${attachment.filename} is not permitted`);
+  }
+
+  const detectedMime = detectInlineImageMime(attachment.content);
+  if (!detectedMime || !INLINE_IMAGE_EXTENSIONS[detectedMime]) {
+    throw new Error(`Inline attachment ${attachment.filename} is not a supported JPEG, PNG, GIF, or WebP image`);
+  }
+  if (declaredMime !== detectedMime) {
+    throw new Error(`Inline attachment ${attachment.filename} declares ${declaredMime || "no MIME type"} but contains ${detectedMime}`);
+  }
+
+  const extension = attachment.filename.trim().toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] || "";
+  if (!INLINE_IMAGE_EXTENSIONS[detectedMime].includes(extension)) {
+    throw new Error(`Inline attachment ${attachment.filename} has an extension that does not match ${detectedMime}`);
+  }
+}
+
 function estimatedBase64MimeBytes(rawBytes: number): number {
   const encodedCharacters = Math.ceil(rawBytes / 3) * 4;
   const lineBreakBytes = Math.ceil(encodedCharacters / 76) * 2;
@@ -325,6 +378,7 @@ Deno.serve(async (req) => {
       if (!attachment.filename || (!attachment.content && !attachment.path)) {
         throw new Error(`Attachment ${attachment.filename || "(unnamed)"} is missing a filename, content, or path`);
       }
+      validateInlineImageAttachment(attachment);
       return {
         filename: attachment.filename,
         content: attachment.content,

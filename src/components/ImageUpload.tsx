@@ -344,15 +344,12 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     // Set total files to upload for progress tracking
     setTotalFilesToUpload(files.length);
     
-    const newUploadingFiles: UploadingFile[] = await Promise.all(files.map(async (file) => {
-      try {
-        const optimized = await optimizeImage(file);
-        const preview = URL.createObjectURL(optimized.blob);
-        return { file: new File([optimized.blob], file.name, { type: optimized.mime }), preview, progress: 0 };
-      } catch {
-        const preview = URL.createObjectURL(file);
-        return { file, preview, progress: 0 };
-      }
+    // Preview the selected originals. Each file is optimized exactly once in the
+    // upload loop below, avoiding duplicate canvas work and inconsistent results.
+    const newUploadingFiles: UploadingFile[] = files.map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+      progress: 0,
     }));
     setUploadingFiles(newUploadingFiles);
     setIsUploading(true);
@@ -767,7 +764,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {folder === 'other'
                   ? 'All file types supported'
-                  : 'JPG · PNG · HEIC · multiple allowed'}
+                  : 'JPG · PNG · WebP · multiple allowed (HEIC is stored in its original format)'}
               </p>
             </div>
           </label>

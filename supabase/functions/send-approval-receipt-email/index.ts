@@ -40,6 +40,29 @@ const toBase64 = async (blob: Blob) => {
   return btoa(binary);
 };
 
+const INLINE_IMAGE_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
+const detectInlineImageMime = async (blob: Blob): Promise<string | null> => {
+  const bytes = new Uint8Array(await blob.slice(0, 32).arrayBuffer());
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.length >= 8 && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value)) return "image/png";
+  if (bytes.length >= 6) {
+    const header = String.fromCharCode(...bytes.slice(0, 6));
+    if (header === "GIF87a" || header === "GIF89a") return "image/gif";
+  }
+  if (
+    bytes.length >= 12 &&
+    String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+    String.fromCharCode(...bytes.slice(8, 12)) === "WEBP"
+  ) return "image/webp";
+  return null;
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -136,9 +159,23 @@ serve(async (req) => {
         continue;
       }
 
-      const contentType = blob.type || "image/jpeg";
+      const contentType = await detectInlineImageMime(blob);
+      const declaredContentType = (blob.type || "").toLowerCase().split(";")[0].trim();
+      if (
+        !contentType ||
+        !INLINE_IMAGE_EXTENSIONS[contentType] ||
+        (declaredContentType && declaredContentType !== "application/octet-stream" && declaredContentType !== contentType)
+      ) {
+        console.warn("Skipping approval image with unsupported or mismatched file data", {
+          path: entry.file_path,
+          declaredContentType,
+          detectedContentType: contentType,
+        });
+        continue;
+      }
       const cid = `approval_${String(entry.id || crypto.randomUUID()).replace(/-/g, "")}@jgpaintingpros.com`;
-      const filename = entry.file_name || entry.file_path?.split("/").pop() || "approval-photo.jpg";
+      const sourceFilename = entry.file_name || entry.file_path?.split("/").pop() || "approval-photo";
+      const filename = `${sourceFilename.replace(/\.[^.]+$/, "")}.${INLINE_IMAGE_EXTENSIONS[contentType]}`;
 
       attachments.push({
         filename,
@@ -215,6 +252,9 @@ serve(async (req) => {
         subject: `${workOrderNum} Extra Charges ${decisionLabel} - ${propertyName}`,
         html,
         attachments: attachments.length > 0 ? attachments : undefined,
+        emailType: "approval_receipt",
+        jobId: approval.job_id || extraData.job_id || null,
+        metadata: { approval_token_id: approval.id, decision },
       }),
     });
 

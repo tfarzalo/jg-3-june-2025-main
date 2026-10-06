@@ -833,6 +833,12 @@ const handleSendPacket = async (
       subject,
       html: buildOnboardingEmailHtml(employee, links),
       replyTo: "info@jgpaintingprosinc.com",
+      emailType: "employee_onboarding",
+      metadata: {
+        employee_id: employee.id,
+        requested_form_key: requestedFormKey || null,
+        link_count: links.length,
+      },
     }),
   });
 
