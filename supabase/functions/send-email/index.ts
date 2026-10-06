@@ -502,7 +502,9 @@ Deno.serve(async (req) => {
       throw new Error(sizeError);
     }
 
-    const queueEnabled = (Deno.env.get("OUTBOUND_EMAIL_QUEUE_ENABLED") || "true").toLowerCase() !== "false";
+    // Direct delivery is the safe default. The durable pacing queue is opt-in
+    // and should only be enabled when its worker and recovery trigger are live.
+    const queueEnabled = (Deno.env.get("OUTBOUND_EMAIL_QUEUE_ENABLED") || "false").toLowerCase() === "true";
     const immediateEmailTypes = new Set(["password_reset"]);
     const shouldQueue = queueEnabled && !queueDirect && !immediateEmailTypes.has(emailType);
 
