@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, MailCheck, RefreshCw, Search } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, MailCheck, RefreshCw, Search } from 'lucide-react';
 import { supabase } from '../../utils/supabase';
 
 type RecipientKind = 'property_contact' | 'subcontractor' | 'internal' | 'external';
@@ -38,6 +38,8 @@ interface RecipientRow {
   status: string;
   reason: string | null;
   eventAt: string | null;
+  latestActivity: string | null;
+  latestActivityAt: string | null;
 }
 
 interface DisplaySend extends EmailSend {
@@ -48,6 +50,9 @@ interface DisplaySend extends EmailSend {
 }
 
 const PAGE_SIZE = 25;
+const DELIVERY_CONFIRMATION_GRACE_MS = 15 * 60 * 1000;
+const FAILURE_STATUSES = ['failed', 'bounced', 'rejected', 'complained', 'permanent_failure', 'unsubscribed'];
+const DEFERRED_STATUSES = ['deferred', 'temporary_failure'];
 
 const TYPE_LABELS: Record<string, string> = {
   assignment_notification: 'Assignment Notification',
@@ -103,10 +108,10 @@ function inferType(emailType: string, subject: string): string {
 
 function statusClasses(status: string): string {
   if (status === 'delivered') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200';
-  if (['failed', 'bounced', 'rejected', 'complained', 'permanent_failure'].includes(status)) {
+  if (FAILURE_STATUSES.includes(status)) {
     return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200';
   }
-  if (['deferred', 'temporary_failure'].includes(status)) {
+  if (DEFERRED_STATUSES.includes(status) || status === 'confirmation_pending') {
     return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200';
   }
   return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200';
@@ -123,6 +128,23 @@ function formatDate(value: string | null): string {
   return new Intl.DateTimeFormat('en-US', {
     month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
   }).format(new Date(value));
+}
+
+function sizeAssessment(bytes: number): { label: string; classes: string } {
+  if (!bytes) return { label: 'Size not recorded', classes: 'text-gray-500' };
+  if (bytes >= 18 * 1024 * 1024) return { label: 'Over send limit', classes: 'text-red-700 dark:text-red-300' };
+  if (bytes >= 12 * 1024 * 1024) return { label: 'High delivery risk', classes: 'text-red-700 dark:text-red-300' };
+  if (bytes >= 8 * 1024 * 1024) return { label: 'Large message', classes: 'text-amber-700 dark:text-amber-300' };
+  if (bytes >= 5 * 1024 * 1024) return { label: 'Review size', classes: 'text-amber-700 dark:text-amber-300' };
+  return { label: 'Within preferred range', classes: 'text-emerald-700 dark:text-emerald-300' };
+}
+
+function deliveryEventStatus(event: EmailEvent | undefined): string | null {
+  if (!event) return null;
+  if (event.event_type === 'failed') return event.severity === 'temporary' ? 'deferred' : 'bounced';
+  if (event.event_type === 'unsubscribed') return 'unsubscribed';
+  if (['delivered', 'complained', 'rejected'].includes(event.event_type)) return event.event_type;
+  return null;
 }
 
 export function EmailDeliveryLog() {
@@ -205,11 +227,13 @@ export function EmailDeliveryLog() {
   useEffect(() => { setPage(1); }, [search, statusFilter, typeFilter, recipientFilter]);
 
   const displaySends = useMemo<DisplaySend[]>(() => {
-    const latestEvents = new Map<string, EmailEvent>();
+    const recipientEvents = new Map<string, EmailEvent[]>();
     for (const event of events) {
       if (!event.recipient_email) continue;
       const key = `${event.outbound_email_send_id}:${normalizeEmail(event.recipient_email)}`;
-      if (!latestEvents.has(key)) latestEvents.set(key, event);
+      const existing = recipientEvents.get(key) || [];
+      existing.push(event);
+      recipientEvents.set(key, existing);
     }
 
     const classify = (email: string): RecipientKind => {
@@ -227,17 +251,25 @@ export function EmailDeliveryLog() {
           const email = normalizeEmail(value);
           if (!email || seen.has(email)) continue;
           seen.add(email);
-          const event = latestEvents.get(`${send.id}:${email}`);
-          const eventStatus = event?.event_type === 'failed'
-            ? event.severity === 'temporary' ? 'deferred' : 'bounced'
-            : event?.event_type;
+          const eventsForRecipient = recipientEvents.get(`${send.id}:${email}`) || [];
+          const latestActivity = eventsForRecipient[0];
+          const statusEvent = eventsForRecipient.find((candidate) => deliveryEventStatus(candidate));
+          let status = deliveryEventStatus(statusEvent) || send.status;
+          const submittedAt = send.submitted_at ? new Date(send.submitted_at).getTime() : NaN;
+          const isStaleSubmission = send.provider === 'mailgun'
+            && status === 'submitted'
+            && Number.isFinite(submittedAt)
+            && Date.now() - submittedAt >= DELIVERY_CONFIRMATION_GRACE_MS;
+          if (isStaleSubmission) status = 'confirmation_pending';
           recipients.push({
             email,
             channel,
             kind: classify(email),
-            status: eventStatus || send.status,
-            reason: event?.reason || send.last_error,
-            eventAt: event?.event_at || send.delivered_at || send.submitted_at,
+            status,
+            reason: statusEvent?.reason || send.last_error,
+            eventAt: statusEvent?.event_at || send.delivered_at || send.submitted_at,
+            latestActivity: latestActivity?.event_type || null,
+            latestActivityAt: latestActivity?.event_at || null,
           });
         }
       };
@@ -252,13 +284,15 @@ export function EmailDeliveryLog() {
       });
       const recipientStatuses = recipients.map((recipient) => recipient.status);
       const deliveredCount = recipientStatuses.filter((status) => status === 'delivered').length;
-      const terminalFailureCount = recipientStatuses.filter((status) => ['failed', 'bounced', 'rejected', 'complained', 'permanent_failure'].includes(status)).length;
+      const terminalFailureCount = recipientStatuses.filter((status) => FAILURE_STATUSES.includes(status)).length;
       const aggregateStatus = recipients.length > 0 && deliveredCount === recipients.length
         ? 'delivered'
         : deliveredCount > 0 && terminalFailureCount > 0
           ? 'partially delivered'
-          : recipientStatuses.some((status) => ['deferred', 'temporary_failure'].includes(status))
+          : recipientStatuses.some((status) => DEFERRED_STATUSES.includes(status))
             ? 'deferred'
+            : recipientStatuses.some((status) => status === 'confirmation_pending')
+              ? 'confirmation_pending'
             : send.status === 'delivered'
               ? 'submitted'
               : send.status;
@@ -279,7 +313,8 @@ export function EmailDeliveryLog() {
   const pageRows = displaySends.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const visibleRecipients = displaySends.flatMap((send) => send.matchingRecipients);
   const deliveredCount = visibleRecipients.filter((recipient) => recipient.status === 'delivered').length;
-  const problemCount = visibleRecipients.filter((recipient) => ['failed', 'bounced', 'rejected', 'complained', 'permanent_failure'].includes(recipient.status)).length;
+  const problemCount = visibleRecipients.filter((recipient) => FAILURE_STATUSES.includes(recipient.status)).length;
+  const pendingCount = visibleRecipients.filter((recipient) => recipient.status === 'confirmation_pending').length;
 
   const toggleExpanded = (id: string) => setExpanded((current) => {
     const next = new Set(current);
@@ -296,7 +331,7 @@ export function EmailDeliveryLog() {
               <MailCheck className="h-5 w-5 text-blue-600" /> Email Delivery
             </h2>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              External and subcontractor recipients are shown by default. Internal To, CC, and BCC recipients remain available in message details and filters.
+              Delivery confirmations, recipient failures, complaints, unsubscribes, and message sizes reported by Mailgun.
             </p>
           </div>
           <button type="button" onClick={() => void loadData()} disabled={loading} className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800">
@@ -304,11 +339,12 @@ export function EmailDeliveryLog() {
           </button>
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5">
           {[
             ['Messages', displaySends.length],
             ['Visible recipients', visibleRecipients.length],
             ['Delivered', deliveredCount],
+            ['Confirmation pending', pendingCount],
             ['Problems', problemCount],
           ].map(([label, value]) => (
             <div key={String(label)} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
@@ -339,12 +375,14 @@ export function EmailDeliveryLog() {
           <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white">
             <option value="all">All Statuses</option>
             <option value="submitted">Submitted</option>
+            <option value="confirmation_pending">Confirmation Pending</option>
             <option value="delivered">Delivered</option>
             <option value="deferred">Deferred</option>
             <option value="temporary_failure">Temporary Failure</option>
             <option value="bounced">Bounced</option>
             <option value="rejected">Rejected</option>
             <option value="complained">Complaint</option>
+            <option value="unsubscribed">Unsubscribed</option>
             <option value="failed">Failed</option>
           </select>
         </div>
@@ -362,6 +400,7 @@ export function EmailDeliveryLog() {
             {pageRows.map((send) => {
               const isExpanded = expanded.has(send.id);
               const delivered = send.matchingRecipients.filter((recipient) => recipient.status === 'delivered').length;
+              const messageSize = sizeAssessment(send.estimated_message_bytes);
               return (
                 <div key={send.id}>
                   <button type="button" onClick={() => toggleExpanded(send.id)} className="grid w-full gap-3 p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 md:grid-cols-[1.6rem_minmax(0,2fr)_minmax(0,1.3fr)_8rem_8rem] md:items-center">
@@ -379,14 +418,21 @@ export function EmailDeliveryLog() {
                   </button>
                   {isExpanded && (
                     <div className="border-t border-gray-100 bg-gray-50 px-5 py-4 dark:border-gray-700 dark:bg-gray-900/40">
-                      <div className="mb-3 grid gap-2 text-xs text-gray-500 md:grid-cols-3">
+                      {send.aggregateStatus === 'confirmation_pending' && (
+                        <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                          <span>Mailgun accepted this message, but no recipient delivery event was recorded within 15 minutes. This is not marked failed; use the message ID below to check Mailgun Events.</span>
+                        </div>
+                      )}
+                      <div className="mb-3 grid gap-2 text-xs text-gray-500 md:grid-cols-4">
                         <span>Attachments: {send.attachment_count}</span>
+                        <span className={messageSize.classes}>Size: {formatBytes(send.estimated_message_bytes)} · {messageSize.label}</span>
                         <span>Submitted: {formatDate(send.submitted_at)}</span>
                         <span className="truncate" title={send.provider_message_id || ''}>Message ID: {send.provider_message_id || '—'}</span>
                       </div>
                       <div className="overflow-x-auto rounded-md border border-gray-200 dark:border-gray-700">
                         <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
-                          <thead className="bg-gray-100 dark:bg-gray-800"><tr>{['Recipient', 'Type', 'Field', 'Status', 'Latest event'].map((heading) => <th key={heading} className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{heading}</th>)}</tr></thead>
+                          <thead className="bg-gray-100 dark:bg-gray-800"><tr>{['Recipient', 'Type', 'Field', 'Delivery status', 'Latest activity'].map((heading) => <th key={heading} className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{heading}</th>)}</tr></thead>
                           <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-[#1E293B]">
                             {send.recipients.map((recipient) => (
                               <tr key={`${recipient.channel}:${recipient.email}`} className={recipient.kind === 'internal' ? 'opacity-65' : ''}>
@@ -394,7 +440,10 @@ export function EmailDeliveryLog() {
                                 <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{RECIPIENT_LABELS[recipient.kind]}</td>
                                 <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{recipient.channel}</td>
                                 <td className="px-3 py-2"><span className={`rounded-full px-2 py-1 text-xs font-medium ${statusClasses(recipient.status)}`}>{recipient.status.replaceAll('_', ' ')}</span></td>
-                                <td className="whitespace-nowrap px-3 py-2 text-gray-500">{formatDate(recipient.eventAt)}</td>
+                                <td className="whitespace-nowrap px-3 py-2 text-gray-500">
+                                  {recipient.latestActivity ? recipient.latestActivity.replaceAll('_', ' ') : '—'}
+                                  <p className="mt-1 text-xs">{formatDate(recipient.latestActivityAt || recipient.eventAt)}</p>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
