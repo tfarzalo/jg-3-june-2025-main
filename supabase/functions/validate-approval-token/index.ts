@@ -87,9 +87,25 @@ serve(async (req) => {
     const expiresAt = new Date(approval.expires_at);
     const actionExpired = !approval.used_at && now > expiresAt;
 
-    // Email attachment selection is intentionally independent from the public
-    // approval gallery. The gallery always shows every applicable job image.
-    const selectedImageIds = new Set<string>(approval.extra_charges_data?.selected_images || []);
+    const extraChargesData = approval.extra_charges_data || {};
+    const hasDedicatedApprovalSelection = Object.prototype.hasOwnProperty.call(
+      extraChargesData,
+      'approval_page_image_entries',
+    );
+    // New tokens use an approval-page-specific selection. Older tokens fall
+    // back to the former shared attachment/page selection for compatibility.
+    const selectedEntries = hasDedicatedApprovalSelection
+      ? (Array.isArray(extraChargesData.approval_page_image_entries)
+        ? extraChargesData.approval_page_image_entries
+        : [])
+      : (Array.isArray(extraChargesData.selected_image_entries)
+        ? extraChargesData.selected_image_entries
+        : []);
+    const selectedImageIds = new Set<string>(
+      hasDedicatedApprovalSelection
+        ? (extraChargesData.approval_page_images || [])
+        : (extraChargesData.selected_images || []),
+    );
     
     // Fetch job details
     const { data: job, error: jobError } = await supabase
@@ -135,7 +151,7 @@ serve(async (req) => {
     if (jobFilesResult.error) console.error('Error loading job approval files:', jobFilesResult.error);
     if (workOrderFilesResult.error) console.error('Error loading work-order approval files:', workOrderFilesResult.error);
 
-    const candidates = [
+    const availableJobImages = [
       ...(legacyResult.data || []).map((image) => ({
         id: image.id,
         file_path: image.file_path,
@@ -161,6 +177,18 @@ serve(async (req) => {
         .filter((image) => Boolean(image.file_path)),
     ].sort((left, right) => String(left.created_at || '').localeCompare(String(right.created_at || '')));
 
+    const availableByStorageLocation = new Map(
+      availableJobImages.map((image) => [`${image.bucket}:${image.file_path}`.toLowerCase(), image]),
+    );
+    const candidates = selectedEntries.length > 0
+      ? selectedEntries
+          .map((entry) => {
+            const bucket = entry.bucket || (entry.source === 'files' ? 'files' : 'job-images');
+            return availableByStorageLocation.get(`${bucket}:${entry.file_path}`.toLowerCase()) || null;
+          })
+          .filter((image): image is (typeof availableJobImages)[number] => image !== null)
+      : availableJobImages.filter((image) => selectedImageIds.has(image.id));
+
     const seenImages = new Set<string>();
     const uniqueImages = candidates.filter((image) => {
       const key = `${image.bucket}:${image.file_path}`.toLowerCase();
@@ -182,7 +210,7 @@ serve(async (req) => {
         mime_type: image.mime_type,
         signedUrl: signedUrlData?.signedUrl || null,
         source: image.source,
-        selected: selectedImageIds.has(image.id),
+        selected: true,
       };
     }));
 
