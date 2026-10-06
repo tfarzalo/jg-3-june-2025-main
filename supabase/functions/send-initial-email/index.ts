@@ -124,16 +124,14 @@ Deno.serve(async (req) => {
     if (!attempt?.attempt_id || !attempt?.verification_id) throw new Error("Unable to prepare verification email.");
     const verificationUrl = `${portalBaseUrl}/email-verification/${encodeURIComponent(token)}`;
     const firstName = (String(recipient.name || "there").replace(/[\r\n]/g, " ").trim().split(/\s+/)[0] || "there");
-    const text = `Hello ${firstName},
-
-Please verify your email address by clicking the link below:
-${verificationUrl}
-
-JG Painting Pros Inc. may send important notifications and updates to this email address.
-
-Please mark this message as Not Spam if it was filtered incorrectly. Where possible, add the sender to your Safe Senders list or email allowlist to help ensure inbox deliverability.
-
-JG Painting Pros Inc.`;
+    const text = [
+      `Hello ${firstName},`,
+      "Please verify your email address by clicking the link below:",
+      verificationUrl,
+      "JG Painting Pros Inc. may send important notifications and updates to this email address.",
+      "Please mark this message as Not Spam if it was filtered incorrectly. Where possible, add the sender to your Safe Senders list or email allowlist to help ensure inbox deliverability.",
+      "JG Painting Pros Inc.",
+    ].join("\n\n");
 
     const sendResponse = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
       method: "POST",
