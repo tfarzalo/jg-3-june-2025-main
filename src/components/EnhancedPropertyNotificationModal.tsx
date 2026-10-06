@@ -380,8 +380,8 @@ export function EnhancedPropertyNotificationModal({
     () => isApprovalEmail
       ? [
           { id: 1, title: 'Select Template' },
-          { id: 2, title: 'Customize Email' },
-          { id: 3, title: 'Approval Page Images' },
+          { id: 2, title: 'Email Details' },
+          { id: 3, title: 'Approval Images' },
           { id: 4, title: 'Review & Send' },
         ]
       : [
@@ -2526,7 +2526,7 @@ export function EnhancedPropertyNotificationModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="flex max-h-[95vh] w-full max-w-4xl flex-col rounded-lg bg-white shadow-2xl dark:bg-gray-800">
+      <div className="flex max-h-[95vh] w-full max-w-6xl flex-col rounded-lg bg-white shadow-2xl dark:bg-gray-800">
         <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
           <div className="flex items-center space-x-2">
             <Mail className="h-5 w-5 text-blue-600" />
@@ -2537,8 +2537,8 @@ export function EnhancedPropertyNotificationModal({
           </button>
         </div>
 
-        <div className="overflow-x-auto border-b border-gray-200 px-6 py-4 dark:border-gray-700">
-          <ol className="flex min-w-max items-center space-x-4 text-sm">
+        <div className="overflow-x-auto border-b border-gray-200 px-4 py-4 sm:px-6 dark:border-gray-700">
+          <ol className="flex min-w-[680px] items-center justify-between text-xs sm:text-sm">
             {steps.map((step, index) => (
               <li key={step.id} className="flex items-center">
                 <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${currentStep >= step.id ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-300'}`}>
@@ -2548,7 +2548,7 @@ export function EnhancedPropertyNotificationModal({
                   {step.title}
                 </span>
                 {index < steps.length - 1 && (
-                  <div className={`ml-4 mr-4 h-0.5 w-10 ${currentStep > step.id ? 'bg-blue-500 dark:bg-blue-400' : 'bg-gray-200 dark:bg-gray-700'}`} />
+                  <div className={`mx-3 h-0.5 w-6 lg:mx-5 lg:w-10 ${currentStep > step.id ? 'bg-blue-500 dark:bg-blue-400' : 'bg-gray-200 dark:bg-gray-700'}`} />
                 )}
               </li>
             ))}
