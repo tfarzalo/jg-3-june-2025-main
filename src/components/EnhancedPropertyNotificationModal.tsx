@@ -909,6 +909,7 @@ export function EnhancedPropertyNotificationModal({
     const sections = selectedTemplate.included_sections ?? [];
     const buckets: ImageBucket[] = [];
     if (sections.includes('before_images')) buckets.push('before');
+    if (sections.includes('after_images')) buckets.push('after');
     if (sections.includes('sprinkler_images')) buckets.push('sprinkler');
     if (sections.includes('other_images')) buckets.push('other');
 
@@ -1198,7 +1199,9 @@ export function EnhancedPropertyNotificationModal({
   };
 
   const renderImagePreview = (bucket: ImageBucket, sectionKey: string) => {
-    if (!safeSections.includes(sectionKey)) return null;
+    // Approval emails honor the user's explicit selection even when the base
+    // template did not originally include that image section.
+    if (!isApprovalEmail && !safeSections.includes(sectionKey)) return null;
     const images = selectedImages.filter((img) => img.normalizedType === bucket);
     if (!images.length) return null;
 
@@ -1346,7 +1349,10 @@ export function EnhancedPropertyNotificationModal({
     }
 
     const imageSection = (bucket: ImageBucket, key: string) => {
-      if (!safeSections.includes(key)) return;
+      // For approval emails, an explicit image selection overrides the
+      // template's default image-section list. Other notification types retain
+      // their template-controlled behavior.
+      if (!isApprovalEmail && !safeSections.includes(key)) return;
       const images = selectedImages.filter((img) => img.normalizedType === bucket);
       if (!images.length) return;
       const cards = images
@@ -1510,6 +1516,7 @@ export function EnhancedPropertyNotificationModal({
       // to base64, and reference it via a cid: URI so that email clients render it inline
       // regardless of their "block remote images" setting.
       const imagesToEmbed = selectedImages.filter((img) => {
+        if (isApprovalEmail) return true;
         // Only embed images that belong to a section the template includes
         const sectionMap: Record<ImageBucket, string> = {
           before: 'before_images',
@@ -1529,6 +1536,7 @@ export function EnhancedPropertyNotificationModal({
         encoding: string;
         cid: string;
       }> = [];
+      const skippedInlineImages: string[] = [];
 
       if (imagesToEmbed.length > 0) {
         console.log(`📸 Fetching ${imagesToEmbed.length} image(s) for inline embedding…`);
@@ -1542,6 +1550,7 @@ export function EnhancedPropertyNotificationModal({
         for (const { img, data } of results) {
           if (!data) {
             console.warn(`⚠️ Could not fetch image for inline embedding: ${img.file_name}`);
+            skippedInlineImages.push(img.file_name);
             continue;
           }
           const cid = `img_${img.id.replace(/-/g, '')}@jgpaintingprosinc.com`;
@@ -1558,6 +1567,17 @@ export function EnhancedPropertyNotificationModal({
           });
         }
         console.log(`✅ ${inlineAttachments.length} image(s) prepared as inline attachments`);
+      }
+
+      if (skippedInlineImages.length > 0) {
+        const skippedSummary = skippedInlineImages.slice(0, 3).join(', ');
+        const remainingCount = skippedInlineImages.length - Math.min(3, skippedInlineImages.length);
+        const detail = remainingCount > 0 ? `${skippedSummary}, and ${remainingCount} more` : skippedSummary;
+        const shouldContinue = window.confirm(
+          `${skippedInlineImages.length} selected image${skippedInlineImages.length === 1 ? '' : 's'} could not be embedded (${detail}). ` +
+          'They will remain available on the approval page. Send the email with the remaining images?',
+        );
+        if (!shouldContinue) return;
       }
 
       // Estimate before creating an approval token so cancelling a large send
@@ -1622,6 +1642,8 @@ export function EnhancedPropertyNotificationModal({
             notification_type: effectiveNotificationType,
             selected_image_count: selectedImages.length,
             inline_attachment_count: inlineAttachments.length,
+            skipped_inline_image_count: skippedInlineImages.length,
+            skipped_inline_image_names: skippedInlineImages,
           },
         },
       });
@@ -1731,7 +1753,7 @@ export function EnhancedPropertyNotificationModal({
           <h4 className="text-sm font-medium text-gray-900 dark:text-white">Images to include</h4>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {isApprovalEmail
-              ? 'Selected images will be shown on the approval page.'
+              ? 'Selected images will be embedded in the email and shown on the approval page.'
               : 'Selected images will be embedded directly in the email.'}
           </p>
         </div>
@@ -2002,7 +2024,7 @@ export function EnhancedPropertyNotificationModal({
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
             These sections appear in the email.{' '}
             {notificationType === 'extra_charges'
-              ? 'Image selection below controls what appears on the approval page.'
+              ? 'Image selection below overrides the template defaults and controls what appears in the email and on the approval page.'
               : 'Image selection below controls which images are embedded in the email.'}
           </p>
           {safeSections.length === 0 ? (
