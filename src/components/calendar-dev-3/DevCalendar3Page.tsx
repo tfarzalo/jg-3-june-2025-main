@@ -588,6 +588,7 @@ export default function DevCalendar3Page() {
   const [batchSending, setBatchSending] = useState(false);
   const [sessionStartedAt] = useState(() => new Date().toISOString());
   const [pendingAssignmentAction, setPendingAssignmentAction] = useState<'send-now' | 'send-later' | null>(null);
+  const [revealedDeferredNotificationIds, setRevealedDeferredNotificationIds] = useState<Set<string>>(new Set());
   const [nonPreferredWarningOpen, setNonPreferredWarningOpen] = useState(false);
   const [sendingNotifications, setSendingNotifications] = useState(false);
   const [addChoice, setAddChoice] = useState<AddChoice>({ date: '', open: false });
@@ -2324,7 +2325,17 @@ JG Painting Pros Inc.`,
       })()}
 
       {selectedItem && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex justify-end" role="dialog" aria-modal="true">
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex justify-end"
+          role="dialog"
+          aria-modal="true"
+          onClick={(event) => {
+            if (event.target !== event.currentTarget) return;
+            const hasUnsavedAssignmentChange = selectedItem.type === 'job'
+              && (assignmentSubId || null) !== ((selectedItem.raw as CalendarJob).assigned_to || null);
+            if (!hasUnsavedAssignmentChange && !assignmentSaving) setSelectedItem(null);
+          }}
+        >
           <div className="h-full w-full max-w-xl overflow-y-auto bg-white dark:bg-[#111827] shadow-2xl">
             <div className="sticky top-0 z-10 bg-white dark:bg-[#111827] border-b border-gray-200 dark:border-[#2D3B4E] p-5 flex items-start justify-between">
               <div>
@@ -2411,9 +2422,30 @@ JG Painting Pros Inc.`,
                                 <p className="font-semibold">{currentAssignmentNotification?.status === 'failed' ? 'The last notification attempt failed.' : 'This assignment has not been emailed yet.'}</p>
                                 {currentAssignmentNotification?.last_error && <p className="mt-1 text-xs">{currentAssignmentNotification.last_error}</p>}
                               </div>
-                              <button onClick={() => sendSelectedNotificationRows([currentAssignmentNotification!.id], true)} disabled={batchSending} className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-                                {batchSending ? 'Sending...' : currentAssignmentNotification?.status === 'failed' ? 'Retry Assignment Notification' : 'Send Assignment Notification'}
-                              </button>
+                              {currentAssignmentNotification?.status === 'pending' && !revealedDeferredNotificationIds.has(currentAssignmentNotification.id) ? (
+                                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <p className="font-semibold">Marked to send later</p>
+                                      <p className="mt-1 text-xs">The assignment was saved without sending its notification email.</p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setRevealedDeferredNotificationIds((current) => new Set(current).add(currentAssignmentNotification.id))}
+                                      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-blue-300 bg-white px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-950/50 dark:text-blue-200"
+                                      aria-label="Remove send later marker and show the send notification button"
+                                      title="Show send now option"
+                                    >
+                                      Send later
+                                      <X className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button onClick={() => sendSelectedNotificationRows([currentAssignmentNotification!.id], true)} disabled={batchSending} className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+                                  {batchSending ? 'Sending...' : currentAssignmentNotification?.status === 'failed' ? 'Retry Assignment Notification' : 'Send Assignment Notification Now'}
+                                </button>
+                              )}
                             </div>
                           ) : job.assigned_to ? (
                             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600 dark:border-[#2D3B4E] dark:bg-[#0F172A] dark:text-gray-300">
