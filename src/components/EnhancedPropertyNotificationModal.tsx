@@ -349,7 +349,9 @@ export function EnhancedPropertyNotificationModal({
   const [emailConfig, setEmailConfig] = useState<EmailConfiguration | null>(null);
   const [jobImages, setJobImages] = useState<JobImageWithMeta[]>([]);
   const [selectedImageIds, setSelectedImageIds] = useState<string[]>([]);
+  const [emailImageChoiceMade, setEmailImageChoiceMade] = useState(false);
   const [approvalPageImageIds, setApprovalPageImageIds] = useState<string[]>([]);
+  const [approvalPageImageChoiceMade, setApprovalPageImageChoiceMade] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -376,6 +378,9 @@ export function EnhancedPropertyNotificationModal({
     return templateType === 'approval' || triggerPhase.includes('extra_charges');
   }, [selectedTemplate]);
   const isApprovalEmail = notificationType === 'extra_charges' || isSelectedApprovalTemplate;
+  const showsEmailImageSelection = isApprovalEmail || safeSections.some((section) =>
+    ['before_images', 'after_images', 'sprinkler_images', 'other_images'].includes(section)
+  );
   const steps = useMemo(
     () => isApprovalEmail
       ? [
@@ -784,7 +789,9 @@ export function EnhancedPropertyNotificationModal({
       // Images are intentionally opt-in. Selecting every available image by
       // default can increase attachment scanning and quarantine risk.
       setSelectedImageIds([]);
+      setEmailImageChoiceMade(false);
       setApprovalPageImageIds([]);
+      setApprovalPageImageChoiceMade(false);
 
       const { data: configData, error: configError } = await supabase.rpc('get_active_email_configuration');
       if (configError) throw configError;
@@ -1018,21 +1025,30 @@ export function EnhancedPropertyNotificationModal({
   }, [ccEmails, ccRecipientOptions.length]);
 
   const toggleImageSelection = (imageId: string) => {
+    setEmailImageChoiceMade(true);
     setSelectedImageIds((prev) =>
       prev.includes(imageId) ? prev.filter((id) => id !== imageId) : [...prev, imageId]
     );
   };
 
-  const selectAllImages = () => setSelectedImageIds(jobImages.map((img) => img.id));
-  const clearImages = () => setSelectedImageIds([]);
+  const selectAllImages = () => {
+    setEmailImageChoiceMade(true);
+    setSelectedImageIds(jobImages.map((img) => img.id));
+  };
+  const selectNoEmailImages = () => {
+    setEmailImageChoiceMade(true);
+    setSelectedImageIds([]);
+  };
   const getIdsForBucket = (bucket: ImageBucket) =>
     jobImages.filter((img) => img.normalizedType === bucket).map((img) => img.id);
   const addImagesForBucket = (bucket: ImageBucket) => {
+    setEmailImageChoiceMade(true);
     const ids = getIdsForBucket(bucket);
     if (ids.length === 0) return;
     setSelectedImageIds((prev) => Array.from(new Set([...prev, ...ids])));
   };
   const removeImagesForBucket = (bucket: ImageBucket) => {
+    setEmailImageChoiceMade(true);
     const ids = new Set(getIdsForBucket(bucket));
     setSelectedImageIds((prev) => prev.filter((id) => !ids.has(id)));
   };
@@ -1896,20 +1912,33 @@ export function EnhancedPropertyNotificationModal({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <h4 className="text-sm font-medium text-gray-900 dark:text-white">Images to include</h4>
+          <h4 className="text-sm font-medium text-gray-900 dark:text-white">
+            Images to include <span className="text-red-600">*</span>
+          </h4>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {isApprovalEmail
               ? 'Selected images will be embedded in the email. Approval-page images are selected separately below.'
               : 'Selected images will be embedded directly in the email.'}
           </p>
         </div>
-        {jobImages.length > 0 && (
-          <div className="space-x-2">
+        <div className="space-x-2">
+          {jobImages.length > 0 && (
             <button onClick={selectAllImages} type="button" className="text-xs font-medium text-blue-600 dark:text-blue-400">Select all</button>
-            <button onClick={clearImages} type="button" className="text-xs font-medium text-gray-500 dark:text-gray-300">Clear</button>
-          </div>
-        )}
+          )}
+          <button
+            onClick={selectNoEmailImages}
+            type="button"
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${emailImageChoiceMade && selectedImageIds.length === 0 ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'}`}
+          >
+            None
+          </button>
+        </div>
       </div>
+      {!emailImageChoiceMade && (
+        <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+          Required: select one or more images, or choose None.
+        </p>
+      )}
       <div className={`rounded-lg border p-3 ${attachmentGuidance.classes}`}>
         <div className="flex items-center justify-between gap-3 text-xs">
           <span className="font-semibold">{selectedCount} image{selectedCount === 1 ? '' : 's'} selected</span>
@@ -2022,8 +2051,12 @@ export function EnhancedPropertyNotificationModal({
   const renderApprovalPageImageSelection = () => {
     if (!isApprovalEmail) return null;
 
-    const useEmailSelections = () => setApprovalPageImageIds([...selectedImageIds]);
+    const useEmailSelections = () => {
+      setApprovalPageImageChoiceMade(true);
+      setApprovalPageImageIds([...selectedImageIds]);
+    };
     const toggleApprovalPageImage = (imageId: string) => {
+      setApprovalPageImageChoiceMade(true);
       setApprovalPageImageIds((current) =>
         current.includes(imageId)
           ? current.filter((id) => id !== imageId)
@@ -2035,25 +2068,39 @@ export function EnhancedPropertyNotificationModal({
       <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/50 p-4 dark:border-blue-800 dark:bg-blue-950/20">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h4 className="text-sm font-medium text-gray-900 dark:text-white">Images visible on the approval page</h4>
+            <h4 className="text-sm font-medium text-gray-900 dark:text-white">
+              Images visible on the approval page <span className="text-red-600">*</span>
+            </h4>
             <p className="text-xs text-gray-600 dark:text-gray-300">
               Select only the images the approving contact should be allowed to view. These choices do not affect email attachments.
             </p>
           </div>
-          {jobImages.length > 0 && (
-            <div className="flex flex-wrap gap-2 text-xs font-medium">
+          <div className="flex flex-wrap gap-2 text-xs font-medium">
+            {jobImages.length > 0 && (
+              <>
               <button onClick={useEmailSelections} type="button" className="text-blue-700 hover:underline dark:text-blue-300">
                 Use email selections
               </button>
-              <button onClick={() => setApprovalPageImageIds(jobImages.map((image) => image.id))} type="button" className="text-blue-700 hover:underline dark:text-blue-300">
+              <button onClick={() => { setApprovalPageImageChoiceMade(true); setApprovalPageImageIds(jobImages.map((image) => image.id)); }} type="button" className="text-blue-700 hover:underline dark:text-blue-300">
                 Select all
               </button>
-              <button onClick={() => setApprovalPageImageIds([])} type="button" className="text-gray-600 hover:underline dark:text-gray-300">
-                Clear
-              </button>
-            </div>
-          )}
+              </>
+            )}
+            <button
+              onClick={() => { setApprovalPageImageChoiceMade(true); setApprovalPageImageIds([]); }}
+              type="button"
+              className={`rounded-full px-3 py-1 font-semibold ${approvalPageImageChoiceMade && approvalPageImageIds.length === 0 ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}
+            >
+              None
+            </button>
+          </div>
         </div>
+
+        {!approvalPageImageChoiceMade && (
+          <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+            Required: select one or more images, or choose None.
+          </p>
+        )}
 
         <p className="text-xs font-semibold text-blue-800 dark:text-blue-200">
           {approvalPageImageIds.length} image{approvalPageImageIds.length === 1 ? '' : 's'} selected for the approval page
@@ -2366,7 +2413,7 @@ export function EnhancedPropertyNotificationModal({
         </div>
 
         {isApprovalEmail && renderImageSelection()}
-        {!isApprovalEmail && safeSections.some(s => ['before_images', 'after_images', 'sprinkler_images', 'other_images'].includes(s)) && renderImageSelection()}
+        {!isApprovalEmail && showsEmailImageSelection && renderImageSelection()}
       </div>
     );
   };
@@ -2520,8 +2567,13 @@ export function EnhancedPropertyNotificationModal({
   const canProceedToNext = currentStep === 1
     ? Boolean(selectedTemplate)
     : currentStep === 2
-      ? Boolean(selectedTemplate && recipientEmail.trim() && emailSubject.trim())
-      : currentStep === 3 && isApprovalEmail;
+      ? Boolean(
+          selectedTemplate &&
+          recipientEmail.trim() &&
+          emailSubject.trim() &&
+          (!showsEmailImageSelection || emailImageChoiceMade)
+        )
+      : currentStep === 3 && isApprovalEmail && approvalPageImageChoiceMade;
   const isFinalStep = currentStep === totalSteps;
 
   return (
