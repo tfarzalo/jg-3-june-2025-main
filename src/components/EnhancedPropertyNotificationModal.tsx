@@ -128,6 +128,25 @@ interface SelectableEmailRecipient {
   source: 'property' | 'configuration';
 }
 
+interface PreparedInlineAttachment {
+  filename: string;
+  content: string;
+  contentType: string;
+  encoding: string;
+  cid: string;
+}
+
+interface PreparedEmailImages {
+  key: string;
+  cidMap: Record<string, string>;
+  inlineAttachments: PreparedInlineAttachment[];
+  skippedInlineImages: string[];
+}
+
+interface ReviewSizeEstimate extends PreparedEmailImages {
+  estimatedMessageBytes: number;
+}
+
 interface EnhancedPropertyNotificationModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -339,6 +358,8 @@ export function EnhancedPropertyNotificationModal({
   const [sentEmailHistory, setSentEmailHistory] = useState<SentEmailHistoryItem[]>([]);
   const [assignedSubcontractorName, setAssignedSubcontractorName] = useState('');
   const [assignedSubcontractorEmail, setAssignedSubcontractorEmail] = useState('');
+  const [reviewSizeEstimate, setReviewSizeEstimate] = useState<ReviewSizeEstimate | null>(null);
+  const [reviewSizeLoading, setReviewSizeLoading] = useState(false);
   const isGeneralWorkOrderEmail = notificationType === 'general_work_order';
 
   const steps = useMemo(
@@ -365,6 +386,20 @@ export function EnhancedPropertyNotificationModal({
   const selectedImages = useMemo(
     () => jobImages.filter((img) => selectedImageIds.includes(img.id)),
     [jobImages, selectedImageIds]
+  );
+  const imagesToEmbed = useMemo(() => selectedImages.filter((img) => {
+    if (isApprovalEmail) return true;
+    const sectionMap: Record<ImageBucket, string> = {
+      before: 'before_images',
+      after: 'after_images',
+      sprinkler: 'sprinkler_images',
+      other: 'other_images',
+    };
+    return safeSections.includes(sectionMap[img.normalizedType]);
+  }), [isApprovalEmail, safeSections, selectedImages]);
+  const imagePreparationKey = useMemo(
+    () => imagesToEmbed.map((image) => `${image.id}:${image.publicUrl}`).sort().join('|'),
+    [imagesToEmbed],
   );
   const finalRecipientLists = useMemo(() => {
     const toKeys = new Set(parseEmailList(recipientEmail).map(normalizeEmailAddress));
@@ -1329,6 +1364,38 @@ export function EnhancedPropertyNotificationModal({
     }
   };
 
+  const prepareInlineImages = async (): Promise<PreparedEmailImages> => {
+    const cidMap: Record<string, string> = {};
+    const inlineAttachments: PreparedInlineAttachment[] = [];
+    const skippedInlineImages: string[] = [];
+
+    if (imagesToEmbed.length > 0) {
+      const results = await Promise.all(imagesToEmbed.map(async (img) => ({
+        img,
+        data: await fetchImageAsBase64(img.publicUrl),
+      })));
+
+      for (const { img, data } of results) {
+        if (!data) {
+          skippedInlineImages.push(img.file_name);
+          continue;
+        }
+        const cid = `img_${img.id.replace(/-/g, '')}@jgpaintingprosinc.com`;
+        cidMap[img.id] = cid;
+        const baseFilename = img.file_name.replace(/\.[^.]+$/, '') || `image_${img.id}`;
+        inlineAttachments.push({
+          filename: `${baseFilename}.${data.extension}`,
+          content: data.base64,
+          contentType: data.contentType,
+          encoding: 'base64',
+          cid,
+        });
+      }
+    }
+
+    return { key: imagePreparationKey, cidMap, inlineAttachments, skippedInlineImages };
+  };
+
   /**
    * Build section HTML for the email body.
    * When cidMap is provided, images are referenced via cid: URIs (inline attachments).
@@ -1536,6 +1603,41 @@ export function EnhancedPropertyNotificationModal({
     `;
   };
 
+  useEffect(() => {
+    if (!isOpen || currentStep !== 3 || !selectedTemplate) return;
+    let cancelled = false;
+
+    const calculateReviewSize = async () => {
+      setReviewSizeLoading(true);
+      try {
+        const prepared = reviewSizeEstimate?.key === imagePreparationKey
+          ? reviewSizeEstimate
+          : await prepareInlineImages();
+        const preliminaryHtml = buildFinalEmailHtml(undefined, prepared.cidMap);
+        const encodedAttachmentBytes = prepared.inlineAttachments.reduce(
+          (sum, attachment) => sum + estimateEncodedBase64Bytes(attachment.content),
+          0,
+        );
+        const preliminaryBodyBytes = new TextEncoder().encode(preliminaryHtml).byteLength;
+        const estimatedMessageBytes = preliminaryBodyBytes
+          + encodedAttachmentBytes
+          + 4096
+          + prepared.inlineAttachments.length * 600;
+        if (!cancelled) setReviewSizeEstimate({ ...prepared, estimatedMessageBytes });
+      } catch (error) {
+        console.error('Unable to calculate the email size preview', error);
+        if (!cancelled) setReviewSizeEstimate(null);
+      } finally {
+        if (!cancelled) setReviewSizeLoading(false);
+      }
+    };
+
+    void calculateReviewSize();
+    return () => { cancelled = true; };
+    // The preparation key captures image changes. Content fields are included
+    // so the body estimate refreshes when the user returns and edits the email.
+  }, [currentStep, emailContent, emailSignature, emailSubject, imagePreparationKey, isOpen, selectedTemplate?.id]);
+
   const handlePreview = async () => {
     if (!isApprovalEmail) {
       toast.info('Preview is only available for approval emails.');
@@ -1572,64 +1674,12 @@ export function EnhancedPropertyNotificationModal({
       const effectiveNotificationType = isApprovalEmail ? 'extra_charges' : notificationType;
       const effectiveEmailPurpose = NOTIFICATION_TYPE_LABELS[effectiveNotificationType];
 
-      // --- Inline image embedding ---
-      // For notification-type emails (sprinkler_paint, drywall_repairs) the selected images
-      // must actually appear inside the email body. We fetch each selected image, convert it
-      // to base64, and reference it via a cid: URI so that email clients render it inline
-      // regardless of their "block remote images" setting.
-      const imagesToEmbed = selectedImages.filter((img) => {
-        if (isApprovalEmail) return true;
-        // Only embed images that belong to a section the template includes
-        const sectionMap: Record<ImageBucket, string> = {
-          before: 'before_images',
-          after: 'after_images',
-          sprinkler: 'sprinkler_images',
-          other: 'other_images',
-        };
-        return safeSections.includes(sectionMap[img.normalizedType]);
-      });
-
-      // Build a CID map: imageId → cid content-id string
-      const cidMap: Record<string, string> = {};
-      const inlineAttachments: Array<{
-        filename: string;
-        content: string;
-        contentType: string;
-        encoding: string;
-        cid: string;
-      }> = [];
-      const skippedInlineImages: string[] = [];
-
-      if (imagesToEmbed.length > 0) {
-        console.log(`📸 Fetching ${imagesToEmbed.length} image(s) for inline embedding…`);
-        const results = await Promise.all(
-          imagesToEmbed.map(async (img) => {
-            const data = await fetchImageAsBase64(img.publicUrl);
-            return { img, data };
-          })
-        );
-
-        for (const { img, data } of results) {
-          if (!data) {
-            console.warn(`⚠️ Could not fetch image for inline embedding: ${img.file_name}`);
-            skippedInlineImages.push(img.file_name);
-            continue;
-          }
-          const cid = `img_${img.id.replace(/-/g, '')}@jgpaintingprosinc.com`;
-          cidMap[img.id] = cid;
-          // Normalize the attachment extension to the verified file signature.
-          const baseFilename = img.file_name.replace(/\.[^.]+$/, '') || `image_${img.id}`;
-          const safeFilename = `${baseFilename}.${data.extension}`;
-          inlineAttachments.push({
-            filename: safeFilename,
-            content: data.base64,
-            contentType: data.contentType,
-            encoding: 'base64',
-            cid,
-          });
-        }
-        console.log(`✅ ${inlineAttachments.length} image(s) prepared as inline attachments`);
-      }
+      // Reuse the exact image preparation used for the Review & Send estimate.
+      // If selections changed, prepare a fresh set before any token or message is created.
+      const preparedImages = reviewSizeEstimate?.key === imagePreparationKey
+        ? reviewSizeEstimate
+        : await prepareInlineImages();
+      const { cidMap, inlineAttachments, skippedInlineImages } = preparedImages;
 
       if (skippedInlineImages.length > 0) {
         const skippedSummary = skippedInlineImages.slice(0, 3).join(', ');
@@ -2194,6 +2244,17 @@ export function EnhancedPropertyNotificationModal({
       }).format(new Date(sentAt));
     const previewEmailContent = applyEmailTokens(emailContent);
     const previewEmailSignature = applyEmailTokens(emailSignature);
+    const currentSizeEstimate = reviewSizeEstimate?.key === imagePreparationKey ? reviewSizeEstimate : null;
+    const estimatedBytes = currentSizeEstimate?.estimatedMessageBytes || 0;
+    const sizeLevel = estimatedBytes >= EMAIL_SIZE_MAX_BYTES
+      ? { label: 'Cannot send', detail: 'Remove selected images before sending.', classes: 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200' }
+      : estimatedBytes >= EMAIL_SIZE_STRONG_WARNING_BYTES
+        ? { label: 'High delivery risk', detail: 'A confirmation will be required before sending.', classes: 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200' }
+        : estimatedBytes >= EMAIL_SIZE_WARNING_BYTES
+          ? { label: 'Large message', detail: 'Some recipient systems may delay or quarantine it.', classes: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200' }
+          : estimatedBytes >= EMAIL_SIZE_INFO_BYTES
+            ? { label: 'Moderate size', detail: 'The message remains below the warning threshold.', classes: 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200' }
+            : { label: 'Within preferred range', detail: 'No size-related delivery warning is expected.', classes: 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200' };
 
     return (
     <div className="space-y-6">
@@ -2204,6 +2265,23 @@ export function EnhancedPropertyNotificationModal({
           <p><span className="font-medium">CC ({finalRecipientLists.cc.length}):</span> {finalRecipientLists.cc.join(', ') || 'None'}</p>
           <p><span className="font-medium">BCC ({finalRecipientLists.bcc.length}):</span> {finalRecipientLists.bcc.join(', ') || 'None'}</p>
         </div>
+      </div>
+      <div className={`rounded-lg border p-4 text-sm ${reviewSizeLoading || !currentSizeEstimate ? 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-900/40 dark:text-gray-200' : sizeLevel.classes}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-semibold">Email size and attachments</p>
+          <span className="rounded-full bg-white/70 px-2.5 py-1 text-xs font-semibold dark:bg-black/20">
+            {reviewSizeLoading || !currentSizeEstimate ? 'Calculating…' : sizeLevel.label}
+          </span>
+        </div>
+        {reviewSizeLoading || !currentSizeEstimate ? (
+          <p className="mt-2 text-xs">Checking the selected images and calculating their encoded email size.</p>
+        ) : (
+          <div className="mt-2 space-y-1 text-xs">
+            <p><span className="font-medium">Estimated message size:</span> {formatFileSize(currentSizeEstimate.estimatedMessageBytes)}</p>
+            <p><span className="font-medium">Images:</span> {selectedImages.length} selected · {currentSizeEstimate.inlineAttachments.length} ready to embed{currentSizeEstimate.skippedInlineImages.length ? ` · ${currentSizeEstimate.skippedInlineImages.length} unavailable for email embedding` : ''}</p>
+            <p>{sizeLevel.detail} Full-resolution job images remain available in the application and approval page.</p>
+          </div>
+        )}
       </div>
       {sentEmailHistory.length > 0 && (
         <div className="flex items-start space-x-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
