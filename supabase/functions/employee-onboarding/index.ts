@@ -16,7 +16,7 @@ import {
   formatEmployeeFormValue,
   type EmployeeBasicInfo,
   type EmployeeFormStatus,
-} from "../../../shared/employeeOnboarding.ts";
+} from "../_shared/employeeOnboarding.ts";
 
 type EmployeeRecord = {
   id: string;
