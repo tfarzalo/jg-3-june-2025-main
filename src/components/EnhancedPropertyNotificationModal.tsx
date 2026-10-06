@@ -122,6 +122,12 @@ interface EmailConfiguration {
   default_bcc_emails: string[];
 }
 
+interface SelectableEmailRecipient {
+  email: string;
+  selected: boolean;
+  source: 'property' | 'configuration';
+}
+
 interface EnhancedPropertyNotificationModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -189,6 +195,32 @@ const formatFileSize = (bytes: number) => {
 const estimateEncodedBase64Bytes = (base64: string) => {
   const encodedCharacters = base64.replace(/\s/g, '').length;
   return encodedCharacters + Math.ceil(encodedCharacters / 76) * 2;
+};
+
+const parseEmailList = (value: string) => value
+  .split(/[;,]/)
+  .map((email) => email.trim())
+  .filter(Boolean);
+
+const normalizeEmailAddress = (value: string) => {
+  const bracketed = value.match(/<([^<>]+)>/);
+  return (bracketed?.[1] || value).trim().toLowerCase();
+};
+
+const mergeRecipientOptions = (
+  current: SelectableEmailRecipient[],
+  emails: string[],
+  source: SelectableEmailRecipient['source'],
+) => {
+  const merged = [...current];
+  const known = new Set(current.map((recipient) => normalizeEmailAddress(recipient.email)));
+  for (const email of emails) {
+    const key = normalizeEmailAddress(email);
+    if (!key || known.has(key)) continue;
+    known.add(key);
+    merged.push({ email: email.trim(), selected: true, source });
+  }
+  return merged;
 };
 
 const formatCurrency = (value?: number | null) => {
@@ -291,6 +323,8 @@ export function EnhancedPropertyNotificationModal({
   const [recipientEmail, setRecipientEmail] = useState('');
   const [ccEmails, setCcEmails] = useState('');
   const [bccEmails, setBccEmails] = useState('');
+  const [ccRecipientOptions, setCcRecipientOptions] = useState<SelectableEmailRecipient[]>([]);
+  const [bccRecipientOptions, setBccRecipientOptions] = useState<SelectableEmailRecipient[]>([]);
   const [showCCBCC, setShowCCBCC] = useState(false);
   const [emailConfig, setEmailConfig] = useState<EmailConfiguration | null>(null);
   const [jobImages, setJobImages] = useState<JobImageWithMeta[]>([]);
@@ -332,6 +366,26 @@ export function EnhancedPropertyNotificationModal({
     () => jobImages.filter((img) => selectedImageIds.includes(img.id)),
     [jobImages, selectedImageIds]
   );
+  const finalRecipientLists = useMemo(() => {
+    const toKeys = new Set(parseEmailList(recipientEmail).map(normalizeEmailAddress));
+    const seen = new Set(toKeys);
+    const unique = (values: string[]) => values.filter((email) => {
+      const key = normalizeEmailAddress(email);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    const cc = unique([
+      ...ccRecipientOptions.filter((recipient) => recipient.selected).map((recipient) => recipient.email),
+      ...parseEmailList(ccEmails),
+    ]);
+    const bcc = unique([
+      ...bccRecipientOptions.filter((recipient) => recipient.selected).map((recipient) => recipient.email),
+      ...parseEmailList(bccEmails),
+    ]);
+    return { cc, bcc };
+  }, [bccEmails, bccRecipientOptions, ccEmails, ccRecipientOptions, recipientEmail]);
   const additionalComments = useMemo(
     () => (job?.work_order?.additional_comments || '').trim(),
     [job?.work_order?.additional_comments]
@@ -451,15 +505,8 @@ export function EnhancedPropertyNotificationModal({
         setRecipientEmail(recipients.to.join(', '));
       }
       
-      // Set CC field: other recipients
-      if (recipients.cc.length > 0) {
-        setCcEmails(recipients.cc.join(', '));
-      }
-      
-      // Set BCC field if any
-      if (recipients.bcc.length > 0) {
-        setBccEmails(recipients.bcc.join(', '));
-      }
+      setCcRecipientOptions((current) => mergeRecipientOptions(current, recipients.cc, 'property'));
+      setBccRecipientOptions((current) => mergeRecipientOptions(current, recipients.bcc, 'property'));
       
       // Show CC/BCC fields if there are any
       if (recipients.cc.length > 0 || recipients.bcc.length > 0) {
@@ -691,6 +738,11 @@ export function EnhancedPropertyNotificationModal({
       const { data: configData, error: configError } = await supabase.rpc('get_active_email_configuration');
       if (configError) throw configError;
       setEmailConfig(configData);
+      setBccRecipientOptions((current) => mergeRecipientOptions(
+        current,
+        configData?.default_bcc_emails || [],
+        'configuration',
+      ));
     } catch (error) {
       console.error('Error loading modal data:', error);
       toast.error('Failed to load email data. Please try again.');
@@ -892,6 +944,11 @@ export function EnhancedPropertyNotificationModal({
       fetchSentEmailHistory();
       setCurrentStep(1);
       setSelectedTemplate(null);
+      setRecipientEmail('');
+      setCcEmails('');
+      setBccEmails('');
+      setCcRecipientOptions([]);
+      setBccRecipientOptions([]);
     }
   }, [isOpen, job, fetchModalData, initializeRecipient, fetchAssignedSubcontractor, fetchSentEmailHistory]);
 
@@ -926,10 +983,15 @@ export function EnhancedPropertyNotificationModal({
 
   // Auto-expand CC/BCC section when there are CC or BCC emails
   useEffect(() => {
-    if ((ccEmails && ccEmails.trim()) || (bccEmails && bccEmails.trim())) {
+    if (
+      (ccEmails && ccEmails.trim()) ||
+      (bccEmails && bccEmails.trim()) ||
+      ccRecipientOptions.length > 0 ||
+      bccRecipientOptions.length > 0
+    ) {
       setShowCCBCC(true);
     }
-  }, [ccEmails, bccEmails]);
+  }, [ccEmails, bccEmails, ccRecipientOptions.length, bccRecipientOptions.length]);
 
   const toggleImageSelection = (imageId: string) => {
     setSelectedImageIds((prev) =>
@@ -1616,18 +1678,13 @@ export function EnhancedPropertyNotificationModal({
       }
 
       const finalHtml = buildFinalEmailHtml(approvalLink, cidMap);
-      const allBcc = [
-        ...(emailConfig?.default_bcc_emails || []),
-        ...bccEmails.split(',').map((email) => email.trim()).filter(Boolean),
-      ];
-
       const { error } = await supabase.functions.invoke('send-email', {
         body: {
           to: recipientEmail,
           subject: applyEmailTokens(emailSubject),
           html: finalHtml,
-          cc: ccEmails.split(',').map((email) => email.trim()).filter(Boolean),
-          bcc: allBcc.filter(Boolean),
+          cc: finalRecipientLists.cc,
+          bcc: finalRecipientLists.bcc,
           from: emailConfig ? `${emailConfig.from_name} <${emailConfig.from_email}>` : undefined,
           attachments: inlineAttachments.length > 0 ? inlineAttachments : undefined,
           emailType: effectiveNotificationType === 'extra_charges'
@@ -1661,8 +1718,8 @@ export function EnhancedPropertyNotificationModal({
           original_notification_type: notificationType,
           email_purpose: effectiveEmailPurpose,
           recipient_email: recipientEmail,
-          cc_emails: ccEmails.split(',').map((email) => email.trim()).filter(Boolean),
-          bcc_emails: allBcc.filter(Boolean),
+          cc_emails: finalRecipientLists.cc,
+          bcc_emails: finalRecipientLists.bcc,
           subject: applyEmailTokens(emailSubject),
           template_id: selectedTemplate.id,
           template_name: selectedTemplate.name,
@@ -1914,6 +1971,90 @@ export function EnhancedPropertyNotificationModal({
     </div>
   );
 
+  const renderSelectableRecipients = (
+    label: 'CC' | 'BCC',
+    options: SelectableEmailRecipient[],
+    setOptions: React.Dispatch<React.SetStateAction<SelectableEmailRecipient[]>>,
+    manualEmails: string,
+    setManualEmails: React.Dispatch<React.SetStateAction<string>>,
+    finalCount: number,
+  ) => {
+    const selectedCount = options.filter((recipient) => recipient.selected).length;
+    const setAll = (selected: boolean) => {
+      setOptions((current) => current.map((recipient) => ({ ...recipient, selected })));
+    };
+
+    return (
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/40">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">{label} recipients</p>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400">
+              {finalCount} selected for this email
+            </p>
+          </div>
+          {options.length > 0 && (
+            <div className="flex gap-2 text-[11px] font-medium">
+              <button type="button" onClick={() => setAll(true)} className="text-blue-600 hover:underline dark:text-blue-400">
+                Select all
+              </button>
+              <button type="button" onClick={() => setAll(false)} className="text-gray-600 hover:underline dark:text-gray-300">
+                Deselect all
+              </button>
+            </div>
+          )}
+        </div>
+
+        {options.length > 0 ? (
+          <div className="mt-3 space-y-2">
+            {options.map((recipient) => (
+              <label
+                key={`${label}-${normalizeEmailAddress(recipient.email)}`}
+                className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs dark:border-gray-700 dark:bg-gray-900"
+              >
+                <span className="min-w-0 truncate text-gray-700 dark:text-gray-200">{recipient.email}</span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-wide text-gray-400">
+                    {recipient.source === 'configuration' ? 'Default' : 'Property'}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={recipient.selected}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setOptions((current) => current.map((item) =>
+                        normalizeEmailAddress(item.email) === normalizeEmailAddress(recipient.email)
+                          ? { ...item, selected: checked }
+                          : item
+                      ));
+                    }}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                </span>
+              </label>
+            ))}
+            <p className="text-[11px] text-gray-500 dark:text-gray-400">
+              {selectedCount} of {options.length} automatic recipients enabled. Changes apply only to this email.
+            </p>
+          </div>
+        ) : (
+          <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">No automatic {label} recipients.</p>
+        )}
+
+        <label className="mt-3 block text-[11px] font-medium text-gray-600 dark:text-gray-400">
+          Additional {label} addresses
+        </label>
+        <input
+          type="text"
+          value={manualEmails}
+          onChange={(event) => setManualEmails(event.target.value)}
+          placeholder="user@example.com, another@example.com"
+          className={INPUT_FIELD_CLASSES}
+        />
+      </div>
+    );
+  };
+
   const renderComposeStep = () => {
     if (!selectedTemplate) {
       return (
@@ -1945,26 +2086,22 @@ export function EnhancedPropertyNotificationModal({
             </button>
             {showCCBCC && (
               <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">CC</label>
-                  <input
-                    type="text"
-                    value={ccEmails}
-                    onChange={(event) => setCcEmails(event.target.value)}
-                    placeholder="user@example.com, another@example.com"
-                    className={INPUT_FIELD_CLASSES}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">BCC</label>
-                  <input
-                    type="text"
-                    value={bccEmails}
-                    onChange={(event) => setBccEmails(event.target.value)}
-                    placeholder="user@example.com, another@example.com"
-                    className={INPUT_FIELD_CLASSES}
-                  />
-                </div>
+                {renderSelectableRecipients(
+                  'CC',
+                  ccRecipientOptions,
+                  setCcRecipientOptions,
+                  ccEmails,
+                  setCcEmails,
+                  finalRecipientLists.cc.length,
+                )}
+                {renderSelectableRecipients(
+                  'BCC',
+                  bccRecipientOptions,
+                  setBccRecipientOptions,
+                  bccEmails,
+                  setBccEmails,
+                  finalRecipientLists.bcc.length,
+                )}
               </div>
             )}
           </div>
@@ -2060,6 +2197,14 @@ export function EnhancedPropertyNotificationModal({
 
     return (
     <div className="space-y-6">
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm dark:border-gray-700 dark:bg-gray-900/40">
+        <p className="font-semibold text-gray-900 dark:text-white">Final recipients</p>
+        <div className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-300">
+          <p><span className="font-medium">To:</span> {recipientEmail || '—'}</p>
+          <p><span className="font-medium">CC ({finalRecipientLists.cc.length}):</span> {finalRecipientLists.cc.join(', ') || 'None'}</p>
+          <p><span className="font-medium">BCC ({finalRecipientLists.bcc.length}):</span> {finalRecipientLists.bcc.join(', ') || 'None'}</p>
+        </div>
+      </div>
       {sentEmailHistory.length > 0 && (
         <div className="flex items-start space-x-3 rounded-md border border-amber-200 bg-amber-50 p-4 text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
           <AlertCircle className="h-5 w-5" />
