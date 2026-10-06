@@ -8,6 +8,30 @@ const corsHeaders = {
   "Access-Control-Max-Age": "86400",
 };
 
+const approvalImageCategories = [
+  'before', 'before_images', 'after', 'after_images',
+  'sprinkler', 'sprinkler_images',
+  'sprinkler_with_cover', 'sprinkler_with_cover_images',
+  'sprinkler_without_cover', 'sprinkler_without_cover_images',
+  'sprinkler_form', 'sprinkler_form_images',
+  'other', 'other_files', 'job_files',
+];
+
+const imageExtensionPattern = /\.(avif|gif|heic|heif|jpe?g|png|webp)$/i;
+
+function isImageFile(file: { type?: string | null; name?: string | null; path?: string | null; storage_path?: string | null }) {
+  if ((file.type || '').toLowerCase().startsWith('image/')) return true;
+  return imageExtensionPattern.test(file.name || file.storage_path || file.path || '');
+}
+
+function normalizedImageType(category?: string | null, name?: string | null) {
+  const value = `${category || ''} ${name || ''}`.toLowerCase();
+  if (value.includes('before')) return 'before';
+  if (value.includes('after')) return 'after';
+  if (value.includes('sprinkler')) return 'sprinkler';
+  return 'other';
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
@@ -63,8 +87,9 @@ serve(async (req) => {
     const expiresAt = new Date(approval.expires_at);
     const actionExpired = !approval.used_at && now > expiresAt;
 
-    // Extract selected images from extra_charges_data
-    const selectedImageIds = approval.extra_charges_data?.selected_images || [];
+    // Email attachment selection is intentionally independent from the public
+    // approval gallery. The gallery always shows every applicable job image.
+    const selectedImageIds = new Set<string>(approval.extra_charges_data?.selected_images || []);
     
     // Fetch job details
     const { data: job, error: jobError } = await supabase
@@ -83,113 +108,83 @@ serve(async (req) => {
       throw new Error(`Error fetching job: ${jobError.message}`);
     }
 
-    let imagesWithSignedUrls: Array<{ id: string; file_path: string; image_type: string; signedUrl: string | null; source?: string }> = [];
-    const selectedEntries = approval.extra_charges_data?.selected_image_entries;
+    const { data: workOrders, error: workOrderError } = await supabase
+      .from('work_orders')
+      .select('id')
+      .eq('job_id', approval.job_id);
+    if (workOrderError) console.error('Error loading work orders for approval images:', workOrderError);
+    const workOrderIds = (workOrders || []).map((row) => row.id);
 
-    if (selectedEntries && Array.isArray(selectedEntries) && selectedEntries.length > 0) {
-      for (const entry of selectedEntries) {
-        const bucket = entry.bucket || (entry.source === 'files' ? 'files' : 'job-images');
-        try {
-          const { data: signedUrlData, error: signedUrlError } = await supabase
-            .storage
-            .from(bucket)
-            .createSignedUrl(entry.file_path, 259200);
+    const [legacyResult, jobFilesResult, workOrderFilesResult] = await Promise.all([
+      supabase.from('job_images').select('*').eq('job_id', approval.job_id).order('created_at', { ascending: true }),
+      supabase.from('files')
+        .select('id, name, path, storage_path, category, type, created_at')
+        .eq('job_id', approval.job_id)
+        .in('category', approvalImageCategories)
+        .order('created_at', { ascending: true }),
+      workOrderIds.length
+        ? supabase.from('files')
+          .select('id, name, path, storage_path, category, type, created_at')
+          .in('work_order_id', workOrderIds)
+          .in('category', approvalImageCategories)
+          .order('created_at', { ascending: true })
+        : Promise.resolve({ data: [], error: null }),
+    ]);
 
-          if (signedUrlError) {
-            console.error('Error creating signed URL for entry', entry.file_path, signedUrlError);
-            imagesWithSignedUrls.push({
-              id: entry.id,
-              file_path: entry.file_path,
-              file_name: entry.file_name,
-              image_type: entry.normalized_type || entry.source || 'photo',
-              signedUrl: null,
-              selected: true,
-            });
-          } else {
-            imagesWithSignedUrls.push({
-              id: entry.id,
-              file_path: entry.file_path,
-              file_name: entry.file_name,
-              image_type: entry.normalized_type || entry.source || 'photo',
-              signedUrl: signedUrlData?.signedUrl || null,
-              selected: true,
-            });
-          }
-        } catch (signedError) {
-          console.error('Exception creating signed URL for entry', entry.file_path, signedError);
-          imagesWithSignedUrls.push({
-            id: entry.id,
-            file_path: entry.file_path,
-            file_name: entry.file_name,
-            image_type: entry.normalized_type || entry.source || 'photo',
-            signedUrl: null,
-            selected: true,
-          });
-        }
-      }
-    } else {
-      // Fetch only selected job images or all if no selection
-      let images = [];
-      if (selectedImageIds.length > 0) {
-        const { data: selectedImages, error: imagesError } = await supabase
-          .from('job_images')
-          .select('*')
-          .in('id', selectedImageIds);
+    if (legacyResult.error) console.error('Error loading legacy approval images:', legacyResult.error);
+    if (jobFilesResult.error) console.error('Error loading job approval files:', jobFilesResult.error);
+    if (workOrderFilesResult.error) console.error('Error loading work-order approval files:', workOrderFilesResult.error);
 
-        if (imagesError) {
-          console.error("Error fetching selected images:", imagesError);
-        } else {
-          images = selectedImages || [];
-        }
-      } else {
-        const { data: allImages, error: imagesError } = await supabase
-          .from('job_images')
-          .select('*')
-          .eq('job_id', approval.job_id)
-          .order('created_at', { ascending: true });
+    const candidates = [
+      ...(legacyResult.data || []).map((image) => ({
+        id: image.id,
+        file_path: image.file_path,
+        file_name: image.file_name || image.file_path?.split('/').pop() || 'Job photo',
+        image_type: normalizedImageType(image.image_type, image.file_name),
+        mime_type: image.mime_type || 'image/jpeg',
+        bucket: 'job-images',
+        source: 'job_images',
+        created_at: image.created_at,
+      })),
+      ...[...(jobFilesResult.data || []), ...(workOrderFilesResult.data || [])]
+        .filter(isImageFile)
+        .map((file) => ({
+          id: file.id,
+          file_path: file.storage_path || file.path,
+          file_name: file.name || file.storage_path?.split('/').pop() || file.path?.split('/').pop() || 'Job photo',
+          image_type: normalizedImageType(file.category, file.name),
+          mime_type: file.type || 'image/jpeg',
+          bucket: 'files',
+          source: 'files',
+          created_at: file.created_at,
+        }))
+        .filter((image) => Boolean(image.file_path)),
+    ].sort((left, right) => String(left.created_at || '').localeCompare(String(right.created_at || '')));
 
-        if (imagesError) {
-          console.error("Error fetching all images:", imagesError);
-        } else {
-          images = allImages || [];
-        }
-      }
+    const seenImages = new Set<string>();
+    const uniqueImages = candidates.filter((image) => {
+      const key = `${image.bucket}:${image.file_path}`.toLowerCase();
+      if (seenImages.has(key)) return false;
+      seenImages.add(key);
+      return true;
+    });
 
-      imagesWithSignedUrls = await Promise.all(
-        (images || []).map(async (image) => {
-          try {
-            const { data: signedUrlData, error: signedUrlError } = await supabase
-              .storage
-              .from('job-images')
-              .createSignedUrl(image.file_path, 259200); // 72 hours
-
-            if (signedUrlError) {
-              console.error(`Error creating signed URL for ${image.file_path}:`, signedUrlError);
-              return {
-                ...image,
-                signedUrl: null,
-                error: signedUrlError.message,
-                selected: selectedImageIds.length === 0 || selectedImageIds.includes(image.id),
-              };
-            }
-
-            return {
-              ...image,
-              signedUrl: signedUrlData.signedUrl,
-              selected: selectedImageIds.length === 0 || selectedImageIds.includes(image.id),
-            };
-          } catch (err) {
-            console.error(`Exception creating signed URL:`, err);
-            return {
-              ...image,
-              signedUrl: null,
-              error: err.message,
-              selected: selectedImageIds.length === 0 || selectedImageIds.includes(image.id),
-            };
-          }
-        })
-      );
-    }
+    const imagesWithSignedUrls = await Promise.all(uniqueImages.map(async (image) => {
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+        .from(image.bucket)
+        .createSignedUrl(image.file_path, 259200);
+      if (signedUrlError) console.error(`Error creating approval image URL for ${image.file_path}:`, signedUrlError);
+      return {
+        id: image.id,
+        file_path: image.file_path,
+        file_name: image.file_name,
+        image_type: image.image_type,
+        mime_type: image.mime_type,
+        signedUrl: signedUrlData?.signedUrl || null,
+        source: image.source,
+        selected: selectedImageIds.has(image.id),
+      };
+    }));
 
     // Determine the actual status
     let resolvedStatus: string;

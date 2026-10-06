@@ -1871,7 +1871,7 @@ export function EnhancedPropertyNotificationModal({
           <h4 className="text-sm font-medium text-gray-900 dark:text-white">Images to include</h4>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {isApprovalEmail
-              ? 'Selected images will be embedded in the email and shown on the approval page.'
+              ? 'Selected images will be embedded in the email. All job images remain visible on the approval page.'
               : 'Selected images will be embedded directly in the email.'}
           </p>
         </div>
