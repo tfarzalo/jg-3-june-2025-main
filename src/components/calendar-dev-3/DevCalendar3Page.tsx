@@ -1125,7 +1125,6 @@ export default function DevCalendar3Page() {
       dates: printDates,
       itemsByDate: printItemsByDate,
     });
-    window.requestAnimationFrame(() => window.requestAnimationFrame(() => window.print()));
   };
 
   useEffect(() => {

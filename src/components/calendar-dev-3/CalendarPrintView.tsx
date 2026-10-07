@@ -1,5 +1,6 @@
 import { format, parseISO } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
+import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import './calendar-print.css';
 
@@ -81,6 +82,46 @@ function Item({ item, detailed = false }: { item: PrintCalendarItem; detailed?: 
 }
 
 export function CalendarPrintView({ snapshot }: { snapshot: CalendarPrintSnapshot | null }) {
+  const logoRef = useRef<HTMLImageElement>(null);
+
+  useEffect(() => {
+    if (!snapshot) return;
+
+    let cancelled = false;
+
+    const printWhenReady = async () => {
+      const logo = logoRef.current;
+
+      if (logo && !logo.complete) {
+        await new Promise<void>(resolve => {
+          const finish = () => resolve();
+          logo.addEventListener('load', finish, { once: true });
+          logo.addEventListener('error', finish, { once: true });
+        });
+      }
+
+      if (logo?.naturalWidth && typeof logo.decode === 'function') {
+        try {
+          await logo.decode();
+        } catch {
+          // A loaded image can still reject decode in some browsers; it remains printable.
+        }
+      }
+
+      if (cancelled) return;
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          if (!cancelled) window.print();
+        });
+      });
+    };
+
+    void printWhenReady();
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshot]);
+
   if (!snapshot) return null;
   const nonEmptyDates = snapshot.dates.filter(date => (snapshot.itemsByDate[date] || []).length > 0);
   const allItems = snapshot.dates.flatMap(date => snapshot.itemsByDate[date] || []);
@@ -94,7 +135,7 @@ export function CalendarPrintView({ snapshot }: { snapshot: CalendarPrintSnapsho
     <section className={`calendar-print-root calendar-print-${snapshot.view}`} aria-hidden="true">
       <header className="calendar-print-header">
         <div className="calendar-print-brand">
-          <div className="calendar-print-logo"><img src={LOGO_URL} alt="JG Painting Pros" /></div>
+          <div className="calendar-print-logo"><img ref={logoRef} src={LOGO_URL} alt="JG Painting Pros" /></div>
           <div><p>JG Painting Pros Inc.</p><h1>{snapshot.view === 'agenda' ? 'Agenda Schedule' : `${snapshot.view.charAt(0).toUpperCase()}${snapshot.view.slice(1)} Schedule`}</h1></div>
         </div>
         <div className="calendar-print-header-meta"><strong>{snapshot.rangeLabel}</strong><span>Printed {formatInTimeZone(parseISO(snapshot.printedAt), TZ, "MMMM d, yyyy 'at' h:mm a 'ET'")}</span></div>
