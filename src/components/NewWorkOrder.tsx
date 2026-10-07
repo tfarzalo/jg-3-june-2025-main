@@ -2071,8 +2071,7 @@ const NewWorkOrder = () => {
       // The dispatch-sms-notification edge function will automatically find all admins
       // with notify_admin_work_order_submitted enabled - no need to query them here
       if (!existingWorkOrder) {
-        try {
-          await dispatchSmsNotification({
+        void dispatchSmsNotification({
             eventType: 'work_order_submitted' as const,
             // Don't set recipientUserId - let edge function find all eligible admins
             recipientUserId: '', // Will be ignored when edge function detects admin event
@@ -2088,26 +2087,23 @@ const NewWorkOrder = () => {
               unitNumber: job.unit_number,
               propertyName: job.property?.property_name ?? null,
             },
-          });
-        } catch (smsErr) {
+          }).catch((smsErr) => {
           console.warn('[NewWorkOrder] SMS dispatch error (non-fatal):', smsErr);
-        }
+        });
       }
 
-      // Add a small delay to ensure database transactions are committed
-      setTimeout(() => {
-        // For subcontractors, redirect to subcontractor dashboard to see updated job list
-        if (isSubcontractor) {
-          if (previewUserId) {
-            navigate(`/dashboard/subcontractor?userId=${previewUserId}`);
-          } else {
-            navigate('/dashboard/subcontractor');
-          }
+      // The work order and phase updates have completed. Navigate immediately;
+      // non-critical notifications must never keep a saved form spinning.
+      setSaving(false);
+      if (isSubcontractor) {
+        if (previewUserId) {
+          navigate(`/dashboard/subcontractor?userId=${previewUserId}`);
         } else {
-          // For other users, redirect to job details page
-          navigate(`/dashboard/jobs/${jobId}`);
+          navigate('/dashboard/subcontractor');
         }
-      }, 1000); // 1 second delay
+      } else {
+        navigate(`/dashboard/jobs/${jobId}`);
+      }
     } catch (err) {
       console.error('❌ Error creating/updating work order:', err);
       
@@ -2145,6 +2141,7 @@ const NewWorkOrder = () => {
             ? String((err as any).message)
             : 'Failed to create/update work order';
       setError(errorMessage);
+    } finally {
       setSaving(false);
     }
   };
@@ -2363,11 +2360,11 @@ const NewWorkOrder = () => {
   }
 
   return (
-    <div className="p-6 bg-gray-100 dark:bg-[#0F172A] min-h-screen">
-      <div className="mx-auto px-4">
+    <div className="min-h-screen bg-gray-100 p-3 dark:bg-[#0F172A] sm:p-6">
+      <div className="mx-auto max-w-7xl">
         {/* Header with 2-column layout */}
-        <div className="flex items-center justify-between gap-4 mb-6">
-          <div className="flex items-center space-x-4">
+        <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
             <button
               onClick={() => {
                 if (previewUserId) {
@@ -2380,18 +2377,18 @@ const NewWorkOrder = () => {
             >
               <ArrowLeft className="h-6 w-6" />
             </button>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            <h1 className="min-w-0 text-xl font-bold leading-tight text-gray-900 dark:text-white sm:text-3xl">
               {isEditMode ? t.editWorkOrder : t.addWorkOrder}
             </h1>
           </div>
           
           {/* Language Toggle */}
-          <div className="flex items-center space-x-3">
+          <div className="flex w-full items-center gap-2 sm:w-auto sm:space-x-3">
             <Globe className="h-5 w-5 text-gray-600 dark:text-gray-400" />
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value as 'en' | 'es')}
-              className="px-4 py-2 bg-white dark:bg-[#1E293B] border border-gray-300 dark:border-[#2D3B4E] rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-[#2D3B4E] dark:bg-[#1E293B] dark:text-white sm:flex-none"
             >
               <option value="en">{t.english}</option>
               <option value="es">{t.spanish}</option>
@@ -2458,7 +2455,7 @@ const NewWorkOrder = () => {
             {/* Job Details Section */}
             <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg mb-6 overflow-hidden">
               {/* Header Section */}
-              <div className="bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800 px-6 py-4">
+              <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-3 dark:from-blue-700 dark:to-blue-800 sm:px-6 sm:py-4">
                 <h2 className="text-xl font-semibold text-white flex items-center">
                   <FileText className="h-5 w-5 mr-2" />
                   {t.jobInformation}
@@ -2466,8 +2463,8 @@ const NewWorkOrder = () => {
               </div>
 
               {/* Content */}
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="p-4 sm:p-6">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
                   <div>
                     <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center">
                       <Building2 className="h-4 w-4 mr-1.5" />
@@ -2519,17 +2516,17 @@ const NewWorkOrder = () => {
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
               {/* Unit Information */}
               <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
                 {/* Header */}
-                <div className="bg-gradient-to-r from-green-600 to-green-700 dark:from-green-700 dark:to-green-800 px-6 py-4">
+                <div className="bg-gradient-to-r from-green-600 to-green-700 px-4 py-3 dark:from-green-700 dark:to-green-800 sm:px-6 sm:py-4">
                   <h2 className="text-xl font-semibold text-white">Unit Information</h2>
                 </div>
 
                 {/* Content */}
-                <div className="p-6">
-                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <div className="p-4 sm:p-6">
+                  <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-2">
                   <div>
                     <label htmlFor="unit_number" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                       Unit # {!isSubcontractor && <span className="text-red-500">*</span>}
@@ -2633,12 +2630,12 @@ const NewWorkOrder = () => {
               {/* Sprinklers */}
               <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
                 {/* Header */}
-                <div className="bg-gradient-to-r from-cyan-600 to-cyan-700 dark:from-cyan-700 dark:to-cyan-800 px-6 py-4">
+                <div className="bg-gradient-to-r from-cyan-600 to-cyan-700 px-4 py-3 dark:from-cyan-700 dark:to-cyan-800 sm:px-6 sm:py-4">
                   <h2 className="text-xl font-semibold text-white">Sprinklers</h2>
                 </div>
 
                 {/* Content */}
-                <div className="p-6">
+                <div className="p-4 sm:p-6">
                   <div className="space-y-4">
                   <div className="flex items-center">
                     <input
@@ -2753,12 +2750,12 @@ const NewWorkOrder = () => {
               {/* Extra Charges (Itemized) */}
               <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
                 {/* Header */}
-                <div className="bg-gradient-to-r from-orange-600 to-orange-700 dark:from-orange-700 dark:to-orange-800 px-6 py-4">
+                <div className="bg-gradient-to-r from-orange-600 to-orange-700 px-4 py-3 dark:from-orange-700 dark:to-orange-800 sm:px-6 sm:py-4">
                   <h2 className="text-xl font-semibold text-white">Extra Charges</h2>
                 </div>
 
                 {/* Content */}
-                <div className="p-6">
+                <div className="p-4 sm:p-6">
                   <div className="flex items-center mb-6">
                   <input
                     type="checkbox"
@@ -2816,14 +2813,14 @@ const NewWorkOrder = () => {
               {/* Before Images */}
               <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
                 {/* Header */}
-                <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 dark:from-indigo-700 dark:to-indigo-800 px-6 py-4">
+                <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-3 dark:from-indigo-700 dark:to-indigo-800 sm:px-6 sm:py-4">
                   <h2 className="text-xl font-semibold text-white">
                     Before Images {isSubcontractor && <span className="text-red-300">*</span>}
                   </h2>
                 </div>
 
                 {/* Content */}
-                <div className="p-6">
+                <div className="p-4 sm:p-6">
                 
                 <div className="space-y-4">
                   <div>
@@ -2850,12 +2847,12 @@ const NewWorkOrder = () => {
               {/* Other Files */}
               <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
                 {/* Header */}
-                <div className="bg-gradient-to-r from-teal-600 to-teal-700 dark:from-teal-700 dark:to-teal-800 px-6 py-4">
+                <div className="bg-gradient-to-r from-teal-600 to-teal-700 px-4 py-3 dark:from-teal-700 dark:to-teal-800 sm:px-6 sm:py-4">
                   <h2 className="text-xl font-semibold text-white">Other Files</h2>
                 </div>
 
                 {/* Content */}
-                <div className="p-6">
+                <div className="p-4 sm:p-6">
                 
                 <div className="space-y-4">
                   <div>
@@ -2879,12 +2876,12 @@ const NewWorkOrder = () => {
               {/* Additional Comments */}
               <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
                 {/* Header */}
-                <div className="bg-gradient-to-r from-gray-600 to-gray-700 dark:from-gray-700 dark:to-gray-800 px-6 py-4">
+                <div className="bg-gradient-to-r from-gray-600 to-gray-700 px-4 py-3 dark:from-gray-700 dark:to-gray-800 sm:px-6 sm:py-4">
                   <h2 className="text-xl font-semibold text-white">Additional Comments</h2>
                 </div>
 
                 {/* Content */}
-                <div className="p-6">
+                <div className="p-4 sm:p-6">
                 
                 <div>
                   <textarea
@@ -2901,7 +2898,7 @@ const NewWorkOrder = () => {
             </div>
 
               {/* Submit/Cancel Buttons */}
-              <div className="flex flex-row justify-between gap-3 sm:gap-2 mt-6">
+              <div className="sticky bottom-0 z-10 -mx-3 mt-6 flex flex-col-reverse gap-3 border-t border-gray-200 bg-gray-100/95 p-3 backdrop-blur dark:border-gray-700 dark:bg-[#0F172A]/95 sm:static sm:mx-0 sm:flex-row sm:justify-end sm:bg-transparent sm:p-0 sm:dark:bg-transparent">
                 <button
                   type="button"
                   onClick={() => navigate('/dashboard/jobs')}

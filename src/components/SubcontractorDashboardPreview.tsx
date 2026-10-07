@@ -1021,10 +1021,10 @@ export function SubcontractorDashboardPreview() {
           </h2>
           
           {/* Tabs: Pending vs Accepted */}
-          <div className="mb-4 flex items-center space-x-2 overflow-x-auto pb-2 sm:pb-0">
+          <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
             <button
               onClick={() => setActiveTab('pending')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap ${
+              className={`min-w-0 rounded-lg px-2 py-2.5 text-center text-xs font-semibold leading-tight transition-colors sm:px-4 sm:text-sm ${
                 activeTab === 'pending'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
@@ -1034,7 +1034,7 @@ export function SubcontractorDashboardPreview() {
             </button>
             <button
               onClick={() => setActiveTab('accepted')}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap ${
+              className={`min-w-0 rounded-lg px-2 py-2.5 text-center text-xs font-semibold leading-tight transition-colors sm:px-4 sm:text-sm ${
                 activeTab === 'accepted'
                   ? 'bg-green-600 text-white'
                   : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'

@@ -25,4 +25,9 @@ describe('calendar assignment and delivery status presentation', () => {
     expect(assignmentStatusPresentation(null)).toBeNull();
     expect(notificationStatusPresentation(null)).toBeNull();
   });
+
+  it('does not show pending acceptance for an unassigned job', () => {
+    expect(assignmentStatusPresentation('pending', null)).toBeNull();
+    expect(assignmentStatusPresentation('pending', 'subcontractor-id')?.label).toBe('Pending Acceptance');
+  });
 });

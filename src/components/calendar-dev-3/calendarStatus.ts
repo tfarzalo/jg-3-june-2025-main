@@ -7,7 +7,11 @@ export interface StatusPresentation {
   shortLabel: string;
   className: string;
 }
-export function assignmentStatusPresentation(status: string | null | undefined): StatusPresentation | null {
+export function assignmentStatusPresentation(
+  status: string | null | undefined,
+  assignedTo?: string | null,
+): StatusPresentation | null {
+  if (status === 'pending' && assignedTo === null) return null;
   switch (status) {
     case 'pending':
       return { label: 'Pending Acceptance', shortLabel: 'Pending', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200' };

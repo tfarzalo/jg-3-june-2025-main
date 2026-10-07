@@ -320,10 +320,12 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
       )}
 
         {/* Job Details Section */}
-        <div className="bg-white dark:bg-[#1E293B] rounded-lg p-6 shadow-lg mb-6">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Información del Trabajo</h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="mb-4 overflow-hidden rounded-xl bg-white shadow-lg dark:bg-[#1E293B] sm:mb-6">
+          <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-3 dark:from-blue-700 dark:to-blue-800 sm:px-6 sm:py-4">
+            <h2 className="flex items-center text-lg font-semibold text-white sm:text-xl"><FileText className="mr-2 h-5 w-5" />Información del Trabajo</h2>
+          </div>
+          <div className="p-4 sm:p-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
             <div>
               <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
                 Propiedad
@@ -374,13 +376,16 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
               </div>
             </div>
           </div>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
           {/* Unit Information */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Información de la Unidad</h2>
-            
+          <div className="overflow-hidden rounded-xl bg-white shadow-lg dark:bg-[#1E293B]">
+            <div className="bg-gradient-to-r from-green-600 to-green-700 px-4 py-3 dark:from-green-700 dark:to-green-800 sm:px-6 sm:py-4">
+              <h2 className="text-lg font-semibold text-white sm:text-xl">Información de la Unidad</h2>
+            </div>
+            <div className="p-4 sm:p-6">
             <div className="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
               <div>
                 <label htmlFor="unit_number" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
@@ -479,12 +484,15 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                 </label>
               </div>
             </div>
+            </div>
           </div>
 
           {/* Sprinklers */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Aspersores</h2>
-            
+          <div className="overflow-hidden rounded-xl bg-white shadow-lg dark:bg-[#1E293B]">
+            <div className="bg-gradient-to-r from-cyan-600 to-cyan-700 px-4 py-3 dark:from-cyan-700 dark:to-cyan-800 sm:px-6 sm:py-4">
+              <h2 className="text-lg font-semibold text-white sm:text-xl">Aspersores</h2>
+            </div>
+            <div className="p-4 sm:p-6">
             <div className="space-y-4">
                                 <div className="flex items-center">
                     <input
@@ -596,24 +604,28 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                 </>
               )}
             </div>
+            </div>
           </div>
 
               {/* Extra Charges (Itemized) */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
-            <div className="flex items-center mb-6">
+          <div className="overflow-hidden rounded-xl bg-white shadow-lg dark:bg-[#1E293B]">
+            <div className="bg-gradient-to-r from-orange-600 to-orange-700 px-4 py-3 dark:from-orange-700 dark:to-orange-800 sm:px-6 sm:py-4">
+            <div className="flex items-center">
               <input
                 type="checkbox"
                 id="has_extra_charges"
                 name="has_extra_charges"
                 checked={formData.has_extra_charges}
                 onChange={(e) => onExtraChargesEnabledChange(e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                className="h-5 w-5 rounded border-white/60 text-orange-600 focus:ring-white"
               />
-              <label htmlFor="has_extra_charges" className="ml-2 text-lg font-semibold text-gray-900 dark:text-white">
+              <label htmlFor="has_extra_charges" className="ml-2 text-lg font-semibold text-white sm:text-xl">
                 Cargos Adicionales
               </label>
             </div>
+            </div>
 
+            <div className="p-4 sm:p-6">
             {formData.has_extra_charges && (
               <div className="space-y-6">
                 {!isSubcontractor && (
@@ -640,6 +652,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                 />
               </div>
             )}
+            </div>
           </div>
 
           {handleAddMiscAdditionalCost && handleChangeMiscAdditionalCost && handleRemoveMiscAdditionalCost && (
@@ -654,12 +667,14 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
           )}
 
           {/* Before Images */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">
+          <div className="overflow-hidden rounded-xl bg-white shadow-lg dark:bg-[#1E293B]">
+            <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-3 dark:from-indigo-700 dark:to-indigo-800 sm:px-6 sm:py-4">
+            <h2 className="text-lg font-semibold text-white sm:text-xl">
               Imágenes de Antes {isSubcontractor && <span className="text-red-500">*</span>}
             </h2>
+            </div>
 
-            <div className="space-y-4">
+            <div className="space-y-4 p-4 sm:p-6">
               <div>
                 <ImageUpload
                   jobId={job.id}
@@ -682,10 +697,12 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
           </div>
 
           {/* Other Files */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Otros Archivos</h2>
+          <div className="overflow-hidden rounded-xl bg-white shadow-lg dark:bg-[#1E293B]">
+            <div className="bg-gradient-to-r from-teal-600 to-teal-700 px-4 py-3 dark:from-teal-700 dark:to-teal-800 sm:px-6 sm:py-4">
+              <h2 className="text-lg font-semibold text-white sm:text-xl">Otros Archivos</h2>
+            </div>
 
-            <div className="space-y-4">
+            <div className="space-y-4 p-4 sm:p-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Archivos Adicionales (Todos los Tipos de Archivo)
@@ -705,10 +722,12 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
           </div>
 
           {/* Additional Comments */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-lg p-4 sm:p-6 shadow">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 sm:mb-6">Comentarios Adicionales</h2>
+          <div className="overflow-hidden rounded-xl bg-white shadow-lg dark:bg-[#1E293B]">
+            <div className="bg-gradient-to-r from-gray-600 to-gray-700 px-4 py-3 dark:from-gray-700 dark:to-gray-800 sm:px-6 sm:py-4">
+              <h2 className="text-lg font-semibold text-white sm:text-xl">Comentarios Adicionales</h2>
+            </div>
             
-            <div>
+            <div className="p-4 sm:p-6">
               <textarea
                 id="additional_comments"
                 name="additional_comments"
@@ -722,7 +741,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
           </div>
 
           {/* Submit/Cancel Buttons */}
-          <div className="flex flex-row justify-between gap-3 sm:gap-2 mt-6 sm:mt-8">
+          <div className="sticky bottom-0 z-10 -mx-3 mt-6 flex flex-col-reverse gap-3 border-t border-gray-200 bg-gray-100/95 p-3 backdrop-blur dark:border-gray-700 dark:bg-[#0F172A]/95 sm:static sm:mx-0 sm:flex-row sm:justify-end sm:bg-transparent sm:p-0 sm:dark:bg-transparent">
             <button
               type="button"
               onClick={() => navigate('/dashboard/jobs')}

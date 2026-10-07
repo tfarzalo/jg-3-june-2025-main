@@ -1101,7 +1101,7 @@ export default function DevCalendar3Page() {
           workOrder: formatWorkOrderNumber(job.work_order_num), property: job.property_name,
           unit: job.unit_number, unitSize: job.unit_size_label, jobType: job.job_type_label,
           subcontractor: job.assigned_to_name, jobPhase: job.job_phase?.job_phase_label,
-          assignmentStatus: assignmentStatusPresentation(job.assignment_status)?.label || (job.assignment_status === null ? 'Unassigned' : job.assignment_status),
+          assignmentStatus: assignmentStatusPresentation(job.assignment_status, job.assigned_to)?.label || (!job.assigned_to ? 'Unassigned' : job.assignment_status),
           notificationStatus: notificationStatusPresentation(notification?.status, notification?.sent_at)?.label || null,
           purchaseOrder: job.purchase_order, address: formatAddress(job), notes: job.description,
           schedule: formatJobDateRange(job, (date) => formatDisplayDate(dateOnlyFromJob(date))),
@@ -1735,7 +1735,7 @@ JG Painting Pros Inc.`,
     const span = item.spanInfo;
     const assignmentNotification = notificationForItem(item);
     const job = item.type === 'job' ? item.raw as CalendarJob : null;
-    const acceptance = assignmentStatusPresentation(job?.assignment_status);
+    const acceptance = assignmentStatusPresentation(job?.assignment_status, job?.assigned_to);
     const delivery = notificationStatusPresentation(assignmentNotification?.status, assignmentNotification?.sent_at);
     const spanRoundingClass = span
       ? `${span.isSpanStart ? '' : 'rounded-l-none border-l-2 border-l-white/40'} ${span.isSpanEnd ? '' : 'rounded-r-none'}`
@@ -1853,9 +1853,9 @@ JG Painting Pros Inc.`,
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{item.title}</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">{item.type === 'job' ? item.status : item.allDay ? 'All day event' : 'Timed event'}</p>
-                  {item.type === 'job' && assignmentStatusPresentation((item.raw as CalendarJob).assignment_status) && (
-                    <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${assignmentStatusPresentation((item.raw as CalendarJob).assignment_status)!.className}`}>
-                      {assignmentStatusPresentation((item.raw as CalendarJob).assignment_status)!.label}
+                  {item.type === 'job' && assignmentStatusPresentation((item.raw as CalendarJob).assignment_status, (item.raw as CalendarJob).assigned_to) && (
+                    <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${assignmentStatusPresentation((item.raw as CalendarJob).assignment_status, (item.raw as CalendarJob).assigned_to)!.className}`}>
+                      {assignmentStatusPresentation((item.raw as CalendarJob).assignment_status, (item.raw as CalendarJob).assigned_to)!.label}
                     </span>
                   )}
                 </div>
@@ -2472,7 +2472,7 @@ JG Painting Pros Inc.`,
                 const assignmentChanged = (assignmentSubId || null) !== (job.assigned_to || null);
                 const notificationSent = currentAssignmentNotification?.status === 'sent';
                 const notificationActionable = currentAssignmentNotification?.status === 'pending' || currentAssignmentNotification?.status === 'failed';
-                const assignmentPresentation = assignmentStatusPresentation(job.assignment_status);
+                const assignmentPresentation = assignmentStatusPresentation(job.assignment_status, job.assigned_to);
                 const notificationPresentation = notificationStatusPresentation(currentAssignmentNotification?.status, currentAssignmentNotification?.sent_at);
                 return (
                   <>
