@@ -16,6 +16,10 @@ const unitSizeTranslations: Record<string, string> = {
   Each: 'Cada Uno',
   'Per Room': 'Por Habitación',
   'Per Unit': 'Por Unidad',
+  'Per Wall': 'Por Pared',
+  'Unit with High Ceilings': 'Unidad con Techos Altos',
+  Standard: 'Estándar',
+  '1 hour': '1 hora',
 };
 
 const categoryTranslations: Record<string, string> = {
@@ -33,6 +37,13 @@ const categoryTranslations: Record<string, string> = {
   'Cabinet Paint': 'Pintura de Gabinete',
   'Drywall Repair': 'Reparación de Drywall',
   'Ceiling Repair': 'Reparación de Techo',
+  'Prep Work / Drywall Repairs': 'Preparación / Reparaciones de Drywall',
+  'Ceiling Paint': 'Pintura de Techo',
+  'Full Paint': 'Pintura Completa',
+  Labor: 'Mano de Obra',
+  Materials: 'Materiales',
+  Paint: 'Pintura',
+  Repair: 'Reparación',
   Other: 'Otro',
 };
 
@@ -49,6 +60,12 @@ export function translateUnitSizeToSpanish(label: string): string {
 }
 
 export function translateJobCategoryToSpanish(label: string): string {
+  const extraChargePrefix = 'Extra Charges - ';
+  if (label.startsWith(extraChargePrefix)) {
+    const category = label.slice(extraChargePrefix.length);
+    return `Cargos Adicionales - ${categoryTranslations[category] || category}`;
+  }
+
   return categoryTranslations[label] || label;
 }
 

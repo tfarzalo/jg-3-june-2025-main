@@ -1441,8 +1441,8 @@ export function SubcontractorDashboard() {
       
       <div className="max-w-4xl mx-auto">
         {/* Compact title and language controls */}
-        <div className="flex flex-col space-y-4 mb-6 sm:mb-8">
-          <div className="flex items-start justify-between gap-2 sm:items-center sm:gap-4">
+        <div className="flex flex-col space-y-4 mb-6 pt-1 sm:mb-8 sm:pt-2">
+          <div className="flex items-center justify-between gap-2 sm:gap-4">
             <div className="flex min-w-0 items-center gap-3 sm:gap-4">
               <CalendarIcon className="h-6 w-6 sm:h-8 sm:w-8 text-gray-600 dark:text-gray-400 flex-shrink-0" />
               <h1 className="min-w-0 text-lg font-semibold leading-tight text-gray-900 dark:text-white sm:text-xl lg:text-2xl">{text.myAssignedJobs}</h1>
