@@ -86,6 +86,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const { user, initializing: authLoading } = useAuth();
   const fileInputId = useId();
   const revokeRef = useRef<(() => void) | null>(null);
+  const uploadingPreviewUrlsRef = useRef<Set<string>>(new Set());
   const [lastUploadedPath, setLastUploadedPath] = useState<string | null>(null);
   const [totalFilesToUpload, setTotalFilesToUpload] = useState(0);
   const [completedFilesCount, setCompletedFilesCount] = useState(0);
@@ -190,18 +191,21 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     setUploadingFiles([]);
   }, [jobId, workOrderId, folder, resetTrigger]);
 
-  // Cleanup preview URLs
+  const revokeUploadingPreviewUrls = useCallback(() => {
+    uploadingPreviewUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+    uploadingPreviewUrlsRef.current.clear();
+  }, []);
+
+  // Cleanup local browser previews after upload or when leaving the page.
   useEffect(() => {
     return () => {
-      uploadingFiles.forEach(file => {
-        URL.revokeObjectURL(file.preview);
-      });
+      revokeUploadingPreviewUrls();
       if (revokeRef.current) {
         revokeRef.current();
         revokeRef.current = null;
       }
     };
-  }, [uploadingFiles]);
+  }, [revokeUploadingPreviewUrls]);
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -353,11 +357,12 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     
     // Preview the selected originals. Each file is optimized exactly once in the
     // upload loop below, avoiding duplicate canvas work and inconsistent results.
-    const newUploadingFiles: UploadingFile[] = files.map((file) => ({
-      file,
-      preview: URL.createObjectURL(file),
-      progress: 0,
-    }));
+    revokeUploadingPreviewUrls();
+    const newUploadingFiles: UploadingFile[] = files.map((file) => {
+      const preview = URL.createObjectURL(file);
+      uploadingPreviewUrlsRef.current.add(preview);
+      return { file, preview, progress: 0 };
+    });
     setUploadingFiles(newUploadingFiles);
     setIsUploading(true);
     
@@ -647,6 +652,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     } finally {
       setIsUploading(false);
       setUploadingFiles([]);
+      revokeUploadingPreviewUrls();
       setTotalFilesToUpload(0); // Reset the counter
       setCompletedFilesCount(0);
       console.log('📤 Upload process finished');
@@ -806,7 +812,20 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {uploadingFiles.map((file, index) => (
-              <div key={index} className="flex items-center space-x-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+              <div key={index} className="flex min-w-0 items-center gap-2 rounded border border-blue-200 bg-blue-50 p-2 dark:border-blue-800 dark:bg-blue-900/20">
+                {file.file.type.startsWith('image/') ? (
+                  <img
+                    src={file.preview}
+                    alt={file.file.name}
+                    className="h-12 w-12 shrink-0 rounded-md border border-blue-200 object-cover dark:border-blue-700"
+                  />
+                ) : (
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-blue-200 bg-white text-blue-600 dark:border-blue-700 dark:bg-gray-900 dark:text-blue-300">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8m-6-6l6 6m-6-6v6h6" />
+                    </svg>
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-gray-700 dark:text-gray-300 truncate">{file.file.name}</p>
                   <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">
@@ -848,8 +867,23 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           </h4>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {uploadedFiles.map((file, index) => (
-              <div key={index} className="group flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-750 transition-colors">
-                <div className="flex-1 min-w-0 mr-2">
+              <div key={index} className="group flex min-w-0 items-center gap-2 rounded border border-gray-200 bg-gray-50 p-2 transition-colors hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-750">
+                {file.type.startsWith('image/') ? (
+                  <img
+                    src={file.public_url}
+                    alt={file.file_name}
+                    loading="lazy"
+                    className="h-12 w-12 shrink-0 rounded-md border border-gray-200 object-cover dark:border-gray-700"
+                    onError={(event) => handleImageError(event, file)}
+                  />
+                ) : (
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8m-6-6l6 6m-6-6v6h6" />
+                    </svg>
+                  </div>
+                )}
+                <div className="mr-2 min-w-0 flex-1">
                   <p className="text-xs text-gray-700 dark:text-gray-300 truncate" title={file.file_name}>
                     {file.file_name}
                   </p>
@@ -864,7 +898,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                       e.stopPropagation();
                       handleDeleteImage(file.file_path);
                     }}
-                    className="flex-shrink-0 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 opacity-60 group-hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity touch-manipulation"
+                    className="shrink-0 touch-manipulation text-red-500 opacity-60 transition-opacity hover:text-red-700 group-hover:opacity-100 dark:text-red-400 dark:hover:text-red-300 sm:opacity-0 sm:group-hover:opacity-100"
                     title="Delete file"
                   >
                     <svg

@@ -584,6 +584,7 @@ export default function DevCalendar3Page() {
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [draggingItem, setDraggingItem] = useState<CalendarItem | null>(null);
   const [assignmentSaving, setAssignmentSaving] = useState(false);
+  const [assignmentSaveAction, setAssignmentSaveAction] = useState<'send-now' | 'send-later' | null>(null);
   const [assignmentSubId, setAssignmentSubId] = useState('');
   const [pendingNotifications, setPendingNotifications] = useState<PendingNotification[]>([]);
   const [notificationRows, setNotificationRows] = useState<AssignmentNotificationRow[]>([]);
@@ -1579,6 +1580,7 @@ JG Painting Pros Inc.`,
       return;
     }
 
+    setAssignmentSaveAction(action);
     setAssignmentSaving(true);
     try {
       let assignedAt: string | null = null;
@@ -1639,6 +1641,7 @@ JG Painting Pros Inc.`,
       toast.error(error instanceof Error ? error.message : 'Could not save assignment');
     } finally {
       setAssignmentSaving(false);
+      setAssignmentSaveAction(null);
     }
   };
 
@@ -2255,7 +2258,13 @@ JG Painting Pros Inc.`,
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
-                <div className="hidden justify-end gap-2 xl:flex">
+                <div className="hidden items-center justify-end gap-2 xl:flex">
+                  {viewMode === 'month' && (
+                    <div className="mr-2 inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
+                      <Printer className="h-3.5 w-3.5" />
+                      Printing is available in Week, Day, and Agenda views.
+                    </div>
+                  )}
                   <button onClick={() => setCalendarListCollapsed((collapsed) => !collapsed)} className="inline-flex p-2 rounded-lg border border-gray-200 dark:border-[#2D3B4E] bg-white dark:bg-[#1E293B]" aria-label={calendarListCollapsed ? 'Show calendar list' : 'Collapse calendar list'} title={calendarListCollapsed ? 'Show calendar list' : 'Collapse calendar list'}>
                     {calendarListCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
                   </button>
@@ -2264,6 +2273,12 @@ JG Painting Pros Inc.`,
                   </button>
                 </div>
               </div>
+              {viewMode === 'month' && (
+                <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 xl:hidden">
+                  <Printer className="h-3.5 w-3.5 shrink-0" />
+                  Printing is available in Week, Day, and Agenda views.
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-600 dark:text-gray-300" aria-label="Calendar status legend">
                 <span className="font-semibold text-gray-700 dark:text-gray-200">Assignment:</span>
                 <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" />Pending Acceptance</span>
@@ -2472,6 +2487,7 @@ JG Painting Pros Inc.`,
                 const assignmentChanged = (assignmentSubId || null) !== (job.assigned_to || null);
                 const notificationSent = currentAssignmentNotification?.status === 'sent';
                 const notificationActionable = currentAssignmentNotification?.status === 'pending' || currentAssignmentNotification?.status === 'failed';
+                const immediateNotificationSending = assignmentSaving && assignmentSaveAction === 'send-now';
                 const assignmentPresentation = assignmentStatusPresentation(job.assignment_status, job.assigned_to);
                 const notificationPresentation = notificationStatusPresentation(currentAssignmentNotification?.status, currentAssignmentNotification?.sent_at);
                 return (
@@ -2499,7 +2515,7 @@ JG Painting Pros Inc.`,
                       {job.description && <div className="sm:col-span-2"><dt className="text-gray-500">Notes</dt><dd className="font-medium whitespace-pre-wrap">{job.description}</dd></div>}
                       {assignmentPresentation && <div><dt className="text-gray-500">Assignment Status</dt><dd className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${assignmentPresentation.className}`}>{assignmentPresentation.label}</dd></div>}
                       {job.assigned_to_name && <div><dt className="text-gray-500">Assigned Subcontractor</dt><dd className="font-medium">{job.assigned_to_name}</dd></div>}
-                      {job.assigned_to && <div className="sm:col-span-2"><dt className="text-gray-500">Assignment Notification</dt><dd className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${notificationPresentation?.className || 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>{currentAssignmentNotification?.status === 'sent' ? <MailCheck className="h-3.5 w-3.5" /> : currentAssignmentNotification?.status === 'failed' ? <AlertTriangle className="h-3.5 w-3.5" /> : currentAssignmentNotification?.status === 'processing' ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : currentAssignmentNotification?.status === 'pending' ? <Clock className="h-3.5 w-3.5" /> : null}{notificationPresentation?.label || 'Status unavailable'}</dd></div>}
+                      {job.assigned_to && <div className="sm:col-span-2"><dt className="text-gray-500">Assignment Notification</dt><dd className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${immediateNotificationSending ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200' : notificationPresentation?.className || 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}>{immediateNotificationSending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : currentAssignmentNotification?.status === 'sent' ? <MailCheck className="h-3.5 w-3.5" /> : currentAssignmentNotification?.status === 'failed' ? <AlertTriangle className="h-3.5 w-3.5" /> : currentAssignmentNotification?.status === 'processing' ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : currentAssignmentNotification?.status === 'pending' ? <Clock className="h-3.5 w-3.5" /> : null}{immediateNotificationSending ? 'Sending assignment notification…' : notificationPresentation?.label || 'Status unavailable'}</dd></div>}
                     </dl>
 
                     <div className="rounded-lg border border-gray-200 dark:border-[#2D3B4E] p-4">
@@ -2523,6 +2539,11 @@ JG Painting Pros Inc.`,
                               {assignmentSubId && <button onClick={() => requestAssignmentSave('send-now')} disabled={assignmentSaving || !subcontractors.find((sub) => sub.id === assignmentSubId)?.email} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
                                 {assignmentSaving ? 'Saving...' : 'Assign & Send Now'}
                               </button>}
+                            </div>
+                          ) : immediateNotificationSending ? (
+                            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
+                              <p className="flex items-center gap-2 font-semibold"><RefreshCw className="h-4 w-4 animate-spin" />Sending assignment notification…</p>
+                              <p className="mt-1">The assignment has been saved. Email delivery is currently processing.</p>
                             </div>
                           ) : notificationSent ? (
                             <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-200">

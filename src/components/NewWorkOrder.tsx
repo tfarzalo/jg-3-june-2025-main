@@ -1704,11 +1704,14 @@ const NewWorkOrder = () => {
     }
     setSaving(true);
     setError(null);
+    let workOrderPersisted = false;
+    let submissionStage = language === 'es' ? 'preparación de la orden de trabajo' : 'work order preparation';
     
     try {
       if (!job) throw new Error('Job not found');
 
       // Get current user ID (needed for all flows)
+      submissionStage = language === 'es' ? 'verificación del usuario' : 'user verification';
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user?.id) throw new Error('User not authenticated');
 
@@ -1809,6 +1812,7 @@ const NewWorkOrder = () => {
       console.log('  - workOrderPayload.painted_ceilings:', workOrderPayload.painted_ceilings);
       console.log('  - workOrderPayload.prepared_by:', workOrderPayload.prepared_by);
       
+      submissionStage = language === 'es' ? 'validación de los datos' : 'data validation';
       const validation = validateWorkOrderPayload(workOrderPayload, accentWallOptions);
       if (!validation.isValid) {
         const errorMessage = `Validation failed: ${validation.errors.join(', ')}`;
@@ -1857,6 +1861,7 @@ const NewWorkOrder = () => {
         );
 
       // Get the target phase ID for phase advancement
+      submissionStage = language === 'es' ? 'selección del estado del trabajo' : 'job status selection';
       const { data: phaseData, error: phaseError } = await supabase
         .from('job_phases')
         .select('id')
@@ -1882,6 +1887,7 @@ const NewWorkOrder = () => {
         ceiling_display_label: dbPayload.ceiling_display_label || null,
       };
       
+      submissionStage = language === 'es' ? 'guardado de la orden de trabajo' : 'work order save';
       if (existingWorkOrder) {
         // Update existing work order
         const { data, error } = await supabase
@@ -1975,9 +1981,11 @@ const NewWorkOrder = () => {
       if (!workOrderResult.data) {
         throw new Error('No data returned from work order creation/update');
       }
+      workOrderPersisted = true;
 
       // Update job unit size if changed
       if (formData.unit_size_id && formData.unit_size_id !== job.unit_size?.id) {
+        submissionStage = language === 'es' ? 'actualización del tamaño de la unidad' : 'unit-size update';
         try {
           // Use RPC function to update job unit size (works for subcontractors too)
           const { error: unitSizeError } = await supabase.rpc('update_job_unit_size', {
@@ -2007,6 +2015,7 @@ const NewWorkOrder = () => {
       const isJobRequestPhase = currentPhaseLabel === 'Job Request';
       
       if (isJobRequestPhase) {
+        submissionStage = language === 'es' ? 'actualización del estado del trabajo' : 'job status update';
         // For subcontractors, use RPC function to bypass RLS policies
         if (isSubcontractor) {
           const { error: rpcError } = await supabase.rpc('update_job_phase', {
@@ -2035,6 +2044,7 @@ const NewWorkOrder = () => {
         }
         
         // Create job phase change record
+        submissionStage = language === 'es' ? 'registro del historial de estado' : 'status-history recording';
         const { error: phaseChangeError } = await supabase
           .from('job_phase_changes')
           .insert([{
@@ -2055,6 +2065,7 @@ const NewWorkOrder = () => {
       }
       
       if (imagesToDelete.size > 0) {
+        submissionStage = language === 'es' ? 'limpieza de archivos eliminados' : 'removed-file cleanup';
         const deleteResult = await deleteFilesByStoragePaths(imagesToDelete);
         if (deleteResult.errors.length > 0) {
           console.error('Error deleting marked work order images:', deleteResult.errors);
@@ -2097,15 +2108,33 @@ const NewWorkOrder = () => {
       setSaving(false);
       if (isSubcontractor) {
         if (previewUserId) {
-          navigate(`/dashboard/subcontractor?userId=${previewUserId}`);
+          navigate(`/dashboard/subcontractor?userId=${previewUserId}`, { replace: true });
         } else {
-          navigate('/dashboard/subcontractor');
+          navigate('/dashboard/subcontractor', { replace: true });
         }
       } else {
         navigate(`/dashboard/jobs/${jobId}`);
       }
     } catch (err) {
       console.error('❌ Error creating/updating work order:', err);
+
+      // Once the work order is durably saved, never strand a subcontractor on
+      // the submission form because a later phase-history or cleanup step failed.
+      if (workOrderPersisted && isSubcontractor) {
+        console.warn('[NewWorkOrder] Work order saved; a post-save step failed', {
+          stage: submissionStage,
+          jobId: job?.id || jobId,
+          workOrderId,
+          error: err,
+        });
+        toast.success(existingWorkOrder ? 'Work order updated successfully' : 'Work order created successfully');
+        if (previewUserId) {
+          navigate(`/dashboard/subcontractor?userId=${previewUserId}`, { replace: true });
+        } else {
+          navigate('/dashboard/subcontractor', { replace: true });
+        }
+        return;
+      }
       
       // Log FULL error object as JSON
       try {
@@ -2140,7 +2169,22 @@ const NewWorkOrder = () => {
           : err && typeof err === 'object' && 'message' in err
             ? String((err as any).message)
             : 'Failed to create/update work order';
-      setError(errorMessage);
+      const errorCode = err && typeof err === 'object' && 'code' in err
+        ? String((err as { code?: unknown }).code || '')
+        : '';
+      console.error('[NewWorkOrder] Submission failed before persistence', {
+        stage: submissionStage,
+        cause: errorMessage,
+        code: errorCode || null,
+        details: err && typeof err === 'object' && 'details' in err ? (err as { details?: unknown }).details : null,
+        hint: err && typeof err === 'object' && 'hint' in err ? (err as { hint?: unknown }).hint : null,
+        jobId: job?.id || jobId,
+      });
+      const visibleFailureMessage = language === 'es'
+        ? `No se pudo enviar la orden de trabajo durante ${submissionStage}. Causa: ${errorMessage}${errorCode ? ` (código ${errorCode})` : ''}`
+        : `Work order submission failed during ${submissionStage}. Cause: ${errorMessage}${errorCode ? ` (code ${errorCode})` : ''}`;
+      setError(visibleFailureMessage);
+      toast.error(visibleFailureMessage);
     } finally {
       setSaving(false);
     }
@@ -2363,7 +2407,7 @@ const NewWorkOrder = () => {
     <div className="min-h-screen bg-gray-100 p-3 dark:bg-[#0F172A] sm:p-6">
       <div className="mx-auto max-w-7xl">
         {/* Header with 2-column layout */}
-        <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="mb-4 flex items-start justify-between gap-2 sm:mb-6 sm:items-center sm:gap-4">
           <div className="flex min-w-0 items-center gap-3 sm:gap-4">
             <button
               onClick={() => {
@@ -2383,12 +2427,13 @@ const NewWorkOrder = () => {
           </div>
           
           {/* Language Toggle */}
-          <div className="flex w-full items-center gap-2 sm:w-auto sm:space-x-3">
-            <Globe className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+          <div className="flex shrink-0 items-center gap-2 sm:space-x-1">
+            <Globe className="hidden h-5 w-5 text-gray-600 dark:text-gray-400 sm:block" />
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value as 'en' | 'es')}
-              className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-[#2D3B4E] dark:bg-[#1E293B] dark:text-white sm:flex-none"
+              aria-label={t.language}
+              className="w-auto max-w-[92px] rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-[#2D3B4E] dark:bg-[#1E293B] dark:text-white sm:max-w-none sm:px-3 sm:py-2 sm:text-sm"
             >
               <option value="en">{t.english}</option>
               <option value="es">{t.spanish}</option>
