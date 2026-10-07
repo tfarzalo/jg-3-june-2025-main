@@ -13,6 +13,10 @@ import { supabase } from '../utils/supabase';
 import ExtraChargesSection, { ExtraChargeDraftState } from './ExtraChargesSection';
 import MiscAdditionalCostsSection, { MiscAdditionalCostItem } from './MiscAdditionalCostsSection';
 import { ExtraChargeLineItem } from '../types/extraCharges';
+import {
+  translateJobCategoryToSpanish,
+  translateUnitSizeToSpanish,
+} from '../lib/spanishOperationalLabels';
 
 
 interface Job {
@@ -427,7 +431,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                   <option value="">Seleccionar tamaño de unidad</option>
                   {unitSizes.map(size => (
                     <option key={size.id} value={size.id}>
-                      {size.unit_size_label}
+                      {translateUnitSizeToSpanish(size.unit_size_label)}
                     </option>
                   ))}
                 </select>
@@ -458,7 +462,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                     <option value="">Seleccionar una categoría de trabajo</option>
                     {jobCategories.map(category => (
                       <option key={category.id} value={category.id}>
-                        {category.name}
+                        {translateJobCategoryToSpanish(category.name)}
                       </option>
                     ))}
                   </select>
@@ -741,7 +745,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
           </div>
 
           {/* Submit/Cancel Buttons */}
-          <div className="sticky bottom-0 z-10 -mx-3 mt-6 flex flex-col-reverse gap-3 border-t border-gray-200 bg-gray-100/95 p-3 backdrop-blur dark:border-gray-700 dark:bg-[#0F172A]/95 sm:static sm:mx-0 sm:flex-row sm:justify-end sm:bg-transparent sm:p-0 sm:dark:bg-transparent">
+          <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <button
               type="button"
               onClick={() => navigate('/dashboard/jobs')}

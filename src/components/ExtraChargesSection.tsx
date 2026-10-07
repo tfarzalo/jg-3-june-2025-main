@@ -14,6 +14,10 @@ import {
   getLineItemSubPayHours,
 } from '../utils/extraChargesCalculations';
 import { validateExtraChargeLineItem } from '../utils/extraChargesValidation';
+import {
+  translateBillingItemToSpanish,
+  translateJobCategoryToSpanish,
+} from '../lib/spanishOperationalLabels';
 
 interface ExtraChargesSectionProps {
   propertyId: string | null;
@@ -294,10 +298,10 @@ export default function ExtraChargesSection({
               <div className="flex-1 space-y-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                    {index + 1}. Extra Charges - {item.categoryName}
+                    {index + 1}. {language === 'es' ? 'Cargos Adicionales' : 'Extra Charges'} - {language === 'es' ? translateJobCategoryToSpanish(item.categoryName) : item.categoryName}
                   </span>
                   <span className="text-xs text-gray-500 dark:text-gray-400">→</span>
-                  <span className="text-sm text-gray-700 dark:text-gray-300">{item.detailName}</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">{language === 'es' ? translateBillingItemToSpanish(item.detailName) : item.detailName}</span>
                 </div>
                 <div className="flex items-center gap-4 text-xs text-gray-600 dark:text-gray-400">
                   <span>
@@ -365,7 +369,7 @@ export default function ExtraChargesSection({
               <option value="">{text.categoryPlaceholder}</option>
               {categories.map((cat) => (
                 <option key={cat.categoryId} value={cat.categoryId}>
-                  {cat.displayName}
+                  {language === 'es' ? translateJobCategoryToSpanish(cat.displayName) : cat.displayName}
                 </option>
               ))}
             </select>
@@ -391,7 +395,7 @@ export default function ExtraChargesSection({
                 <option value="">{text.lineItemPlaceholder}</option>
                 {selectedCategory.lineItems.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.name}
+                    {language === 'es' ? translateBillingItemToSpanish(item.name) : item.name}
                   </option>
                 ))}
               </select>

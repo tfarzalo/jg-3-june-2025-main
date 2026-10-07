@@ -968,7 +968,7 @@ const translations = {
     
     // Language
     language: 'Idioma',
-    english: 'English',
+    english: 'Inglés',
     spanish: 'Español'
   }
 };
@@ -2135,11 +2135,10 @@ const NewWorkOrder = () => {
       // non-critical notifications must never keep a saved form spinning.
       setSaving(false);
       if (isSubcontractor) {
-        if (previewUserId) {
-          navigate(`/dashboard/subcontractor?userId=${previewUserId}`, { replace: true });
-        } else {
-          navigate('/dashboard/subcontractor', { replace: true });
-        }
+        const dashboardUrl = previewUserId
+          ? `/dashboard/subcontractor?userId=${encodeURIComponent(previewUserId)}`
+          : '/dashboard/subcontractor';
+        window.location.replace(dashboardUrl);
       } else {
         navigate(`/dashboard/jobs/${jobId}`);
       }
@@ -2156,11 +2155,10 @@ const NewWorkOrder = () => {
           error: err,
         });
         toast.success(existingWorkOrder ? 'Work order updated successfully' : 'Work order created successfully');
-        if (previewUserId) {
-          navigate(`/dashboard/subcontractor?userId=${previewUserId}`, { replace: true });
-        } else {
-          navigate('/dashboard/subcontractor', { replace: true });
-        }
+        const dashboardUrl = previewUserId
+          ? `/dashboard/subcontractor?userId=${encodeURIComponent(previewUserId)}`
+          : '/dashboard/subcontractor';
+        window.location.replace(dashboardUrl);
         return;
       }
       
@@ -2981,7 +2979,7 @@ const NewWorkOrder = () => {
             </div>
 
               {/* Submit/Cancel Buttons */}
-              <div className="sticky bottom-0 z-10 -mx-3 mt-6 flex flex-col-reverse gap-3 border-t border-gray-200 bg-gray-100/95 p-3 backdrop-blur dark:border-gray-700 dark:bg-[#0F172A]/95 sm:static sm:mx-0 sm:flex-row sm:justify-end sm:bg-transparent sm:p-0 sm:dark:bg-transparent">
+              <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 <button
                   type="button"
                   onClick={() => navigate('/dashboard/jobs')}

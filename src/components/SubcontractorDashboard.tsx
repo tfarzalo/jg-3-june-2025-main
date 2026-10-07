@@ -339,7 +339,7 @@ export function SubcontractorDashboard() {
       noAddress: "Dirección no disponible",
       unit: "Unidad",
       language: "Idioma",
-      english: "English",
+      english: "Inglés",
       spanish: "Español",
       extraCharges: "Cargos Adicionales -",
       perHour: "/hora",
@@ -1440,28 +1440,25 @@ export function SubcontractorDashboard() {
       )}
       
       <div className="max-w-4xl mx-auto">
-        {/* Mobile-optimized header with 2-column layout on larger screens */}
+        {/* Compact title and language controls */}
         <div className="flex flex-col space-y-4 mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center space-x-3">
+          <div className="flex items-start justify-between gap-2 sm:items-center sm:gap-4">
+            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
               <CalendarIcon className="h-6 w-6 sm:h-8 sm:w-8 text-gray-600 dark:text-gray-400 flex-shrink-0" />
-              <h1 className="text-lg sm:text-xl lg:text-2xl font-semibold text-gray-900 dark:text-white">{text.myAssignedJobs}</h1>
+              <h1 className="min-w-0 text-lg font-semibold leading-tight text-gray-900 dark:text-white sm:text-xl lg:text-2xl">{text.myAssignedJobs}</h1>
             </div>
 
-            <div className="flex items-center space-x-2 w-full sm:w-auto">
-               <div className="relative flex-1 sm:flex-none">
-                 <div className="pointer-events-none absolute inset-y-0 left-0 pl-3 flex items-center">
-                   <Globe className="h-4 w-4 text-gray-400" />
-                 </div>
-                 <select
-                   value={language}
-                   onChange={(e) => handleLanguageChange(e.target.value as 'en' | 'es')}
-                   className="block w-full sm:w-auto pl-10 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md dark:bg-[#1E293B] dark:border-gray-600 dark:text-white"
-                 >
-                   <option value="en">{text.english}</option>
-                   <option value="es">{text.spanish}</option>
-                 </select>
-               </div>
+            <div className="flex shrink-0 items-center gap-2 sm:space-x-1">
+              <Globe className="hidden h-5 w-5 text-gray-600 dark:text-gray-400 sm:block" />
+              <select
+                value={language}
+                onChange={(e) => handleLanguageChange(e.target.value as 'en' | 'es')}
+                aria-label={text.language}
+                className="w-auto max-w-[92px] rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-[#2D3B4E] dark:bg-[#1E293B] dark:text-white sm:max-w-none sm:px-3 sm:py-2 sm:text-sm"
+              >
+                <option value="en">{text.english}</option>
+                <option value="es">{text.spanish}</option>
+              </select>
             </div>
           </div>
 
