@@ -5,10 +5,29 @@ import { findBillingDetail } from '../../lib/billing/lookups';
 
 interface UseJobFetchProps {
   phaseLabel: string | string[];
+  query?: JobFetchQuery;
 }
 
-export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
+export interface JobFetchQuery {
+  page: number;
+  pageSize: number;
+  searchTerm?: string;
+  propertyName?: string;
+  subcontractor?: string;
+  scheduledStartDate?: string;
+  scheduledEndDate?: string;
+  sortField?: 'work_order_num' | 'job_phase' | 'property_name' | 'unit_number' | 'unit_size' | 'job_type' | 'scheduled_date' | 'total_billing_amount';
+  sortDirection?: 'asc' | 'desc';
+}
+
+const normalizeRelation = (value: unknown): Record<string, unknown> | undefined => {
+  if (Array.isArray(value)) return value[0] as Record<string, unknown> | undefined;
+  return value && typeof value === 'object' ? value as Record<string, unknown> : undefined;
+};
+
+export function useJobFetch({ phaseLabel, query }: UseJobFetchProps) {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [phaseIds, setPhaseIds] = useState<string[]>([]);
@@ -16,11 +35,12 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastFetchTimeRef = useRef<number>(0);
   const MIN_FETCH_INTERVAL = 5000; // Minimum time between fetches in milliseconds
+  const phaseKey = Array.isArray(phaseLabel) ? phaseLabel.join('|') : phaseLabel;
 
   const fetchJobs = useCallback(async (forceRefresh = false) => {
     // Prevent fetching too frequently unless forced
     const now = Date.now();
-    if (!forceRefresh && now - lastFetchTimeRef.current < MIN_FETCH_INTERVAL) {
+    if (!query && !forceRefresh && now - lastFetchTimeRef.current < MIN_FETCH_INTERVAL) {
       return;
     }
     lastFetchTimeRef.current = now;
@@ -32,15 +52,21 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
     
     // Create a new abort controller for this request
     abortControllerRef.current = new AbortController();
+    let timedOut = false;
+    const requestTimeout = window.setTimeout(() => {
+      timedOut = true;
+      abortControllerRef.current?.abort();
+    }, 20000);
+    if (isMountedRef.current) setLoading(true);
     
     try {
       const { data: phaseData, error: phaseError } = await supabase
         .from('job_phases')
         .select('id')
-        .in('job_phase_label', Array.isArray(phaseLabel) ? phaseLabel : [phaseLabel]);
+        .in('job_phase_label', phaseKey.split('|'));
 
       if (phaseError) throw phaseError;
-      if (!phaseData?.length) throw new Error(`${phaseLabel} phase not found`);
+      if (!phaseData?.length) throw new Error(`${phaseKey} phase not found`);
 
       // Store phase IDs for subscription filtering
       if (isMountedRef.current) {
@@ -77,7 +103,7 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
         ascending = false;
       }
 
-      const { data, error } = await supabase
+      let jobsQuery = supabase
         .from('jobs')
         .select(`
           id,
@@ -100,6 +126,9 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
           active_snapshot_id,
           snapshot_frozen_at,
           purchase_order,
+          property_id,
+          job_type_id,
+          assigned_to,
           property:properties (
             id,
             property_name,
@@ -122,14 +151,87 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
           assigned_to_profile:assigned_to (
             full_name
           )
-        `)
-        .in('current_phase_id', phaseData.map(phase => phase.id))
-        .order(orderColumn, { ascending });
+        `, { count: query ? 'exact' : undefined })
+        .in('current_phase_id', phaseData.map(phase => phase.id));
+
+      if (query) {
+        const trimmedSearch = query.searchTerm?.trim();
+        if (query.propertyName && query.propertyName !== 'all') {
+          const { data: matchingProperties, error: propertyError } = await supabase
+            .from('properties')
+            .select('id')
+            .eq('property_name', query.propertyName);
+          if (propertyError) throw propertyError;
+          jobsQuery = jobsQuery.in('property_id', (matchingProperties || []).map(row => row.id));
+        }
+
+        if (query.subcontractor === 'unassigned') {
+          jobsQuery = jobsQuery.is('assigned_to', null);
+        } else if (query.subcontractor && query.subcontractor !== 'all') {
+          const { data: matchingProfiles, error: profileError } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('full_name', query.subcontractor);
+          if (profileError) throw profileError;
+          jobsQuery = jobsQuery.in('assigned_to', (matchingProfiles || []).map(row => row.id));
+        }
+
+        if (query.scheduledStartDate) jobsQuery = jobsQuery.gte('scheduled_date', query.scheduledStartDate);
+        if (query.scheduledEndDate) jobsQuery = jobsQuery.lte('scheduled_date', query.scheduledEndDate);
+
+        if (trimmedSearch) {
+          const safeTerm = trimmedSearch.replace(/[,%()]/g, ' ').trim();
+          const [propertiesResult, unitSizesResult, jobTypesResult, profilesResult] = await Promise.all([
+            supabase.from('properties').select('id').ilike('property_name', `%${safeTerm}%`),
+            supabase.from('unit_sizes').select('id').ilike('unit_size_label', `%${safeTerm}%`),
+            supabase.from('job_types').select('id').ilike('job_type_label', `%${safeTerm}%`),
+            supabase.from('profiles').select('id').ilike('full_name', `%${safeTerm}%`)
+          ]);
+          const lookupError = propertiesResult.error || unitSizesResult.error || jobTypesResult.error || profilesResult.error;
+          if (lookupError) throw lookupError;
+          const clauses = [
+            `unit_number.ilike.%${safeTerm}%`,
+            `purchase_order.ilike.%${safeTerm}%`,
+            ...((propertiesResult.data || []).map(row => `property_id.eq.${row.id}`)),
+            ...((unitSizesResult.data || []).map(row => `unit_size_id.eq.${row.id}`)),
+            ...((jobTypesResult.data || []).map(row => `job_type_id.eq.${row.id}`)),
+            ...((profilesResult.data || []).map(row => `assigned_to.eq.${row.id}`))
+          ];
+          const workOrderNumber = Number(trimmedSearch.replace(/^wo-?/i, ''));
+          if (Number.isFinite(workOrderNumber) && workOrderNumber > 0) clauses.push(`work_order_num.eq.${workOrderNumber}`);
+          jobsQuery = jobsQuery.or(clauses.join(','));
+        }
+
+        const directSortColumns: Record<string, string> = {
+          work_order_num: 'work_order_num',
+          job_phase: 'job_phase(job_phase_label)',
+          property_name: 'property(property_name)',
+          unit_number: 'unit_number',
+          unit_size: 'unit_size(unit_size_label)',
+          job_type: 'job_type(job_type_label)',
+          scheduled_date: 'scheduled_date',
+          total_billing_amount: 'total_billing_amount'
+        };
+        const requestedOrder = directSortColumns[query.sortField || ''] || orderColumn;
+        jobsQuery = jobsQuery
+          .order(requestedOrder, { ascending: query.sortDirection === 'asc' })
+          .order('id', { ascending: true })
+          .range((query.page - 1) * query.pageSize, query.page * query.pageSize - 1);
+      } else {
+        jobsQuery = jobsQuery.order(orderColumn, { ascending });
+      }
+
+      jobsQuery = jobsQuery.abortSignal(abortControllerRef.current.signal);
+      const { data, error, count } = await jobsQuery;
+      window.clearTimeout(requestTimeout);
 
       if (error) throw error;
+      if (isMountedRef.current && query) setTotalCount(count || 0);
       
       // Pre-fetch base billing for relevant property/unit size/category combos
-      const propertyIds = Array.from(new Set((data || []).map(j => (Array.isArray(j.property) ? j.property[0]?.id : j.property?.id)).filter(Boolean)));
+      const propertyIds = Array.from(new Set((data || [])
+        .map(job => normalizeRelation(job.property)?.id)
+        .filter((id): id is string => typeof id === 'string')));
       const baseBillingMap = new Map<string, number | null>();
 
       if (propertyIds.length > 0) {
@@ -222,42 +324,21 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
           return total;
         };
 
-        // Transform the data to match the Job interface
-        const transformedJobs: Job[] = await Promise.all((data || []).map(async job => {
-          const phaseLabel = Array.isArray(job.job_phase) ? job.job_phase[0]?.job_phase_label : job.job_phase?.job_phase_label;
-          const jobCategory = Array.isArray(job.job_type) ? job.job_type[0]?.job_type_label : job.job_type?.job_type_label;
-          let totalBillingAmount = job.total_billing_amount;
-          const cancellationTripChargeAdded = Boolean(job.cancellation_trip_charge_added);
-
-          if ((!totalBillingAmount || totalBillingAmount === 0) && phaseLabel === 'Job Request') {
-            const propertyObj = Array.isArray(job.property) ? job.property[0] : job.property;
-            const unitSizeObj = Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size;
-            const baseBill = await getBaseBillForJobRequest(propertyObj?.id, job.unit_size_id, unitSizeObj?.unit_size_label, jobCategory);
-            if (baseBill !== null) {
-              totalBillingAmount = baseBill;
-            }
-          }
-
-          // For other phases or missing amounts, try live RPC billing total
-          if (!totalBillingAmount || totalBillingAmount === 0) {
-            if (cancellationTripChargeAdded) {
-              totalBillingAmount = Number(job.cancellation_trip_charge_bill_amount ?? 0) || null;
-            } else {
-              const rpcTotal = await computeBillingTotalFromRpc(job.id);
-              if (rpcTotal !== null) {
-                totalBillingAmount = rpcTotal;
-              }
-            }
-          }
-
-        return {
+        // Transform first so the list can render without waiting for optional billing lookups.
+        const transformedJobs: Job[] = (data || []).map(job => {
+          const property = normalizeRelation(job.property) as Job['property'] | undefined;
+          const unitSize = normalizeRelation(job.unit_size) as Job['unit_size'] | undefined;
+          const jobType = normalizeRelation(job.job_type) as Job['job_type'] | undefined;
+          const jobPhase = normalizeRelation(job.job_phase) as Job['job_phase'] | undefined;
+          const assignedProfile = normalizeRelation(job.assigned_to_profile) as Job['assigned_to_profile'] | undefined;
+          return {
           id: job.id,
-            work_order_num: job.work_order_num,
-            unit_number: job.unit_number,
-            scheduled_date: job.scheduled_date,
+            work_order_num: job.work_order_num ?? 0,
+            unit_number: job.unit_number || '',
+            scheduled_date: job.scheduled_date || '',
             created_at: job.created_at,
             updated_at: job.updated_at,
-            total_billing_amount: totalBillingAmount,
+            total_billing_amount: job.total_billing_amount,
             historical_data_mode: job.historical_data_mode === 'snapshot' ? 'snapshot' : 'live',
             active_snapshot_id: job.active_snapshot_id ?? null,
             snapshot_frozen_at: job.snapshot_frozen_at ?? null,
@@ -269,30 +350,56 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
             cancellation_trip_charge_bill_amount: job.cancellation_trip_charge_bill_amount,
             cancellation_trip_charge_sub_pay_amount: job.cancellation_trip_charge_sub_pay_amount,
             purchase_order: job.purchase_order,
-            property: Array.isArray(job.property) ? job.property[0] : job.property,
+            property: property || { id: '', property_name: 'Unknown property', address: '', city: '', state: '' },
             unit_size: {
-              ...((Array.isArray(job.unit_size) ? job.unit_size[0] : job.unit_size) || {}),
-              unit_size_label: job.unit_size_label_snapshot || (Array.isArray(job.unit_size) ? job.unit_size[0]?.unit_size_label : job.unit_size?.unit_size_label),
+              ...(unitSize || {}),
+              unit_size_label: job.unit_size_label_snapshot || unitSize?.unit_size_label || 'Unknown',
             },
-            job_type: Array.isArray(job.job_type) ? job.job_type[0] : job.job_type,
-            job_phase: Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase,
-            assigned_to_profile: Array.isArray(job.assigned_to_profile) ? job.assigned_to_profile[0] : job.assigned_to_profile
-          };
-        }));
+            job_type: jobType || { job_type_label: 'Unknown' },
+            job_phase: jobPhase || null,
+            assigned_to_profile: assignedProfile
+          } as Job;
+        });
         
         setJobs(transformedJobs);
         setError(null);
+        setLoading(false);
+
+        // Enrich missing amounts in bounded batches after the page is already usable.
+        const missingAmounts = transformedJobs.filter(job => !job.total_billing_amount);
+        for (let index = 0; index < missingAmounts.length && isMountedRef.current; index += 10) {
+          const batch = missingAmounts.slice(index, index + 10);
+          const updates = await Promise.all(batch.map(async job => {
+            let amount: number | null = null;
+            if (job.job_phase?.job_phase_label === 'Job Request') {
+              amount = await getBaseBillForJobRequest(job.property?.id, job.unit_size?.id, job.unit_size?.unit_size_label, job.job_type?.job_type_label);
+            }
+            if (amount === null) {
+              amount = job.cancellation_trip_charge_added
+                ? Number(job.cancellation_trip_charge_bill_amount || 0) || null
+                : await computeBillingTotalFromRpc(job.id);
+            }
+            return [job.id, amount] as const;
+          }));
+          if (!isMountedRef.current) break;
+          const amountById = new Map(updates);
+          setJobs(current => current.map(job => amountById.has(job.id)
+            ? { ...job, total_billing_amount: amountById.get(job.id) ?? job.total_billing_amount }
+            : job));
+        }
       }
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError' && !timedOut) return;
       if (isMountedRef.current) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch jobs');
+        setError(timedOut ? 'The job list took too long to load. Please try again.' : err instanceof Error ? err.message : 'Failed to fetch jobs');
       }
     } finally {
+      window.clearTimeout(requestTimeout);
       if (isMountedRef.current) {
         setLoading(false);
       }
     }
-  }, [phaseLabel]);
+  }, [phaseKey, query]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -322,6 +429,10 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
         filter: `current_phase_id=in.(${phaseIds.join(',')})`
       }, async (payload) => {
         if (isMountedRef.current) {
+          if (query) {
+            fetchJobs(true);
+            return;
+          }
           console.log('New job added to phase:', payload.new);
           
           // Fetch the complete job data with relations
@@ -371,21 +482,23 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
             .single();
             
           if (!error && newJob) {
-            const propertyObj = Array.isArray(newJob.property) ? newJob.property[0] : newJob.property;
+            const propertyObj = normalizeRelation(newJob.property);
+            const rawUnitSize = normalizeRelation(newJob.unit_size);
             const unitSizeObj = {
-              ...((Array.isArray(newJob.unit_size) ? newJob.unit_size[0] : newJob.unit_size) || {}),
-              unit_size_label: newJob.unit_size_label_snapshot || (Array.isArray(newJob.unit_size) ? newJob.unit_size[0]?.unit_size_label : newJob.unit_size?.unit_size_label),
+              ...(rawUnitSize || {}),
+              unit_size_label: newJob.unit_size_label_snapshot || rawUnitSize?.unit_size_label,
             };
             let totalBillingAmount = newJob.total_billing_amount;
-            const phaseLabel = Array.isArray(newJob.job_phase) ? newJob.job_phase[0]?.job_phase_label : newJob.job_phase?.job_phase_label;
-            const jobCategory = Array.isArray(newJob.job_type) ? newJob.job_type[0]?.job_type_label : newJob.job_type?.job_type_label;
+            const phaseLabel = normalizeRelation(newJob.job_phase)?.job_phase_label;
+            const jobCategory = normalizeRelation(newJob.job_type)?.job_type_label;
             const cancellationTripChargeAdded = Boolean(newJob.cancellation_trip_charge_added);
 
-            if ((!totalBillingAmount || totalBillingAmount === 0) && phaseLabel === 'Job Request') {
+            if ((!totalBillingAmount || totalBillingAmount === 0) && phaseLabel === 'Job Request' &&
+                typeof propertyObj?.id === 'string' && typeof jobCategory === 'string') {
               const billing = await findBillingDetail(supabase, {
-                propertyId: propertyObj?.id,
+                propertyId: propertyObj.id,
                 categoryName: jobCategory,
-                unitSizeLabel: unitSizeObj?.unit_size_label
+                unitSizeLabel: unitSizeObj?.unit_size_label as string | undefined
               });
               totalBillingAmount = billing?.bill_amount ?? totalBillingAmount;
             }
@@ -431,9 +544,9 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
             // Transform the data to match the Job interface
             const transformedJob: Job = {
               id: newJob.id,
-              work_order_num: newJob.work_order_num,
-              unit_number: newJob.unit_number,
-              scheduled_date: newJob.scheduled_date,
+              work_order_num: newJob.work_order_num ?? 0,
+              unit_number: newJob.unit_number || '',
+              scheduled_date: newJob.scheduled_date || '',
               total_billing_amount: totalBillingAmount,
               historical_data_mode: newJob.historical_data_mode === 'snapshot' ? 'snapshot' : 'live',
               active_snapshot_id: newJob.active_snapshot_id ?? null,
@@ -445,11 +558,14 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
               cancellation_trip_charge_added: newJob.cancellation_trip_charge_added,
               cancellation_trip_charge_bill_amount: newJob.cancellation_trip_charge_bill_amount,
               cancellation_trip_charge_sub_pay_amount: newJob.cancellation_trip_charge_sub_pay_amount,
-              property: Array.isArray(newJob.property) ? newJob.property[0] : newJob.property,
-              unit_size: Array.isArray(newJob.unit_size) ? newJob.unit_size[0] : newJob.unit_size,
-              job_type: Array.isArray(newJob.job_type) ? newJob.job_type[0] : newJob.job_type,
-              job_phase: Array.isArray(newJob.job_phase) ? newJob.job_phase[0] : newJob.job_phase,
-              assigned_to_profile: Array.isArray(newJob.assigned_to_profile) ? newJob.assigned_to_profile[0] : newJob.assigned_to_profile
+              property: (propertyObj as unknown as Job['property']) || { id: '', property_name: 'Unknown property', address: '', city: '', state: '' },
+              unit_size: {
+                ...(rawUnitSize || {}),
+                unit_size_label: String(unitSizeObj.unit_size_label || 'Unknown')
+              } as Job['unit_size'],
+              job_type: (normalizeRelation(newJob.job_type) as Job['job_type'] | undefined) || { job_type_label: 'Unknown' },
+              job_phase: (normalizeRelation(newJob.job_phase) as Job['job_phase'] | undefined) || null,
+              assigned_to_profile: normalizeRelation(newJob.assigned_to_profile) as Job['assigned_to_profile'] | undefined
             };
             setJobs(prev => [transformedJob, ...prev]);
           } else {
@@ -489,7 +605,8 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
       }, (payload) => {
         if (isMountedRef.current) {
           console.log('Job deleted:', payload.old);
-          setJobs(prev => prev.filter(job => job.id !== payload.old.id));
+          if (query) fetchJobs(true);
+          else setJobs(prev => prev.filter(job => job.id !== payload.old.id));
         }
       })
       .subscribe();
@@ -503,6 +620,7 @@ export function useJobFetch({ phaseLabel }: UseJobFetchProps) {
     jobs, 
     loading, 
     error,
+    totalCount,
     refetch: () => fetchJobs(true)
   };
 }

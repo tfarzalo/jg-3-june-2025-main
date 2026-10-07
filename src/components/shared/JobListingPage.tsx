@@ -202,6 +202,21 @@ interface JobListingPageProps {
   showArchivesButton?: boolean;
   showInvoiceColumns?: boolean;
   initialSortConfig?: SortConfig;
+  pagination?: {
+    page: number;
+    pageSize: number;
+    totalCount: number;
+    onPageChange: (page: number) => void;
+    onQueryChange: (query: {
+      searchTerm: string;
+      propertyName: string;
+      subcontractor: string;
+      scheduledStartDate: string;
+      scheduledEndDate: string;
+      sortField: SortField;
+      sortDirection: SortDirection;
+    }) => void;
+  };
 }
 
 const JOB_EXPORT_SELECT = `
@@ -575,7 +590,8 @@ export function JobListingPage({
   hideAmountColumn = false,
   showArchivesButton = false,
   showInvoiceColumns = false,
-  initialSortConfig
+  initialSortConfig,
+  pagination
 }: JobListingPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -717,6 +733,32 @@ export function JobListingPage({
   const hasActiveFilters = Boolean(
     searchTerm || propertyFilter !== 'all' || subcontractorFilter !== 'all' || scheduledStartDate || scheduledEndDate
   );
+  const onPaginationQueryChange = pagination?.onQueryChange;
+
+  useEffect(() => {
+    if (!onPaginationQueryChange) return;
+    const timer = window.setTimeout(() => {
+      onPaginationQueryChange({
+        searchTerm,
+        propertyName: propertyFilter,
+        subcontractor: subcontractorFilter,
+        scheduledStartDate,
+        scheduledEndDate,
+        sortField: sortConfig.field,
+        sortDirection: sortConfig.direction
+      });
+    }, searchTerm ? 300 : 0);
+    return () => window.clearTimeout(timer);
+  }, [
+    onPaginationQueryChange,
+    searchTerm,
+    propertyFilter,
+    subcontractorFilter,
+    scheduledStartDate,
+    scheduledEndDate,
+    sortConfig.field,
+    sortConfig.direction
+  ]);
 
   const handleSort = (field: SortField) => {
     setSortConfig(prevConfig => ({
@@ -1895,8 +1937,7 @@ export function JobListingPage({
     setScheduledEndDate('');
   };
 
-  const sortedAndFilteredJobs = getSortedJobs(
-    jobs.filter((job) => {
+  const locallyFilteredJobs = pagination ? jobs : jobs.filter((job) => {
       const normalizedSearchTerm = searchTerm.trim().toLowerCase();
       const unitSearchTerms = getUnitSearchTerms(searchTerm);
       const scheduledDateOnly = getJobScheduledDateOnly(job.scheduled_date);
@@ -1921,8 +1962,8 @@ export function JobListingPage({
       const matchesEndDate = !scheduledEndDate || (scheduledDateOnly !== '' && scheduledDateOnly <= scheduledEndDate);
 
       return matchesSearch && matchesProperty && matchesSubcontractor && matchesStartDate && matchesEndDate;
-    })
-  );
+    });
+  const sortedAndFilteredJobs = getSortedJobs(locallyFilteredJobs);
 
   const handlePinJobListSummary = () => {
     pinSummary({
@@ -2097,7 +2138,9 @@ export function JobListingPage({
               </div>
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Showing {sortedAndFilteredJobs.length} of {jobs.length} jobs
+                  {pagination
+                    ? `Showing ${pagination.totalCount === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1}–${Math.min(pagination.page * pagination.pageSize, pagination.totalCount)} of ${pagination.totalCount} jobs`
+                    : `Showing ${sortedAndFilteredJobs.length} of ${jobs.length} jobs`}
                 </p>
                 {hasActiveFilters && (
                   <button
@@ -2404,6 +2447,56 @@ export function JobListingPage({
             </tbody>
           </table>
           </div>
+          {pagination && pagination.totalCount > pagination.pageSize && (
+            <div className="flex flex-col gap-3 border-t border-gray-200 px-4 py-3 dark:border-[#2D3B4E] sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Page {pagination.page} of {Math.ceil(pagination.totalCount / pagination.pageSize)}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => pagination.onPageChange(pagination.page - 1)}
+                  disabled={pagination.page <= 1}
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#334155] dark:text-gray-200 dark:hover:bg-[#2D3B4E]"
+                >
+                  Previous
+                </button>
+                {Array.from({ length: Math.ceil(pagination.totalCount / pagination.pageSize) }, (_, index) => index + 1)
+                  .filter(pageNumber =>
+                    pageNumber === 1 ||
+                    pageNumber === Math.ceil(pagination.totalCount / pagination.pageSize) ||
+                    Math.abs(pageNumber - pagination.page) <= 1
+                  )
+                  .map((pageNumber, index, visiblePages) => (
+                    <React.Fragment key={pageNumber}>
+                      {index > 0 && pageNumber - visiblePages[index - 1] > 1 && (
+                        <span className="px-1 text-gray-400" aria-hidden="true">…</span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => pagination.onPageChange(pageNumber)}
+                        aria-current={pageNumber === pagination.page ? 'page' : undefined}
+                        className={`min-w-9 rounded-lg border px-3 py-2 text-sm font-medium ${
+                          pageNumber === pagination.page
+                            ? 'border-blue-600 bg-blue-600 text-white'
+                            : 'border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-[#334155] dark:text-gray-200 dark:hover:bg-[#2D3B4E]'
+                        }`}
+                      >
+                        {pageNumber}
+                      </button>
+                    </React.Fragment>
+                  ))}
+                <button
+                  type="button"
+                  onClick={() => pagination.onPageChange(pagination.page + 1)}
+                  disabled={pagination.page >= Math.ceil(pagination.totalCount / pagination.pageSize)}
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#334155] dark:text-gray-200 dark:hover:bg-[#2D3B4E]"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
