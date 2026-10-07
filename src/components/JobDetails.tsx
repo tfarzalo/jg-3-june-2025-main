@@ -5269,7 +5269,9 @@ export function JobDetails() {
           </div>
 
           {/* Job Activity Log */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden lg:flex lg:min-h-0 lg:flex-col">
+          {/* The desktop panel is taken out of intrinsic grid sizing so the Job Details card sets the row height. */}
+          <div className="relative lg:min-h-0">
+            <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden lg:absolute lg:inset-0 lg:flex lg:min-h-0 lg:flex-col">
             {/* Header */}
             <div className="bg-gradient-to-r from-purple-600 to-purple-700 dark:from-purple-700 dark:to-purple-800 px-6 py-4 lg:flex-none">
               <div className="flex justify-between items-center">
@@ -5370,6 +5372,7 @@ export function JobDetails() {
                   </div>
                 )}
               </div>
+            </div>
             </div>
           </div>
         </div>
