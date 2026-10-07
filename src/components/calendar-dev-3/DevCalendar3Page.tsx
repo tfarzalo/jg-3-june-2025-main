@@ -1119,7 +1119,7 @@ export default function DevCalendar3Page() {
       heading: `${viewMode.charAt(0).toUpperCase()}${viewMode.slice(1)} Schedule — ${calendarHeading}`,
       rangeLabel,
       printedAt: new Date().toISOString(),
-      filterLabel: `Jobs: ${visibility.allJobs ? visiblePhaseLabels.join(', ') || 'Visible phases' : 'Hidden'} · Events: ${visibility.allEvents ? 'Shown' : 'Hidden'}`,
+      filterLabel: `Jobs: ${visiblePhaseLabels.join(', ') || 'Hidden'} · Events: ${visibility.allEvents ? 'Shown' : 'Hidden'}`,
       sortLabel: sortBySubcontractor ? 'Sorted by subcontractor' : 'Calendar order',
       dates: printDates,
       itemsByDate: printItemsByDate,
@@ -2190,10 +2190,12 @@ JG Painting Pros Inc.`,
                     {pendingNotificationCount > 0 && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white">{pendingNotificationCount}</span>}
                   </button>
                 )}
-                <button onClick={handlePrintCalendar} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#2D3B4E] dark:bg-[#1E293B] dark:text-gray-200 dark:hover:bg-[#0F172A]" aria-label="Print current calendar view" title="Print current calendar view">
-                  <Printer className="h-4 w-4" />
-                  <span className="hidden sm:inline">Print</span>
-                </button>
+                {viewMode !== 'month' && (
+                  <button onClick={handlePrintCalendar} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#2D3B4E] dark:bg-[#1E293B] dark:text-gray-200 dark:hover:bg-[#0F172A]" aria-label={`Print current ${viewMode} calendar view`} title={`Print ${viewMode} view`}>
+                    <Printer className="h-4 w-4" />
+                    <span className="hidden sm:inline">Print</span>
+                  </button>
+                )}
                 <button onClick={loadData} className="p-2 rounded-lg border border-gray-200 dark:border-[#2D3B4E] bg-white dark:bg-[#1E293B]" aria-label="Refresh calendar">
                   <RefreshCw className="h-4 w-4" />
                 </button>

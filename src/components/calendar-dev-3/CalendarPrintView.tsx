@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import './calendar-print.css';
 
 const TZ = 'America/New_York';
+const LOGO_URL = `${import.meta.env.BASE_URL}jg-logo-icon.png`;
 
 export type PrintCalendarView = 'month' | 'week' | 'day' | 'agenda';
 
@@ -45,27 +46,34 @@ function Item({ item, detailed = false }: { item: PrintCalendarItem; detailed?: 
   if (item.type === 'event') {
     return (
       <article className="calendar-print-item calendar-print-event">
-        <div className="calendar-print-item-title"><span className="calendar-print-color" style={{ backgroundColor: item.color }} />{item.title}</div>
-        <div className="calendar-print-meta">Event · {item.eventTime || 'All day'}</div>
-        {detailed && item.eventDetails && <div className="calendar-print-notes">{item.eventDetails}</div>}
+        <div className="calendar-print-item-heading">
+          <div className="calendar-print-item-title"><span className="calendar-print-color" style={{ backgroundColor: item.color }} />{item.title}</div>
+          <span className="calendar-print-type">Event</span>
+        </div>
+        <div className="calendar-print-meta">{item.eventTime || 'All day'}</div>
+        {detailed && item.eventDetails && <div className="calendar-print-notes"><strong>Details</strong><span>{item.eventDetails}</span></div>}
       </article>
     );
   }
   return (
     <article className="calendar-print-item">
-      <div className="calendar-print-item-title"><span className="calendar-print-color" style={{ backgroundColor: item.color }} />{item.workOrder} · {item.property} · Unit {item.unit}</div>
-      <div className="calendar-print-meta">{[item.jobType, item.subcontractor || 'Unassigned', item.jobPhase].filter(Boolean).join(' · ')}</div>
+      <div className="calendar-print-item-heading">
+        <div className="calendar-print-item-title"><span className="calendar-print-color" style={{ backgroundColor: item.color }} />{item.workOrder}</div>
+        {item.jobPhase && <span className="calendar-print-type">{item.jobPhase}</span>}
+      </div>
+      <div className="calendar-print-location">{item.property} <span>•</span> Unit {item.unit}</div>
+      <div className="calendar-print-meta">{[item.jobType, item.subcontractor || 'Unassigned'].filter(Boolean).join(' · ')}</div>
       <div className="calendar-print-statuses">
-        <span>Assignment: {item.assignmentStatus || 'Unassigned'}</span>
-        <span>Notification: {item.notificationStatus || 'Not available'}</span>
+        <span className="calendar-print-status"><strong>Assignment</strong>{item.assignmentStatus || 'Unassigned'}</span>
+        <span className="calendar-print-status"><strong>Notification</strong>{item.notificationStatus || 'Not available'}</span>
       </div>
       {detailed && (
         <div className="calendar-print-details">
-          {item.schedule && <span>Schedule: {item.schedule}</span>}
-          {item.unitSize && <span>Unit Size: {item.unitSize}</span>}
-          {item.purchaseOrder && <span>PO: {item.purchaseOrder}</span>}
-          {item.address && <span>Address: {item.address}</span>}
-          {item.notes && <span className="calendar-print-notes">Notes: {item.notes}</span>}
+          {item.schedule && <div><strong>Schedule</strong><span>{item.schedule}</span></div>}
+          {item.unitSize && <div><strong>Unit Size</strong><span>{item.unitSize}</span></div>}
+          {item.purchaseOrder && <div><strong>Purchase Order</strong><span>{item.purchaseOrder}</span></div>}
+          {item.address && <div className="calendar-print-wide"><strong>Address</strong><span>{item.address}</span></div>}
+          {item.notes && <div className="calendar-print-notes calendar-print-wide"><strong>Notes</strong><span>{item.notes}</span></div>}
         </div>
       )}
     </article>
@@ -75,18 +83,25 @@ function Item({ item, detailed = false }: { item: PrintCalendarItem; detailed?: 
 export function CalendarPrintView({ snapshot }: { snapshot: CalendarPrintSnapshot | null }) {
   if (!snapshot) return null;
   const nonEmptyDates = snapshot.dates.filter(date => (snapshot.itemsByDate[date] || []).length > 0);
-  const isGrid = snapshot.view === 'month' || snapshot.view === 'week';
+  const isGrid = snapshot.view === 'week';
   const orientation = isGrid ? 'landscape' : 'portrait';
   return createPortal((
     <>
       <style media="print">{`@page { size: ${orientation}; margin: 0.45in; }`}</style>
     <section className={`calendar-print-root calendar-print-${snapshot.view}`} aria-hidden="true">
       <header className="calendar-print-header">
-        <div><h1>JG Painting Pros — Calendar</h1><h2>{snapshot.heading}</h2></div>
-        <div className="calendar-print-header-meta"><div>{snapshot.rangeLabel}</div><div>Printed: {formatInTimeZone(parseISO(snapshot.printedAt), TZ, "MMMM d, yyyy 'at' h:mm a 'ET'")}</div></div>
-        <div className="calendar-print-filter">{snapshot.filterLabel} · {snapshot.sortLabel}</div>
+        <div className="calendar-print-brand">
+          <img src={LOGO_URL} alt="JG Painting Pros" />
+          <div><p>JG Painting Pros Inc.</p><h1>{snapshot.view === 'agenda' ? 'Agenda' : `${snapshot.view.charAt(0).toUpperCase()}${snapshot.view.slice(1)} Schedule`}</h1></div>
+        </div>
+        <div className="calendar-print-header-meta"><strong>{snapshot.rangeLabel}</strong><span>Printed {formatInTimeZone(parseISO(snapshot.printedAt), TZ, "MMMM d, yyyy 'at' h:mm a 'ET'")}</span></div>
+        <div className="calendar-print-filter"><span>{snapshot.filterLabel}</span><span>{snapshot.sortLabel}</span></div>
       </header>
-      <div className="calendar-print-legend">Assignment: Pending Acceptance / Accepted / Declined / In Progress / Completed · Notification: Send Later / Sent / Failed</div>
+      <div className="calendar-print-legend">
+        <strong>Status key</strong>
+        <span>Assignment: Pending / Accepted / Declined / In Progress / Completed</span>
+        <span>Notification: Send Later / Sent / Failed</span>
+      </div>
 
       {isGrid && (
         <div className={`calendar-print-grid calendar-print-grid-${snapshot.view}`}>
@@ -99,12 +114,15 @@ export function CalendarPrintView({ snapshot }: { snapshot: CalendarPrintSnapsho
         </div>
       )}
 
-      {(!isGrid || snapshot.view === 'month') && (
+      {!isGrid && (
         <section className="calendar-print-agenda">
-          {snapshot.view === 'month' && <h2>Schedule Details by Date</h2>}
           {nonEmptyDates.map(date => (
             <section key={date} className="calendar-print-agenda-day">
-              <h3>{format(parseISO(`${date}T12:00:00`), 'EEEE, MMMM d, yyyy')}</h3>
+              <div className="calendar-print-date-heading">
+                <span>{format(parseISO(`${date}T12:00:00`), 'EEEE')}</span>
+                <strong>{format(parseISO(`${date}T12:00:00`), 'MMMM d, yyyy')}</strong>
+                <small>{(snapshot.itemsByDate[date] || []).length} item{(snapshot.itemsByDate[date] || []).length === 1 ? '' : 's'}</small>
+              </div>
               {(snapshot.itemsByDate[date] || []).map(item => <Item key={item.id} item={item} detailed />)}
             </section>
           ))}

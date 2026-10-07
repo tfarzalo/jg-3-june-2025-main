@@ -5269,9 +5269,9 @@ export function JobDetails() {
           </div>
 
           {/* Job Activity Log */}
-          <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden">
+          <div className="bg-white dark:bg-[#1E293B] rounded-xl shadow-lg overflow-hidden lg:flex lg:min-h-0 lg:flex-col">
             {/* Header */}
-            <div className="bg-gradient-to-r from-purple-600 to-purple-700 dark:from-purple-700 dark:to-purple-800 px-6 py-4">
+            <div className="bg-gradient-to-r from-purple-600 to-purple-700 dark:from-purple-700 dark:to-purple-800 px-6 py-4 lg:flex-none">
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-semibold text-white flex items-center">
                   <Clock className="h-5 w-5 mr-2" />
@@ -5284,8 +5284,8 @@ export function JobDetails() {
             </div>
 
             {/* Content */}
-            <div className="p-6">
-              <div className="mb-5 flex flex-wrap gap-2">
+            <div className="p-6 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+              <div className="mb-5 flex flex-wrap gap-2 lg:flex-none">
                 {activityFilterOptions.map((option) => (
                   <button
                     key={option.value}
@@ -5302,7 +5302,7 @@ export function JobDetails() {
                 ))}
               </div>
 
-              <div className="h-[520px] overflow-y-auto overscroll-contain pb-6 pr-2 scroll-pb-6">
+              <div className="h-[520px] overflow-y-auto overscroll-contain pb-6 pr-2 scroll-pb-6 lg:h-auto lg:min-h-0 lg:flex-1">
                 {activityLogLoading ? (
                   <div className="flex h-full items-center justify-center">
                     <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
