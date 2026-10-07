@@ -29,6 +29,7 @@ import { isFrozenHistoricalSnapshot } from '../lib/jobs/historicalDataMode';
 import { dispatchSmsNotification, dispatchSmsNotificationBatch } from '../lib/sms/dispatchSmsNotification';
 import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
 import { deleteFilesByStoragePaths } from '../lib/utils/fileUpload';
+import { fetchPropertyUnitSizesForCategory } from '../lib/propertyUnitSizes';
 
 interface Job {
   id: string;
@@ -1096,9 +1097,6 @@ const NewWorkOrder = () => {
       setLoading(true);
       setError(null);
       try {
-        // First fetch unit sizes since we need them for the form
-        await fetchUnitSizes();
-        // Then fetch the rest of the data
         await Promise.all([
           fetchJob(),
           fetchJobPhases(),
@@ -1303,14 +1301,44 @@ const NewWorkOrder = () => {
   
   const fetchUnitSizes = async () => {
     try {
-      const { data, error } = await supabase
-        .from('unit_sizes')
-        .select('id, unit_size_label')
-        .order('unit_size_label');
-        
-      if (error) throw error;
-      console.log('Fetched unit sizes:', data);
-      setUnitSizes(data || []);
+      if (!job?.property?.id) {
+        setUnitSizes([]);
+        return;
+      }
+
+      const selectedCategory = jobCategories.find(
+        category => category.id === formData.job_category_id,
+      );
+
+      // Do not fall back to global unit sizes while the property's billing
+      // categories are loading or when the selected category is not configured.
+      if (!selectedCategory) {
+        setUnitSizes(job.unit_size ? [{
+          id: job.unit_size.id,
+          unit_size_label: job.unit_size.unit_size_label || 'Current Unit Size',
+        }] : []);
+        return;
+      }
+
+      let sizes = await fetchPropertyUnitSizesForCategory(
+        job.property.id,
+        selectedCategory.name,
+      );
+
+      // Preserve an existing job's current selection without modifying billing
+      // configuration or historical work-order data.
+      if (job.unit_size?.id && !sizes.some(size => size.id === job.unit_size?.id)) {
+        sizes = [
+          ...sizes,
+          {
+            id: job.unit_size.id,
+            unit_size_label: job.unit_size.unit_size_label || 'Current Unit Size',
+          },
+        ];
+      }
+
+      console.log('Fetched scoped unit sizes:', sizes);
+      setUnitSizes(sizes);
     } catch (err) {
       console.error('Error fetching unit sizes:', err);
     }
@@ -2289,6 +2317,16 @@ const NewWorkOrder = () => {
       fetchJobCategories();
     }
   }, [job?.property?.id]);
+
+  useEffect(() => {
+    void fetchUnitSizes();
+  }, [
+    job?.property?.id,
+    job?.unit_size?.id,
+    job?.unit_size?.unit_size_label,
+    formData.job_category_id,
+    jobCategories,
+  ]);
 
   const fetchJobCategories = async () => {
     try {
