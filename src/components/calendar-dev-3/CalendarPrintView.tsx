@@ -83,6 +83,9 @@ function Item({ item, detailed = false }: { item: PrintCalendarItem; detailed?: 
 export function CalendarPrintView({ snapshot }: { snapshot: CalendarPrintSnapshot | null }) {
   if (!snapshot) return null;
   const nonEmptyDates = snapshot.dates.filter(date => (snapshot.itemsByDate[date] || []).length > 0);
+  const allItems = snapshot.dates.flatMap(date => snapshot.itemsByDate[date] || []);
+  const jobCount = allItems.filter(item => item.type === 'job').length;
+  const eventCount = allItems.length - jobCount;
   const isGrid = snapshot.view === 'week';
   const orientation = isGrid ? 'landscape' : 'portrait';
   return createPortal((
@@ -91,10 +94,15 @@ export function CalendarPrintView({ snapshot }: { snapshot: CalendarPrintSnapsho
     <section className={`calendar-print-root calendar-print-${snapshot.view}`} aria-hidden="true">
       <header className="calendar-print-header">
         <div className="calendar-print-brand">
-          <img src={LOGO_URL} alt="JG Painting Pros" />
-          <div><p>JG Painting Pros Inc.</p><h1>{snapshot.view === 'agenda' ? 'Agenda' : `${snapshot.view.charAt(0).toUpperCase()}${snapshot.view.slice(1)} Schedule`}</h1></div>
+          <div className="calendar-print-logo"><img src={LOGO_URL} alt="JG Painting Pros" /></div>
+          <div><p>JG Painting Pros Inc.</p><h1>{snapshot.view === 'agenda' ? 'Agenda Schedule' : `${snapshot.view.charAt(0).toUpperCase()}${snapshot.view.slice(1)} Schedule`}</h1></div>
         </div>
         <div className="calendar-print-header-meta"><strong>{snapshot.rangeLabel}</strong><span>Printed {formatInTimeZone(parseISO(snapshot.printedAt), TZ, "MMMM d, yyyy 'at' h:mm a 'ET'")}</span></div>
+        <div className="calendar-print-summary" aria-label="Print summary">
+          <span><strong>{jobCount}</strong> job{jobCount === 1 ? '' : 's'}</span>
+          <span><strong>{eventCount}</strong> event{eventCount === 1 ? '' : 's'}</span>
+          <span><strong>{nonEmptyDates.length}</strong> scheduled day{nonEmptyDates.length === 1 ? '' : 's'}</span>
+        </div>
         <div className="calendar-print-filter"><span>{snapshot.filterLabel}</span><span>{snapshot.sortLabel}</span></div>
       </header>
       <div className="calendar-print-legend">

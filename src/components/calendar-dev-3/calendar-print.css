@@ -3,54 +3,136 @@
 @media print {
   html, body { height: auto !important; overflow: visible !important; background: #fff !important; }
   body * { visibility: hidden !important; }
-  .calendar-print-root, .calendar-print-root * { visibility: visible !important; }
-  .calendar-print-root { display: block !important; position: absolute; inset: 0; width: 100%; color: #172033; background: #fff; font-family: Inter, Arial, sans-serif; font-size: 9pt; line-height: 1.4; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .calendar-print-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 24px; padding: 0 0 14px; margin-bottom: 12px; border-bottom: 3px solid #1598d1; }
-  .calendar-print-brand { display: flex; align-items: center; gap: 12px; }
-  .calendar-print-brand img { width: 54px; height: 54px; object-fit: contain; }
-  .calendar-print-brand p { margin: 0 0 2px; color: #5f6b7c; font-size: 8pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-  .calendar-print-header h1 { margin: 0; font-size: 19pt; line-height: 1.1; color: #172033; }
-  .calendar-print-header-meta { display: flex; flex-direction: column; justify-content: center; align-items: flex-end; gap: 3px; text-align: right; }
-  .calendar-print-header-meta strong { font-size: 10pt; color: #172033; }
-  .calendar-print-header-meta span { color: #667085; font-size: 8pt; }
+  .calendar-print-root, .calendar-print-root * { visibility: visible !important; box-sizing: border-box; }
+  .calendar-print-root {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    color: #182230;
+    background: #fff;
+    font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    font-size: 9pt;
+    line-height: 1.42;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .calendar-print-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px 24px;
+    margin-bottom: 12px;
+    padding: 0 0 13px;
+    border-bottom: 2px solid #179bd3;
+  }
+  .calendar-print-brand { display: flex; min-width: 0; align-items: center; gap: 12px; }
+  .calendar-print-logo {
+    display: flex;
+    width: 52px;
+    height: 52px;
+    flex: 0 0 52px;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border: 1px solid #d8e5ec;
+    border-radius: 12px;
+    background: #fff;
+  }
+  .calendar-print-brand img { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .calendar-print-brand p { margin: 0 0 3px; color: #587084; font-size: 7.5pt; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+  .calendar-print-header h1 { margin: 0; color: #15283b; font-size: 19pt; font-weight: 750; letter-spacing: -.02em; line-height: 1.05; }
+  .calendar-print-header-meta { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 3px; text-align: right; }
+  .calendar-print-header-meta strong { color: #15283b; font-size: 10pt; font-weight: 750; }
+  .calendar-print-header-meta span { color: #697889; font-size: 7.5pt; }
+  .calendar-print-summary { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 7px; padding-top: 2px; }
+  .calendar-print-summary span { padding: 4px 9px; border: 1px solid #dbe5eb; border-radius: 999px; background: #f8fafc; color: #536577; font-size: 7.2pt; }
+  .calendar-print-summary strong { margin-right: 2px; color: #173b57; font-size: 8pt; }
   .calendar-print-filter { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px 8px; }
-  .calendar-print-filter span { padding: 3px 8px; border-radius: 999px; background: #eef6fa; color: #365267; font-size: 7.5pt; }
-  .calendar-print-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 14px; margin-bottom: 14px; padding: 7px 10px; border: 1px solid #d9e3ea; border-radius: 6px; background: #f8fafc; color: #526071; font-size: 7.5pt; }
-  .calendar-print-legend strong { color: #172033; text-transform: uppercase; letter-spacing: .05em; }
-  .calendar-print-grid { display: grid; border: 1px solid #aebbc6; border-radius: 6px; overflow: hidden; }
-  .calendar-print-grid-month, .calendar-print-grid-week { grid-template-columns: repeat(7, minmax(0, 1fr)); }
-  .calendar-print-day { min-height: 500px; padding: 7px; border-right: 1px solid #c9d3dc; break-inside: avoid; background: #fbfcfd; }
+  .calendar-print-filter span { padding: 3px 8px; border-radius: 4px; background: #edf7fb; color: #36576d; font-size: 7pt; }
+
+  .calendar-print-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px 16px;
+    margin: 0 0 14px;
+    padding: 7px 10px;
+    border: 1px solid #dce4e9;
+    border-radius: 7px;
+    background: #fafbfc;
+    color: #596879;
+    font-size: 7.2pt;
+  }
+  .calendar-print-legend strong { color: #263b4f; font-size: 6.8pt; letter-spacing: .08em; text-transform: uppercase; }
+
+  .calendar-print-grid { display: grid; border: 1px solid #becbd4; border-radius: 8px; overflow: hidden; background: #fff; }
+  .calendar-print-grid-week { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .calendar-print-day { min-height: 500px; padding: 7px; border-right: 1px solid #d2dce3; background: #fbfcfd; break-inside: avoid; }
   .calendar-print-day:last-child { border-right: 0; }
-  .calendar-print-day h3 { margin: -7px -7px 7px; padding: 7px 5px; background: #edf3f7; border-bottom: 1px solid #c9d3dc; text-align: center; font-size: 8pt; color: #26384a; }
-  .calendar-print-item { margin: 0 0 9px; padding: 10px 12px; border: 1px solid #d7e0e7; border-left: 4px solid #5d6b7b; border-radius: 5px; background: #fff; break-inside: avoid; overflow-wrap: anywhere; box-shadow: 0 1px 2px rgba(23,32,51,.05); }
-  .calendar-print-event { border-left-color: #1598d1; background: #f7fcff; }
-  .calendar-print-item-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-  .calendar-print-item-title { display: flex; align-items: center; min-width: 0; font-size: 11pt; font-weight: 800; line-height: 1.25; color: #172033; }
-  .calendar-print-color { display: inline-block; flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; border: 1px solid rgba(23,32,51,.35); }
-  .calendar-print-type { flex: 0 0 auto; padding: 2px 7px; border-radius: 999px; background: #eef2f5; color: #4a596a; font-size: 6.8pt; font-weight: 700; }
-  .calendar-print-location { margin-top: 3px; font-size: 10pt; font-weight: 700; color: #314459; }
-  .calendar-print-location span { padding: 0 3px; color: #1598d1; }
-  .calendar-print-meta { margin-top: 2px; color: #687587; font-size: 8.5pt; }
-  .calendar-print-statuses { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-  .calendar-print-status { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border: 1px solid #d5e1e8; border-radius: 4px; background: #f6f9fb; color: #33475b; font-size: 7.5pt; }
-  .calendar-print-status strong { color: #172033; }
-  .calendar-print-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; margin-top: 10px; padding-top: 9px; border-top: 1px solid #e3e9ee; }
-  .calendar-print-details > div, .calendar-print-notes { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 8px; color: #3e4d5f; }
-  .calendar-print-details strong, .calendar-print-notes strong { color: #6b7786; font-size: 7pt; letter-spacing: .04em; text-transform: uppercase; }
+  .calendar-print-day h3 { margin: -7px -7px 8px; padding: 7px 5px; border-bottom: 1px solid #d2dce3; background: #eef3f6; color: #2a4053; text-align: center; font-size: 7.8pt; font-weight: 750; }
+
+  .calendar-print-item {
+    position: relative;
+    margin: 0 0 9px;
+    padding: 11px 13px;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    border: 1px solid #d9e1e7;
+    border-left: 3px solid #667789;
+    border-radius: 7px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(20, 38, 55, .04);
+    break-inside: avoid;
+  }
+  .calendar-print-item:last-child { margin-bottom: 0; }
+  .calendar-print-event { border-left-color: #179bd3; background: #f8fcfe; }
+  .calendar-print-item-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .calendar-print-item-title { display: flex; min-width: 0; align-items: center; color: #172b3d; font-size: 10.5pt; font-weight: 780; line-height: 1.2; }
+  .calendar-print-color { display: inline-block; width: 8px; height: 8px; flex: 0 0 8px; margin-right: 7px; border: 1px solid rgba(24, 34, 48, .25); border-radius: 50%; }
+  .calendar-print-type { flex: 0 0 auto; padding: 2px 7px; border: 1px solid #dce4e9; border-radius: 999px; background: #f4f7f9; color: #526375; font-size: 6.5pt; font-weight: 700; }
+  .calendar-print-location { margin-top: 4px; color: #31485d; font-size: 9.5pt; font-weight: 700; }
+  .calendar-print-location span { padding: 0 4px; color: #179bd3; }
+  .calendar-print-meta { margin-top: 2px; color: #68798a; font-size: 8pt; }
+  .calendar-print-statuses { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+  .calendar-print-status { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border: 1px solid #dbe4ea; border-radius: 5px; background: #f7f9fb; color: #344b5f; font-size: 7.2pt; }
+  .calendar-print-status strong { color: #1c3347; font-size: 6.5pt; letter-spacing: .025em; text-transform: uppercase; }
+  .calendar-print-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 20px; margin-top: 11px; padding-top: 10px; border-top: 1px solid #e2e8ed; }
+  .calendar-print-details > div, .calendar-print-notes { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 9px; color: #3e5163; }
+  .calendar-print-details strong, .calendar-print-notes strong { color: #758291; font-size: 6.6pt; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; }
   .calendar-print-wide { grid-column: 1 / -1; }
   .calendar-print-notes { white-space: pre-wrap; overflow-wrap: anywhere; }
+
   .calendar-print-agenda { margin-top: 2px; }
-  .calendar-print-agenda-day { break-inside: auto; margin-bottom: 18px; }
-  .calendar-print-date-heading { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 8px; margin: 0 0 8px; padding: 7px 10px; border-radius: 5px; background: #1f3b57; color: #fff; break-after: avoid; }
-  .calendar-print-date-heading span { font-size: 11pt; font-weight: 800; }
-  .calendar-print-date-heading strong { font-size: 8.5pt; font-weight: 500; opacity: .9; }
-  .calendar-print-date-heading small { font-size: 7pt; opacity: .8; }
-  .calendar-print-day .calendar-print-item { margin-bottom: 5px; padding: 5px; border-left-width: 3px; box-shadow: none; }
-  .calendar-print-day .calendar-print-item-title { font-size: 7.5pt; }
-  .calendar-print-day .calendar-print-location { font-size: 7pt; }
-  .calendar-print-day .calendar-print-meta, .calendar-print-day .calendar-print-status { font-size: 6pt; }
-  .calendar-print-day .calendar-print-statuses { display: grid; gap: 2px; margin-top: 4px; }
-  .calendar-print-day .calendar-print-status { display: block; padding: 2px 3px; }
-  .calendar-print-day .calendar-print-status strong { display: block; }
+  .calendar-print-agenda-day { margin-bottom: 19px; break-inside: auto; }
+  .calendar-print-agenda-day + .calendar-print-agenda-day { padding-top: 1px; }
+  .calendar-print-date-heading {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 9px;
+    padding: 8px 11px;
+    border: 1px solid #193b56;
+    border-radius: 7px;
+    background: #1f425d;
+    color: #fff;
+    break-after: avoid;
+  }
+  .calendar-print-date-heading span { font-size: 10.5pt; font-weight: 780; }
+  .calendar-print-date-heading strong { font-size: 8.2pt; font-weight: 550; opacity: .92; }
+  .calendar-print-date-heading small { padding: 2px 6px; border-radius: 999px; background: rgba(255,255,255,.13); font-size: 6.8pt; opacity: .95; }
+
+  .calendar-print-day .calendar-print-item { margin-bottom: 6px; padding: 6px; border-left-width: 3px; border-radius: 5px; box-shadow: none; }
+  .calendar-print-day .calendar-print-item-title { font-size: 7.2pt; }
+  .calendar-print-day .calendar-print-location { margin-top: 2px; font-size: 6.8pt; }
+  .calendar-print-day .calendar-print-meta, .calendar-print-day .calendar-print-status { font-size: 5.8pt; }
+  .calendar-print-day .calendar-print-statuses { display: grid; gap: 3px; margin-top: 5px; }
+  .calendar-print-day .calendar-print-status { display: block; padding: 2px 4px; }
+  .calendar-print-day .calendar-print-status strong { display: block; margin-bottom: 1px; font-size: 5.3pt; }
   .calendar-print-day .calendar-print-type { display: none; }
+
+  .calendar-print-day .calendar-print-color { width: 6px; height: 6px; flex-basis: 6px; margin-right: 5px; }
+  .calendar-print-day .calendar-print-item-heading { gap: 4px; }
 }
