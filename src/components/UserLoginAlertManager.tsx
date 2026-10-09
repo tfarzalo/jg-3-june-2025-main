@@ -6,6 +6,7 @@ import { supabase } from '../utils/supabase';
 import { useAuth } from '../contexts/AuthProvider';
 import { getAvatarUrl } from '../utils/supabase';
 import { NewMessageToast } from './chat/NewMessageToast';
+import { ApprovalDecisionAlert, type ApprovalDecisionAlertData } from './ApprovalDecisionAlert';
 
 interface LoginAlert {
   id: string;
@@ -28,6 +29,7 @@ export function UserLoginAlertManager() {
     senderAvatar?: string | null;
     preview: string;
   }>>([]);
+  const [approvalAlerts, setApprovalAlerts] = useState<ApprovalDecisionAlertData[]>([]);
   const { onlineUserIds, onlineUsers } = usePresence();
   const { role: currentUserRole } = useUserRole();
   const { user: currentUser } = useAuth();
@@ -167,12 +169,29 @@ export function UserLoginAlertManager() {
     return () => window.removeEventListener('new-message-toast' as any, handler as EventListener);
   }, []);
 
+  // Approval decisions are dispatched only by the live INSERT subscription.
+  // Fetched notification history never emits this event, so old decisions do
+  // not replay as fresh slide-in alerts after login or refresh.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<ApprovalDecisionAlertData>).detail;
+      if (!detail?.id || !['approved', 'declined'].includes(detail.decision)) return;
+      setApprovalAlerts((current) => {
+        if (current.some((alert) => alert.id === detail.id)) return current;
+        return [...current, detail];
+      });
+    };
+
+    window.addEventListener('approval-decision-alert', handler);
+    return () => window.removeEventListener('approval-decision-alert', handler);
+  }, []);
+
   const removeAlert = useCallback((alertId: string) => {
     setAlerts(prev => prev.filter(alert => alert.id !== alertId));
   }, []);
 
   // Only show for admin and jg_management users
-  if (currentUserRole !== 'admin' && currentUserRole !== 'jg_management') {
+  if (currentUserRole !== 'admin' && currentUserRole !== 'jg_management' && currentUserRole !== 'is_super_admin') {
     return null;
   }
 
@@ -211,6 +230,18 @@ export function UserLoginAlertManager() {
               setMessageToasts(prev => prev.filter(t => t.id !== toast.id));
             }}
             onClose={() => setMessageToasts(prev => prev.filter(t => t.id !== toast.id))}
+          />
+        </div>
+      ))}
+      {approvalAlerts.slice(-3).map((alert, index) => (
+        <div
+          key={alert.id}
+          className="transform transition-all duration-300 ease-out"
+          style={{ zIndex: 99980 - index }}
+        >
+          <ApprovalDecisionAlert
+            alert={alert}
+            onClose={() => setApprovalAlerts((current) => current.filter((item) => item.id !== alert.id))}
           />
         </div>
       ))}
