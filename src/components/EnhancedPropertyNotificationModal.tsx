@@ -1597,28 +1597,19 @@ export function EnhancedPropertyNotificationModal({
       throw new Error('Billing details are required for approval emails.');
     }
 
-    const token = crypto.randomUUID();
-    // Customer approval requests do not expire. Preview links remain temporary.
-    const expiresAt = params.isPreview
-      ? new Date(Date.now() + 10 * 60 * 1000).toISOString()
-      : null;
-
     const { data, error } = await supabase
-      .from('approval_tokens')
-      .insert({
-        job_id: job.id,
-        token,
-        approval_type: params.isPreview ? 'extra_charges_preview' : 'extra_charges',
-        approver_email: recipientEmail,
-        approver_name: primaryRecipientName || apContactName || null,
-        expires_at: expiresAt,
-        extra_charges_data: extraData,
-      })
-      .select('id')
+      .rpc('create_or_refresh_approval_token', {
+        p_job_id: job.id,
+        p_approval_type: 'extra_charges',
+        p_approver_email: recipientEmail,
+        p_approver_name: primaryRecipientName || apContactName || null,
+        p_extra_charges_data: extraData,
+        p_is_preview: Boolean(params.isPreview),
+      } as any)
       .single();
 
     if (error) throw error;
-    return { id: data.id, token, expiresAt };
+    return { id: data.id, token: data.token, expiresAt: data.expires_at, reused: data.reused };
   };
 
   const buildFinalEmailHtml = (approvalLink?: string, cidMap?: Record<string, string>) => {
@@ -1725,6 +1716,7 @@ export function EnhancedPropertyNotificationModal({
       setSending(true);
       let approvalLink: string | undefined;
       let approvalTokenId: string | undefined;
+      let approvalTokenReused = false;
       const effectiveNotificationType = isApprovalEmail ? 'extra_charges' : notificationType;
       const effectiveEmailPurpose = NOTIFICATION_TYPE_LABELS[effectiveNotificationType];
 
@@ -1779,6 +1771,7 @@ export function EnhancedPropertyNotificationModal({
       if (isApprovalEmail) {
         const tokenRecord = await createApprovalToken({ isPreview: false });
         approvalTokenId = tokenRecord.id;
+        approvalTokenReused = Boolean(tokenRecord.reused);
         approvalLink = `${config.portalBaseUrl}/approval/${tokenRecord.token}`;
       }
 
@@ -1818,7 +1811,9 @@ export function EnhancedPropertyNotificationModal({
       const sendSucceeded = sendResult?.success === true;
 
       if (error || !sendSucceeded || !customerCopyAccepted) {
-        if (approvalTokenId) {
+        // A failed first send can safely invalidate its newly created token.
+        // A failed resend must never invalidate the already-valid page.
+        if (approvalTokenId && !approvalTokenReused) {
           const { error: discardError } = await supabase.rpc('invalidate_unsent_approval_token', {
             p_token_id: approvalTokenId,
           });

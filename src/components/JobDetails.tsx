@@ -719,9 +719,11 @@ export function JobDetails() {
   } | null>(null);
   const [pendingApproval, setPendingApproval] = useState<{
     id: string;
-    expiresAt: string;
+    token: string;
+    expiresAt: string | null;
     sentAt: string;
   } | null>(null);
+  const [latestApprovalPageToken, setLatestApprovalPageToken] = useState<string | null>(null);
   const [reactivatedFromDecline, setReactivatedFromDecline] = useState(false);
   const parseExtraChargeApproverFromReason = useCallback((reason?: string | null) => {
     return reason?.match(/extra charges (?:approved|declined|rejected)(?: manually)? by ([^.;-]+)/i)?.[1]?.trim() || null;
@@ -1386,7 +1388,7 @@ export function JobDetails() {
       // The newest request is authoritative, including when it is pending.
       const { data, error } = await supabase
         .from('approval_tokens')
-        .select('decision, decision_at, approver_name, approver_email, decision_maker_name, decision_maker_email, decline_reason')
+        .select('token, decision, decision_at, approver_name, approver_email, decision_maker_name, decision_maker_email, decline_reason')
         .eq('job_id', jobId)
         .eq('approval_type', 'extra_charges')
         .order('created_at', { ascending: false })
@@ -1399,12 +1401,14 @@ export function JobDetails() {
       }
 
       if (data) {
+        setLatestApprovalPageToken(data.token || null);
         setApprovalTokenDecision({
           ...data,
           approver_name: data.decision_maker_name || data.approver_name,
           approver_email: data.decision_maker_email || data.approver_email,
         });
       } else {
+        setLatestApprovalPageToken(null);
         // Clear the decision if no data found
         setApprovalTokenDecision(null);
       }
@@ -1419,7 +1423,7 @@ export function JobDetails() {
     try {
       const { data, error } = await supabase
         .from('approval_tokens')
-        .select('id, expires_at, created_at, used_at')
+        .select('id, token, expires_at, created_at, used_at')
         .eq('job_id', jobId)
         .eq('approval_type', 'extra_charges')
         .is('used_at', null)
@@ -1434,6 +1438,7 @@ export function JobDetails() {
 
       setPendingApproval({
         id: data.id,
+        token: data.token,
         expiresAt: data.expires_at,
         sentAt: data.created_at
       });
@@ -1442,6 +1447,11 @@ export function JobDetails() {
       setPendingApproval(null);
     }
   }, [jobId]);
+
+  const viewLatestApprovalPage = useCallback(() => {
+    if (!latestApprovalPageToken) return;
+    window.open(`/approval/${latestApprovalPageToken}`, '_blank', 'noopener,noreferrer');
+  }, [latestApprovalPageToken]);
 
   // Fetch approval decision when component mounts or job changes
   useEffect(() => {
@@ -3324,6 +3334,8 @@ export function JobDetails() {
     // Refresh job data to show updated status
     await refetchJob();
     await refetchActivityLog();
+    await fetchApprovalDecision();
+    await fetchPendingApproval();
   };
 
   // Miscellaneous additional cost handler
@@ -5798,7 +5810,17 @@ export function JobDetails() {
                           }) : 'an unknown date'}.
                         </p>
                         {(isAdmin || isJGManagement) && (
-                          <div className="mt-3">
+                          <div className="mt-3 flex flex-wrap gap-3">
+                            {latestApprovalPageToken && (
+                              <button
+                                type="button"
+                                onClick={viewLatestApprovalPage}
+                                className="inline-flex items-center px-3 py-1.5 bg-white hover:bg-red-50 text-red-700 text-sm font-medium rounded-lg border border-red-300 transition-colors"
+                              >
+                                <Eye className="h-4 w-4 mr-2" />
+                                View Approval Page
+                              </button>
+                            )}
                             <button
                               onClick={handleReactivateJob}
                               disabled={reactivatingJob}
@@ -5839,6 +5861,16 @@ export function JobDetails() {
                           This job remains in Pending Work Order and requires internal follow-up.
                         </p>
                         <div className="mt-3 flex flex-wrap gap-3">
+                          {latestApprovalPageToken && (
+                            <button
+                              type="button"
+                              onClick={viewLatestApprovalPage}
+                              className="inline-flex items-center px-3 py-1.5 bg-white hover:bg-red-50 text-red-700 text-sm font-medium rounded-lg border border-red-300 transition-colors"
+                            >
+                              <Eye className="h-4 w-4 mr-2" />
+                              View Approval Page
+                            </button>
+                          )}
                           <button
                             onClick={handleSendExtraChargesNotification}
                             className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
@@ -5890,6 +5922,16 @@ export function JobDetails() {
                             minute: '2-digit'
                           }) : 'an unknown date'}. The job has been moved to Work Order phase.
                         </p>
+                        {latestApprovalPageToken && (isAdmin || isJGManagement) && (
+                          <button
+                            type="button"
+                            onClick={viewLatestApprovalPage}
+                            className="mt-3 inline-flex items-center px-3 py-1.5 bg-white hover:bg-green-50 text-green-700 text-sm font-medium rounded-lg border border-green-300 transition-colors"
+                          >
+                            <Eye className="h-4 w-4 mr-2" />
+                            View Approval Page
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -5921,7 +5963,7 @@ export function JobDetails() {
               const itemLabel = job.work_order?.has_sprinklers ? 'Sprinkler Paint' : 'Drywall Repairs';
               const message = needsExtraChargesApproval
                 ? (hasActiveApprovalEmail
-                    ? `An approval email was sent ${pendingApproval?.sentAt ? formatDate(pendingApproval.sentAt) : 'recently'}. You can send another approval email now if needed.`
+                    ? `An approval email was sent ${pendingApproval?.sentAt ? formatDate(pendingApproval.sentAt) : 'recently'}. Resending will retain the same approval page URL and refresh it with the current job and work order details.`
                     : isApprovalMissingBillAmount
                       ? 'Bill to Customer needs input for subcontractor-submitted miscellaneous additional costs before approval can be sent.'
                     : (job.work_order?.has_sprinklers
@@ -5958,6 +6000,16 @@ export function JobDetails() {
                           <Mail className="h-4 w-4 mr-2" />
                           Prepare Email
                         </button>
+                        {needsExtraChargesApproval && latestApprovalPageToken && (isAdmin || isJGManagement) && (
+                          <button
+                            type="button"
+                            onClick={viewLatestApprovalPage}
+                            className="inline-flex items-center px-3 py-1.5 bg-white hover:bg-blue-50 text-blue-700 text-sm font-medium rounded-lg border border-blue-300 transition-colors"
+                          >
+                            <Eye className="h-4 w-4 mr-2" />
+                            View Approval Page
+                          </button>
+                        )}
                         {(needsExtraChargesApproval && (isAdmin || isJGManagement)) && (
                           <button
                             onClick={() => {

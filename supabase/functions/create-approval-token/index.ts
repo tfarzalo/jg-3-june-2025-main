@@ -30,28 +30,15 @@ serve(async (req) => {
       })
     }
 
-    const token = crypto.randomUUID()
-    const now = new Date()
-    // Customer approval requests remain available for the life of the job.
-    // Internal previews remain temporary.
-    const expires_at = is_preview
-      ? new Date(now.getTime() + 60 * 60 * 1000).toISOString()
-      : null
-    const sent_at = is_preview ? null : now.toISOString()
-
     const { data, error } = await supabaseClient
-      .from('approval_tokens')
-      .insert({
-        job_id,
-        token,
-        expires_at,
-        approval_type,
-        approver_email: approver_email || null,
-        approver_name: approver_name || null,
-        status: 'pending',
-        sent_at,
+      .rpc('create_or_refresh_approval_token', {
+        p_job_id: job_id,
+        p_approval_type: approval_type,
+        p_approver_email: approver_email || null,
+        p_approver_name: approver_name || null,
+        p_extra_charges_data: null,
+        p_is_preview: Boolean(is_preview),
       })
-      .select()
       .single()
 
     if (error) {
@@ -59,7 +46,7 @@ serve(async (req) => {
       throw error
     }
 
-    return new Response(JSON.stringify({ token: data.token, expires_at: data.expires_at }), {
+    return new Response(JSON.stringify({ token: data.token, expires_at: data.expires_at, reused: data.reused }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
