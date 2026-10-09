@@ -3749,6 +3749,9 @@ export function JobDetails() {
     miscAdditionalCostTotal > 0 ||
     miscAdditionalCostSubPayTotal > 0
   );
+  const needsSprinklerPaintNotification = Boolean(
+    job?.work_order?.has_sprinklers && job?.work_order?.sprinklers_painted
+  );
   const notificationJob = useMemo(() => {
     if (!job) return job;
     return {
@@ -5958,7 +5961,7 @@ export function JobDetails() {
                 isPendingWorkOrder &&
                 !needsExtraChargesApproval &&
                 !hasExtraChargesForApproval &&
-                (job.work_order?.has_sprinklers || hasDrywallSignal);
+                (needsSprinklerPaintNotification || hasDrywallSignal);
               if (!hasWorkOrder || (!needsExtraChargesApproval && !showBlueVariant && !archivedUnansweredApproval)) return null;
               const containerClasses = needsExtraChargesApproval
                 ? 'bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-300 dark:border-yellow-700/30 text-yellow-900 dark:text-yellow-200'
@@ -5971,7 +5974,7 @@ export function JobDetails() {
                     ? 'Extra Charges Modified — New Approval Required'
                     : hasActiveApprovalEmail ? 'Approval Email Already Sent' : 'Extra Charges Approval Needed')
                 : archivedUnansweredApproval ? 'Approval Notification Sent' : 'Notification Needed';
-              const itemLabel = job.work_order?.has_sprinklers ? 'Sprinkler Paint' : 'Drywall Repairs';
+              const itemLabel = needsSprinklerPaintNotification ? 'Sprinkler Paint' : 'Drywall Repairs';
               const message = needsExtraChargesApproval
                 ? (approvalNeedsUpdatedRequest
                     ? 'Modifications were made to the extra charges for this job after the previous request. An updated cumulative approval notification must be sent and approved before this job can proceed.'
@@ -5979,14 +5982,14 @@ export function JobDetails() {
                     ? `An approval email was sent ${pendingApproval?.sentAt ? formatDate(pendingApproval.sentAt) : 'recently'}. Resending will retain the same approval page URL and refresh it with the current job and work order details.`
                     : isApprovalMissingBillAmount
                       ? 'Bill to Customer needs input for subcontractor-submitted miscellaneous additional costs before approval can be sent.'
-                    : (job.work_order?.has_sprinklers
+                    : (needsSprinklerPaintNotification
                         ? 'Extra charges need approval. The sprinkler update should be included in the approval email via template sections.'
                         : 'Extra charges need approval. Recommended: send approval email.'))
                 : archivedUnansweredApproval
                   ? 'No approval response was recorded before this job was archived. The approval page remains available as a view-only record.'
                   : `Notification email needed: ${itemLabel}`;
               const recommended: 'extra_charges' | 'sprinkler_paint' | 'drywall_repairs' =
-                needsExtraChargesApproval ? 'extra_charges' : (job.work_order?.has_sprinklers ? 'sprinkler_paint' : 'drywall_repairs');
+                needsExtraChargesApproval ? 'extra_charges' : (needsSprinklerPaintNotification ? 'sprinkler_paint' : 'drywall_repairs');
               return (
                 <div className={`${containerClasses} px-6 py-4 relative z-[50]`}>
                   <div className="flex items-start">
