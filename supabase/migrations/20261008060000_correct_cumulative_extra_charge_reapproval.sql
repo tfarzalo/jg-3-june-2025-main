@@ -249,9 +249,7 @@ BEGIN
       UPDATE public.approval_tokens a
       SET approver_email = COALESCE(NULLIF(btrim(p_approver_email), ''), a.approver_email),
           approver_name = COALESCE(NULLIF(btrim(p_approver_name), ''), a.approver_name),
-          expires_at = NULL,
-          sent_at = now(),
-          status = 'pending'
+          expires_at = NULL
       WHERE a.id = v_record.id
       RETURNING a.* INTO v_record;
       RETURN QUERY SELECT v_record.id, v_record.token::text, v_record.expires_at, true;
@@ -265,11 +263,11 @@ BEGIN
 
   INSERT INTO public.approval_tokens (
     job_id, token, approval_type, approver_email, approver_name,
-    expires_at, extra_charges_data, status, sent_at
+    expires_at, extra_charges_data
   ) VALUES (
     p_job_id, gen_random_uuid()::text, v_type, p_approver_email, p_approver_name,
     CASE WHEN p_is_preview THEN now() + interval '10 minutes' ELSE NULL END,
-    p_extra_charges_data, 'pending', CASE WHEN p_is_preview THEN NULL ELSE now() END
+    p_extra_charges_data
   ) RETURNING * INTO v_record;
 
   RETURN QUERY SELECT v_record.id, v_record.token::text, v_record.expires_at, false;

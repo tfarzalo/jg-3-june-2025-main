@@ -3303,7 +3303,6 @@ export function JobDetails() {
   };
 
   const handleNotificationSent = async () => {
-    toast.success('Notification sent successfully');
     setShowNotificationModal(false);
     setShowEnhancedNotificationModal(false);
     setNotificationType(null);

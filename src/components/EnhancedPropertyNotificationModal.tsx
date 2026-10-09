@@ -346,6 +346,7 @@ export function EnhancedPropertyNotificationModal({
 }: EnhancedPropertyNotificationModalProps) {
   const subjectInputRef = useRef<HTMLInputElement>(null);
   const stepContentRef = useRef<HTMLDivElement>(null);
+  const initializedForCurrentOpenRef = useRef(false);
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null);
   const [emailSubject, setEmailSubject] = useState('');
@@ -1029,19 +1030,27 @@ export function EnhancedPropertyNotificationModal({
   }, [job?.id]);
 
   useEffect(() => {
-    if (isOpen && job) {
-      initializeRecipient();
-      fetchAssignedSubcontractor();
-      fetchModalData();
-      fetchSentEmailHistory();
-      setCurrentStep(1);
-      setSelectedTemplate(null);
-      setRecipientEmail('');
-      setCcEmails('');
-      setCcRecipientOptions([]);
-      setSendAdminCopy(true);
-      setShowCCBCC(true);
+    if (!isOpen) {
+      initializedForCurrentOpenRef.current = false;
+      return;
     }
+    if (!job || initializedForCurrentOpenRef.current) return;
+
+    // Initialize once per opening. Realtime job updates can replace the job
+    // object while a send is completing; rerunning this reset at that point
+    // briefly sends the visible modal back to step one before it closes.
+    initializedForCurrentOpenRef.current = true;
+    initializeRecipient();
+    fetchAssignedSubcontractor();
+    fetchModalData();
+    fetchSentEmailHistory();
+    setCurrentStep(1);
+    setSelectedTemplate(null);
+    setRecipientEmail('');
+    setCcEmails('');
+    setCcRecipientOptions([]);
+    setSendAdminCopy(true);
+    setShowCCBCC(true);
   }, [isOpen, job, fetchModalData, initializeRecipient, fetchAssignedSubcontractor, fetchSentEmailHistory]);
 
   useEffect(() => {
