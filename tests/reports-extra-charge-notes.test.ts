@@ -13,7 +13,7 @@ const charge = (description: string, notes?: string) => ({
   quantity: 1, billRate: 25, subRate: 10,
 });
 
-async function run(filters: Record<string, unknown> = {}, columns = preset.columns) {
+async function run(filters: Record<string, unknown> = {}, columns = preset.columns, name = preset.name) {
   const jobs = [{ id: 'job-1', description: 'Paint unit', work_order_num: 123,
     job_phase: { job_phase_label: 'Completed Work Orders' }, work_orders: [] }];
   const query: Record<string, unknown> = {};
@@ -28,16 +28,18 @@ async function run(filters: Record<string, unknown> = {}, columns = preset.colum
     ] },
   }, error: null });
   return generateReport({ from: '2026-09-01', to: '2026-09-10', persistRun: false,
-    template: { ...preset, columns, filters: { ...preset.filters, phases: ['ALL'], ...filters } } });
+    template: { ...preset, name, columns, filters: { ...preset.filters, phases: ['ALL'], ...filters } } });
 }
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('extra-charge report notes', () => {
-  it('defaults on for Wufoo presets and older saved Wufoo templates only', () => {
+  it('defaults on for Wufoo presets and every template named Wufoo', () => {
     expect(reportIncludesExtraChargeNotes(preset)).toBe(true);
     expect(reportIncludesExtraChargeNotes({ ...preset, filters: { reportType: 'wufoo_style_billing' } })).toBe(true);
-    expect(reportIncludesExtraChargeNotes({ ...preset, filters: {} })).toBe(false);
+    expect(reportIncludesExtraChargeNotes({ ...preset, filters: {} })).toBe(true);
+    expect(reportIncludesExtraChargeNotes({ ...preset, name: 'Customer WuFoO Export', filters: {} })).toBe(true);
+    expect(reportIncludesExtraChargeNotes({ ...preset, name: 'Standard Billing', filters: {} })).toBe(false);
   });
 
   it('keeps notes with each charge in preview and CSV without changing amounts or headers', async () => {
@@ -60,11 +62,11 @@ describe('extra-charge report notes', () => {
 
   it('lets standard templates opt in and respects selected extra-charge items', async () => {
     const columns = ['extra_item_2', 'extra_item_3'];
-    const report = await run({ reportType: undefined, includeExtraChargeNotes: true }, columns);
+    const report = await run({ reportType: undefined, includeExtraChargeNotes: true }, columns, 'Standard Billing');
     expect(report.rows[0]['Extra Charge 2']).toContain('Notes: Door note');
     expect(report.rows[0]['Extra Charge 3']).not.toContain('Notes:');
     expect(JSON.stringify(report.rows)).not.toContain('Repair walls');
-    const original = await run({ reportType: undefined, includeExtraChargeNotes: undefined }, columns);
+    const original = await run({ reportType: undefined, includeExtraChargeNotes: undefined }, columns, 'Standard Billing');
     expect(JSON.stringify(original.rows)).not.toContain('Notes:');
   });
 

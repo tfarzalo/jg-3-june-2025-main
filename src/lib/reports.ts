@@ -7,6 +7,7 @@ import {
 } from './qualityControl';
 import { formatJobPhaseLabel } from './jobPhaseLabels';
 import { getMiscAdditionalCostAmounts } from './miscAdditionalCosts';
+import { extractJobCancellationReason } from './jobs/cancellationReasons';
 
 const GENERIC_MISC_ADDITIONAL_COST_DESCRIPTION = 'Miscellaneous additional cost';
 
@@ -41,6 +42,12 @@ type ExtraChargeReportItem = {
   bill: number;
   sub: number;
   profit: number;
+};
+type MiscAdditionalCostReportItem = {
+  description: string;
+  notes?: string;
+  bill: number;
+  sub: number;
 };
 type QualityControlSubmissionRecord = {
   id: string;
@@ -135,6 +142,9 @@ type ReportJob = {
   misc_additional_cost_description?: string | null;
   misc_additional_cost_bill?: number | string | null;
   misc_additional_cost_sub_pay?: number | string | null;
+  misc_additional_cost_item_details?: MiscAdditionalCostReportItem[];
+  cancellation_reason?: string | null;
+  wufoo_charge_details?: string | null;
   quality_control_submissions?: QualityControlSubmissionRecord[];
   quality_control_latest?: QualityControlSubmissionRecord | null;
   quality_control_submission_count?: number;
@@ -178,6 +188,36 @@ const formatExtraChargeReportItemText = (item?: ExtraChargeReportItem, includeNo
   return `${formatCurrency(item.bill)}${detail ? ` - ${detail}` : ''}${notes ? ` - Notes: ${notes}` : ''}`;
 };
 
+const formatWufooExtraChargeItem = (item: ExtraChargeReportItem, includeNotes = true) => {
+  const parts = [`${normalizeCurrencyForSentence(formatCurrency(item.bill))} Extra Charge`];
+  const name = item.name?.trim();
+  const description = item.description?.trim();
+  if (name) parts.push(name);
+  if (item.qty) parts.push(`Quantity/Hours: ${item.qty}${item.unit ? ` ${item.unit}` : ''}`);
+  if (description && description !== name) parts.push(description);
+  if (includeNotes && item.notes?.trim()) parts.push(`Notes: ${item.notes.trim()}`);
+  return `${parts.join(' - ')}.`;
+};
+
+const buildWufooChargeDetails = (job: ReportJob, includeNotes = true) => {
+  const parts = (job.extra_item_details || []).map(item => {
+    if (item.type !== 'cancellation_trip_charge') return formatWufooExtraChargeItem(item, includeNotes);
+    const reason = job.cancellation_reason?.trim();
+    return `${normalizeCurrencyForSentence(formatCurrency(item.bill))} Cancellation Trip Charge${reason ? ` - Reason: ${reason}` : ''}.`;
+  });
+
+  (job.misc_additional_cost_item_details || []).forEach(item => {
+    const detail = [
+      `${normalizeCurrencyForSentence(formatCurrency(item.bill))} Misc Additional Cost`,
+      item.description?.trim(),
+      includeNotes && item.notes?.trim() ? `Notes: ${item.notes.trim()}` : '',
+    ].filter(Boolean).join(' - ');
+    parts.push(`${detail}.`);
+  });
+
+  return parts.join(' ');
+};
+
 const EXTRA_CHARGE_ITEM_REPORT_COLUMNS: ReportColumn[] = EXTRA_CHARGE_ITEM_COLUMN_KEYS.map((key, index) => ({
   key,
   label: `Extra Charge ${index + 1}`,
@@ -208,6 +248,7 @@ export const REPORT_COLUMNS: ReportColumn[] = [
   { key: 'misc_additional_cost_description', label: 'Miscellaneous Additional Cost Description', value: job => job.misc_additional_cost_description || '' },
   { key: 'misc_additional_cost_bill', label: 'Miscellaneous Additional Cost Bill', value: job => job.misc_additional_cost_bill },
   { key: 'misc_additional_cost_sub_pay', label: 'Miscellaneous Additional Cost Sub Pay', value: job => job.misc_additional_cost_sub_pay },
+  { key: 'wufoo_charge_details', label: 'Wufoo Charge Details', value: job => buildWufooChargeDetails(job) },
   { key: 'description', label: 'Description', value: job => job.description || '' },
   { key: 'extra_charges_total', label: 'Extra Charges Billing', value: job => job.extra_charges_total },
   { key: 'extra_sub_total', label: 'Extra Pay to Subcontractor', value: job => job.extra_sub_total },
@@ -315,11 +356,17 @@ const WUFOO_STYLE_DESCRIPTION_HEADER = 'Description, Extra Charges Amounts and D
 
 const WUFOO_STYLE_DESCRIPTION_COLUMN_KEYS = new Set([
   'description',
+  'extra_items',
   ...EXTRA_CHARGE_ITEM_COLUMN_KEYS,
   'misc_additional_cost_description',
   'misc_additional_cost_bill',
   'additional_comments',
 ]);
+
+function isWufooStyleTemplate(template: ReportTemplate) {
+  if (template.filters?.wufooSource === true) return false;
+  return template.filters?.reportType === 'wufoo_style_billing' || /wufoo/i.test(template.name);
+}
 
 const WUFOO_STYLE_HEADER_OVERRIDES: Record<string, string> = {
   work_order_num: 'Work Order #',
@@ -527,7 +574,7 @@ export async function fetchReportRuns(): Promise<ReportRun[]> {
 export function reportIncludesExtraChargeNotes(template: ReportTemplate): boolean {
   return typeof template.filters?.includeExtraChargeNotes === 'boolean'
     ? template.filters.includeExtraChargeNotes
-    : template.filters?.reportType === 'wufoo_style_billing';
+    : isWufooStyleTemplate(template);
 }
 
 export async function generateReport(params: {
@@ -537,7 +584,7 @@ export async function generateReport(params: {
   sort?: ReportSort;
   persistRun?: boolean;
 }): Promise<GeneratedReport> {
-  if (params.template.filters?.reportType === 'wufoo_style_billing') {
+  if (isWufooStyleTemplate(params.template)) {
     return generateWufooStyleBillingReport(params);
   }
 
@@ -672,6 +719,7 @@ export async function generateReport(params: {
     column.key === 'misc_additional_cost_description' ||
     column.key === 'misc_additional_cost_bill' ||
     column.key === 'misc_additional_cost_sub_pay' ||
+    column.key === 'wufoo_charge_details' ||
     column.key.startsWith('extra_item_')
   );
   if (needsBillingTotals || needsSubPay) {
@@ -687,7 +735,9 @@ export async function generateReport(params: {
     const row: ReportRow = {};
     selectedColumns.forEach(column => {
       const extraItemIndex = EXTRA_CHARGE_ITEM_COLUMN_KEYS.indexOf(column.key);
-      row[column.label] = includeExtraChargeNotes && extraItemIndex >= 0
+      row[column.label] = column.key === 'wufoo_charge_details'
+        ? buildWufooChargeDetails(job, includeExtraChargeNotes)
+        : includeExtraChargeNotes && extraItemIndex >= 0
         ? formatExtraChargeReportItemText(job.extra_item_details?.[extraItemIndex], true)
         : includeExtraChargeNotes && column.key === 'extra_items'
           ? (job.extra_item_details || []).map(item => formatExtraChargeReportItemText(item, true)).join(';; ')
@@ -836,10 +886,14 @@ async function generateWufooStyleBillingReport(params: {
     template: {
       ...params.template,
       name: `${params.template.name} Source`,
-      columns: params.template.columns.length ? params.template.columns : WUFOO_STYLE_BILLING_COLUMNS,
+      columns: Array.from(new Set([
+        ...(params.template.columns.length ? params.template.columns : WUFOO_STYLE_BILLING_COLUMNS),
+        'wufoo_charge_details',
+      ])),
       filters: {
         ...(params.template.filters || {}),
         reportType: undefined,
+        wufooSource: true,
         includeExtraChargeNotes: reportIncludesExtraChargeNotes(params.template),
       },
       preset: true,
@@ -1063,6 +1117,7 @@ async function saveReportRun(template: ReportTemplate, report: GeneratedReport) 
 
 async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob[]> {
   const snapshotTotals = await fetchSnapshotTotals(jobs);
+  const cancellationReasons = await fetchCancellationReasons(jobs);
 
   return Promise.all(jobs.map(async job => {
     const directMiscAdditionalCostDetails = getMiscAdditionalCostReportDetails(firstWorkOrder(job));
@@ -1093,6 +1148,9 @@ async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob
           misc_additional_cost_description: miscAdditionalCostDescription,
           misc_additional_cost_bill: miscAdditionalCostBill,
           misc_additional_cost_sub_pay: miscAdditionalCostSubPay,
+          misc_additional_cost_item_details: totals.miscAdditionalCostItems || [],
+          cancellation_reason: cancellationReasons.get(job.id) || null,
+          wufoo_charge_details: '',
         };
       }
     } catch (e) {
@@ -1170,6 +1228,39 @@ async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob
       misc_additional_cost_sub_pay: 0,
     };
   }));
+}
+
+async function fetchCancellationReasons(jobs: ReportJob[]) {
+  const jobIds = jobs
+    .filter(job => Boolean(job.cancellation_trip_charge_added))
+    .map(job => job.id);
+  const reasons = new Map<string, string>();
+  if (jobIds.length === 0) return reasons;
+
+  try {
+    const { data, error } = await supabase
+      .from('job_phase_changes')
+      .select('job_id, change_reason, changed_at')
+      .in('job_id', jobIds)
+      .order('changed_at', { ascending: false });
+
+    if (error) {
+      console.warn('Unable to load cancellation reasons for reports:', error);
+      return reasons;
+    }
+
+    (data || []).forEach((change: any) => {
+      const jobId = String(change.job_id || '');
+      const rawReason = String(change.change_reason || '');
+      if (!jobId || reasons.has(jobId) || !/cancel/i.test(rawReason)) return;
+      const reason = extractJobCancellationReason(rawReason);
+      if (reason) reasons.set(jobId, reason.replace(/;\s*Cancellation Trip Charge.*$/i, '').trim());
+    });
+  } catch (error) {
+    console.warn('Error loading cancellation reasons for reports:', error);
+  }
+
+  return reasons;
 }
 
 async function enrichJobsWithQualityControl(jobs: ReportJob[]): Promise<ReportJob[]> {
@@ -1336,6 +1427,7 @@ export function calculateBillingTotals(details: unknown, job: ReportJob): Billin
   miscAdditionalCostDescription?: string;
   miscAdditionalCostBill?: number;
   miscAdditionalCostSubPay?: number;
+  miscAdditionalCostItems?: MiscAdditionalCostReportItem[];
 } {
   const jobDetails = details as Record<string, unknown> | null;
   if (!jobDetails) {
@@ -1363,7 +1455,8 @@ export function calculateBillingTotals(details: unknown, job: ReportJob): Billin
       base: 0,
       baseSub: 0,
       extraSub: cSub || 0,
-      extraItems: [{ name: 'Cancellation Trip Charge', description: '', bill: Number((cBill || 0).toFixed(2)), sub: Number((cSub || 0).toFixed(2)), profit: Number(((cBill || 0) - (cSub || 0)).toFixed(2)) }],
+      extraItems: [{ name: 'Cancellation Trip Charge', type: 'cancellation_trip_charge', description: '', bill: Number((cBill || 0).toFixed(2)), sub: Number((cSub || 0).toFixed(2)), profit: Number(((cBill || 0) - (cSub || 0)).toFixed(2)) }],
+      miscAdditionalCostItems: [],
     };
   }
 
@@ -1382,6 +1475,7 @@ export function calculateBillingTotals(details: unknown, job: ReportJob): Billin
 
   const extraItems: ExtraChargeReportItem[] = [];
   const miscDescriptions: string[] = [];
+  const miscAdditionalCostReportItems: MiscAdditionalCostReportItem[] = [];
   let miscAdditionalCostBill = 0;
   let miscAdditionalCostSubPay = 0;
   const directMiscAdditionalCostDetails = getMiscAdditionalCostReportDetails(workOrder);
@@ -1477,6 +1571,12 @@ export function calculateBillingTotals(details: unknown, job: ReportJob): Billin
       miscAdditionalCostBill += billAmount;
       miscAdditionalCostSubPay += subAmount;
       addUniqueDescription(miscDescriptions, description);
+      miscAdditionalCostReportItems.push({
+        description,
+        notes: String(item.notes ?? item.note ?? '').trim() || undefined,
+        bill: Number(billAmount.toFixed(2)),
+        sub: Number(subAmount.toFixed(2)),
+      });
     });
   } else {
     const repairBill = numberFrom(jobDetails.repair_amount, workOrder?.repair_cost);
@@ -1488,6 +1588,11 @@ export function calculateBillingTotals(details: unknown, job: ReportJob): Billin
       miscAdditionalCostBill += repairBill;
       miscAdditionalCostSubPay += repairSub;
       addUniqueDescription(miscDescriptions, description);
+      miscAdditionalCostReportItems.push({
+        description,
+        bill: Number(repairBill.toFixed(2)),
+        sub: Number(repairSub.toFixed(2)),
+      });
     }
   }
 
@@ -1539,6 +1644,7 @@ export function calculateBillingTotals(details: unknown, job: ReportJob): Billin
     miscAdditionalCostDescription: miscDescriptions.join('; '),
     miscAdditionalCostBill: Number(miscAdditionalCostBill.toFixed(2)),
     miscAdditionalCostSubPay: Number(miscAdditionalCostSubPay.toFixed(2)),
+    miscAdditionalCostItems: miscAdditionalCostReportItems,
   };
 }
 
@@ -1624,7 +1730,7 @@ function resolveColumns(keys: string[]) {
 }
 
 export function reportHeadersForTemplate(template: ReportTemplate): string[] {
-  if (template.filters?.reportType === 'wufoo_style_billing') {
+  if (isWufooStyleTemplate(template)) {
     return wufooStyleOutputColumns(template).map(column => column.header);
   }
 
@@ -1676,12 +1782,11 @@ function wufooStyleOutputColumns(template: ReportTemplate) {
 
 function buildWufooStyleDescription(row: Record<string, unknown>) {
   const parts: string[] = [];
-  const jobDescription = String(row.Description ?? '').trim();
-  const additionalComments = String(row['Additional Comments'] ?? '').trim();
 
-  if (jobDescription) parts.push(jobDescription);
+  const structuredChargeDetails = String(row['Wufoo Charge Details'] ?? '').trim();
+  if (structuredChargeDetails) parts.push(structuredChargeDetails);
 
-  for (let index = 1; index <= EXTRA_CHARGE_ITEM_COLUMN_COUNT; index += 1) {
+  for (let index = 1; !structuredChargeDetails && index <= EXTRA_CHARGE_ITEM_COLUMN_COUNT; index += 1) {
     const text = String(row[`Extra Charge ${index}`] ?? '').trim();
     if (!text) continue;
     parts.push(formatChargeSentence(text));
@@ -1689,11 +1794,9 @@ function buildWufooStyleDescription(row: Record<string, unknown>) {
 
   const miscBill = String(row['Miscellaneous Additional Cost Bill'] ?? '').trim();
   const miscDescription = String(row['Miscellaneous Additional Cost Description'] ?? '').trim();
-  if (miscDescription && miscBill && miscBill !== '$0.00' && miscBill !== '0') {
+  if (!structuredChargeDetails && miscDescription && miscBill && miscBill !== '$0.00' && miscBill !== '0') {
     parts.push(`${normalizeCurrencyForSentence(miscBill)} Misc Additional Cost - ${miscDescription}.`);
   }
-
-  if (additionalComments) parts.push(`Additional Comments: ${additionalComments}`);
 
   return parts.join(' ');
 }
