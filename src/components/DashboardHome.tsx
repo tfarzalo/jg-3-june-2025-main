@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ClipboardList, 
@@ -71,6 +71,7 @@ export function DashboardHome() {
   const [completedJobs, setCompletedJobs] = useState<any[]>([]);
   const [loadingCompletedDates, setLoadingCompletedDates] = useState(false);
   const [phases, setPhases] = useState<any[]>([]);
+  const phaseLabelByIdRef = useRef<Record<string, string>>({});
   
   // Use the dedicated dashboard jobs hook for specific job categories
   const { 
@@ -95,9 +96,9 @@ export function DashboardHome() {
       return;
     }
     
-    const fetchData = async () => {
+    const fetchData = async (options?: { silent?: boolean }) => {
       try {
-        setLoading(true);
+        if (!options?.silent) setLoading(true);
         
         // Fetch phase metadata first, then use light count/list queries instead
         // of pulling the full jobs table into the dashboard.
@@ -120,6 +121,10 @@ export function DashboardHome() {
 
         const phaseIdByLabel: Record<string, string> = phasesData.reduce((acc: Record<string, string>, phase: JobPhase) => {
           acc[phase.job_phase_label] = phase.id;
+          return acc;
+        }, {});
+        phaseLabelByIdRef.current = phasesData.reduce((acc: Record<string, string>, phase: JobPhase) => {
+          acc[phase.id] = phase.job_phase_label;
           return acc;
         }, {});
 
@@ -201,49 +206,126 @@ export function DashboardHome() {
       }
     };
     
-    fetchData();
+    void fetchData();
+
+    const fetchChangedJob = async (jobId: string) => {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(`
+          id,
+          work_order_num,
+          unit_number,
+          scheduled_date,
+          created_at,
+          updated_at,
+          property:properties(property_name),
+          job_phase:current_phase_id(job_phase_label, color_dark_mode),
+          assigned_to:profiles(full_name),
+          job_type:job_types(job_type_label),
+          total_billing_amount
+        `)
+        .eq('id', jobId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Unable to apply realtime dashboard job update:', error);
+        return;
+      }
+
+      setJobs((current) => {
+        const withoutChangedJob = current.filter((job) => job.id !== jobId);
+        if (!data) return withoutChangedJob;
+
+        const phaseLabel = Array.isArray(data.job_phase)
+          ? data.job_phase[0]?.job_phase_label
+          : data.job_phase?.job_phase_label;
+        if (phaseLabel !== 'Pending Work Order' && phaseLabel !== 'Completed Work Orders') {
+          return withoutChangedJob;
+        }
+
+        return [data, ...withoutChangedJob]
+          .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+          .filter((job, index, rows) => rows.findIndex((row) => row.id === job.id) === index)
+          .slice(0, 16);
+      });
+    };
+
+    const adjustPhaseCounts = (fromPhaseId?: string | null, toPhaseId?: string | null) => {
+      if (!fromPhaseId || !toPhaseId || fromPhaseId === toPhaseId) return;
+      const fromLabel = phaseLabelByIdRef.current[fromPhaseId];
+      const toLabel = phaseLabelByIdRef.current[toPhaseId];
+      setPhaseCounts((current) => {
+        const next = { ...current };
+        if (fromLabel) next[fromLabel] = Math.max(0, (next[fromLabel] || 0) - 1);
+        if (toLabel) next[toLabel] = (next[toLabel] || 0) + 1;
+        return next;
+      });
+    };
 
     // Set up real-time subscriptions for automatic updates
+    let jobsConnectedOnce = false;
     const jobsSubscription = supabase
       .channel('dashboard-jobs')
       .on('postgres_changes', 
         { event: 'INSERT', schema: 'public', table: 'jobs' },
-        async (payload) => {
+        (payload) => {
           console.log('New job added:', payload.new);
-          fetchData();
+          const phaseLabel = phaseLabelByIdRef.current[(payload.new as any).current_phase_id];
+          if (phaseLabel) {
+            setPhaseCounts((current) => ({
+              ...current,
+              [phaseLabel]: (current[phaseLabel] || 0) + 1,
+            }));
+          }
+          void fetchChangedJob((payload.new as any).id);
         }
       )
       .on('postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'jobs' },
-        async (payload) => {
+        (payload) => {
           console.log('Job updated:', payload.new);
-          fetchData();
+          void fetchChangedJob((payload.new as any).id);
         }
       )
       .on('postgres_changes',
         { event: 'DELETE', schema: 'public', table: 'jobs' },
         (payload) => {
           console.log('Job deleted:', payload.old);
-          fetchData();
+          const deletedJobId = (payload.old as any).id;
+          setJobs((current) => current.filter((job) => job.id !== deletedJobId));
+          // Deletes are uncommon and the default realtime old-record payload
+          // may contain only the primary key. Reconcile silently for exact counts.
+          void fetchData({ silent: true });
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') return;
+        if (jobsConnectedOnce) {
+          // A reconnect can occur after a laptop sleeps or the network changes.
+          // Reconcile quietly in case events were missed while disconnected.
+          void fetchData({ silent: true });
+        }
+        jobsConnectedOnce = true;
+      });
 
     // Set up real-time subscription for activity updates
     const activitySubscription = supabase
       .channel('dashboard-activity')
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'job_phase_changes' },
-        () => {
+        (payload) => {
           console.log('New activity detected, refreshing activities...');
-          fetchActivities();
+          const change = payload.new as any;
+          adjustPhaseCounts(change.from_phase_id, change.to_phase_id);
+          void fetchChangedJob(change.job_id);
+          void fetchActivities();
         }
       )
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'activity_log' },
         () => {
           console.log('New activity log detected, refreshing activities...');
-          fetchActivities();
+          void fetchActivities();
         }
       )
       .subscribe();

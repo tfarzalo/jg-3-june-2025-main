@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle2, X, XCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export interface ApprovalDecisionAlertData {
   id: string;
@@ -16,6 +17,7 @@ interface ApprovalDecisionAlertProps {
 
 export function ApprovalDecisionAlert({ alert, onClose }: ApprovalDecisionAlertProps) {
   const [isVisible, setIsVisible] = useState(false);
+  const navigate = useNavigate();
   const isDeclined = alert.decision === 'declined';
   const displayDuration = isDeclined ? 12000 : 8000;
 
@@ -37,7 +39,7 @@ export function ApprovalDecisionAlert({ alert, onClose }: ApprovalDecisionAlertP
   };
 
   const openJob = () => {
-    if (alert.route) window.location.assign(alert.route);
+    if (alert.route) navigate(alert.route);
   };
 
   const Icon = isDeclined ? XCircle : CheckCircle2;

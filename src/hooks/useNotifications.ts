@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../utils/supabase';
 import {
   getBellNotificationPreferenceKey,
@@ -40,6 +40,7 @@ export function useNotifications() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const notificationSettingsRef = useRef<BellNotificationSettings>(normalizeBellNotificationSettings(null));
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
@@ -81,6 +82,7 @@ export function useNotifications() {
       if (unreadNotificationsResult.error) throw unreadNotificationsResult.error;
 
       const settings = normalizeBellNotificationSettings(profileResult.data?.notification_settings);
+      notificationSettingsRef.current = settings;
       const notificationsData = filterVisibleNotifications(
         (notificationsResult.data || []) as Notification[],
         session.user.id,
@@ -204,6 +206,34 @@ export function useNotifications() {
           
           // Only add if it's for the current user
           if (newNotification.user_id === session.user.id) {
+            const isVisible = filterVisibleNotifications(
+              [newNotification as Notification],
+              session.user.id,
+              notificationSettingsRef.current
+            ).length > 0;
+
+            if (!isVisible) return;
+
+            // Dispatch the transient alert directly from the realtime INSERT.
+            // Do not wait for joined-view/profile queries: those hydrate the
+            // persistent bell entry independently below.
+            if (newNotification.metadata?.event === 'extra_charge_approval_decision') {
+              const decision = newNotification.metadata?.decision;
+              if (decision === 'approved' || decision === 'declined') {
+                window.dispatchEvent(new CustomEvent('approval-decision-alert', {
+                  detail: {
+                    id: newNotification.id,
+                    title: newNotification.title,
+                    message: newNotification.message,
+                    decision,
+                    route: typeof newNotification.metadata?.route === 'string'
+                      ? newNotification.metadata.route
+                      : undefined,
+                  },
+                }));
+              }
+            }
+
             // Fetch full notification details with joined data
             const { data } = await supabase
               .from('notifications_view')
@@ -211,34 +241,9 @@ export function useNotifications() {
               .eq('id', newNotification.id)
               .single();
 
-            const { data: profileData } = await supabase
-              .from('profiles')
-              .select('notification_settings')
-              .eq('id', session.user.id)
-              .maybeSingle();
-            const settings = normalizeBellNotificationSettings(profileData?.notification_settings);
-
-            if (data && !filterVisibleNotifications([data as Notification], session.user.id, settings).length) {
-              return;
-            }
-
             if (data) {
               setNotifications(prev => [data as Notification, ...prev]);
               setUnreadCount(prev => prev + 1);
-              if (data.metadata?.event === 'extra_charge_approval_decision') {
-                const decision = data.metadata?.decision;
-                if (decision === 'approved' || decision === 'declined') {
-                  window.dispatchEvent(new CustomEvent('approval-decision-alert', {
-                    detail: {
-                      id: data.id,
-                      title: data.title,
-                      message: data.message,
-                      decision,
-                      route: typeof data.metadata?.route === 'string' ? data.metadata.route : undefined,
-                    },
-                  }));
-                }
-              }
             }
           }
         }

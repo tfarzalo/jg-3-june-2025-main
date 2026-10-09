@@ -60,6 +60,27 @@ export function useDashboardJobs(): UseDashboardJobsResult {
   const MIN_FETCH_INTERVAL = 5000; // Minimum time between fetches in milliseconds
   const initialLoadDoneRef = useRef<boolean>(false);
 
+  const addNewestUnique = useCallback((jobs: DashboardJob[], job: DashboardJob, limit = 4) => (
+    [job, ...jobs.filter((existing) => existing.id !== job.id)]
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+      .slice(0, limit)
+  ), []);
+
+  const reconcilePhaseLists = useCallback((job: DashboardJob) => {
+    const phase = Array.isArray(job.job_phase) ? job.job_phase[0] : job.job_phase;
+    const phaseLabel = phase?.job_phase_label;
+
+    setJobRequests((current) => phaseLabel === 'Job Request'
+      ? addNewestUnique(current, job)
+      : current.filter((existing) => existing.id !== job.id));
+    setWorkOrders((current) => phaseLabel === 'Work Order' || phaseLabel === 'Pending Work Order'
+      ? addNewestUnique(current, job)
+      : current.filter((existing) => existing.id !== job.id));
+    setInvoicingJobs((current) => phaseLabel === 'Invoicing'
+      ? addNewestUnique(current, job)
+      : current.filter((existing) => existing.id !== job.id));
+  }, [addNewestUnique]);
+
   const fetchJobs = useCallback(async (options?: { silent?: boolean }) => {
     if (!isMountedRef.current) return;
     
@@ -378,24 +399,10 @@ export function useDashboardJobs(): UseDashboardJobsResult {
 
   useEffect(() => {
     isMountedRef.current = true;
-    fetchJobs();
-
-    // Set up real-time subscriptions with debounce
-    let debounceTimeout: NodeJS.Timeout | null = null;
-    const handleChange = () => {
-      if (debounceTimeout) {
-        clearTimeout(debounceTimeout);
-      }
-      debounceTimeout = setTimeout(() => {
-        if (isMountedRef.current) {
-          console.log('Jobs table changed, refreshing data...');
-          // Silent refresh to avoid UI flicker
-          fetchJobs({ silent: true });
-        }
-      }, 1000); // 1 second debounce
-    };
+    void fetchJobs();
 
     // Set up comprehensive real-time subscriptions with optimistic updates
+    let jobsConnectedOnce = false;
     const jobsSubscription = supabase
       .channel('dashboard-jobs-changes')
       .on('postgres_changes', 
@@ -429,15 +436,9 @@ export function useDashboardJobs(): UseDashboardJobsResult {
               .single();
             
             if (!error && newJob) {
-              // Update relevant state based on job phase
+              // Place the job in exactly one current phase block.
+              reconcilePhaseLists(newJob);
               const phaseLabel = newJob.job_phase?.[0]?.job_phase_label;
-              if (phaseLabel === 'Job Request') {
-                setJobRequests(prev => [newJob, ...prev].slice(0, 4));
-              } else if (phaseLabel === 'Work Order' || phaseLabel === 'Pending Work Order') {
-                setWorkOrders(prev => [newJob, ...prev].slice(0, 4));
-              } else if (phaseLabel === 'Invoicing') {
-                setInvoicingJobs(prev => [newJob, ...prev].slice(0, 4));
-              }
               
               // Update today's jobs if scheduled for today (or today falls within a multi-day span)
               if (
@@ -483,20 +484,9 @@ export function useDashboardJobs(): UseDashboardJobsResult {
             if (!error && updatedJob) {
               const phaseLabel = updatedJob.job_phase?.[0]?.job_phase_label;
               
-              // Update job requests
-              setJobRequests(prev => 
-                prev.map(job => job.id === updatedJob.id ? updatedJob : job)
-              );
-              
-              // Update work orders
-              setWorkOrders(prev => 
-                prev.map(job => job.id === updatedJob.id ? updatedJob : job)
-              );
-              
-              // Update invoicing jobs
-              setInvoicingJobs(prev => 
-                prev.map(job => job.id === updatedJob.id ? updatedJob : job)
-              );
+              // Remove from the former block and insert into the current one.
+              // This works even when no phase-history event is emitted.
+              reconcilePhaseLists(updatedJob);
               
               // Keep today's agenda tied to the scheduled date. Completion/phase progress should not reduce it.
               setTodaysJobs(prev => {
@@ -541,7 +531,15 @@ export function useDashboardJobs(): UseDashboardJobsResult {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') return;
+        if (jobsConnectedOnce && isMountedRef.current) {
+          // Quietly reconcile anything missed while the realtime connection
+          // was interrupted; this does not reload or replace the page.
+          void fetchJobs({ silent: true });
+        }
+        jobsConnectedOnce = true;
+      });
 
     const phaseChangesSubscription = supabase
       .channel('dashboard-phase-changes')
@@ -576,26 +574,8 @@ export function useDashboardJobs(): UseDashboardJobsResult {
             
             if (!error && updatedJob) {
               const newPhaseLabel = updatedJob.job_phase?.[0]?.job_phase_label;
-              const oldPhaseLabel = payload.new.from_phase_id ? 
-                (await supabase.from('job_phases').select('job_phase_label').eq('id', payload.new.from_phase_id).single())?.data?.job_phase_label : null;
-              
-              // Remove job from old phase arrays
-              if (oldPhaseLabel === 'Job Request') {
-                setJobRequests(prev => prev.filter(job => job.id !== updatedJob.id));
-              } else if (oldPhaseLabel === 'Work Order' || oldPhaseLabel === 'Pending Work Order') {
-                setWorkOrders(prev => prev.filter(job => job.id !== updatedJob.id));
-              } else if (oldPhaseLabel === 'Invoicing') {
-                setInvoicingJobs(prev => prev.filter(job => job.id !== updatedJob.id));
-              }
-              
-              // Add job to new phase arrays
-              if (newPhaseLabel === 'Job Request') {
-                setJobRequests(prev => [updatedJob, ...prev].slice(0, 4));
-              } else if (newPhaseLabel === 'Work Order' || newPhaseLabel === 'Pending Work Order') {
-                setWorkOrders(prev => [updatedJob, ...prev].slice(0, 4));
-              } else if (newPhaseLabel === 'Invoicing') {
-                setInvoicingJobs(prev => [updatedJob, ...prev].slice(0, 4));
-              }
+
+              reconcilePhaseLists(updatedJob);
 
               setTodaysJobs(prev => {
                 const phaseChangedToday = payload.new.changed_at ? isEasternToday(payload.new.changed_at) : false;
@@ -625,13 +605,10 @@ export function useDashboardJobs(): UseDashboardJobsResult {
 
     return () => {
       isMountedRef.current = false;
-      if (debounceTimeout) {
-        clearTimeout(debounceTimeout);
-      }
       jobsSubscription.unsubscribe();
       phaseChangesSubscription.unsubscribe();
     };
-  }, [fetchJobs]);
+  }, [fetchJobs, reconcilePhaseLists]);
 
   return { 
     jobRequests, 
