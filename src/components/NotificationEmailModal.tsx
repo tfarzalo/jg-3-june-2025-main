@@ -307,7 +307,7 @@ const NotificationEmailModal: React.FC<NotificationEmailModalProps> = ({
         cc_emails: ccEmails || null,
         bcc_emails: bccEmails || null,
         subject: emailSubject,
-        template_type: notificationType,
+        notification_type: notificationType,
         sent_at: new Date().toISOString(),
         sent_by: userData.user?.id ?? null
       });

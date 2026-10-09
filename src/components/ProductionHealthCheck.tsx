@@ -47,7 +47,7 @@ export const ProductionHealthCheck: React.FC = () => {
             const { supabase } = await import('../utils/supabase');
             
             // Test basic Supabase connection
-            const { data, error } = await supabase.from('profiles').select('count').limit(1);
+            const { error } = await supabase.from('profiles').select('id', { count: 'exact', head: true });
             
             if (error) {
               errors.push(`Supabase error: ${error.message}`);

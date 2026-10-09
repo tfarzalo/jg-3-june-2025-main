@@ -198,23 +198,6 @@ export function Contacts() {
     }
   };
 
-  const updateLeadStatus = async (contactId: string, statusName: string) => {
-    try {
-      const { error } = await supabase
-        .from('contacts')
-        .update({ status: statusName })
-        .eq('id', contactId);
-
-      if (error) throw error;
-
-      toast.success('Contact status updated successfully');
-      fetchContacts();
-    } catch (error) {
-      console.error('Error updating contact status:', error);
-      toast.error('Failed to update contact status');
-    }
-  };
-
   const updateContactNotes = async (contactId: string, notes: string) => {
     try {
       const { error } = await supabase

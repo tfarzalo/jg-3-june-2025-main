@@ -875,12 +875,24 @@ const ApprovalPage: React.FC = () => {
           )}
 
           {!postDecisionView && isActionUnavailable && (
-            <div className="mt-6 mx-auto max-w-2xl bg-amber-50 border-2 border-amber-300 rounded-lg p-4 shadow-md">
-              <p className="text-amber-800 font-semibold">
-                This approval request is no longer actionable.
+            <div className={`mt-6 mx-auto max-w-2xl border-2 rounded-lg p-4 shadow-md ${
+              approvalData.action_unavailable_reason === 'preview'
+                ? 'bg-blue-50 border-blue-300'
+                : 'bg-amber-50 border-amber-300'
+            }`}>
+              <p className={`font-semibold ${
+                approvalData.action_unavailable_reason === 'preview' ? 'text-blue-800' : 'text-amber-800'
+              }`}>
+                {approvalData.action_unavailable_reason === 'preview'
+                  ? 'Preview Approval Page'
+                  : 'This approval request is no longer actionable.'}
               </p>
-              <p className="text-sm text-amber-700 mt-1">
-                {approvalData.action_unavailable_reason === 'superseded'
+              <p className={`text-sm mt-1 ${
+                approvalData.action_unavailable_reason === 'preview' ? 'text-blue-700' : 'text-amber-700'
+              }`}>
+                {approvalData.action_unavailable_reason === 'preview'
+                  ? 'This is a preview of the approval page before it is sent. No approval or decline response can be submitted from this preview.'
+                  : approvalData.action_unavailable_reason === 'superseded'
                   ? 'A newer approval request replaced this one.'
                   : approvalData.action_unavailable_reason === 'cancelled'
                     ? 'A response is no longer required. The original request remains available for viewing and download.'

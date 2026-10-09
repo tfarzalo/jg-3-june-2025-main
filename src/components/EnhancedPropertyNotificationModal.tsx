@@ -1875,14 +1875,15 @@ export function EnhancedPropertyNotificationModal({
 
             if (phaseData) {
               // Log activity as a phase change (to same phase) to track the approval email
-              await supabase.from('job_phase_changes').insert({
+              const { error: phaseLogError } = await supabase.from('job_phase_changes').insert({
                 job_id: job.id,
                 from_phase_id: phaseData.id,
                 to_phase_id: phaseData.id,
                 changed_by: currentUserId,
                 changed_at: new Date().toISOString(),
-                notes: `Extra charges approval email sent to ${recipientEmail}`
+                change_reason: `Extra charges approval email sent to ${recipientEmail}`
               });
+              if (phaseLogError) console.error('Unable to record approval-email phase history:', phaseLogError);
             }
           } else if (notificationType === 'sprinkler_paint' || notificationType === 'drywall_repairs') {
             // For notification-only emails (sprinkler_paint, drywall_repairs), 
@@ -1901,20 +1902,26 @@ export function EnhancedPropertyNotificationModal({
 
             if (pendingPhaseData && workOrderPhaseData) {
               // Update the job phase to Work Order
-              await supabase
+              const { error: phaseUpdateError } = await supabase
                 .from('jobs')
                 .update({ current_phase_id: workOrderPhaseData.id })
                 .eq('id', job.id);
 
-              // Log the phase change
-              await supabase.from('job_phase_changes').insert({
-                job_id: job.id,
-                from_phase_id: pendingPhaseData.id,
-                to_phase_id: workOrderPhaseData.id,
-                changed_by: currentUserId,
-                changed_at: new Date().toISOString(),
-                notes: `Notification email (${notificationType === 'sprinkler_paint' ? 'Sprinkler Paint' : 'Drywall Repairs'}) sent to ${recipientEmail} - Job auto-advanced to Work Order`
-              });
+              if (phaseUpdateError) {
+                console.error('Unable to advance the job after notification delivery:', phaseUpdateError);
+                toast.warning('The notification was sent, but the job phase could not be updated. Please review the job.', { duration: 8000 });
+              } else {
+                // Log the phase change only when the phase update succeeded.
+                const { error: phaseLogError } = await supabase.from('job_phase_changes').insert({
+                  job_id: job.id,
+                  from_phase_id: pendingPhaseData.id,
+                  to_phase_id: workOrderPhaseData.id,
+                  changed_by: currentUserId,
+                  changed_at: new Date().toISOString(),
+                  change_reason: `Notification email (${notificationType === 'sprinkler_paint' ? 'Sprinkler Paint' : 'Drywall Repairs'}) sent to ${recipientEmail} - Job auto-advanced to Work Order`
+                });
+                if (phaseLogError) console.error('Unable to record notification phase history:', phaseLogError);
+              }
             }
           }
         }

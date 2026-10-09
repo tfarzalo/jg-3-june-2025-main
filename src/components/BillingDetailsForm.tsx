@@ -426,7 +426,7 @@ export function BillingDetailsForm() {
         // First check if this category is referenced by any work orders or jobs
         const { data: workOrdersWithCategory, error: checkWorkOrdersError } = await supabase
           .from('work_orders')
-          .select('id, work_order_num')
+          .select('id')
           .or(`job_category_id.eq.${propertyBillingCategoryId}`)
           .limit(1);
 
@@ -441,7 +441,7 @@ export function BillingDetailsForm() {
 
         const { data: jobsWithCategory, error: checkJobsError } = await supabase
           .from('jobs')
-          .select('id, job_number')
+          .select('id')
           .eq('job_category_id', propertyBillingCategoryId)
           .limit(1);
 

@@ -99,7 +99,7 @@ export function JobRequestForm() {
   useEffect(() => {
     const testConnection = async () => {
       try {
-        const { data, error } = await supabase.from('properties').select('count').limit(1);
+        const { error } = await supabase.from('properties').select('id', { count: 'exact', head: true });
         setDebugInfo(prev => ({ ...prev, supabaseConnected: !error }));
         if (error) throw error;
       } catch (err) {

@@ -271,7 +271,7 @@ export function SupportTickets() {
         .insert({
           recipient_email: 'design@thunderlightmedia.com',
           subject: `Support Ticket: ${ticketTypes.find(t => t.value === formData.ticketType)?.label} - ${formData.fullName}`,
-          template_type: 'support_ticket',
+          notification_type: 'support_ticket',
           sent_at: new Date().toISOString(),
           job_id: null
         });

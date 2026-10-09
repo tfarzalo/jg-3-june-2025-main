@@ -25,7 +25,7 @@ export const HealthCheck: React.FC = () => {
         let supabaseOk = false;
         if (envOk) {
           try {
-            const { data, error } = await supabase.from('profiles').select('count').limit(1);
+            const { error } = await supabase.from('profiles').select('id', { count: 'exact', head: true });
             supabaseOk = !error;
           } catch (err) {
             console.warn('Supabase health check failed:', err);
