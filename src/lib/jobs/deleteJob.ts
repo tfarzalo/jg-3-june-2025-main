@@ -23,6 +23,11 @@ export const deleteJobSafely = async (
   }
 
   const result = (data || {}) as DeleteJobResult;
+
+  if (result.success !== true || result.job_deleted !== true) {
+    throw new Error(result.message || 'Job deletion could not be confirmed');
+  }
+
   const filePaths = (result.file_paths || [])
     .filter((path): path is string => typeof path === 'string' && path.trim().length > 0)
     .map(normalizeStoragePath);
