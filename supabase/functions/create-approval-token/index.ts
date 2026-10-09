@@ -1,6 +1,13 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { corsHeaders } from '../_shared/cors.ts'
+
+// Keep this function self-contained so it can be deployed from either the
+// Supabase CLI or the Dashboard editor, which does not include ../_shared.
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -25,9 +32,11 @@ serve(async (req) => {
 
     const token = crypto.randomUUID()
     const now = new Date()
-    // This timestamp controls the internal pending/processing window. Customer
-    // action eligibility is state-based and is enforced by the approval RPC.
-    const expires_at = new Date(now.getTime() + (is_preview ? 60 * 60 * 1000 : 30 * 60 * 1000)).toISOString()
+    // Customer approval requests remain available for the life of the job.
+    // Internal previews remain temporary.
+    const expires_at = is_preview
+      ? new Date(now.getTime() + 60 * 60 * 1000).toISOString()
+      : null
     const sent_at = is_preview ? null : now.toISOString()
 
     const { data, error } = await supabaseClient

@@ -71,7 +71,7 @@ interface ApprovalData {
   decision?: 'approved' | 'declined' | null;
   decision_at?: string | null;
   action_available?: boolean;
-  action_unavailable_reason?: 'completed' | 'preview' | 'invalidated' | 'cancelled' | 'job_changed' | 'superseded' | null;
+  action_unavailable_reason?: 'completed' | 'preview' | 'invalidated' | 'cancelled' | 'manually_approved' | 'job_changed' | 'superseded' | null;
   job: {
     id: string;
     work_order_num: number;
@@ -106,6 +106,7 @@ const ApprovalPage: React.FC = () => {
     decision_at: string;
     approver_name: string | null;
     approver_email: string | null;
+    internally_approved: boolean;
   } | null>(null);
 
   // Approver identity form — shown before approve/decline is submitted
@@ -219,6 +220,7 @@ const ApprovalPage: React.FC = () => {
               decision_at: tokenData.decision_at,
               approver_name: tokenData.decision_maker_name || tokenData.approver_name,
               approver_email: tokenData.decision_maker_email || tokenData.approver_email,
+              internally_approved: tokenData.decision === 'approved' && Boolean(tokenData.decision_maker_name || tokenData.decision_maker_email),
             }
           : null
       );
@@ -685,11 +687,11 @@ const ApprovalPage: React.FC = () => {
             </div>
           ) : null}
 
-          {/* Download PDF Button */}
+          <div className="mb-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <button
             onClick={handleDownloadPDF}
             disabled={downloadingPDF}
-            className="inline-flex items-center px-6 py-3 border border-gray-300 rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition-colors mb-6"
+            className="inline-flex items-center px-6 py-3 border border-gray-300 rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition-colors"
           >
             {downloadingPDF ? (
               <>
@@ -699,10 +701,18 @@ const ApprovalPage: React.FC = () => {
             ) : (
               <>
                 <Download className="w-5 h-5 mr-2" />
-                Download Approval PDF
+                Download Approved Response PDF
               </>
             )}
           </button>
+          <button
+            type="button"
+            onClick={() => window.open(window.location.href, '_blank', 'noopener,noreferrer')}
+            className="inline-flex items-center px-6 py-3 border border-green-300 rounded-lg text-green-700 bg-green-50 hover:bg-green-100 transition-colors"
+          >
+            View Approved Response Online
+          </button>
+          </div>
 
           <div className="text-xs text-gray-400 border-t pt-4">
             Approved by: {approverName.trim() || approvalData?.approver_name || approvalData?.approver_email}<br/>
@@ -792,6 +802,23 @@ const ApprovalPage: React.FC = () => {
             </div>
           ) : null}
 
+          <div className="mb-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <button
+              onClick={handleDownloadPDF}
+              disabled={downloadingPDF}
+              className="inline-flex items-center px-6 py-3 border border-gray-300 rounded-lg text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+            >
+              {downloadingPDF ? 'Generating PDF...' : 'Download Declined Response PDF'}
+            </button>
+            <button
+              type="button"
+              onClick={() => window.open(window.location.href, '_blank', 'noopener,noreferrer')}
+              className="inline-flex items-center px-6 py-3 border border-red-300 rounded-lg text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+            >
+              View Declined Response Online
+            </button>
+          </div>
+
           <div className="text-xs text-gray-400 border-t pt-4">
             Declined by: {approverName.trim() || approvalData?.approver_name || approvalData?.approver_email}<br/>
             Date: {new Date().toLocaleString()}
@@ -835,9 +862,11 @@ const ApprovalPage: React.FC = () => {
               <p className={`font-semibold ${
                 postDecisionView.decision === 'approved' ? 'text-green-800' : 'text-red-800'
               }`}>
-                These extra charges were {postDecisionView.decision === 'approved' ? 'approved' : 'declined'} by{' '}
-                {postDecisionView.approver_name || postDecisionView.approver_email || 'the approver'} on{' '}
-                {new Date(postDecisionView.decision_at).toLocaleString()}.
+                {postDecisionView.internally_approved
+                  ? 'A JG Painting Pros representative has internally approved these charges.'
+                  : <>These extra charges were {postDecisionView.decision === 'approved' ? 'approved' : 'declined'} by{' '}
+                    {postDecisionView.approver_name || postDecisionView.approver_email || 'the approver'} on{' '}
+                    {new Date(postDecisionView.decision_at).toLocaleString()}.</>}
               </p>
               <p className="text-sm text-gray-600 mt-1">
                 This page is available as a view-only record.
@@ -854,9 +883,11 @@ const ApprovalPage: React.FC = () => {
                 {approvalData.action_unavailable_reason === 'superseded'
                   ? 'A newer approval request replaced this one.'
                   : approvalData.action_unavailable_reason === 'cancelled'
-                    ? 'The related job was cancelled.'
+                    ? 'A response is no longer required. The original request remains available for viewing and download.'
                     : approvalData.action_unavailable_reason === 'job_changed'
-                      ? 'The related job is no longer awaiting this approval.'
+                      ? 'This job is no longer dependent upon this response. The original request remains available for viewing and download.'
+                      : approvalData.action_unavailable_reason === 'manually_approved'
+                        ? 'A JG Painting Pros representative has internally approved these charges.'
                       : approvalData.action_unavailable_reason === 'invalidated'
                         ? 'This request was not successfully sent and is no longer active.'
                     : 'The charge details and photos remain available here for reference.'}
@@ -917,10 +948,28 @@ const ApprovalPage: React.FC = () => {
                 ) : (
                   <>
                     <Download className="w-5 h-5 mr-2" />
-                    Download PDF
+                    {postDecisionView?.decision === 'approved'
+                      ? 'Download Approved Response PDF'
+                      : postDecisionView?.decision === 'declined'
+                        ? 'Download Declined Response PDF'
+                        : 'Download Original Request PDF'}
                   </>
                 )}
               </button>
+
+              {isReadOnly && (
+                <button
+                  type="button"
+                  onClick={() => window.open(window.location.href, '_blank', 'noopener,noreferrer')}
+                  className="inline-flex items-center px-6 py-3 border-2 border-blue-300 rounded-lg text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors font-medium shadow-sm"
+                >
+                  {postDecisionView?.decision === 'approved'
+                    ? 'View Approved Response Online'
+                    : postDecisionView?.decision === 'declined'
+                      ? 'View Declined Response Online'
+                      : 'View Original Request Online'}
+                </button>
+              )}
 
               {!isReadOnly && (
                 <>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import NewWorkOrderSpanish from './NewWorkOrderSpanish';
 import { 
@@ -30,6 +30,12 @@ import { dispatchSmsNotification, dispatchSmsNotificationBatch } from '../lib/sm
 import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
 import { deleteFilesByStoragePaths } from '../lib/utils/fileUpload';
 import { fetchPropertyUnitSizesForCategory } from '../lib/propertyUnitSizes';
+import { getWorkOrderReadiness } from '../lib/workOrders/formReadiness';
+import {
+  SaveConfirmationTimeoutError,
+  withSaveTimeout,
+  workOrderSaveMatches,
+} from '../lib/workOrders/saveConfirmation';
 
 interface Job {
   id: string;
@@ -984,6 +990,7 @@ const NewWorkOrder = () => {
   const [loading, setLoading] = useState(true);
   const t = translations[language];
   const [saving, setSaving] = useState(false);
+  const submissionWorkOrderIdRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [jobPhases, setJobPhases] = useState<{ id: string; job_phase_label: string }[]>([]);
@@ -1724,6 +1731,29 @@ const NewWorkOrder = () => {
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const submitReadiness = getWorkOrderReadiness({
+      unitNumber: formData.unit_number,
+      jobCategoryId: formData.job_category_id,
+      unitSizeId: formData.unit_size_id,
+      isSubcontractor,
+      isEditMode: Boolean(existingWorkOrder),
+      beforeImagesPresent: beforeImagesUploaded,
+      hasSprinklers: formData.has_sprinklers,
+      sprinklerImagesPresent: sprinklerImagesUploaded,
+      paintedCeilings: formData.painted_ceilings,
+      ceilingMode: formData.ceiling_mode,
+      ceilingOption: formData.ceiling_rooms_count,
+      individualCeilingCount: formData.individual_ceiling_count,
+      hasAccentWall: formData.has_accent_wall,
+      accentWallType: formData.accent_wall_type,
+      accentWallCount: formData.accent_wall_count,
+      hasExtraCharges: formData.has_extra_charges,
+      extraCharges: extraChargesItems,
+    });
+    if (!submitReadiness.canSubmit) {
+      setError(submitReadiness.errors.join(' '));
+      return;
+    }
     if (isAnyFileUploading) {
       setError(language === 'es'
         ? 'Espere a que todas las imágenes terminen de cargarse antes de enviar la orden de trabajo.'
@@ -1740,7 +1770,11 @@ const NewWorkOrder = () => {
 
       // Get current user ID (needed for all flows)
       submissionStage = language === 'es' ? 'verificación del usuario' : 'user verification';
-      const { data: userData } = await supabase.auth.getUser();
+      const { data: userData } = await withSaveTimeout(
+        supabase.auth.getUser(),
+        'user verification',
+        10_000,
+      );
       if (!userData.user?.id) throw new Error('User not authenticated');
 
       // Subcontractor: block insert if work order exists
@@ -1779,7 +1813,11 @@ const NewWorkOrder = () => {
             accentWallBillingDetailId: selectedAccentWallBillingDetailId,
           };
 
-          ceilingAccentPatch = await prepareCeilingAccentUpdate(supabase, job.property.id, formValues);
+          ceilingAccentPatch = await withSaveTimeout(
+            prepareCeilingAccentUpdate(supabase, job.property.id, formValues),
+            'billing preparation',
+            15_000,
+          );
           console.log('Ceiling/Accent Wall patch:', ceilingAccentPatch);
         } catch (error) {
           console.error('Error preparing ceiling/accent wall update:', error);
@@ -1890,10 +1928,14 @@ const NewWorkOrder = () => {
 
       // Get the target phase ID for phase advancement
       submissionStage = language === 'es' ? 'selección del estado del trabajo' : 'job status selection';
-      const { data: phaseData, error: phaseError } = await supabase
-        .from('job_phases')
-        .select('id')
-        .eq('job_phase_label', requiresApproval ? 'Pending Work Order' : 'Work Order');
+      const { data: phaseData, error: phaseError } = await withSaveTimeout(
+        supabase
+          .from('job_phases')
+          .select('id')
+          .eq('job_phase_label', requiresApproval ? 'Pending Work Order' : 'Work Order'),
+        'job status selection',
+        10_000,
+      );
         
       if (phaseError) {
         console.error('Error fetching phase:', phaseError);
@@ -1907,6 +1949,10 @@ const NewWorkOrder = () => {
       let workOrderResult;
       
       // Clean the payload to ensure all values are properly typed
+      const submissionWorkOrderId = existingWorkOrder?.id
+        || submissionWorkOrderIdRef.current
+        || crypto.randomUUID();
+      submissionWorkOrderIdRef.current = submissionWorkOrderId;
       const cleanPayload = {
         ...dbPayload,
         ceiling_billing_detail_id: dbPayload.ceiling_billing_detail_id || null,
@@ -1916,23 +1962,49 @@ const NewWorkOrder = () => {
       };
       
       submissionStage = language === 'es' ? 'guardado de la orden de trabajo' : 'work order save';
-      if (existingWorkOrder) {
-        // Update existing work order
-        const { data, error } = await supabase
-          .from('work_orders')
-          .update(cleanPayload)
-          .eq('id', existingWorkOrder.id)
-          .select()
-          .single();
-        workOrderResult = { data, error };
-      } else {
-        // Create new work order
-        const { data, error } = await supabase
-          .from('work_orders')
-          .insert([cleanPayload])
-          .select()
-          .single();
-        workOrderResult = { data, error };
+      try {
+        if (existingWorkOrder) {
+          const { data, error } = await withSaveTimeout(
+            supabase
+              .from('work_orders')
+              .update(cleanPayload)
+              .eq('id', existingWorkOrder.id)
+              .select()
+              .single(),
+            'work order update',
+          );
+          workOrderResult = { data, error };
+        } else {
+          const { data, error } = await withSaveTimeout(
+            supabase
+              .from('work_orders')
+              .insert([{ ...cleanPayload, id: submissionWorkOrderId }])
+              .select()
+              .single(),
+            'work order creation',
+          );
+          workOrderResult = { data, error };
+        }
+      } catch (saveError) {
+        if (!(saveError instanceof SaveConfirmationTimeoutError)) throw saveError;
+
+        // The request may have committed even if its response was lost. The
+        // client-generated work-order ID makes this lookup exact and prevents a
+        // later retry from creating a second record.
+        submissionStage = language === 'es' ? 'verificación del estado del guardado' : 'save-status verification';
+        const { data: reconciled, error: reconciliationError } = await withSaveTimeout(
+          supabase
+            .from('work_orders')
+            .select('*')
+            .eq('id', submissionWorkOrderId)
+            .maybeSingle(),
+          'save-status verification',
+          10_000,
+        );
+        if (reconciliationError || !reconciled || !workOrderSaveMatches(reconciled, cleanPayload)) {
+          throw saveError;
+        }
+        workOrderResult = { data: reconciled, error: null };
       }
       
       if (workOrderResult.error) {
@@ -1989,7 +2061,7 @@ const NewWorkOrder = () => {
           } else {
             const { data: fallbackData, error: fallbackError } = await supabase
               .from('work_orders')
-              .insert([fallbackPayload])
+              .insert([{ ...fallbackPayload, id: submissionWorkOrderId }])
               .select()
               .single();
             workOrderResult = { data: fallbackData, error: fallbackError };
@@ -2009,6 +2081,21 @@ const NewWorkOrder = () => {
       if (!workOrderResult.data) {
         throw new Error('No data returned from work order creation/update');
       }
+
+      submissionStage = language === 'es' ? 'confirmación del guardado' : 'save confirmation';
+      const { data: confirmedWorkOrder, error: confirmationError } = await withSaveTimeout(
+        supabase
+          .from('work_orders')
+          .select('*')
+          .eq('id', submissionWorkOrderId)
+          .single(),
+        'save confirmation',
+      );
+      if (confirmationError) throw confirmationError;
+      if (!workOrderSaveMatches(confirmedWorkOrder as Record<string, unknown>, cleanPayload)) {
+        throw new Error('The saved work order could not be verified against the submitted values.');
+      }
+      workOrderResult.data = { ...workOrderResult.data, ...confirmedWorkOrder };
       workOrderPersisted = true;
 
       // Update job unit size if changed
@@ -2016,10 +2103,14 @@ const NewWorkOrder = () => {
         submissionStage = language === 'es' ? 'actualización del tamaño de la unidad' : 'unit-size update';
         try {
           // Use RPC function to update job unit size (works for subcontractors too)
-          const { error: unitSizeError } = await supabase.rpc('update_job_unit_size', {
-            p_job_id: job.id,
-            p_unit_size_id: formData.unit_size_id
-          });
+          const { error: unitSizeError } = await withSaveTimeout(
+            supabase.rpc('update_job_unit_size', {
+              p_job_id: job.id,
+              p_unit_size_id: formData.unit_size_id
+            }),
+            'unit-size update',
+            10_000,
+          );
           
           if (unitSizeError) {
             console.error('Error updating job unit size:', unitSizeError);
@@ -2046,13 +2137,16 @@ const NewWorkOrder = () => {
         submissionStage = language === 'es' ? 'actualización del estado del trabajo' : 'job status update';
         // For subcontractors, use RPC function to bypass RLS policies
         if (isSubcontractor) {
-          const { error: rpcError } = await supabase.rpc('update_job_phase', {
-            p_job_id: job.id,
-            p_new_phase_id: targetPhaseId,
-            p_change_reason: requiresApproval
-              ? 'Work order created with approval-required items - job advanced from Job Request'
-              : 'Work order created - job advanced from Job Request'
-          });
+          const { error: rpcError } = await withSaveTimeout(
+            supabase.rpc('update_job_phase', {
+              p_job_id: job.id,
+              p_new_phase_id: targetPhaseId,
+              p_change_reason: requiresApproval
+                ? 'Work order created with approval-required items - job advanced from Job Request'
+                : 'Work order created - job advanced from Job Request'
+            }),
+            'job status update',
+          );
           
           if (rpcError) {
             console.error('Error updating job phase via RPC:', rpcError);
@@ -2060,10 +2154,13 @@ const NewWorkOrder = () => {
           }
         } else {
           // For admins, use direct update
-          const { error: jobUpdateError } = await supabase
-            .from('jobs')
-            .update({ current_phase_id: targetPhaseId })
-            .eq('id', job.id);
+          const { error: jobUpdateError } = await withSaveTimeout(
+            supabase
+              .from('jobs')
+              .update({ current_phase_id: targetPhaseId })
+              .eq('id', job.id),
+            'job status update',
+          );
             
           if (jobUpdateError) {
             console.error('Error updating job phase:', jobUpdateError);
@@ -2073,17 +2170,20 @@ const NewWorkOrder = () => {
         
         // Create job phase change record
         submissionStage = language === 'es' ? 'registro del historial de estado' : 'status-history recording';
-        const { error: phaseChangeError } = await supabase
-          .from('job_phase_changes')
-          .insert([{
-            job_id: job.id,
-            changed_by: previewUserId || userData.user.id,
-            from_phase_id: job.job_phase?.id,
-            to_phase_id: targetPhaseId,
-            change_reason: requiresApproval
-              ? 'Work order created with approval-required items - job advanced from Job Request'
-              : 'Work order created - job advanced from Job Request'
-          }]);
+        const { error: phaseChangeError } = await withSaveTimeout(
+          supabase
+            .from('job_phase_changes')
+            .insert([{
+              job_id: job.id,
+              changed_by: previewUserId || userData.user.id,
+              from_phase_id: job.job_phase?.id,
+              to_phase_id: targetPhaseId,
+              change_reason: requiresApproval
+                ? 'Work order created with approval-required items - job advanced from Job Request'
+                : 'Work order created - job advanced from Job Request'
+            }]),
+          'status-history recording',
+        );
           
         if (phaseChangeError) {
           console.error('Error creating phase change record:', phaseChangeError);
@@ -2094,10 +2194,13 @@ const NewWorkOrder = () => {
       
       if (imagesToDelete.size > 0) {
         submissionStage = language === 'es' ? 'limpieza de archivos eliminados' : 'removed-file cleanup';
-        const deleteResult = await deleteFilesByStoragePaths(imagesToDelete);
+        const deleteResult = await withSaveTimeout(
+          deleteFilesByStoragePaths(imagesToDelete),
+          'removed-file cleanup',
+        );
         if (deleteResult.errors.length > 0) {
           console.error('Error deleting marked work order images:', deleteResult.errors);
-          toast.error('Work order saved, but one or more removed images could not be fully deleted.');
+          throw new Error(`The work order was saved, but requested file removals were not completed: ${deleteResult.errors.join(' ')}`);
         }
       }
       
@@ -2105,6 +2208,7 @@ const NewWorkOrder = () => {
       setImagesToDelete(new Set());
       
       toast.success(existingWorkOrder ? 'Work order updated successfully' : 'Work order created successfully');
+      submissionWorkOrderIdRef.current = null;
       
       // Notify admins/managers via SMS that a work order was submitted (best-effort, new WO only)
       // The dispatch-sms-notification edge function will automatically find all admins
@@ -2140,28 +2244,11 @@ const NewWorkOrder = () => {
           : '/dashboard/subcontractor';
         window.location.replace(dashboardUrl);
       } else {
-        navigate(`/dashboard/jobs/${jobId}`);
+        navigate(`/dashboard/jobs/${jobId}?workOrderSaved=${encodeURIComponent(String(workOrderResult.data.updated_at || Date.now()))}`);
       }
     } catch (err) {
       console.error('❌ Error creating/updating work order:', err);
 
-      // Once the work order is durably saved, never strand a subcontractor on
-      // the submission form because a later phase-history or cleanup step failed.
-      if (workOrderPersisted && isSubcontractor) {
-        console.warn('[NewWorkOrder] Work order saved; a post-save step failed', {
-          stage: submissionStage,
-          jobId: job?.id || jobId,
-          workOrderId,
-          error: err,
-        });
-        toast.success(existingWorkOrder ? 'Work order updated successfully' : 'Work order created successfully');
-        const dashboardUrl = previewUserId
-          ? `/dashboard/subcontractor?userId=${encodeURIComponent(previewUserId)}`
-          : '/dashboard/subcontractor';
-        window.location.replace(dashboardUrl);
-        return;
-      }
-      
       // Log FULL error object as JSON
       try {
         console.error('❌ FULL ERROR OBJECT (catch block):', JSON.stringify(err, null, 2));
@@ -2206,9 +2293,15 @@ const NewWorkOrder = () => {
         hint: err && typeof err === 'object' && 'hint' in err ? (err as { hint?: unknown }).hint : null,
         jobId: job?.id || jobId,
       });
+      const isUnconfirmedTimeout = err instanceof SaveConfirmationTimeoutError;
+      const persistenceNote = workOrderPersisted
+        ? (language === 'es'
+          ? ' La orden se guardó, pero no se completó un paso requerido. No se mostrará como envío exitoso hasta corregirlo.'
+          : ' The work order was saved, but a required follow-up step did not complete. It is not being reported as a successful submission.')
+        : '';
       const visibleFailureMessage = language === 'es'
-        ? `No se pudo enviar la orden de trabajo durante ${submissionStage}. Causa: ${errorMessage}${errorCode ? ` (código ${errorCode})` : ''}`
-        : `Work order submission failed during ${submissionStage}. Cause: ${errorMessage}${errorCode ? ` (code ${errorCode})` : ''}`;
+        ? `${isUnconfirmedTimeout ? 'No se pudo confirmar' : 'No se pudo enviar'} la orden de trabajo durante ${submissionStage}. Causa: ${errorMessage}${errorCode ? ` (código ${errorCode})` : ''}${persistenceNote}`
+        : `Work order ${isUnconfirmedTimeout ? 'could not be confirmed' : 'submission failed'} during ${submissionStage}. Cause: ${errorMessage}${errorCode ? ` (code ${errorCode})` : ''}${persistenceNote}`;
       setError(visibleFailureMessage);
       toast.error(visibleFailureMessage);
     } finally {
@@ -2302,6 +2395,16 @@ const NewWorkOrder = () => {
     }));
   };
 
+  const handleExistingFilesChange = (folder: string) => (hasFiles: boolean) => {
+    if (folder === 'before') {
+      setBeforeImagesUploaded(hasFiles);
+    } else if (folder === 'sprinkler' || folder === 'sprinkler_with_cover' || folder === 'sprinkler_without_cover') {
+      if (hasFiles) setSprinklerImagesUploaded(true);
+    } else if (folder === 'sprinkler_form') {
+      setSprinklerFormImagesUploaded(hasFiles);
+    }
+  };
+
   const handleUploadError = (error: string) => {
     toast.error(error);
   };
@@ -2360,19 +2463,26 @@ const NewWorkOrder = () => {
     }
   };
 
-  // Helper to check if required fields are filled
-  const requiredFieldsFilled = Boolean(
-    formData.unit_number &&
-    formData.job_category_id &&
-    // For subcontractors, also require before images
-    (!isSubcontractor || beforeImagesUploaded) &&
-    // For subcontractors with sprinklers, require sprinkler images
-    (!isSubcontractor || !formData.has_sprinklers || sprinklerImagesUploaded) &&
-    // If a sprinkler form was left in the unit, require a photo of it
-    (!formData.sprinkler_form_left_in_unit || sprinklerFormImagesUploaded) &&
-    // Extra Charges requirements - at least one line item when checkbox is checked
-    (!formData.has_extra_charges || extraChargesItems.length > 0)
-  );
+  const readiness = getWorkOrderReadiness({
+    unitNumber: formData.unit_number,
+    jobCategoryId: formData.job_category_id,
+    unitSizeId: formData.unit_size_id,
+    isSubcontractor,
+    isEditMode: Boolean(existingWorkOrder),
+    beforeImagesPresent: beforeImagesUploaded,
+    hasSprinklers: formData.has_sprinklers,
+    sprinklerImagesPresent: sprinklerImagesUploaded,
+    paintedCeilings: formData.painted_ceilings,
+    ceilingMode: formData.ceiling_mode,
+    ceilingOption: formData.ceiling_rooms_count,
+    individualCeilingCount: formData.individual_ceiling_count,
+    hasAccentWall: formData.has_accent_wall,
+    accentWallType: formData.accent_wall_type,
+    accentWallCount: formData.accent_wall_count,
+    hasExtraCharges: formData.has_extra_charges,
+    extraCharges: extraChargesItems,
+  });
+  const requiredFieldsFilled = readiness.canSubmit;
 
   if (loading) {
     return (
@@ -2382,7 +2492,7 @@ const NewWorkOrder = () => {
     );
   }
   
-  if (error || !job) {
+  if (!job) {
     return (
       <div className="p-6 bg-gray-100 dark:bg-[#0F172A]">
         <div className="bg-red-50 dark:bg-red-900/50 border border-red-200 dark:border-red-500/50 text-red-700 dark:text-red-200 px-4 py-3 rounded">
@@ -2514,8 +2624,20 @@ const NewWorkOrder = () => {
                 extraChargeDraft={extraChargeDraft}
                 setExtraChargeDraft={setExtraChargeDraft}
                 requiredFieldsFilled={requiredFieldsFilled}
+                readinessErrors={readiness.errors.map(message => ({
+                  'Unit number is required.': 'Se requiere el número de unidad.',
+                  'Job category is required.': 'Se requiere la categoría del trabajo.',
+                  'Unit size is required.': 'Se requiere el tamaño de la unidad.',
+                  'At least one before image is required.': 'Se requiere al menos una imagen de antes.',
+                  'Sprinkler images are required when the unit has sprinklers.': 'Se requieren imágenes de aspersores cuando la unidad tiene aspersores.',
+                  'Individual ceiling count must be greater than 0.': 'La cantidad de techos individuales debe ser mayor que 0.',
+                  'Select a ceiling painting option.': 'Seleccione una opción de pintura de techo.',
+                  'Select an accent wall type.': 'Seleccione un tipo de pared de acento.',
+                  'Accent wall count must be greater than 0.': 'La cantidad de paredes de acento debe ser mayor que 0.',
+                } as Record<string, string>)[message] || message)}
                 isAnyFileUploading={isAnyFileUploading}
                 handleUploadingChange={handleUploadingChange}
+                handleExistingFilesChange={handleExistingFilesChange}
                 handleOccupiedChange={handleOccupiedChange}
                 handleSprinklersChange={handleSprinklersChange}
                 handleSprinklersPaintedChange={handleSprinklersPaintedChange}
@@ -2761,6 +2883,7 @@ const NewWorkOrder = () => {
                             onError={handleUploadError}
                             onImageDelete={handleImageDelete}
                             onUploadingChange={handleUploadingChange('sprinkler_without_cover')}
+                            onExistingFilesChange={handleExistingFilesChange('sprinkler_without_cover')}
                             required={isSubcontractor}
                           />
                         </div>
@@ -2776,6 +2899,7 @@ const NewWorkOrder = () => {
                             onError={handleUploadError}
                             onImageDelete={handleImageDelete}
                             onUploadingChange={handleUploadingChange('sprinkler_with_cover')}
+                            onExistingFilesChange={handleExistingFilesChange('sprinkler_with_cover')}
                             required={isSubcontractor}
                           />
                         </div>
@@ -2801,7 +2925,7 @@ const NewWorkOrder = () => {
                           {formData.sprinkler_form_left_in_unit && (
                             <div className="mt-4">
                               <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                                Signed Sprinkler Head Form Photo <span className="text-red-500">*</span>
+                                Signed Sprinkler Head Form Photo <span className="font-normal text-gray-500">(Optional)</span>
                               </label>
                               <ImageUpload
                                 jobId={jobId || ''}
@@ -2811,7 +2935,7 @@ const NewWorkOrder = () => {
                                 onError={handleUploadError}
                                 onImageDelete={handleImageDelete}
                                 onUploadingChange={handleUploadingChange('sprinkler_form')}
-                                required
+                                onExistingFilesChange={handleExistingFilesChange('sprinkler_form')}
                               />
                               {sprinklerFormImagesUploaded && (
                                 <p className="mt-2 text-xs text-green-700 dark:text-green-300">
@@ -2913,6 +3037,7 @@ const NewWorkOrder = () => {
                       onError={handleUploadError}
                       onImageDelete={handleImageDelete}
                       onUploadingChange={handleUploadingChange('before')}
+                      onExistingFilesChange={handleExistingFilesChange('before')}
                       required={isSubcontractor}
                     />
                     {isSubcontractor && (
@@ -2979,6 +3104,14 @@ const NewWorkOrder = () => {
             </div>
 
               {/* Submit/Cancel Buttons */}
+              {!requiredFieldsFilled && readiness.errors.length > 0 && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-100">
+                  <p className="font-semibold">Complete the following before saving:</p>
+                  <ul className="mt-1 list-disc pl-5">
+                    {readiness.errors.map(message => <li key={message}>{message}</li>)}
+                  </ul>
+                </div>
+              )}
               <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 <button
                   type="button"

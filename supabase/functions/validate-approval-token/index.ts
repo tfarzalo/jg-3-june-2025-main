@@ -6,6 +6,7 @@ type ApprovalUnavailableReason =
   | 'preview'
   | 'invalidated'
   | 'cancelled'
+  | 'manually_approved'
   | 'job_changed'
   | 'superseded'
   | null;
@@ -17,13 +18,15 @@ function getApprovalUnavailableReason(input: {
   invalidatedAt?: string | null;
   jobPhase?: string | null;
   hasNewerRequest: boolean;
+  manualApprovalRecorded: boolean;
 }): ApprovalUnavailableReason {
   if (input.usedAt || input.decision) return 'completed';
   if (input.approvalType !== 'extra_charges') return 'preview';
   if (input.invalidatedAt) return 'invalidated';
-  if (input.jobPhase === 'Cancelled') return 'cancelled';
-  if (input.jobPhase !== 'Pending Work Order') return 'job_changed';
   if (input.hasNewerRequest) return 'superseded';
+  if (input.jobPhase === 'Cancelled') return 'cancelled';
+  if (input.manualApprovalRecorded) return 'manually_approved';
+  if (input.jobPhase !== 'Pending Work Order') return 'job_changed';
   return null;
 }
 
@@ -166,6 +169,18 @@ serve(async (req) => {
       throw new Error(`Error fetching job: ${jobError.message}`);
     }
 
+    const { data: latestPhaseChange, error: phaseChangeError } = await supabase
+      .from('job_phase_changes')
+      .select('change_reason')
+      .eq('job_id', approval.job_id)
+      .order('changed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (phaseChangeError) {
+      console.error('Unable to inspect latest phase change:', phaseChangeError);
+    }
+    const manualApprovalRecorded = /extra charges approved manually/i.test(latestPhaseChange?.change_reason || '');
+
     const actionUnavailableReason = getApprovalUnavailableReason({
       approvalType: approval.approval_type,
       usedAt: approval.used_at,
@@ -173,6 +188,7 @@ serve(async (req) => {
       invalidatedAt: approval.invalidated_at,
       jobPhase: job?.job_phase?.job_phase_label,
       hasNewerRequest: Boolean(newerApproval),
+      manualApprovalRecorded,
     });
     const actionAvailable = actionUnavailableReason === null;
 
@@ -287,7 +303,7 @@ serve(async (req) => {
       resolvedStatus = 'superseded';
     } else if (actionUnavailableReason === 'invalidated') {
       resolvedStatus = 'invalidated';
-    } else if (actionUnavailableReason === 'job_changed') {
+    } else if (actionUnavailableReason === 'job_changed' || actionUnavailableReason === 'manually_approved') {
       resolvedStatus = 'invalidated';
     } else {
       resolvedStatus = 'pending';

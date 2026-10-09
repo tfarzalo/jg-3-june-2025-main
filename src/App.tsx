@@ -30,7 +30,6 @@ const SubcontractorDashboard = lazy(() => import('./components/SubcontractorDash
 const SubcontractorEditPage = lazy(() => import('./components/SubcontractorEditPage'));
 const NewWorkOrder = lazy(() => import('./components/NewWorkOrder'));
 const ApprovalPage = lazy(() => import('./pages/ApprovalPage'));
-const PublicApprovalPage = lazy(() => import('./pages/PublicApprovalPage'));
 const AssignmentDecisionPage = lazy(() => import('./pages/AssignmentDecisionPage'));
 const ApprovalPreviewPage = lazy(() => import('./pages/ApprovalPreviewPage'));
 const MessagingPage = lazy(() => import('./pages/MessagingPage'));
@@ -106,7 +105,7 @@ const ProtectedLayout = () => (
           <Suspense fallback={<LoadingSpinner />}>
             <JobDataProvider>
               <AuthProvider>
-                <PublicApprovalPage />
+                <ApprovalPage />
               </AuthProvider>
             </JobDataProvider>
           </Suspense>

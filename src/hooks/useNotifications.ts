@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../utils/supabase';
+import { toast } from 'sonner';
 import {
   getBellNotificationPreferenceKey,
   normalizeBellNotificationSettings,
@@ -225,6 +226,19 @@ export function useNotifications() {
             if (data) {
               setNotifications(prev => [data as Notification, ...prev]);
               setUnreadCount(prev => prev + 1);
+              if (data.metadata?.event === 'extra_charge_approval_decision') {
+                const route = data.metadata?.route;
+                const options = {
+                  description: data.message,
+                  duration: data.metadata?.decision === 'declined' ? 12000 : 8000,
+                  action: route ? {
+                    label: 'View Job',
+                    onClick: () => window.location.assign(route),
+                  } : undefined,
+                };
+                if (data.metadata?.decision === 'declined') toast.error(data.title, options);
+                else toast.success(data.title, options);
+              }
             }
           }
         }

@@ -10,13 +10,15 @@ function getApprovalUnavailableReason(input: {
   invalidatedAt?: string | null;
   jobPhase?: string | null;
   hasNewerRequest: boolean;
+  manualApprovalRecorded: boolean;
 }) {
   if (input.usedAt || input.decision) return 'completed';
   if (input.approvalType !== 'extra_charges') return 'preview';
   if (input.invalidatedAt) return 'invalidated';
-  if (input.jobPhase === 'Cancelled') return 'cancelled';
-  if (input.jobPhase !== 'Pending Work Order') return 'job_changed';
   if (input.hasNewerRequest) return 'superseded';
+  if (input.jobPhase === 'Cancelled') return 'cancelled';
+  if (input.manualApprovalRecorded) return 'manually_approved';
+  if (input.jobPhase !== 'Pending Work Order') return 'job_changed';
   return null;
 }
 
@@ -27,6 +29,7 @@ const pendingRequest = {
   invalidatedAt: null,
   jobPhase: 'Pending Work Order',
   hasNewerRequest: false,
+  manualApprovalRecorded: false,
 };
 
 describe('customer approval availability', () => {
@@ -72,6 +75,22 @@ describe('customer approval availability', () => {
     expect(getApprovalUnavailableReason({
       ...pendingRequest,
       jobPhase: 'Quality Control',
+    })).toBe('job_changed');
+  });
+
+  it('identifies an undecided request moved manually into Work Order', () => {
+    expect(getApprovalUnavailableReason({
+      ...pendingRequest,
+      jobPhase: 'Work Order',
+      manualApprovalRecorded: true,
+    })).toBe('manually_approved');
+  });
+
+  it('does not label a direct phase bypass as an internal manual approval', () => {
+    expect(getApprovalUnavailableReason({
+      ...pendingRequest,
+      jobPhase: 'Work Order',
+      manualApprovalRecorded: false,
     })).toBe('job_changed');
   });
 });

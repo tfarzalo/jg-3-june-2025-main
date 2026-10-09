@@ -1598,7 +1598,10 @@ export function EnhancedPropertyNotificationModal({
     }
 
     const token = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + (params.isPreview ? 10 : 30) * 60 * 1000).toISOString();
+    // Customer approval requests do not expire. Preview links remain temporary.
+    const expiresAt = params.isPreview
+      ? new Date(Date.now() + 10 * 60 * 1000).toISOString()
+      : null;
 
     const { data, error } = await supabase
       .from('approval_tokens')

@@ -150,8 +150,10 @@ interface NewWorkOrderSpanishProps {
   extraChargeDraft?: ExtraChargeDraftState;
   setExtraChargeDraft?: React.Dispatch<React.SetStateAction<ExtraChargeDraftState>>;
   requiredFieldsFilled?: boolean;
+  readinessErrors?: string[];
   isAnyFileUploading?: boolean;
   handleUploadingChange?: (folder: string) => (isUploading: boolean, uploadCount: number, totalCount: number) => void;
+  handleExistingFilesChange?: (folder: string) => (hasFiles: boolean, count: number) => void;
   handleOccupiedChange?: (checked: boolean) => void;
   handleSprinklersChange?: (checked: boolean) => void;
   handleSprinklersPaintedChange?: (painted: boolean) => void;
@@ -200,8 +202,10 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
   extraChargeDraft,
   setExtraChargeDraft,
   requiredFieldsFilled,
+  readinessErrors = [],
   isAnyFileUploading = false,
   handleUploadingChange,
+  handleExistingFilesChange,
   handleOccupiedChange,
   handleSprinklersChange,
   handleSprinklersPaintedChange,
@@ -237,7 +241,6 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
     formData.job_category_id &&
     (!isSubcontractor || beforeImagesUploaded) &&
     (!isSubcontractor || !formData.has_sprinklers || sprinklerImagesUploaded) &&
-    (!formData.sprinkler_form_left_in_unit || sprinklerFormImagesUploaded) &&
     (!formData.has_extra_charges || extraChargesItems.length > 0)
   );
 
@@ -543,6 +546,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                         required={isSubcontractor}
                         language="es"
                         onUploadingChange={handleUploadingChange?.('sprinkler_without_cover')}
+                        onExistingFilesChange={handleExistingFilesChange?.('sprinkler_without_cover')}
                       />
                     </div>
                     <div>
@@ -559,6 +563,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                         required={isSubcontractor}
                         language="es"
                         onUploadingChange={handleUploadingChange?.('sprinkler_with_cover')}
+                        onExistingFilesChange={handleExistingFilesChange?.('sprinkler_with_cover')}
                       />
                     </div>
                     {isSubcontractor && (
@@ -583,7 +588,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                       {formData.sprinkler_form_left_in_unit && (
                         <div className="mt-4">
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                            Foto del Formulario Firmado de Cabezales de Aspersores <span className="text-red-500">*</span>
+                            Foto del Formulario Firmado de Cabezales de Aspersores <span className="font-normal text-gray-500">(Opcional)</span>
                           </label>
                           <ImageUpload
                             jobId={job.id}
@@ -592,9 +597,9 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                             onUploadComplete={(filePath) => handleUploadComplete(filePath, 'sprinkler_form')}
                             onError={handleUploadError}
                             onImageDelete={handleImageDelete}
-                            required
                             language="es"
                             onUploadingChange={handleUploadingChange?.('sprinkler_form')}
+                            onExistingFilesChange={handleExistingFilesChange?.('sprinkler_form')}
                           />
                           {sprinklerFormImagesUploaded && (
                             <p className="mt-2 text-xs text-green-700 dark:text-green-300">
@@ -690,6 +695,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                   required={isSubcontractor}
                   language="es"
                   onUploadingChange={handleUploadingChange?.('before')}
+                  onExistingFilesChange={handleExistingFilesChange?.('before')}
                 />
                 {isSubcontractor && (
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -745,6 +751,14 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
           </div>
 
           {/* Submit/Cancel Buttons */}
+          {!canSubmit && readinessErrors.length > 0 && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-100">
+              <p className="font-semibold">Complete lo siguiente antes de guardar:</p>
+              <ul className="mt-1 list-disc pl-5">
+                {readinessErrors.map(message => <li key={message}>{message}</li>)}
+              </ul>
+            </div>
+          )}
           <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <button
               type="button"

@@ -145,6 +145,7 @@ function approvalDecisionActorFromChange(
     return {
       actorName: matchingToken.decision_maker_name || matchingToken.decision_maker_email || matchingToken.approver_name || matchingToken.approver_email || UNKNOWN_ACTOR,
       actorEmail: matchingToken.decision_maker_email || matchingToken.approver_email || null,
+      approvalTokenId: matchingToken.id,
     };
   }
 
@@ -302,17 +303,21 @@ export function useJobActivityLog({
       }
 
       const items: JobActivityLogItem[] = [];
+      const approvalDecisionsRepresentedByPhase = new Set<string>();
 
       phaseChanges.forEach((change) => {
         const actor = actorFromProfile(change.changed_by, profiles);
         const approvalActor = approvalDecisionActorFromChange(change, approvalTokens);
+        if (approvalActor?.approvalTokenId) approvalDecisionsRepresentedByPhase.add(approvalActor.approvalTokenId);
         const fromPhase = change.from_phase_label ? formatJobPhaseLabel(change.from_phase_label) : 'None';
         const toPhase = formatJobPhaseLabel(change.to_phase_label);
         items.push({
           id: `phase-${change.id}`,
           source: 'job_phase_changes',
-          category: 'phase',
-          title: `Phase changed to ${toPhase}`,
+          category: approvalActor ? 'approval' : 'phase',
+          title: approvalActor
+            ? ((change.change_reason || '').toLowerCase().includes('approved') ? 'Extra charges approved' : 'Extra charges declined')
+            : `Phase changed to ${toPhase}`,
           description: change.change_reason || `Moved from ${fromPhase} to ${toPhase}`,
           actorName: approvalActor?.actorName || change.changed_by_name || actor.actorName,
           actorEmail: approvalActor?.actorEmail || change.changed_by_email || actor.actorEmail,
@@ -372,7 +377,7 @@ export function useJobActivityLog({
           },
         });
 
-        if (token.decision && token.decision_at) {
+        if (token.decision && token.decision_at && !approvalDecisionsRepresentedByPhase.has(token.id)) {
           const approved = token.decision === 'approved';
           items.push({
             id: `approval-decision-${token.id}`,
@@ -456,7 +461,11 @@ export function useJobActivityLog({
         });
       });
 
-      if (workOrder?.id && (workOrder.submission_date || workOrder.created_at)) {
+      const hasCanonicalWorkOrderSubmission = items.some((item) =>
+        item.source === 'activity_log' && item.category === 'work_order' &&
+        /work order (created|submitted)/i.test(`${item.title} ${item.description}`)
+      );
+      if (workOrder?.id && (workOrder.submission_date || workOrder.created_at) && !hasCanonicalWorkOrderSubmission) {
         items.push({
           id: `work-order-${workOrder.id}`,
           source: 'work_order_snapshot',

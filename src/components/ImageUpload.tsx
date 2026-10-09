@@ -31,6 +31,8 @@ interface ImageUploadProps {
    * Use this to disable form submission while files are uploading.
    */
   onUploadingChange?: (isUploading: boolean, uploadCount: number, totalCount: number) => void;
+  /** Reports persisted files loaded for this field, independently of new uploads. */
+  onExistingFilesChange?: (hasFiles: boolean, count: number) => void;
   language?: 'en' | 'es';
 }
 
@@ -75,6 +77,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   resetTrigger,
   onImageDelete,
   onUploadingChange,
+  onExistingFilesChange,
   language = 'en'
 }) => {
   const [isDragging, setIsDragging] = useState(false);
@@ -87,10 +90,20 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const fileInputId = useId();
   const revokeRef = useRef<(() => void) | null>(null);
   const uploadingPreviewUrlsRef = useRef<Set<string>>(new Set());
+  const onUploadingChangeRef = useRef(onUploadingChange);
+  const onExistingFilesChangeRef = useRef(onExistingFilesChange);
   const [lastUploadedPath, setLastUploadedPath] = useState<string | null>(null);
   const [totalFilesToUpload, setTotalFilesToUpload] = useState(0);
   const [completedFilesCount, setCompletedFilesCount] = useState(0);
   const [failedFiles, setFailedFiles] = useState<File[]>([]);
+
+  useEffect(() => {
+    onUploadingChangeRef.current = onUploadingChange;
+  }, [onUploadingChange]);
+
+  useEffect(() => {
+    onExistingFilesChangeRef.current = onExistingFilesChange;
+  }, [onExistingFilesChange]);
  
   // Component mount logging
   useEffect(() => {
@@ -115,10 +128,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
   // Notify parent when upload status changes
   useEffect(() => {
-    if (onUploadingChange) {
-      onUploadingChange(isUploading, completedFilesCount, totalFilesToUpload);
-    }
-  }, [isUploading, completedFilesCount, totalFilesToUpload, onUploadingChange]);
+    onUploadingChangeRef.current?.(isUploading, completedFilesCount, totalFilesToUpload);
+  }, [isUploading, completedFilesCount, totalFilesToUpload]);
 
   // Fetch images on mount or when resetTrigger changes
   useEffect(() => {
@@ -178,12 +189,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             }
           }));
           setUploadedFiles(files);
+          onExistingFilesChangeRef.current?.(true, files.length);
         } else {
           setUploadedFiles([]);
+          onExistingFilesChangeRef.current?.(false, 0);
         }
       } catch (error) {
         console.error('Error fetching files:', error);
         setUploadedFiles([]);
+        onExistingFilesChangeRef.current?.(false, 0);
       }
     };
 

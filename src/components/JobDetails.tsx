@@ -1432,12 +1432,6 @@ export function JobDetails() {
         return;
       }
 
-      const expiresAt = new Date(data.expires_at);
-      if (expiresAt.getTime() <= Date.now()) {
-        setPendingApproval(null);
-        return;
-      }
-
       setPendingApproval({
         id: data.id,
         expiresAt: data.expires_at,
@@ -2759,8 +2753,8 @@ export function JobDetails() {
             used_at: approvedAt,
             decision: 'approved',
             decision_at: approvedAt,
-            approver_name: approverName,
-            approver_email: approverEmail,
+            decision_maker_name: approverName,
+            decision_maker_email: approverEmail,
             decline_reason: null
           })
           .eq('id', latestApprovalToken.id);
@@ -4274,7 +4268,7 @@ export function JobDetails() {
     : -1;
 
   // Add a helper function to handle phase change by phase object
-  const handlePhaseChangeTo = async (phase) => {
+  const handlePhaseChangeTo = async (phase, overrideReason?: string) => {
     if (!phase || !job) return;
 
     // A frozen job may only advance through the terminal review/billing flow
@@ -4318,7 +4312,7 @@ export function JobDetails() {
           changed_by: userData.user.id,
           from_phase_id: job?.job_phase?.id,
           to_phase_id: phase.id,
-          change_reason: `Phase changed by ${userData.user.email}`
+          change_reason: overrideReason || `Phase changed by ${userData.user.email}`
         }]);
       if (phaseChangeError) throw phaseChangeError;
       
@@ -4333,6 +4327,22 @@ export function JobDetails() {
     } finally {
       setChangingPhase(false);
     }
+  };
+
+  const requestPhaseChangeTo = (phase) => {
+    if (!phase || !job) return;
+    const bypassesPendingApproval =
+      isPendingWorkOrder
+      && phase.job_phase_label === 'Work Order'
+      && effectiveApprovalDecision?.decision !== 'approved';
+
+    if (bypassesPendingApproval) {
+      setSelectedPhase(phase.id);
+      setShowPhaseChangeModal(true);
+      return;
+    }
+
+    void handlePhaseChangeTo(phase);
   };
 
   const handleReopenHistoricalJob = async () => {
@@ -4447,7 +4457,7 @@ export function JobDetails() {
                 {!isJobRequest && (
                   <button
                     onClick={() => {
-                      if (currentNavPhaseIndex > 0) handlePhaseChangeTo(navPhases[currentNavPhaseIndex - 1]);
+                      if (currentNavPhaseIndex > 0) requestPhaseChangeTo(navPhases[currentNavPhaseIndex - 1]);
                     }}
                     disabled={currentNavPhaseIndex === 0 || changingPhase || isHistoricalSnapshotJob}
                     className="inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -4461,7 +4471,7 @@ export function JobDetails() {
                 )}
                 <button
                   onClick={() => {
-                    if (currentNavPhaseIndex < navPhases.length - 1) handlePhaseChangeTo(navPhases[currentNavPhaseIndex + 1]);
+                    if (currentNavPhaseIndex < navPhases.length - 1) requestPhaseChangeTo(navPhases[currentNavPhaseIndex + 1]);
                   }}
                   disabled={currentNavPhaseIndex === navPhases.length - 1 || changingPhase}
                   className="inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -5806,11 +5816,14 @@ export function JobDetails() {
 
                 {/* DECLINED STATE - Red alert with resend/override options */}
                 {!isCancelled && effectiveApprovalDecision?.decision === 'declined' && (
-                  <div className="bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-700/30 text-red-800 dark:text-red-200 px-6 py-4 relative z-[50]">
+                  <div className="bg-red-100 dark:bg-red-950/40 border-y-2 border-red-500 dark:border-red-500/70 text-red-950 dark:text-red-100 px-6 py-5 relative z-[50] shadow-inner">
                     <div className="flex items-start">
-                      <XCircle className="h-5 w-5 mr-2 text-red-600 dark:text-red-400 mt-0.5" />
+                      <XCircle className="h-7 w-7 mr-3 text-red-700 dark:text-red-300 mt-0.5" />
                       <div className="flex-1">
-                        <p className="font-medium">Extra Charges Declined</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-lg font-bold">Extra Charges Declined</p>
+                          <span className="rounded-full bg-red-700 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white">High Priority</span>
+                        </div>
                         <p className="mt-1 text-sm">
                           The extra charges were declined by {effectiveApprovalDecision.approver_name || effectiveApprovalDecision.approver_email || 'the approver'} on{' '}
                           {effectiveApprovalDecision.decision_at ? new Date(effectiveApprovalDecision.decision_at).toLocaleDateString('en-US', {
@@ -5821,6 +5834,9 @@ export function JobDetails() {
                             minute: '2-digit'
                           }) : 'an unknown date'}.
                           {effectiveApprovalDecision.decline_reason && ` Reason: ${effectiveApprovalDecision.decline_reason}`}
+                        </p>
+                        <p className="mt-2 text-sm font-semibold">
+                          This job remains in Pending Work Order and requires internal follow-up.
                         </p>
                         <div className="mt-3 flex flex-wrap gap-3">
                           <button
@@ -7571,6 +7587,53 @@ export function JobDetails() {
         )}
 
       </div>
+
+      {/* Guard against bypassing the required extra-charge approval flow. */}
+      {showPhaseChangeModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-800">
+            <div className="mb-4 flex items-start gap-3">
+              <div className="rounded-full bg-amber-100 p-2 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Move to Work Order without approval?</h2>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                  This job is awaiting an extra-charge response. No approved customer response or internal manual approval is recorded.
+                </p>
+              </div>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/50 dark:bg-amber-900/20 dark:text-amber-200">
+              Use <strong>Approve Manually</strong> when JG Painting Pros is authorizing the charges. Continue below only when approval is no longer required for another documented reason.
+            </div>
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => { setShowPhaseChangeModal(false); setSelectedPhase(null); }}
+                className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+              >
+                Stay in Pending Work Order
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const targetPhase = phases.find(phase => phase.id === selectedPhase);
+                  setShowPhaseChangeModal(false);
+                  setSelectedPhase(null);
+                  if (targetPhase) void handlePhaseChangeTo(
+                    targetPhase,
+                    'Admin confirmed approval response was no longer required and moved the job to Work Order',
+                  );
+                }}
+                disabled={changingPhase}
+                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+              >
+                Confirm Move Without Approval
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Reopen Job Confirmation Dialog */}
       {showReopenConfirm && (

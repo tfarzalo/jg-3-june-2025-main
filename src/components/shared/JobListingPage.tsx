@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 import { JobDataModeIndicator } from '@/components/jobs/JobDataModeIndicator';
 import { formatJobPhaseLabel } from '@/lib/jobPhaseLabels';
 import { usePinnedWorkspace } from '@/contexts/PinnedWorkspaceContext';
+import { approvalStatusPresentation, type ApprovalListStatus } from '@/lib/approvals/approvalStatus';
 
 export interface Job {
   id: string;
@@ -202,6 +203,7 @@ interface JobListingPageProps {
   showArchivesButton?: boolean;
   showInvoiceColumns?: boolean;
   initialSortConfig?: SortConfig;
+  approvalStatuses?: Record<string, ApprovalListStatus>;
   pagination?: {
     page: number;
     pageSize: number;
@@ -577,7 +579,7 @@ function SearchableFilterSelect({
   );
 }
 
-export function JobListingPage({ 
+export function JobListingPage({
   title, 
   jobs, 
   loading, 
@@ -591,6 +593,7 @@ export function JobListingPage({
   showArchivesButton = false,
   showInvoiceColumns = false,
   initialSortConfig,
+  approvalStatuses,
   pagination
 }: JobListingPageProps) {
   const navigate = useNavigate();
@@ -769,6 +772,11 @@ export function JobListingPage({
 
   const getSortedJobs = (jobs: Job[]) => {
     return [...jobs].sort((a, b) => {
+      if (approvalStatuses) {
+        const priorityDifference = (approvalStatuses[a.id] === 'declined' ? 0 : 1)
+          - (approvalStatuses[b.id] === 'declined' ? 0 : 1);
+        if (priorityDifference !== 0) return priorityDifference;
+      }
       let comparison = 0;
       const direction = sortConfig.direction === 'asc' ? 1 : -1;
 
@@ -2224,6 +2232,13 @@ export function JobListingPage({
                     />
                   </div>
                 </th>
+                {approvalStatuses && (
+                  <th scope="col" className="px-4 py-4 text-left w-40">
+                    <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Approval Status
+                    </span>
+                  </th>
+                )}
                 <th scope="col" className="px-6 py-4 text-left w-24 sm:w-auto">
                   <button
                     onClick={() => handleSort('work_order_num')}
@@ -2320,8 +2335,11 @@ export function JobListingPage({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-[#2D3B4E]">
-              {sortedAndFilteredJobs.map((job) => (
-                <tr key={job.id} className="hover:bg-gray-50/50 dark:hover:bg-[#2D3B4E]/30 transition-colors">
+              {sortedAndFilteredJobs.map((job) => {
+                const approvalStatus = approvalStatuses?.[job.id] || 'not_sent';
+                const approvalPresentation = approvalStatusPresentation[approvalStatus];
+                return (
+                <tr key={job.id} className={`${approvalStatus === 'declined' ? 'border-l-4 border-l-red-500 bg-red-50/50 dark:bg-red-950/20' : ''} hover:bg-gray-50/50 dark:hover:bg-[#2D3B4E]/30 transition-colors`}>
                   <td className="px-3 py-4">
                     <div className="flex items-center gap-2">
                       <input
@@ -2343,6 +2361,13 @@ export function JobListingPage({
                       )}
                     </div>
                   </td>
+                  {approvalStatuses && (
+                    <td className="px-4 py-4">
+                      <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${approvalPresentation.className}`}>
+                        {approvalPresentation.label}
+                      </span>
+                    </td>
+                  )}
                   <td className="px-6 py-4 w-24 sm:w-auto">
                     <Link
                       to={`/dashboard/jobs/${job.id}`}
@@ -2436,7 +2461,7 @@ export function JobListingPage({
                     </>
                   )}
                 </tr>
-              ))}
+              );})}
               {sortedAndFilteredJobs.length === 0 && (
                 <tr>
               <td colSpan={hideAmountColumn ? (showInvoiceColumns ? 11 : 9) : (showInvoiceColumns ? 12 : 10)} className="px-6 py-4 text-center text-gray-600 dark:text-gray-400">
