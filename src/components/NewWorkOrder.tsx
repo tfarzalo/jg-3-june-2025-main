@@ -33,6 +33,7 @@ import { fetchPropertyUnitSizesForCategory } from '../lib/propertyUnitSizes';
 import { getWorkOrderReadiness } from '../lib/workOrders/formReadiness';
 import {
   SaveConfirmationTimeoutError,
+  getWorkOrderSaveMismatches,
   withSaveTimeout,
   workOrderSaveMatches,
 } from '../lib/workOrders/saveConfirmation';
@@ -1960,6 +1961,7 @@ const NewWorkOrder = () => {
         individual_ceiling_count: dbPayload.individual_ceiling_count || null,
         ceiling_display_label: dbPayload.ceiling_display_label || null,
       };
+      let effectiveSavedPayload = cleanPayload;
       
       submissionStage = language === 'es' ? 'guardado de la orden de trabajo' : 'work order save';
       try {
@@ -2072,6 +2074,7 @@ const NewWorkOrder = () => {
             throw workOrderResult.error;
           } else {
             console.log('Fallback succeeded - work order created without newer optional columns');
+            effectiveSavedPayload = fallbackPayload;
           }
         } else {
           throw workOrderResult.error;
@@ -2081,6 +2084,10 @@ const NewWorkOrder = () => {
       if (!workOrderResult.data) {
         throw new Error('No data returned from work order creation/update');
       }
+      // The database has returned the inserted/updated row. Any later failure
+      // must be reported as a follow-up or verification failure, not as a
+      // failure to persist the work order itself.
+      workOrderPersisted = true;
 
       submissionStage = language === 'es' ? 'confirmación del guardado' : 'save confirmation';
       const { data: confirmedWorkOrder, error: confirmationError } = await withSaveTimeout(
@@ -2092,18 +2099,22 @@ const NewWorkOrder = () => {
         'save confirmation',
       );
       if (confirmationError) throw confirmationError;
-      if (!workOrderSaveMatches(confirmedWorkOrder as Record<string, unknown>, cleanPayload)) {
+      const confirmationMismatches = getWorkOrderSaveMismatches(
+        confirmedWorkOrder as Record<string, unknown>,
+        effectiveSavedPayload,
+      );
+      if (confirmationMismatches.length > 0) {
+        console.error('[NewWorkOrder] Save confirmation mismatched fields:', confirmationMismatches);
         throw new Error('The saved work order could not be verified against the submitted values.');
       }
       workOrderResult.data = { ...workOrderResult.data, ...confirmedWorkOrder };
-      workOrderPersisted = true;
 
       // Update job unit size if changed
       if (formData.unit_size_id && formData.unit_size_id !== job.unit_size?.id) {
         submissionStage = language === 'es' ? 'actualización del tamaño de la unidad' : 'unit-size update';
         try {
           // Use RPC function to update job unit size (works for subcontractors too)
-          const { error: unitSizeError } = await withSaveTimeout(
+          const { data: unitSizeResult, error: unitSizeError } = await withSaveTimeout(
             supabase.rpc('update_job_unit_size', {
               p_job_id: job.id,
               p_unit_size_id: formData.unit_size_id
@@ -2114,12 +2125,15 @@ const NewWorkOrder = () => {
           
           if (unitSizeError) {
             console.error('Error updating job unit size:', unitSizeError);
-            // Don't throw here, just log error, as work order was successful
+            throw unitSizeError;
+          } else if (!unitSizeResult || unitSizeResult.success !== true) {
+            throw new Error(unitSizeResult?.error || 'The job unit size update was not confirmed.');
           } else {
             console.log('Job unit size updated successfully');
           }
         } catch (err) {
           console.error('Exception updating job unit size:', err);
+          throw err;
         }
       }
       
@@ -2137,7 +2151,7 @@ const NewWorkOrder = () => {
         submissionStage = language === 'es' ? 'actualización del estado del trabajo' : 'job status update';
         // For subcontractors, use RPC function to bypass RLS policies
         if (isSubcontractor) {
-          const { error: rpcError } = await withSaveTimeout(
+          const { data: phaseUpdateResult, error: rpcError } = await withSaveTimeout(
             supabase.rpc('update_job_phase', {
               p_job_id: job.id,
               p_new_phase_id: targetPhaseId,
@@ -2151,6 +2165,9 @@ const NewWorkOrder = () => {
           if (rpcError) {
             console.error('Error updating job phase via RPC:', rpcError);
             throw rpcError;
+          }
+          if (!phaseUpdateResult || phaseUpdateResult.success !== true) {
+            throw new Error(phaseUpdateResult?.error || 'The job phase update was not confirmed.');
           }
         } else {
           // For admins, use direct update
@@ -2168,26 +2185,29 @@ const NewWorkOrder = () => {
           }
         }
         
-        // Create job phase change record
-        submissionStage = language === 'es' ? 'registro del historial de estado' : 'status-history recording';
-        const { error: phaseChangeError } = await withSaveTimeout(
-          supabase
-            .from('job_phase_changes')
-            .insert([{
-              job_id: job.id,
-              changed_by: previewUserId || userData.user.id,
-              from_phase_id: job.job_phase?.id,
-              to_phase_id: targetPhaseId,
-              change_reason: requiresApproval
-                ? 'Work order created with approval-required items - job advanced from Job Request'
-                : 'Work order created - job advanced from Job Request'
-            }]),
-          'status-history recording',
-        );
-          
-        if (phaseChangeError) {
-          console.error('Error creating phase change record:', phaseChangeError);
-          throw phaseChangeError;
+        // update_job_phase records history transactionally for subcontractors.
+        // Direct admin updates need the corresponding history row here.
+        if (!isSubcontractor) {
+          submissionStage = language === 'es' ? 'registro del historial de estado' : 'status-history recording';
+          const { error: phaseChangeError } = await withSaveTimeout(
+            supabase
+              .from('job_phase_changes')
+              .insert([{
+                job_id: job.id,
+                changed_by: previewUserId || userData.user.id,
+                from_phase_id: job.job_phase?.id,
+                to_phase_id: targetPhaseId,
+                change_reason: requiresApproval
+                  ? 'Work order created with approval-required items - job advanced from Job Request'
+                  : 'Work order created - job advanced from Job Request'
+              }]),
+            'status-history recording',
+          );
+
+          if (phaseChangeError) {
+            console.error('Error creating phase change record:', phaseChangeError);
+            throw phaseChangeError;
+          }
         }
         
       }
