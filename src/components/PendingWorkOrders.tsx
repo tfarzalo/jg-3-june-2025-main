@@ -22,7 +22,7 @@ export function PendingWorkOrders() {
     }
     const { data, error: statusError } = await supabase
       .from('approval_tokens')
-      .select('job_id, decision, used_at, invalidated_at, created_at')
+      .select('job_id, decision, used_at, invalidated_at, invalidation_reason, created_at')
       .eq('approval_type', 'extra_charges')
       .in('job_id', jobIds)
       .order('created_at', { ascending: false });

@@ -716,6 +716,9 @@ export function JobDetails() {
     decision_maker_name?: string | null;
     decision_maker_email?: string | null;
     decline_reason: string | null;
+    invalidated_at?: string | null;
+    invalidation_reason?: string | null;
+    token?: string | null;
   } | null>(null);
   const [pendingApproval, setPendingApproval] = useState<{
     id: string;
@@ -724,6 +727,7 @@ export function JobDetails() {
     sentAt: string;
   } | null>(null);
   const [latestApprovalPageToken, setLatestApprovalPageToken] = useState<string | null>(null);
+  const [previousApprovalPageToken, setPreviousApprovalPageToken] = useState<string | null>(null);
   const [openingApprovalRecord, setOpeningApprovalRecord] = useState(false);
   const [reactivatedFromDecline, setReactivatedFromDecline] = useState(false);
   const parseExtraChargeApproverFromReason = useCallback((reason?: string | null) => {
@@ -731,6 +735,7 @@ export function JobDetails() {
   }, []);
   const effectiveApprovalDecision = useMemo(() => {
     if (reactivatedFromDecline) return null;
+    if (approvalTokenDecision?.invalidated_at) return null;
     // The latest token is authoritative. A latest pending token must not fall
     // back to an older approved/declined phase-history entry.
     if (approvalTokenDecision) {
@@ -769,6 +774,12 @@ export function JobDetails() {
     }
     return null;
   }, [approvalTokenDecision, parseExtraChargeApproverFromReason, phaseChanges, reactivatedFromDecline]);
+  const approvalNeedsUpdatedRequest = Boolean(
+    approvalTokenDecision?.invalidated_at
+      && ['extra_charge_details_changed', 'extra_charge_amount_changed'].includes(
+        approvalTokenDecision.invalidation_reason || ''
+      )
+  );
 
   const hasDrywallSignal = useMemo(() => {
     const text = `${job?.work_order?.additional_comments ?? ''} ${job?.work_order?.extra_charges_description ?? ''}`.toLowerCase();
@@ -1389,27 +1400,30 @@ export function JobDetails() {
       // The newest request is authoritative, including when it is pending.
       const { data, error } = await supabase
         .from('approval_tokens')
-        .select('token, decision, decision_at, approver_name, approver_email, decision_maker_name, decision_maker_email, decline_reason')
+        .select('token, decision, decision_at, approver_name, approver_email, decision_maker_name, decision_maker_email, decline_reason, invalidated_at, invalidation_reason')
         .eq('job_id', jobId)
         .eq('approval_type', 'extra_charges')
         .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(10);
 
       if (error) {
         console.error('Error fetching approval decision:', error);
         return;
       }
 
-      if (data) {
-        setLatestApprovalPageToken(data.token || null);
+      const latest = data?.[0] || null;
+      const previousCompleted = data?.slice(1).find(record => Boolean(record.decision)) || null;
+      if (latest) {
+        setLatestApprovalPageToken(latest.token || null);
+        setPreviousApprovalPageToken(previousCompleted?.token || null);
         setApprovalTokenDecision({
-          ...data,
-          approver_name: data.decision_maker_name || data.approver_name,
-          approver_email: data.decision_maker_email || data.approver_email,
+          ...latest,
+          approver_name: latest.decision_maker_name || latest.approver_name,
+          approver_email: latest.decision_maker_email || latest.approver_email,
         });
       } else {
         setLatestApprovalPageToken(null);
+        setPreviousApprovalPageToken(null);
         // Clear the decision if no data found
         setApprovalTokenDecision(null);
       }
@@ -1428,6 +1442,7 @@ export function JobDetails() {
         .eq('job_id', jobId)
         .eq('approval_type', 'extra_charges')
         .is('used_at', null)
+        .is('invalidated_at', null)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -5835,6 +5850,16 @@ export function JobDetails() {
                               {openingApprovalRecord ? 'Opening Approval Page...' : 'View Approval Page'}
                             </button>
                           )}
+                          {previousApprovalPageToken && (
+                            <button
+                              type="button"
+                              onClick={() => window.open(`/approval/${previousApprovalPageToken}`, '_blank', 'noopener,noreferrer')}
+                              className="inline-flex items-center px-3 py-1.5 bg-white hover:bg-red-50 text-red-700 text-sm font-medium rounded-lg border border-red-300 transition-colors"
+                            >
+                              <Eye className="h-4 w-4 mr-2" />
+                              View Previous Approval
+                            </button>
+                          )}
                           <button
                             onClick={handleSendExtraChargesNotification}
                             className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
@@ -5884,18 +5909,33 @@ export function JobDetails() {
                             year: 'numeric',
                             hour: 'numeric',
                             minute: '2-digit'
-                          }) : 'an unknown date'}. The job has been moved to Work Order phase.
+                          }) : 'an unknown date'}.
+                          {phaseLabel === 'Archived'
+                            ? ' This approval is retained as part of the archived job record.'
+                            : ' The job has been moved to Work Order phase.'}
                         </p>
                         {(isAdmin || isJGManagement) && (
-                          <button
-                            type="button"
-                            onClick={viewLatestApprovalPage}
-                            disabled={openingApprovalRecord}
-                            className="mt-3 inline-flex items-center px-3 py-1.5 bg-white hover:bg-green-50 text-green-700 text-sm font-medium rounded-lg border border-green-300 transition-colors"
-                          >
-                            <Eye className="h-4 w-4 mr-2" />
-                            {openingApprovalRecord ? 'Opening Approval Page...' : 'View Approval Page'}
-                          </button>
+                          <div className="mt-3 flex flex-wrap gap-3">
+                            <button
+                              type="button"
+                              onClick={viewLatestApprovalPage}
+                              disabled={openingApprovalRecord}
+                              className="inline-flex items-center px-3 py-1.5 bg-white hover:bg-green-50 text-green-700 text-sm font-medium rounded-lg border border-green-300 transition-colors"
+                            >
+                              <Eye className="h-4 w-4 mr-2" />
+                              {openingApprovalRecord ? 'Opening Approval Page...' : 'View Approval Page'}
+                            </button>
+                            {previousApprovalPageToken && (
+                              <button
+                                type="button"
+                                onClick={() => window.open(`/approval/${previousApprovalPageToken}`, '_blank', 'noopener,noreferrer')}
+                                className="inline-flex items-center px-3 py-1.5 bg-white hover:bg-green-50 text-green-700 text-sm font-medium rounded-lg border border-green-300 transition-colors"
+                              >
+                                <Eye className="h-4 w-4 mr-2" />
+                                View Previous Approval
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -5908,6 +5948,11 @@ export function JobDetails() {
             {(() => {
               const needsExtraChargesApproval =
                 isPendingWorkOrder && !effectiveApprovalDecision?.decision && hasExtraChargesForApproval;
+              const archivedUnansweredApproval =
+                phaseLabel === 'Archived'
+                && Boolean(latestApprovalPageToken)
+                && !effectiveApprovalDecision?.decision
+                && !approvalNeedsUpdatedRequest;
               const hasActiveApprovalEmail = needsExtraChargesApproval && Boolean(pendingApproval);
               const isApprovalMissingBillAmount = needsExtraChargesApproval && hasMiscAdditionalCostItemsMissingBillAmount;
               const showBlueVariant =
@@ -5915,7 +5960,7 @@ export function JobDetails() {
                 !needsExtraChargesApproval &&
                 !hasExtraChargesForApproval &&
                 (job.work_order?.has_sprinklers || hasDrywallSignal);
-              if (!hasWorkOrder || (!needsExtraChargesApproval && !showBlueVariant)) return null;
+              if (!hasWorkOrder || (!needsExtraChargesApproval && !showBlueVariant && !archivedUnansweredApproval)) return null;
               const containerClasses = needsExtraChargesApproval
                 ? 'bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-300 dark:border-yellow-700/30 text-yellow-900 dark:text-yellow-200'
                 : 'bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-700/30 text-blue-800 dark:text-blue-200';
@@ -5923,18 +5968,24 @@ export function JobDetails() {
                 ? 'text-yellow-600 dark:text-yellow-400'
                 : 'text-blue-600 dark:text-blue-400';
               const heading = needsExtraChargesApproval
-                ? (hasActiveApprovalEmail ? 'Approval Email Already Sent' : 'Extra Charges Approval Needed')
-                : 'Notification Needed';
+                ? (approvalNeedsUpdatedRequest
+                    ? 'Extra Charges Modified — New Approval Required'
+                    : hasActiveApprovalEmail ? 'Approval Email Already Sent' : 'Extra Charges Approval Needed')
+                : archivedUnansweredApproval ? 'Approval Notification Sent' : 'Notification Needed';
               const itemLabel = job.work_order?.has_sprinklers ? 'Sprinkler Paint' : 'Drywall Repairs';
               const message = needsExtraChargesApproval
-                ? (hasActiveApprovalEmail
+                ? (approvalNeedsUpdatedRequest
+                    ? 'Modifications were made to the extra charges for this job after the previous request. An updated cumulative approval notification must be sent and approved before this job can proceed.'
+                    : hasActiveApprovalEmail
                     ? `An approval email was sent ${pendingApproval?.sentAt ? formatDate(pendingApproval.sentAt) : 'recently'}. Resending will retain the same approval page URL and refresh it with the current job and work order details.`
                     : isApprovalMissingBillAmount
                       ? 'Bill to Customer needs input for subcontractor-submitted miscellaneous additional costs before approval can be sent.'
                     : (job.work_order?.has_sprinklers
                         ? 'Extra charges need approval. The sprinkler update should be included in the approval email via template sections.'
                         : 'Extra charges need approval. Recommended: send approval email.'))
-                : `Notification email needed: ${itemLabel}`;
+                : archivedUnansweredApproval
+                  ? 'No approval response was recorded before this job was archived. The approval page remains available as a view-only record.'
+                  : `Notification email needed: ${itemLabel}`;
               const recommended: 'extra_charges' | 'sprinkler_paint' | 'drywall_repairs' =
                 needsExtraChargesApproval ? 'extra_charges' : (job.work_order?.has_sprinklers ? 'sprinkler_paint' : 'drywall_repairs');
               return (
@@ -5945,7 +5996,7 @@ export function JobDetails() {
                       <p className="font-medium">{heading}</p>
                       <p className="mt-1 text-sm">{message}</p>
                       <div className="mt-3 flex flex-col md:flex-row md:items-center gap-3">
-                        <button
+                        {!archivedUnansweredApproval && <button
                           onClick={() => {
                             if (isApprovalMissingBillAmount) {
                               toast.error('Enter Bill to Customer for miscellaneous additional costs before sending approval.');
@@ -5963,19 +6014,29 @@ export function JobDetails() {
                           className="inline-flex items-center px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <Mail className="h-4 w-4 mr-2" />
-                          Prepare Email
-                        </button>
-                        {needsExtraChargesApproval && latestApprovalPageToken && (isAdmin || isJGManagement) && (
+                          {approvalNeedsUpdatedRequest ? 'Prepare Updated Approval' : 'Prepare Email'}
+                        </button>}
+                        {(needsExtraChargesApproval || archivedUnansweredApproval) && latestApprovalPageToken && (isAdmin || isJGManagement) && (
                           <button
                             type="button"
                             onClick={viewLatestApprovalPage}
                             className="inline-flex items-center px-3 py-1.5 bg-white hover:bg-blue-50 text-blue-700 text-sm font-medium rounded-lg border border-blue-300 transition-colors"
                           >
                             <Eye className="h-4 w-4 mr-2" />
-                            View Approval Page
+                            {approvalNeedsUpdatedRequest ? 'View Previous Approval' : 'View Approval Page'}
                           </button>
                         )}
-                        {(needsExtraChargesApproval && (isAdmin || isJGManagement)) && (
+                        {needsExtraChargesApproval && previousApprovalPageToken && !approvalNeedsUpdatedRequest && (isAdmin || isJGManagement) && (
+                          <button
+                            type="button"
+                            onClick={() => window.open(`/approval/${previousApprovalPageToken}`, '_blank', 'noopener,noreferrer')}
+                            className="inline-flex items-center px-3 py-1.5 bg-white hover:bg-amber-50 text-amber-800 text-sm font-medium rounded-lg border border-amber-300 transition-colors"
+                          >
+                            <Eye className="h-4 w-4 mr-2" />
+                            View Previous Approval
+                          </button>
+                        )}
+                        {(needsExtraChargesApproval && !approvalNeedsUpdatedRequest && (isAdmin || isJGManagement)) && (
                           <button
                             onClick={() => {
                               if (isApprovalMissingBillAmount) {

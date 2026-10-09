@@ -132,6 +132,21 @@ serve(async (req) => {
       throw new Error(`Error checking approval request history: ${newerApprovalError.message}`);
     }
 
+    const { data: previousApproval, error: previousApprovalError } = await supabase
+      .from('approval_tokens')
+      .select('token, decision, decision_at, decision_maker_name, decision_maker_email, approver_name, approver_email, extra_charges_data, created_at')
+      .eq('job_id', approval.job_id)
+      .eq('approval_type', 'extra_charges')
+      .lt('created_at', approval.created_at)
+      .not('decision', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (previousApprovalError) {
+      throw new Error(`Error checking previous approval history: ${previousApprovalError.message}`);
+    }
+
     const extraChargesData = approval.extra_charges_data || {};
     const hasDedicatedApprovalSelection = Object.prototype.hasOwnProperty.call(
       extraChargesData,
@@ -374,6 +389,16 @@ serve(async (req) => {
           approverEmail: approval.decision_maker_email || approval.approver_email,
           actionAvailable,
           actionUnavailableReason,
+          invalidationReason: approval.invalidation_reason,
+          isUpdatedCumulativeRequest: Boolean(previousApproval),
+          previousApproval: previousApproval ? {
+            token: previousApproval.token,
+            decision: previousApproval.decision,
+            decisionAt: previousApproval.decision_at,
+            approverName: previousApproval.decision_maker_name || previousApproval.approver_name,
+            approverEmail: previousApproval.decision_maker_email || previousApproval.approver_email,
+            amount: previousApproval.extra_charges_data?.total,
+          } : null,
           amount: approval.extra_charges_data?.total,
           description: approval.extra_charges_data?.items?.[0]?.description
         },
@@ -381,6 +406,16 @@ serve(async (req) => {
           ...approval,
           action_available: actionAvailable,
           action_unavailable_reason: actionUnavailableReason,
+          invalidation_reason: approval.invalidation_reason,
+          is_updated_cumulative_request: Boolean(previousApproval),
+          previous_approval: previousApproval ? {
+            token: previousApproval.token,
+            decision: previousApproval.decision,
+            decision_at: previousApproval.decision_at,
+            approver_name: previousApproval.decision_maker_name || previousApproval.approver_name,
+            approver_email: previousApproval.decision_maker_email || previousApproval.approver_email,
+            amount: previousApproval.extra_charges_data?.total,
+          } : null,
           decision_source: recordedDecisionSource
             || (manualApprovalRecorded ? 'internal_manual' : 'approval_link'),
         },

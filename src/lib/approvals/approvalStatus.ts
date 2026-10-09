@@ -1,10 +1,11 @@
-export type ApprovalListStatus = 'not_sent' | 'sent' | 'approved' | 'declined';
+export type ApprovalListStatus = 'not_sent' | 'modified' | 'sent' | 'approved' | 'declined';
 
 export interface ApprovalStatusRecord {
   job_id: string;
   decision?: string | null;
   used_at?: string | null;
   invalidated_at?: string | null;
+  invalidation_reason?: string | null;
   created_at: string;
 }
 
@@ -14,7 +15,11 @@ export function latestApprovalStatuses(records: ApprovalStatusRecord[]) {
 
   for (const record of sorted) {
     if (result[record.job_id]) continue;
-    if (record.invalidated_at) result[record.job_id] = 'not_sent';
+    if (record.invalidated_at) {
+      result[record.job_id] = ['extra_charge_details_changed', 'extra_charge_amount_changed'].includes(record.invalidation_reason || '')
+        ? 'modified'
+        : 'not_sent';
+    }
     else if (record.decision === 'approved') result[record.job_id] = 'approved';
     else if (record.decision === 'declined') result[record.job_id] = 'declined';
     else result[record.job_id] = 'sent';
@@ -25,6 +30,7 @@ export function latestApprovalStatuses(records: ApprovalStatusRecord[]) {
 
 export const approvalStatusPresentation: Record<ApprovalListStatus, { label: string; className: string }> = {
   not_sent: { label: 'Notice Not Sent', className: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200' },
+  modified: { label: 'Modified — Updated Approval Required', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200' },
   sent: { label: 'Notification Sent', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200' },
   approved: { label: 'Approved', className: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-200' },
   declined: { label: 'Declined — High Priority', className: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-200' },

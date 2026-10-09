@@ -73,6 +73,16 @@ interface ApprovalData {
   decision_at?: string | null;
   action_available?: boolean;
   action_unavailable_reason?: 'completed' | 'preview' | 'invalidated' | 'cancelled' | 'manually_approved' | 'job_changed' | 'superseded' | null;
+  invalidation_reason?: string | null;
+  is_updated_cumulative_request?: boolean;
+  previous_approval?: {
+    token: string;
+    decision: 'approved' | 'declined';
+    decision_at?: string | null;
+    approver_name?: string | null;
+    approver_email?: string | null;
+    amount?: number | null;
+  } | null;
   job: {
     id: string;
     work_order_num: number;
@@ -273,6 +283,80 @@ const ApprovalPage: React.FC = () => {
     return null;
   };
 
+  const runReconciledDecisionFollowUps = async (
+    decision: 'approved' | 'declined',
+    decisionMakerName?: string | null,
+    decisionMakerEmail?: string | null,
+  ) => {
+    if (!approvalData) return;
+
+    if (decision === 'approved') {
+      try {
+        const { data: jobRow } = await supabase
+          .from('jobs')
+          .select('assigned_to')
+          .eq('id', approvalData.job_id)
+          .single();
+        if (jobRow?.assigned_to) {
+          void dispatchSmsNotification({
+            eventType: 'charges_approved',
+            recipientUserId: jobRow.assigned_to,
+            job_id: approvalData.job_id,
+            context: {
+              jobId: approvalData.job_id,
+              workOrderNum: approvalData.job.work_order_num,
+              propertyName: approvalData.job.property.name,
+              unitNumber: approvalData.job.unit_number,
+              extraChargesTotal: approvalData.extra_charges_data.total,
+            },
+          });
+        }
+      } catch (smsError) {
+        console.warn('Failed to dispatch approval SMS after reconciliation:', smsError);
+      }
+    }
+
+    try {
+      const propertyAddress = [
+        approvalData.job.property.address,
+        approvalData.job.property.address_2,
+        `${approvalData.job.property.city}, ${approvalData.job.property.state} ${approvalData.job.property.zip}`,
+      ].filter(Boolean).join(', ');
+      await sendInternalApprovalNotification({
+        decision,
+        jobId: approvalData.job_id,
+        workOrderNum: approvalData.job.work_order_num,
+        propertyName: approvalData.job.property.name,
+        unitNumber: approvalData.job.unit_number,
+        propertyAddress,
+        extraChargesAmount: approvalData.extra_charges_data.total,
+        approverName: decisionMakerName || approvalData.approver_name,
+        approverEmail: decisionMakerEmail || approvalData.approver_email,
+      });
+    } catch (notificationError) {
+      console.warn('Failed to send internal decision email after reconciliation:', notificationError);
+    }
+
+    try {
+      await sendCustomerReceiptEmail(decision);
+    } catch (receiptError) {
+      console.warn('Failed to send customer receipt after reconciliation:', receiptError);
+    }
+
+    try {
+      const messageType = decision === 'approved' ? 'APPROVAL_COMPLETED' : 'APPROVAL_DECLINED';
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage({ type: messageType, jobId: approvalData.job_id, timestamp: Date.now() }, window.location.origin);
+      }
+      window.dispatchEvent(new CustomEvent(
+        decision === 'approved' ? 'approvalCompleted' : 'approvalDeclined',
+        { detail: { jobId: approvalData.job_id } },
+      ));
+    } catch (refreshError) {
+      console.warn('Could not notify the parent page after reconciliation:', refreshError);
+    }
+  };
+
   const handleApproval = async () => {
     if (!approvalData || approvalLocked) return;
     const submittedApproverName = approverName.trim();
@@ -419,11 +503,11 @@ const ApprovalPage: React.FC = () => {
           } : prev);
           setApproved(true);
           setError(null);
-          try {
-            await sendCustomerReceiptEmail('approved');
-          } catch (receiptError) {
-            console.warn('Failed to send customer approval receipt after reconciliation:', receiptError);
-          }
+          await runReconciledDecisionFollowUps(
+            'approved',
+            confirmedToken.decision_maker_name,
+            confirmedToken.decision_maker_email,
+          );
           return;
         }
       }
@@ -559,11 +643,11 @@ const ApprovalPage: React.FC = () => {
           } : prev);
           setDeclined(true);
           setError(null);
-          try {
-            await sendCustomerReceiptEmail('declined');
-          } catch (receiptError) {
-            console.warn('Failed to send customer decline receipt after reconciliation:', receiptError);
-          }
+          await runReconciledDecisionFollowUps(
+            'declined',
+            confirmedToken.decision_maker_name,
+            confirmedToken.decision_maker_email,
+          );
           return;
         }
       }
@@ -920,6 +1004,23 @@ const ApprovalPage: React.FC = () => {
           <p className="text-lg text-gray-500">
             {approvalData.job.property.name}
           </p>
+
+          {approvalData.is_updated_cumulative_request && (
+            <div className="mt-6 mx-auto max-w-2xl rounded-lg border-2 border-blue-300 bg-blue-50 p-4 text-left shadow-md">
+              <p className="font-semibold text-blue-900">Updated Cumulative Extra Charges</p>
+              <p className="mt-1 text-sm text-blue-800">
+                This request replaces the previous approval request and shows the complete current extra-charge total.
+                Previously presented charges that still apply are already included below; the displayed total is not an
+                additional amount on top of the earlier request.
+              </p>
+              {approvalData.previous_approval?.amount != null && (
+                <p className="mt-2 text-sm text-blue-800">
+                  Previous {approvalData.previous_approval.decision} request: ${Number(approvalData.previous_approval.amount).toFixed(2)}.
+                  Current cumulative total: ${Number(approvalData.extra_charges_data.total).toFixed(2)}.
+                </p>
+              )}
+            </div>
+          )}
           
           {postDecisionView && (
             <div className={`mt-6 mx-auto max-w-2xl border-2 rounded-lg p-4 shadow-md ${
@@ -939,6 +1040,12 @@ const ApprovalPage: React.FC = () => {
               <p className="text-sm text-gray-600 mt-1">
                 This page is available as a view-only record.
               </p>
+              {['extra_charge_details_changed', 'extra_charge_amount_changed'].includes(approvalData.invalidation_reason || '') && (
+                <p className="mt-2 text-sm font-medium text-amber-800">
+                  This response applies to an earlier version of the extra charges. The charges were subsequently
+                  modified, and this page is retained as a historical record.
+                </p>
+              )}
             </div>
           )}
 
@@ -969,7 +1076,9 @@ const ApprovalPage: React.FC = () => {
                       : approvalData.action_unavailable_reason === 'manually_approved'
                         ? 'A JG Painting Pros representative has internally approved these charges.'
                       : approvalData.action_unavailable_reason === 'invalidated'
-                        ? 'This request was not successfully sent and is no longer active.'
+                        ? ['extra_charge_details_changed', 'extra_charge_amount_changed'].includes(approvalData.invalidation_reason || '')
+                          ? 'The extra charges were subsequently modified. This earlier request remains available as a view-only historical record.'
+                          : 'This request was not successfully sent and is no longer active.'
                     : 'The charge details and photos remain available here for reference.'}
               </p>
             </div>

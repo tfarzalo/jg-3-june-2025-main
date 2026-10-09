@@ -31,4 +31,16 @@ describe('pending work order approval status', () => {
       },
     ])).toEqual({ 'changed-after-approval': 'not_sent' });
   });
+
+  it('labels a customer-facing charge modification explicitly', () => {
+    expect(latestApprovalStatuses([
+      {
+        job_id: 'modified',
+        decision: 'approved',
+        invalidated_at: '2026-10-08T20:00:00Z',
+        invalidation_reason: 'extra_charge_details_changed',
+        created_at: '2026-10-08T19:00:00Z',
+      },
+    ])).toEqual({ modified: 'modified' });
+  });
 });

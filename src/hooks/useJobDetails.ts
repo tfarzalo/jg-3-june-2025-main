@@ -419,6 +419,10 @@ export function useJobDetails(jobId: string | undefined) {
               has_extra_charges,
               extra_charges_description,
               extra_hours,
+              extra_charges_line_items,
+              misc_additional_cost_items,
+              repair_cost,
+              repair_description,
               additional_comments,
               additional_services,
               is_active

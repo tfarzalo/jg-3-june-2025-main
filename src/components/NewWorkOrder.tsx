@@ -887,6 +887,8 @@ const translations = {
     saving: 'Saving...',
     createWorkOrder: 'Create Work Order',
     updateWorkOrder: 'Update Work Order',
+    workOrderCreated: 'Work order created successfully',
+    workOrderUpdated: 'Work order updated successfully',
     returnToDashboard: 'Return to Dashboard',
     
     // Other
@@ -966,6 +968,8 @@ const translations = {
     saving: 'Guardando...',
     createWorkOrder: 'Crear Orden de Trabajo',
     updateWorkOrder: 'Actualizar Orden de Trabajo',
+    workOrderCreated: 'Orden de trabajo creada correctamente',
+    workOrderUpdated: 'Orden de trabajo actualizada correctamente',
     returnToDashboard: 'Volver al Panel',
     
     // Other
@@ -2231,7 +2235,7 @@ const NewWorkOrder = () => {
       // Clear the images to delete set after successful submission
       setImagesToDelete(new Set());
       
-      toast.success(existingWorkOrder ? 'Work order updated successfully' : 'Work order created successfully');
+      toast.success(existingWorkOrder ? t.workOrderUpdated : t.workOrderCreated);
       submissionWorkOrderIdRef.current = null;
       
       // Notify admins/managers via SMS that a work order was submitted (best-effort, new WO only)
