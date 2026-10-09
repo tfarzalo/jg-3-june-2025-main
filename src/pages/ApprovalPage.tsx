@@ -66,6 +66,7 @@ interface ApprovalData {
   approver_name: string;
   decision_maker_email?: string | null;
   decision_maker_name?: string | null;
+  decision_source?: 'internal_manual' | 'approval_link' | null;
   expires_at: string;
   used_at?: string | null;
   decision?: 'approved' | 'declined' | null;
@@ -220,7 +221,7 @@ const ApprovalPage: React.FC = () => {
               decision_at: tokenData.decision_at,
               approver_name: tokenData.decision_maker_name || tokenData.approver_name,
               approver_email: tokenData.decision_maker_email || tokenData.approver_email,
-              internally_approved: tokenData.decision === 'approved' && Boolean(tokenData.decision_maker_name || tokenData.decision_maker_email),
+              internally_approved: tokenData.decision === 'approved' && tokenData.decision_source === 'internal_manual',
             }
           : null
       );

@@ -22,6 +22,17 @@ function getApprovalUnavailableReason(input: {
   return null;
 }
 
+function getDecisionSource(input: {
+  hasDecision: boolean;
+  manualApprovalEventInCurrentCycle: boolean;
+  latestChangeIsManualApproval: boolean;
+}) {
+  const manualApprovalRecorded = input.hasDecision
+    ? input.manualApprovalEventInCurrentCycle
+    : input.latestChangeIsManualApproval;
+  return manualApprovalRecorded ? 'internal_manual' : 'approval_link';
+}
+
 const pendingRequest = {
   approvalType: 'extra_charges',
   usedAt: null,
@@ -92,5 +103,31 @@ describe('customer approval availability', () => {
       jobPhase: 'Work Order',
       manualApprovalRecorded: false,
     })).toBe('job_changed');
+  });
+});
+
+describe('approval decision source', () => {
+  it('treats a completed approval-link response as external even when identity was entered', () => {
+    expect(getDecisionSource({
+      hasDecision: true,
+      manualApprovalEventInCurrentCycle: false,
+      latestChangeIsManualApproval: false,
+    })).toBe('approval_link');
+  });
+
+  it('classifies a completed admin approval from its current-cycle manual audit event', () => {
+    expect(getDecisionSource({
+      hasDecision: true,
+      manualApprovalEventInCurrentCycle: true,
+      latestChangeIsManualApproval: true,
+    })).toBe('internal_manual');
+  });
+
+  it('does not let a manual event from an older approval cycle relabel a later response', () => {
+    expect(getDecisionSource({
+      hasDecision: true,
+      manualApprovalEventInCurrentCycle: false,
+      latestChangeIsManualApproval: true,
+    })).toBe('approval_link');
   });
 });

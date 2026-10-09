@@ -171,7 +171,7 @@ serve(async (req) => {
 
     const { data: latestPhaseChange, error: phaseChangeError } = await supabase
       .from('job_phase_changes')
-      .select('change_reason')
+      .select('change_reason, changed_at')
       .eq('job_id', approval.job_id)
       .order('changed_at', { ascending: false })
       .limit(1)
@@ -179,7 +179,37 @@ serve(async (req) => {
     if (phaseChangeError) {
       console.error('Unable to inspect latest phase change:', phaseChangeError);
     }
-    const manualApprovalRecorded = /extra charges approved manually/i.test(latestPhaseChange?.change_reason || '');
+    // A typed name/email is collected for both customer-link responses and
+    // internal manual approvals, so identity alone cannot identify the source.
+    // The manual admin flow records an explicit audit event. Scope the lookup
+    // to this token's approval cycle so an older manual approval cannot be
+    // applied to a later request for updated charges.
+    let manualApprovalQuery = supabase
+      .from('job_phase_changes')
+      .select('id')
+      .eq('job_id', approval.job_id)
+      .ilike('change_reason', 'Extra charges approved manually%')
+      .gte('changed_at', approval.created_at)
+      .order('changed_at', { ascending: false })
+      .limit(1);
+
+    if (approval.decision_at) {
+      const decisionWindowEnd = new Date(
+        new Date(approval.decision_at).getTime() + 5 * 60 * 1000,
+      ).toISOString();
+      manualApprovalQuery = manualApprovalQuery.lte('changed_at', decisionWindowEnd);
+    }
+
+    const { data: manualApprovalEvent, error: manualApprovalError } = await manualApprovalQuery.maybeSingle();
+    if (manualApprovalError) {
+      console.error('Unable to inspect manual approval history:', manualApprovalError);
+    }
+    const latestChangeIsManualApproval = /extra charges approved manually/i.test(
+      latestPhaseChange?.change_reason || '',
+    );
+    const manualApprovalRecorded = approval.decision
+      ? Boolean(manualApprovalEvent)
+      : latestChangeIsManualApproval;
 
     const actionUnavailableReason = getApprovalUnavailableReason({
       approvalType: approval.approval_type,
@@ -348,6 +378,7 @@ serve(async (req) => {
           ...approval,
           action_available: actionAvailable,
           action_unavailable_reason: actionUnavailableReason,
+          decision_source: manualApprovalRecorded ? 'internal_manual' : 'approval_link',
         },
         job: normalizedJob,
         images: imagesWithSignedUrls
