@@ -36,6 +36,7 @@ import { useNotifications, Notification as UserNotification } from '../../hooks/
 import { MobileNav } from '../mobile/MobileNav';
 import { useHugh } from '../../contexts/HughContext';
 import { HughAssistant } from '../ai/HughAssistant';
+import { AdminAttentionMenu } from './AdminAttentionMenu';
 
 interface Profile {
   id: string;
@@ -520,6 +521,9 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
           <div className="touch-manipulation flex-shrink-0">
             <ChatMenuEnhanced />
           </div>
+
+          {/* Admin Attention - time-sensitive workflow blockers, separate from notifications */}
+          {!showOnlyProfile && <AdminAttentionMenu enabled={isAdmin && !isSubcontractor} />}
 
           {/* Notification Bell - Only show for non-subcontractors */}
           {!isSubcontractor && !showOnlyProfile && (
