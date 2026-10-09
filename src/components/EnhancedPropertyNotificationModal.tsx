@@ -32,6 +32,14 @@ import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
 import { config } from '../config/environment';
 import { detectImageMime, extensionForImageMime } from '../lib/utils/imageOptimization';
 
+const readableErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+    return error.message;
+  }
+  return fallback;
+};
+
 interface Job {
   id: string;
   job_number?: string;
@@ -1695,7 +1703,7 @@ export function EnhancedPropertyNotificationModal({
       window.open(`${config.portalBaseUrl}/approval/${tokenRecord.token}`, '_blank');
     } catch (error) {
       console.error('Preview error:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to generate preview');
+      toast.error(readableErrorMessage(error, 'Failed to generate preview'));
     } finally {
       setIsPreviewing(false);
     }
@@ -1924,7 +1932,7 @@ export function EnhancedPropertyNotificationModal({
       onClose();
     } catch (error) {
       console.error('Send error:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to send email');
+      toast.error(readableErrorMessage(error, 'Failed to send email'));
     } finally {
       setSending(false);
     }

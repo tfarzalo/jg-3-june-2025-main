@@ -14,9 +14,9 @@ export function latestApprovalStatuses(records: ApprovalStatusRecord[]) {
 
   for (const record of sorted) {
     if (result[record.job_id]) continue;
-    if (record.decision === 'approved') result[record.job_id] = 'approved';
+    if (record.invalidated_at) result[record.job_id] = 'not_sent';
+    else if (record.decision === 'approved') result[record.job_id] = 'approved';
     else if (record.decision === 'declined') result[record.job_id] = 'declined';
-    else if (record.invalidated_at) result[record.job_id] = 'not_sent';
     else result[record.job_id] = 'sent';
   }
 

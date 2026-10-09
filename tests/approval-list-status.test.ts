@@ -20,4 +20,15 @@ describe('pending work order approval status', () => {
       declined: 'declined',
     });
   });
+
+  it('requires a new notice when a completed approval was superseded by changed charges', () => {
+    expect(latestApprovalStatuses([
+      {
+        job_id: 'changed-after-approval',
+        decision: 'approved',
+        invalidated_at: '2026-10-08T20:00:00Z',
+        created_at: '2026-10-08T19:00:00Z',
+      },
+    ])).toEqual({ 'changed-after-approval': 'not_sent' });
+  });
 });

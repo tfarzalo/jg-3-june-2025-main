@@ -146,6 +146,7 @@ interface NewWorkOrderSpanishProps {
   setDynamicFormValues?: any;
   extraChargesItems: ExtraChargeLineItem[];
   handleAddExtraCharge: (item: ExtraChargeLineItem) => void;
+  handleUpdateExtraCharge: (item: ExtraChargeLineItem) => void;
   handleRemoveExtraCharge: (id: string) => void;
   extraChargeDraft?: ExtraChargeDraftState;
   setExtraChargeDraft?: React.Dispatch<React.SetStateAction<ExtraChargeDraftState>>;
@@ -198,6 +199,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
   setDynamicFormValues,
   extraChargesItems,
   handleAddExtraCharge,
+  handleUpdateExtraCharge,
   handleRemoveExtraCharge,
   extraChargeDraft,
   setExtraChargeDraft,
@@ -653,6 +655,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                   propertyId={job?.property?.id || null}
                   lineItems={extraChargesItems}
                   onAddLineItem={handleAddExtraCharge}
+                  onUpdateLineItem={handleUpdateExtraCharge}
                   onRemoveLineItem={handleRemoveExtraCharge}
                   language="es"
                   disabled={saving}

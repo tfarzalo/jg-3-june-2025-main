@@ -1423,6 +1423,10 @@ const NewWorkOrder = () => {
     setExtraChargesItems(prev => [...prev, item]);
   };
 
+  const handleUpdateExtraCharge = (item: ExtraChargeLineItem) => {
+    setExtraChargesItems(prev => prev.map(existing => existing.id === item.id ? item : existing));
+  };
+
   const handleRemoveExtraCharge = (id: string) => {
     setExtraChargesItems(prev => prev.filter(item => item.id !== id));
   };
@@ -2640,6 +2644,7 @@ const NewWorkOrder = () => {
                 setDynamicFormValues={setDynamicFormValues}
                 extraChargesItems={extraChargesItems}
                 handleAddExtraCharge={handleAddExtraCharge}
+                handleUpdateExtraCharge={handleUpdateExtraCharge}
                 handleRemoveExtraCharge={handleRemoveExtraCharge}
                 extraChargeDraft={extraChargeDraft}
                 setExtraChargeDraft={setExtraChargeDraft}
@@ -3014,6 +3019,7 @@ const NewWorkOrder = () => {
                       propertyId={job?.property?.id || null}
                       lineItems={extraChargesItems}
                       onAddLineItem={handleAddExtraCharge}
+                      onUpdateLineItem={handleUpdateExtraCharge}
                       onRemoveLineItem={handleRemoveExtraCharge}
                       language="en"
                       disabled={saving}

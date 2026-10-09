@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { Plus, X, AlertCircle } from 'lucide-react';
+import { Plus, X, AlertCircle, Pencil } from 'lucide-react';
 import { ExtraChargeLineItem } from '../types/extraCharges';
 import { useExtraCharges } from '../hooks/useExtraCharges';
 import {
@@ -23,6 +23,7 @@ interface ExtraChargesSectionProps {
   propertyId: string | null;
   lineItems: ExtraChargeLineItem[];
   onAddLineItem: (item: ExtraChargeLineItem) => void;
+  onUpdateLineItem: (item: ExtraChargeLineItem) => void;
   onRemoveLineItem: (id: string) => void;
   language?: 'en' | 'es';
   disabled?: boolean;
@@ -32,6 +33,7 @@ interface ExtraChargesSectionProps {
 
 export interface ExtraChargeDraftState {
   isAddingNew: boolean;
+  editingItemId: string | null;
   selectedCategoryId: string;
   selectedDetailId: string;
   quantity: string;
@@ -44,6 +46,7 @@ export interface ExtraChargeDraftState {
 
 export const createExtraChargeDraftState = (): ExtraChargeDraftState => ({
   isAddingNew: false,
+  editingItemId: null,
   selectedCategoryId: '',
   selectedDetailId: '',
   quantity: '1',
@@ -58,6 +61,7 @@ export default function ExtraChargesSection({
   propertyId,
   lineItems,
   onAddLineItem,
+  onUpdateLineItem,
   onRemoveLineItem,
   language = 'en',
   disabled = false,
@@ -70,6 +74,7 @@ export default function ExtraChargesSection({
       infoBody: 'Add any additional charges not already included',
       addedTitle: 'Added Extra Charges:',
       addTitle: 'Add Extra Charge:',
+      editTitle: 'Edit Extra Charge:',
       categoryLabel: 'Category *',
       categoryPlaceholder: 'Select category...',
       lineItemLabel: 'Line Item *',
@@ -85,6 +90,8 @@ export default function ExtraChargesSection({
       notesLabel: 'Notes (Optional)',
       notesPlaceholder: 'Add any additional notes...',
       addButton: 'Add Charge',
+      saveButton: 'Save Changes',
+      edit: 'Edit Extra Charge',
       cancelButton: 'Cancel',
       addAnother: 'Add Extra Charge',
       quantity: 'Quantity',
@@ -105,6 +112,7 @@ export default function ExtraChargesSection({
       infoBody: 'Agregue cargos adicionales no incluidos',
       addedTitle: 'Cargos Adicionales Agregados:',
       addTitle: 'Agregar Cargo Adicional:',
+      editTitle: 'Editar Cargo Adicional:',
       categoryLabel: 'Categoría *',
       categoryPlaceholder: 'Seleccionar categoría...',
       lineItemLabel: 'Partida *',
@@ -120,6 +128,8 @@ export default function ExtraChargesSection({
       notesLabel: 'Notas (Opcional)',
       notesPlaceholder: 'Agregue notas adicionales...',
       addButton: 'Agregar Cargo',
+      saveButton: 'Guardar Cambios',
+      edit: 'Editar Cargo Adicional',
       cancelButton: 'Cancelar',
       addAnother: 'Agregar Cargo Adicional',
       quantity: 'Cantidad',
@@ -143,6 +153,7 @@ export default function ExtraChargesSection({
   const updateDraft = onDraftChange ?? setLocalDraft;
   const {
     isAddingNew,
+    editingItemId,
     selectedCategoryId,
     selectedDetailId,
     quantity,
@@ -156,6 +167,7 @@ export default function ExtraChargesSection({
     updateDraft((current) => ({ ...current, [key]: value }));
   };
   const setIsAddingNew = (value: boolean) => setDraftField('isAddingNew', value);
+  const setEditingItemId = (value: string | null) => setDraftField('editingItemId', value);
   const setSelectedCategoryId = (value: string) => setDraftField('selectedCategoryId', value);
   const setSelectedDetailId = (value: string) => setDraftField('selectedDetailId', value);
   const setQuantity = (value: string) => setDraftField('quantity', value);
@@ -172,41 +184,67 @@ export default function ExtraChargesSection({
   const parsedBillHours = customizeHours && billHours.trim() !== '' ? parseFloat(billHours) : parsedQuantity;
   const parsedSubPayHours = customizeHours && subPayHours.trim() !== '' ? parseFloat(subPayHours) : parsedQuantity;
 
-  // Calculate amounts in real-time
-  const calculatedAmounts = selectedDetail
-    ? calculateLineItemAmounts(
-        parsedQuantity,
-        selectedDetail.billAmount,
-        selectedDetail.subAmount,
-        selectedDetail.isHourly ? parsedBillHours : parsedQuantity,
-        selectedDetail.isHourly ? parsedSubPayHours : parsedQuantity
-      )
-    : { billAmount: 0, subAmount: 0 };
+  const resetDraft = () => {
+    setIsAddingNew(false);
+    setEditingItemId(null);
+    setSelectedCategoryId('');
+    setSelectedDetailId('');
+    setQuantity('1');
+    setCustomizeHours(false);
+    setBillHours('1');
+    setSubPayHours('1');
+    setNotes('');
+    setFormErrors([]);
+  };
 
-  // Handle adding new charge
-  const handleAddCharge = () => {
+  const handleEditCharge = (item: ExtraChargeLineItem) => {
+    setEditingItemId(item.id);
+    setIsAddingNew(true);
+    setSelectedCategoryId(item.categoryId);
+    setSelectedDetailId(item.detailId);
+    setQuantity(String(item.quantity));
+    setCustomizeHours(Boolean(item.isHourly && item.customizeHours));
+    setBillHours(String(getLineItemBillHours(item)));
+    setSubPayHours(String(getLineItemSubPayHours(item)));
+    setNotes(item.notes || '');
+    setFormErrors([]);
+  };
+
+  // Handle adding or updating a charge
+  const handleSaveCharge = () => {
     if (!selectedCategory || !selectedDetail) {
       setFormErrors([text.selectCategoryAndItem]);
       return;
     }
 
+    const existingItem = editingItemId ? lineItems.find((item) => item.id === editingItemId) : undefined;
+    const detailUnchanged = existingItem?.detailId === selectedDetail.id;
+    const effectiveBillRate = detailUnchanged ? existingItem.billRate : selectedDetail.billAmount;
+    const effectiveSubRate = detailUnchanged ? existingItem.subRate : selectedDetail.subAmount;
+    const effectiveAmounts = calculateLineItemAmounts(
+      parsedQuantity,
+      effectiveBillRate,
+      effectiveSubRate,
+      selectedDetail.isHourly ? parsedBillHours : parsedQuantity,
+      selectedDetail.isHourly ? parsedSubPayHours : parsedQuantity,
+    );
     const newItem: ExtraChargeLineItem = {
-      id: generateTempId(),
+      id: existingItem?.id || generateTempId(),
       categoryId: selectedCategory.categoryId,
       categoryName: selectedCategory.categoryName,
       detailId: selectedDetail.id,
       detailName: selectedDetail.name,
       quantity: parsedQuantity,
-      billRate: selectedDetail.billAmount,
-      subRate: selectedDetail.subAmount,
+      billRate: effectiveBillRate,
+      subRate: effectiveSubRate,
       isHourly: selectedDetail.isHourly,
       customizeHours: selectedDetail.isHourly ? customizeHours : false,
       billHours: selectedDetail.isHourly && customizeHours ? parsedBillHours : undefined,
       subPayHours: selectedDetail.isHourly && customizeHours ? parsedSubPayHours : undefined,
       jobBillingCategory: 'owner',
       notes: notes.trim(),
-      calculatedBillAmount: calculatedAmounts.billAmount,
-      calculatedSubAmount: calculatedAmounts.subAmount,
+      calculatedBillAmount: effectiveAmounts.billAmount,
+      calculatedSubAmount: effectiveAmounts.subAmount,
     };
 
     // Validate
@@ -217,18 +255,9 @@ export default function ExtraChargesSection({
     }
 
     // Add to list
-    onAddLineItem(newItem);
-
-    // Reset form
-    setSelectedCategoryId('');
-    setSelectedDetailId('');
-    setQuantity('1');
-    setCustomizeHours(false);
-    setBillHours('1');
-    setSubPayHours('1');
-    setNotes('');
-    setFormErrors([]);
-    setIsAddingNew(false);
+    if (existingItem) onUpdateLineItem(newItem);
+    else onAddLineItem(newItem);
+    resetDraft();
   };
 
   if (!propertyId) {
@@ -318,15 +347,16 @@ export default function ExtraChargesSection({
                   <p className="text-xs text-gray-500 dark:text-gray-400 italic">{text.notes}: {item.notes}</p>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => onRemoveLineItem(item.id)}
-                disabled={disabled}
-                className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors disabled:opacity-50"
-                title={text.remove}
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex shrink-0 items-center gap-3">
+                <button type="button" onClick={() => handleEditCharge(item)} disabled={disabled || isAddingNew}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 underline underline-offset-2 hover:text-blue-800 disabled:opacity-50 dark:text-blue-400 dark:hover:text-blue-300">
+                  <Pencil className="h-4 w-4" /> {text.edit}
+                </button>
+                <button type="button" onClick={() => onRemoveLineItem(item.id)} disabled={disabled || isAddingNew}
+                  className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 transition-colors disabled:opacity-50" title={text.remove}>
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
           ))}
 
@@ -336,7 +366,7 @@ export default function ExtraChargesSection({
       {/* Add New Charge Form */}
       {isAddingNew ? (
         <div className="rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 p-4 space-y-4">
-          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">{text.addTitle}</h4>
+          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">{editingItemId ? text.editTitle : text.addTitle}</h4>
 
           {/* Show validation errors */}
           {formErrors.length > 0 && (
@@ -511,25 +541,15 @@ export default function ExtraChargesSection({
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={handleAddCharge}
+              onClick={handleSaveCharge}
               disabled={disabled}
               className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {text.addButton}
+              {editingItemId ? text.saveButton : text.addButton}
             </button>
             <button
               type="button"
-              onClick={() => {
-                setIsAddingNew(false);
-                setFormErrors([]);
-                setSelectedCategoryId('');
-                setSelectedDetailId('');
-                setQuantity('1');
-                setCustomizeHours(false);
-                setBillHours('1');
-                setSubPayHours('1');
-                setNotes('');
-              }}
+              onClick={resetDraft}
               disabled={disabled}
               className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -540,7 +560,7 @@ export default function ExtraChargesSection({
       ) : (
         <button
           type="button"
-          onClick={() => setIsAddingNew(true)}
+          onClick={() => { setEditingItemId(null); setIsAddingNew(true); }}
           disabled={disabled}
           className="w-full px-4 py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-400 hover:border-blue-500 hover:text-blue-600 dark:hover:border-blue-400 dark:hover:text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
