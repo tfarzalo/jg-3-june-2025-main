@@ -66,7 +66,7 @@ interface ApprovalData {
   approver_name: string;
   decision_maker_email?: string | null;
   decision_maker_name?: string | null;
-  decision_source?: 'internal_manual' | 'approval_link' | null;
+  decision_source?: 'internal_manual' | 'approval_link' | 'historical_record' | null;
   expires_at: string;
   used_at?: string | null;
   decision?: 'approved' | 'declined' | null;
@@ -248,6 +248,31 @@ const ApprovalPage: React.FC = () => {
     }
   };
 
+  const confirmDecisionAfterTimeout = async (expectedDecision: 'approved' | 'declined') => {
+    // A client timeout does not prove that PostgreSQL rolled the transaction
+    // back. Confirm the persisted token state before showing either success or
+    // failure, so the page never reports a decision that was not saved.
+    const deadline = Date.now() + 12_000;
+    while (Date.now() < deadline) {
+      try {
+        const { data, error: validationError } = await supabase.functions.invoke('validate-approval-token', {
+          body: { token },
+        });
+        const tokenData = data?.token;
+        if (!validationError && data?.valid && tokenData?.decision === expectedDecision && tokenData?.decision_at) {
+          return tokenData as ApprovalData;
+        }
+        if (!validationError && data?.valid && tokenData?.decision && tokenData.decision !== expectedDecision) {
+          return null;
+        }
+      } catch (verificationError) {
+        console.warn('Unable to verify timed-out approval decision yet:', verificationError);
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    return null;
+  };
+
   const handleApproval = async () => {
     if (!approvalData || approvalLocked) return;
     const submittedApproverName = approverName.trim();
@@ -381,8 +406,29 @@ const ApprovalPage: React.FC = () => {
     } catch (err) {
       console.error('Error processing approval:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      if (errorMessage === 'TIMEOUT') {
+        const confirmedToken = await confirmDecisionAfterTimeout('approved');
+        if (confirmedToken) {
+          setApprovalData(prev => prev ? {
+            ...prev,
+            decision_maker_name: confirmedToken.decision_maker_name,
+            decision_maker_email: confirmedToken.decision_maker_email,
+            decision: 'approved',
+            decision_at: confirmedToken.decision_at,
+            used_at: confirmedToken.used_at,
+          } : prev);
+          setApproved(true);
+          setError(null);
+          try {
+            await sendCustomerReceiptEmail('approved');
+          } catch (receiptError) {
+            console.warn('Failed to send customer approval receipt after reconciliation:', receiptError);
+          }
+          return;
+        }
+      }
       setError(errorMessage === 'TIMEOUT'
-        ? 'The approval request timed out. Please check your internet connection and try again.'
+        ? 'The approval response could not be confirmed. No success has been reported. Refresh this page to check the saved decision before contacting JG Painting Pros.'
         : errorMessage
       );
       // Don't unlock on error - prevent retry that might cause issues
@@ -500,8 +546,29 @@ const ApprovalPage: React.FC = () => {
     } catch (err) {
       console.error('Error processing decline:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      if (errorMessage === 'TIMEOUT') {
+        const confirmedToken = await confirmDecisionAfterTimeout('declined');
+        if (confirmedToken) {
+          setApprovalData(prev => prev ? {
+            ...prev,
+            decision_maker_name: confirmedToken.decision_maker_name,
+            decision_maker_email: confirmedToken.decision_maker_email,
+            decision: 'declined',
+            decision_at: confirmedToken.decision_at,
+            used_at: confirmedToken.used_at,
+          } : prev);
+          setDeclined(true);
+          setError(null);
+          try {
+            await sendCustomerReceiptEmail('declined');
+          } catch (receiptError) {
+            console.warn('Failed to send customer decline receipt after reconciliation:', receiptError);
+          }
+          return;
+        }
+      }
       setError(errorMessage === 'TIMEOUT'
-        ? 'The decline request timed out. Please check your internet connection and try again.'
+        ? 'The decline response could not be confirmed. No success has been reported. Refresh this page to check the saved decision before contacting JG Painting Pros.'
         : errorMessage
       );
       // Don't unlock on error - prevent retry that might cause issues

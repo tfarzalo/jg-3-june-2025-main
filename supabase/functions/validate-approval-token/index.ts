@@ -207,9 +207,12 @@ serve(async (req) => {
     const latestChangeIsManualApproval = /extra charges approved manually/i.test(
       latestPhaseChange?.change_reason || '',
     );
-    const manualApprovalRecorded = approval.decision
-      ? Boolean(manualApprovalEvent)
-      : latestChangeIsManualApproval;
+    const recordedDecisionSource = approval.decision_source as string | null | undefined;
+    const manualApprovalRecorded = recordedDecisionSource
+      ? recordedDecisionSource === 'internal_manual'
+      : approval.decision
+        ? Boolean(manualApprovalEvent)
+        : latestChangeIsManualApproval;
 
     const actionUnavailableReason = getApprovalUnavailableReason({
       approvalType: approval.approval_type,
@@ -378,7 +381,8 @@ serve(async (req) => {
           ...approval,
           action_available: actionAvailable,
           action_unavailable_reason: actionUnavailableReason,
-          decision_source: manualApprovalRecorded ? 'internal_manual' : 'approval_link',
+          decision_source: recordedDecisionSource
+            || (manualApprovalRecorded ? 'internal_manual' : 'approval_link'),
         },
         job: normalizedJob,
         images: imagesWithSignedUrls

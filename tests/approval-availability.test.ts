@@ -23,10 +23,12 @@ function getApprovalUnavailableReason(input: {
 }
 
 function getDecisionSource(input: {
+  recordedDecisionSource?: 'approval_link' | 'internal_manual' | 'historical_record' | null;
   hasDecision: boolean;
   manualApprovalEventInCurrentCycle: boolean;
   latestChangeIsManualApproval: boolean;
 }) {
+  if (input.recordedDecisionSource) return input.recordedDecisionSource;
   const manualApprovalRecorded = input.hasDecision
     ? input.manualApprovalEventInCurrentCycle
     : input.latestChangeIsManualApproval;
@@ -129,5 +131,14 @@ describe('approval decision source', () => {
       manualApprovalEventInCurrentCycle: false,
       latestChangeIsManualApproval: true,
     })).toBe('approval_link');
+  });
+
+  it('preserves an explicit historical read-only source', () => {
+    expect(getDecisionSource({
+      recordedDecisionSource: 'historical_record',
+      hasDecision: true,
+      manualApprovalEventInCurrentCycle: false,
+      latestChangeIsManualApproval: false,
+    })).toBe('historical_record');
   });
 });

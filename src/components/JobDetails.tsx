@@ -724,6 +724,7 @@ export function JobDetails() {
     sentAt: string;
   } | null>(null);
   const [latestApprovalPageToken, setLatestApprovalPageToken] = useState<string | null>(null);
+  const [openingApprovalRecord, setOpeningApprovalRecord] = useState(false);
   const [reactivatedFromDecline, setReactivatedFromDecline] = useState(false);
   const parseExtraChargeApproverFromReason = useCallback((reason?: string | null) => {
     return reason?.match(/extra charges (?:approved|declined|rejected)(?: manually)? by ([^.;-]+)/i)?.[1]?.trim() || null;
@@ -1448,10 +1449,35 @@ export function JobDetails() {
     }
   }, [jobId]);
 
-  const viewLatestApprovalPage = useCallback(() => {
-    if (!latestApprovalPageToken) return;
-    window.open(`/approval/${latestApprovalPageToken}`, '_blank', 'noopener,noreferrer');
-  }, [latestApprovalPageToken]);
+  const viewLatestApprovalPage = useCallback(async () => {
+    if (!jobId || openingApprovalRecord) return;
+    if (latestApprovalPageToken) {
+      window.open(`/approval/${latestApprovalPageToken}`, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    // Older approved/declined jobs may predate approval_tokens. Create a
+    // view-only record from their preserved work-order and audit data without
+    // changing the job, work order, phase, or historical snapshot.
+    try {
+      setOpeningApprovalRecord(true);
+      const { data, error } = await supabase.rpc('ensure_extra_charge_approval_record', {
+        p_job_id: jobId,
+      });
+      if (error) throw error;
+      const result = data as { success?: boolean; token?: string; error?: string } | null;
+      if (!result?.success || !result.token) {
+        throw new Error(result?.error || 'The approval record could not be created.');
+      }
+      setLatestApprovalPageToken(result.token);
+      window.open(`/approval/${result.token}`, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      console.error('Error opening approval record:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to open approval record');
+    } finally {
+      setOpeningApprovalRecord(false);
+    }
+  }, [jobId, latestApprovalPageToken, openingApprovalRecord]);
 
   // Fetch approval decision when component mounts or job changes
   useEffect(() => {
@@ -2731,77 +2757,13 @@ export function JobDetails() {
     }
     
     try {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!userData.user) throw new Error('User not found');
-
-      const { data: approverProfile } = await supabase
-        .from('profiles')
-        .select('full_name, email')
-        .eq('id', userData.user.id)
-        .maybeSingle();
-
-      const approverName = approverProfile?.full_name || userData.user.email || 'Admin';
-      const approverEmail = approverProfile?.email || userData.user.email || null;
-      const approvedAt = new Date().toISOString();
-
-      const { data: latestApprovalToken, error: approvalFetchError } = await supabase
-        .from('approval_tokens')
-        .select('id')
-        .eq('job_id', job.id)
-        .eq('approval_type', 'extra_charges')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (approvalFetchError) throw approvalFetchError;
-
-      if (latestApprovalToken?.id) {
-        const { error: tokenUpdateError } = await supabase
-          .from('approval_tokens')
-          .update({
-            used_at: approvedAt,
-            decision: 'approved',
-            decision_at: approvedAt,
-            decision_maker_name: approverName,
-            decision_maker_email: approverEmail,
-            decline_reason: null
-          })
-          .eq('id', latestApprovalToken.id);
-
-        if (tokenUpdateError) throw tokenUpdateError;
-      }
-
-      // Get the Work Order phase ID
-      const { data: phaseData, error: phaseError } = await supabase
-        .from('job_phases')
-        .select('id')
-        .eq('job_phase_label', 'Work Order')
-        .single();
-        
-      if (phaseError) throw phaseError;
-      if (!phaseData) throw new Error('Work Order phase not found');
-
-      // Update the job phase
-      const { error: updateError } = await supabase
-        .from('jobs')
-        .update({ current_phase_id: phaseData.id })
-        .eq('id', job.id);
-
-      if (updateError) throw updateError;
-
-      // Log the phase change
-      const { error: phaseChangeError } = await supabase
-        .from('job_phase_changes')
-        .insert({
-          job_id: job.id,
-          changed_by: userData.user.id,
-          from_phase_id: job?.job_phase?.id,
-          to_phase_id: phaseData.id,
-          change_reason: `Extra charges approved manually by ${approverName} - job advanced to Work Order`
-        });
-
-      if (phaseChangeError) console.error('Error logging phase change:', phaseChangeError);
+      const { data, error } = await supabase.rpc('approve_extra_charges_manually', {
+        p_job_id: job.id,
+      });
+      if (error) throw error;
+      const result = data as { success?: boolean; token?: string; error?: string } | null;
+      if (!result?.success) throw new Error(result?.error || 'Manual approval was not completed.');
+      if (result.token) setLatestApprovalPageToken(result.token);
 
       // Refresh the job data
       await refetchJob(true);
@@ -5811,14 +5773,15 @@ export function JobDetails() {
                         </p>
                         {(isAdmin || isJGManagement) && (
                           <div className="mt-3 flex flex-wrap gap-3">
-                            {latestApprovalPageToken && (
+                            {(latestApprovalPageToken || effectiveApprovalDecision) && (
                               <button
                                 type="button"
                                 onClick={viewLatestApprovalPage}
+                                disabled={openingApprovalRecord}
                                 className="inline-flex items-center px-3 py-1.5 bg-white hover:bg-red-50 text-red-700 text-sm font-medium rounded-lg border border-red-300 transition-colors"
                               >
                                 <Eye className="h-4 w-4 mr-2" />
-                                View Approval Page
+                                {openingApprovalRecord ? 'Opening Approval Page...' : 'View Approval Page'}
                               </button>
                             )}
                             <button
@@ -5861,14 +5824,15 @@ export function JobDetails() {
                           This job remains in Pending Work Order and requires internal follow-up.
                         </p>
                         <div className="mt-3 flex flex-wrap gap-3">
-                          {latestApprovalPageToken && (
+                          {(latestApprovalPageToken || effectiveApprovalDecision) && (
                             <button
                               type="button"
                               onClick={viewLatestApprovalPage}
+                              disabled={openingApprovalRecord}
                               className="inline-flex items-center px-3 py-1.5 bg-white hover:bg-red-50 text-red-700 text-sm font-medium rounded-lg border border-red-300 transition-colors"
                             >
                               <Eye className="h-4 w-4 mr-2" />
-                              View Approval Page
+                              {openingApprovalRecord ? 'Opening Approval Page...' : 'View Approval Page'}
                             </button>
                           )}
                           <button
@@ -5922,14 +5886,15 @@ export function JobDetails() {
                             minute: '2-digit'
                           }) : 'an unknown date'}. The job has been moved to Work Order phase.
                         </p>
-                        {latestApprovalPageToken && (isAdmin || isJGManagement) && (
+                        {(isAdmin || isJGManagement) && (
                           <button
                             type="button"
                             onClick={viewLatestApprovalPage}
+                            disabled={openingApprovalRecord}
                             className="mt-3 inline-flex items-center px-3 py-1.5 bg-white hover:bg-green-50 text-green-700 text-sm font-medium rounded-lg border border-green-300 transition-colors"
                           >
                             <Eye className="h-4 w-4 mr-2" />
-                            View Approval Page
+                            {openingApprovalRecord ? 'Opening Approval Page...' : 'View Approval Page'}
                           </button>
                         )}
                       </div>
