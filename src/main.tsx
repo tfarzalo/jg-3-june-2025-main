@@ -80,14 +80,15 @@ try {
     root.innerHTML = `
       <div style="min-height: 100vh; background: #f3f4f6; display: flex; align-items: center; justify-content: center; padding: 1rem; font-family: system-ui;">
         <div style="max-width: 400px; background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); padding: 2rem; text-align: center;">
-          <div style="font-size: 3rem; margin-bottom: 1rem;">🎨</div>
+          <img src="/jg-logo-icon.png" alt="Paint Manager Pro logo" style="width: 6rem; height: 6rem; object-fit: contain; margin: 0 auto 1rem;" />
           <h1 style="font-size: 1.5rem; font-weight: bold; margin-bottom: 0.5rem; color: #1f2937;">Paint Manager Pro</h1>
-          <p style="color: #6b7280; margin-bottom: 1.5rem;">Critical loading error</p>
-          <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 4px; padding: 0.75rem; margin-bottom: 1rem;">
-            <p style="color: #dc2626; font-size: 0.875rem;">App failed to initialize. Check browser console for details.</p>
+          <p style="color: #6b7280; margin-bottom: 1.5rem;">Professional painting business management system</p>
+          <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 1rem; margin-bottom: 1rem;">
+            <p style="color: #1e3a8a; font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem;">A new version is available</p>
+            <p style="color: #1e40af; font-size: 0.875rem; margin: 0;">Refresh this browser or application window to load the latest version.</p>
           </div>
           <button onclick="window.location.reload()" style="background: #3b82f6; color: white; padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer;">
-            Reload Page
+            Refresh Application
           </button>
         </div>
       </div>
