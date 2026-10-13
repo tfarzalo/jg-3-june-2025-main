@@ -110,6 +110,7 @@ interface CalendarJob {
   assigned_to_email: string | null;
   preferred_subcontractor_ids: string[];
   assigned_at: string | null;
+  assignment_notification_sent_at?: string | null;
   assignment_status: string | null;
   assignment_deadline: string | null;
   assignment_decision_at: string | null;
@@ -1586,23 +1587,13 @@ JG Painting Pros Inc.`,
       let assignmentDeadline: string | null = null;
       if (newSubId) {
         assignedAt = new Date().toISOString();
-        const { data, error } = await supabase.rpc('calculate_assignment_deadline', { p_assigned_at: assignedAt });
-        if (error) {
-          console.error('Assignment deadline calculation failed:', error);
-          const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
-          const fallback = new Date(etNow);
-          fallback.setHours(15, 30, 0, 0);
-          if (etNow.getHours() > 15 || (etNow.getHours() === 15 && etNow.getMinutes() >= 30)) fallback.setDate(fallback.getDate() + 1);
-          assignmentDeadline = fallback.toISOString();
-        } else {
-          assignmentDeadline = data;
-        }
       }
 
       const patch = {
         assigned_to: newSubId,
         assigned_at: assignedAt,
         assignment_deadline: assignmentDeadline,
+        assignment_notification_sent_at: null,
         assignment_status: newSubId ? 'pending' : null,
         assignment_decision_at: null,
         declined_reason_code: null,

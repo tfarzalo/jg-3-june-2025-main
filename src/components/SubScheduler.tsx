@@ -23,6 +23,10 @@ import { AssignmentCountdownTimer } from './AssignmentCountdownTimer';
 import { dispatchSmsNotification } from '../lib/sms/dispatchSmsNotification';
 import { fetchActiveSubcontractors } from '../lib/users/activeSubcontractors';
 import { isJobActiveOnDate, getJobSpanDayLabel } from '../utils/jobScheduling';
+import {
+  findActionableAssignmentNotification,
+  sendAssignmentNotifications,
+} from '../services/assignmentNotifications';
 
 interface Job {
   id: string;
@@ -32,6 +36,7 @@ interface Job {
   scheduled_end_date?: string | null;
   assigned_to?: string | null;
   assigned_at?: string | null;
+  assignment_notification_sent_at?: string | null;
   assignment_status?: string | null;
   assignment_decision_at?: string | null;
   assignment_deadline?: string | null;
@@ -77,11 +82,7 @@ interface Subcontractor {
 interface AssignmentNotification {
   subcontractor: Subcontractor;
   jobs: Job[];
-  tokensByJobId?: Record<string, string>;
 }
-
-const SUBCONTRACTOR_DASHBOARD_URL = 'https://portal.jgpaintingprosinc.com/dashboard/subcontractor';
-const ASSIGNMENT_DECISION_URL = 'https://portal.jgpaintingprosinc.com/assignment/decision';
 
 export default function SubScheduler() {
 
@@ -394,26 +395,6 @@ export default function SubScheduler() {
     return notifications;
   };
 
-  const createAssignmentDecisionToken = async (jobId: string, subcontractorId: string) => {
-    const token = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${jobId}-${Date.now()}`;
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-    const sentAt = new Date().toISOString();
-
-    const { error } = await supabase.from('assignment_tokens').insert({
-      job_id: jobId,
-      subcontractor_id: subcontractorId,
-      token,
-      expires_at: expiresAt,
-      sent_at: sentAt
-    });
-
-    if (error) {
-      throw new Error(error.message || 'Failed to create assignment decision token');
-    }
-
-    return { token, expires_at: expiresAt };
-  };
-
   const formatPropertyAddress = (job: Job) => {
     const addressParts: string[] = [];
     if (job.property?.address) {
@@ -436,79 +417,6 @@ export default function SubScheduler() {
     return addressParts.length > 0 ? addressParts.join(', ') : 'Address on file';
   };
 
-  const generateEmailContent = (subcontractor: Subcontractor, jobsForSub: Job[], tokensByJobId: Record<string, string>) => {
-    const firstName = subcontractor.full_name?.split(' ')[0] || subcontractor.full_name || 'there';
-    const subject = 'New Job Assignment – Please Accept or Decline';
-    
-    const jobItemsHtml = jobsForSub
-      .map(job => {
-        const propertyName = job.property?.property_name || 'Property';
-        // Use formatDisplayDate which now handles pure date strings correctly
-        const scheduledDate = formatDisplayDate(job.scheduled_date);
-        const address = formatPropertyAddress(job);
-        const token = tokensByJobId[job.id];
-        const decisionUrl = token
-          ? `${ASSIGNMENT_DECISION_URL}?token=${encodeURIComponent(token)}&jobId=${encodeURIComponent(job.id)}`
-          : SUBCONTRACTOR_DASHBOARD_URL;
-        return `
-          <li style="margin-bottom: 18px; padding: 14px 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #f9fafb;">
-            <div style="font-weight: 600; color: #111827; font-size: 15px;">${propertyName}</div>
-            <div style="margin-top: 6px; color: #374151; font-size: 14px;">
-              <div><strong>Work Order:</strong> WO-${String(job.work_order_num).padStart(6, '0')}</div>
-              <div><strong>Scheduled Date:</strong> ${scheduledDate}</div>
-              <div><strong>Address:</strong> ${address}</div>
-            </div>
-            <div style="margin-top: 12px;">
-              <a href="${decisionUrl}" style="display: inline-block; padding: 12px 16px; background: #0ea5e9; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 600;">
-                Review &amp; Accept / Decline
-              </a>
-            </div>
-            <div style="margin-top: 8px; font-size: 12px; color: #6b7280;">This link is unique to this assignment and expires in 7 days.</div>
-          </li>
-        `;
-      })
-      .join('');
-
-    const jobItemsText = jobsForSub
-      .map(job => {
-        const propertyName = job.property?.property_name || 'Property';
-        // Use formatDisplayDate which now handles pure date strings correctly
-        const scheduledDate = formatDisplayDate(job.scheduled_date);
-        const address = formatPropertyAddress(job);
-        const token = tokensByJobId[job.id];
-        const decisionUrl = token
-          ? `${ASSIGNMENT_DECISION_URL}?token=${token}&jobId=${job.id}`
-          : SUBCONTRACTOR_DASHBOARD_URL;
-        return `${propertyName}
-Work Order: WO-${String(job.work_order_num).padStart(6, '0')}
-Scheduled Date: ${scheduledDate}
-Address: ${address}
-Respond: ${decisionUrl}`;
-      })
-      .join('\n\n');
-
-    const html = `
-      <p>Hi ${firstName},</p>
-      <p>You have been assigned to the following job${jobsForSub.length > 1 ? 's' : ''}. Please review and accept or decline:</p>
-      <ul>${jobItemsHtml}</ul>
-      <p style="margin-top: 16px;">You can also log in to your dashboard to review: <a href="${SUBCONTRACTOR_DASHBOARD_URL}">${SUBCONTRACTOR_DASHBOARD_URL}</a></p>
-      <p>Thank you,<br/>JG Painting Pros Inc.</p>
-    `;
-
-    const text = `Hi ${firstName},
-
-You have been assigned to the following job${jobsForSub.length > 1 ? 's' : ''}. Please review and accept or decline:
-
-${jobItemsText}
-
-Log in to view details: ${SUBCONTRACTOR_DASHBOARD_URL}
-
-Thank you,
-JG Painting Pros Inc.`;
-
-    return { subject, html, text };
-  };
-
   const handleSendNotifications = async () => {
     if (!pendingNotifications.length) {
       setShowNotificationModal(false);
@@ -522,27 +430,16 @@ JG Painting Pros Inc.`;
         const { subcontractor, jobs: jobsForSub } = notification;
         if (!subcontractor.email) continue;
 
-        // Create decision tokens for each job
-        const tokensByJobId: Record<string, string> = {};
-        for (const job of jobsForSub) {
-          const { token } = await createAssignmentDecisionToken(job.id, subcontractor.id);
-          tokensByJobId[job.id] = token;
+        const notificationIds = (await Promise.all(jobsForSub.map(job =>
+          findActionableAssignmentNotification(job.id, subcontractor.id)
+        ))).filter((id): id is string => Boolean(id));
+        if (notificationIds.length !== jobsForSub.length) {
+          throw new Error('One or more assignment notification records are not ready yet');
         }
 
-        const { subject, html, text } = generateEmailContent(subcontractor, jobsForSub, tokensByJobId);
-
-        const { error: emailError } = await supabase.functions.invoke('send-email', {
-          body: {
-            to: subcontractor.email,
-            subject,
-            html,
-            text
-          }
-        });
-
-        if (emailError) {
-          throw new Error(emailError.message || 'Failed to send assignment email');
-        }
+        const result = await sendAssignmentNotifications(notificationIds, true);
+        const failure = result.results.find(item => !item.success);
+        if (failure) throw new Error(failure.error || 'Failed to send assignment email');
 
         // Fire SMS notification to the subcontractor (best-effort).
         // Pass job_id (first job) at top level so the dispatcher can fetch
@@ -564,27 +461,6 @@ JG Painting Pros Inc.`;
           },
         });
 
-        const { data: userData } = await supabase.auth.getUser();
-
-        const logEntries = jobsForSub.map(job => ({
-          job_id: job.id,
-          recipient_email: subcontractor.email,
-          subject,
-          content: text,
-          notification_type: 'sub_assignment',
-          template_id: 'assignment_decision',
-          cc_emails: null,
-          bcc_emails: null,
-          sent_by: userData.user?.id ?? null
-        }));
-
-        const { error: logError } = await supabase
-          .from('email_logs')
-          .insert(logEntries);
-
-        if (logError) {
-          console.error('Error logging assignment email:', logError);
-        }
       }
 
       toast.success('Assignment emails sent');
@@ -611,36 +487,17 @@ JG Painting Pros Inc.`;
       const notifications = buildAssignmentNotifications();
       
       // Prepare batch updates for assignments
-      const updates = await Promise.all(Object.entries(assignments).map(async ([jobId, subcontractorId]) => {
+      const updates = Object.entries(assignments).map(([jobId, subcontractorId]) => {
         const job = jobs.find(j => j.id === jobId);
         if (!job) throw new Error(`Job ${jobId} not found`);
         const isNewAssignee = job.assigned_to !== subcontractorId;
         
-        // If this is a new assignment, calculate the deadline
         let assignedAt = job.assigned_at;
         let assignmentDeadline = job.assignment_deadline;
         
         if (isNewAssignee) {
-          const now = new Date().toISOString();
-          assignedAt = now;
-          
-          // Call the database function to calculate deadline
-          const { data: deadlineData, error: deadlineError } = await supabase
-            .rpc('calculate_assignment_deadline', { p_assigned_at: now });
-          
-          if (deadlineError) {
-            console.error('Error calculating deadline:', deadlineError);
-            // Fallback: set deadline to 3:30 PM ET today or next business day
-            const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-            const deadline = new Date(etNow);
-            deadline.setHours(15, 30, 0, 0); // 3:30 PM
-            if (etNow.getHours() >= 15 && etNow.getMinutes() >= 30) {
-              deadline.setDate(deadline.getDate() + 1);
-            }
-            assignmentDeadline = deadline.toISOString();
-          } else {
-            assignmentDeadline = deadlineData;
-          }
+          assignedAt = new Date().toISOString();
+          assignmentDeadline = null;
         }
         
         return {
@@ -654,12 +511,13 @@ JG Painting Pros Inc.`;
           assigned_to: subcontractorId,
           assigned_at: assignedAt,
           assignment_deadline: assignmentDeadline,
+          assignment_notification_sent_at: null,
           assignment_status: isNewAssignee ? 'pending' : job.assignment_status || 'pending',
           assignment_decision_at: isNewAssignee ? null : job.assignment_decision_at,
           declined_reason_code: isNewAssignee ? null : job.declined_reason_code,
           declined_reason_text: isNewAssignee ? null : job.declined_reason_text
         };
-      }));
+      });
       
       // Prepare batch updates for unassignments
       const unassignments = jobsToUnassign.map(jobId => {
@@ -677,6 +535,7 @@ JG Painting Pros Inc.`;
           assigned_to: null,
           assigned_at: null,
           assignment_deadline: null,
+          assignment_notification_sent_at: null,
           assignment_status: null,
           assignment_decision_at: null,
           declined_reason_code: null,

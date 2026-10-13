@@ -1626,7 +1626,7 @@ export function EnhancedPropertyNotificationModal({
       .single();
 
     if (error) throw error;
-    return { id: data.id, token: data.token, expiresAt: data.expires_at, reused: data.reused };
+    return { id: data.id, token: data.token, reused: data.reused };
   };
 
   const buildFinalEmailHtml = (approvalLink?: string, cidMap?: Record<string, string>) => {

@@ -421,7 +421,7 @@ export function EmailDeliveryLog() {
                       {send.aggregateStatus === 'confirmation_pending' && (
                         <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
                           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                          <span>Mailgun accepted this message, but no recipient delivery event was recorded within 15 minutes. This is not marked failed; use the message ID below to check Mailgun Events.</span>
+                          <span>Mailgun accepted this message, but no recipient delivery confirmation has been recorded yet. This is not marked failed; use the message ID below to check Mailgun Events.</span>
                         </div>
                       )}
                       <div className="mb-3 grid gap-2 text-xs text-gray-500 md:grid-cols-4">

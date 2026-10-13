@@ -723,7 +723,6 @@ export function JobDetails() {
   const [pendingApproval, setPendingApproval] = useState<{
     id: string;
     token: string;
-    expiresAt: string | null;
     sentAt: string;
   } | null>(null);
   const [latestApprovalPageToken, setLatestApprovalPageToken] = useState<string | null>(null);
@@ -1438,7 +1437,7 @@ export function JobDetails() {
     try {
       const { data, error } = await supabase
         .from('approval_tokens')
-        .select('id, token, expires_at, created_at, used_at')
+        .select('id, token, created_at, used_at')
         .eq('job_id', jobId)
         .eq('approval_type', 'extra_charges')
         .is('used_at', null)
@@ -1455,7 +1454,6 @@ export function JobDetails() {
       setPendingApproval({
         id: data.id,
         token: data.token,
-        expiresAt: data.expires_at,
         sentAt: data.created_at
       });
     } catch (err) {
@@ -1964,10 +1962,14 @@ export function JobDetails() {
     setAssigning(true);
     
     try {
+      const assignedAt = new Date().toISOString();
       const { error } = await supabase
         .from('jobs')
         .update({ 
           assigned_to: selectedSubcontractor,
+          assigned_at: assignedAt,
+          assignment_deadline: null,
+          assignment_notification_sent_at: null,
           assignment_status: 'pending',
           assignment_decision_at: null,
           declined_reason_code: null,

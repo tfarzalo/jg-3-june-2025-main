@@ -179,7 +179,7 @@ const ApprovalPreviewPage: React.FC = () => {
             {previewData.job.property?.name}
           </p>
           
-          {/* Mock Expiration Warning */}
+          {/* Permanent availability notice */}
           <div className="mt-6 mx-auto max-w-2xl bg-gradient-to-r from-red-50 to-orange-50 border-2 border-red-300 rounded-lg p-4 shadow-md">
             <p className="text-red-800 font-semibold flex items-center justify-center">
               <span className="text-2xl mr-2">⏰</span>

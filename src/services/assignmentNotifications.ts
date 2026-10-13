@@ -72,3 +72,17 @@ export async function findCurrentAssignmentNotification(jobId: string, assignedA
   if (error) throw error;
   return data?.id as string | undefined;
 }
+
+export async function findActionableAssignmentNotification(jobId: string, subcontractorId: string) {
+  const { data, error } = await supabase
+    .from('job_assignment_notifications')
+    .select('id')
+    .eq('job_id', jobId)
+    .eq('subcontractor_id', subcontractorId)
+    .in('status', ['pending', 'failed'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.id as string | undefined;
+}

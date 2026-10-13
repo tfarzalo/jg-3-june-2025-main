@@ -67,7 +67,7 @@ interface ApprovalData {
   decision_maker_email?: string | null;
   decision_maker_name?: string | null;
   decision_source?: 'internal_manual' | 'approval_link' | 'historical_record' | null;
-  expires_at: string;
+  expires_at?: string | null;
   used_at?: string | null;
   decision?: 'approved' | 'declined' | null;
   decision_at?: string | null;
@@ -111,7 +111,7 @@ const ApprovalPage: React.FC = () => {
   const [approvalLocked, setApprovalLocked] = useState(false);
   const [downloadingPDF, setDownloadingPDF] = useState(false);
 
-  // Post-decision read-only view (14-day window)
+  // Permanent post-decision read-only view.
   const [postDecisionView, setPostDecisionView] = useState<{
     decision: 'approved' | 'declined';
     decision_at: string;
@@ -675,8 +675,11 @@ const ApprovalPage: React.FC = () => {
     if (error.includes('no longer awaiting') || error.includes('no longer active')) {
       return 'This approval request is no longer active. Please contact JG Painting Pros Inc. if you need a current approval request.';
     }
+    // Legacy database functions used "expired" as a generic invalid-token
+    // error. Customer extra-charge links no longer expire, so do not present
+    // that obsolete explanation to recipients.
     if (error.includes('expired')) {
-      return 'This approval link has expired. Please request a new approval link from JG Painting Pros Inc.';
+      return 'This approval request could not be loaded. Please contact JG Painting Pros Inc. so we can verify the link.';
     }
     if (error.includes('not found') || error.includes('Invalid')) {
       return 'This approval link is invalid. Please verify the link or contact JG Painting Pros Inc.';

@@ -371,7 +371,11 @@ serve(async (req) => {
       },
     };
 
-    // Return success response with all data from approval_tokens
+    // Never expose the legacy expiration column for customer extra-charge
+    // links. These links are governed by job/request state, not by a clock.
+    const { expires_at: _legacyExpiresAt, ...approvalWithoutLegacyExpiration } = approval;
+
+    // Return success response with the approval data needed by the page.
     return new Response(
       JSON.stringify({ 
         valid: true,
@@ -379,7 +383,6 @@ serve(async (req) => {
           id: approval.id,
           type: approval.approval_type,
           status: resolvedStatus,
-          expiresAt: approval.expires_at,
           usedAt: approval.used_at,
           decision: approval.decision,
           decisionAt: approval.decision_at,
@@ -403,7 +406,7 @@ serve(async (req) => {
           description: approval.extra_charges_data?.items?.[0]?.description
         },
         token: {
-          ...approval,
+          ...approvalWithoutLegacyExpiration,
           action_available: actionAvailable,
           action_unavailable_reason: actionUnavailableReason,
           invalidation_reason: approval.invalidation_reason,

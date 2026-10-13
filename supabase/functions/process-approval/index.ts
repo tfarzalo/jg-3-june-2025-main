@@ -78,7 +78,8 @@ serve(async (req) => {
       );
     }
 
-    // Mark the approval token as used so the 14-day view window begins
+    // Mark the approval token as used. The completed approval page remains
+    // available as a permanent read-only record.
     await supabase
       .from('approval_tokens')
       .update({ used_at: new Date().toISOString() })

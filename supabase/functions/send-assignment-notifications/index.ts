@@ -139,10 +139,19 @@ Deno.serve(async (req) => {
         if (!response.ok || !emailResult.success) throw new Error(emailResult.error || 'Email service rejected the message');
 
         const sentAt = new Date().toISOString();
-        await admin.from('job_assignment_notifications').update({
-          status: 'sent', sent_at: sentAt, provider_message_id: emailResult.messageId || null,
-          last_error: null, updated_at: sentAt,
-        }).in('id', group.map((row) => row.id));
+        const groupIds = group.map((row) => row.id);
+        const { data: finalizedCount, error: finalizeError } = await admin.rpc(
+          'finalize_job_assignment_notifications',
+          {
+            p_ids: groupIds,
+            p_sent_at: sentAt,
+            p_provider_message_id: emailResult.messageId || null,
+          },
+        );
+        if (finalizeError) throw finalizeError;
+        if (Number(finalizedCount) !== group.length) {
+          throw new Error('Email sent, but one or more assignment revisions could not be finalized');
+        }
         await admin.from('assignment_tokens').update({ sent_at: sentAt }).in('token', Object.values(tokens));
         await admin.from('email_logs').insert(group.map((row) => ({
           job_id: row.job.id, recipient_email: recipient, subject: message.subject,

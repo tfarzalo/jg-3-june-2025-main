@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle, XCircle, Clock, Image as ImageIcon } from 'lucide-react';
+import { CheckCircle, XCircle, Image as ImageIcon } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { formatDate } from '../lib/dateUtils';
@@ -12,8 +12,6 @@ interface ApprovalData {
     id: string;
     type: string;
     status: string;
-    expiresAt: string;
-    viewExpiresAt?: string | null;
     amount?: number;
     description?: string;
     requested_by?: string;
@@ -146,7 +144,7 @@ export function PublicApprovalPage() {
             Invalid Approval Link
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mb-6">
-            {approvalData?.error || 'This approval link is invalid, expired, or has already been used.'}
+            {approvalData?.error || 'This approval link is invalid or is no longer available.'}
           </p>
         </div>
       </div>
@@ -155,7 +153,6 @@ export function PublicApprovalPage() {
 
   const { approval, job, images } = approvalData;
   const isAlreadyProcessed = approval?.status !== 'pending';
-  const isExpiredRecord = approval?.status === 'expired';
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-[#0F172A] py-8 px-4">
@@ -170,19 +167,15 @@ export function PublicApprovalPage() {
               <div className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
                 approval?.status === 'approved' 
                   ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                  : isExpiredRecord
-                  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
                   : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
               }`}>
                 {approval?.status === 'approved' ? (
                   <CheckCircle className="h-5 w-5" />
-                ) : isExpiredRecord ? (
-                  <Clock className="h-5 w-5" />
                 ) : (
                   <XCircle className="h-5 w-5" />
                 )}
                 <span className="font-semibold capitalize">
-                  {isExpiredRecord ? 'Response window closed' : approval?.status}
+                  {approval?.status}
                 </span>
               </div>
             )}
@@ -193,12 +186,6 @@ export function PublicApprovalPage() {
               <span className="text-gray-500 dark:text-gray-400">Approval Type:</span>
               <p className="font-semibold text-gray-900 dark:text-white capitalize">
                 {approval?.type?.replace('_', ' ')}
-              </p>
-            </div>
-            <div>
-              <span className="text-gray-500 dark:text-gray-400">Expires:</span>
-              <p className="font-semibold text-gray-900 dark:text-white">
-                {approval?.expiresAt ? formatDate(approval.expiresAt) : 'N/A'}
               </p>
             </div>
             {approval?.amount && (
@@ -361,14 +348,10 @@ export function PublicApprovalPage() {
             <div className={`inline-flex items-center justify-center w-14 h-14 rounded-full mb-4 ${
               approval?.status === 'approved'
                 ? 'bg-green-100 dark:bg-green-900/30'
-                : isExpiredRecord
-                ? 'bg-amber-100 dark:bg-amber-900/30'
                 : 'bg-red-100 dark:bg-red-900/30'
             }`}>
               {approval?.status === 'approved' ? (
                 <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
-              ) : isExpiredRecord ? (
-                <Clock className="h-8 w-8 text-amber-600 dark:text-amber-400" />
               ) : (
                 <XCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
               )}
@@ -376,13 +359,11 @@ export function PublicApprovalPage() {
             <p className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
               This request has been{' '}
               <span className={approval?.status === 'approved' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                {approval?.status === 'approved' ? 'Approved' : isExpiredRecord ? 'Closed' : 'Declined'}
+                {approval?.status === 'approved' ? 'Approved' : 'Declined'}
               </span>
             </p>
             <p className="text-gray-500 dark:text-gray-400 text-sm">
-              {isExpiredRecord
-                ? 'The response window has closed, but the record remains available for review.'
-                : 'No further action can be taken on this request.'}
+              No further action can be taken on this request.
             </p>
           </div>
         )}

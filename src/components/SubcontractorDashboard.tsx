@@ -48,6 +48,7 @@ interface Job {
   assignment_status?: 'pending' | 'accepted' | 'declined' | 'auto_declined' | 'in_progress' | 'completed' | null;
   assignment_decision_at?: string | null;
   assigned_at?: string | null;
+  assignment_notification_sent_at?: string | null;
   assignment_deadline?: string | null;
   declined_reason_code?: string | null;
   declined_reason_text?: string | null;
@@ -246,9 +247,11 @@ export function SubcontractorDashboard() {
       cancelJob: "Cancel Job",
       cancelJobTitle: "Cancel Job",
       cancelJobPrompt: "Are you sure you want to cancel this job?",
-      cancelTripChargeIntro: "Once confirmed, this job will be moved to Cancelled and the Cancellation Trip Charge will be added.",
+      cancelTripChargeIntro: "This job will be moved to Cancelled. Choose whether to add the Cancellation Trip Charge.",
       cancellationTripCharge: "Cancellation Trip Charge",
       subcontractorPay: "Subcontractor Pay",
+      noTripCharge: "No Trip Charge",
+      cancelWithTripCharge: "Cancel with Trip Charge",
       keepJobActive: "Keep Job Active",
       confirmCancelJob: "Confirm Cancellation",
       cancellingJob: "Cancelling...",
@@ -314,9 +317,11 @@ export function SubcontractorDashboard() {
       cancelJob: "Cancelar Trabajo",
       cancelJobTitle: "Cancelar Trabajo",
       cancelJobPrompt: "¿Está seguro de que desea cancelar este trabajo?",
-      cancelTripChargeIntro: "Una vez confirmado, este trabajo pasará a Cancelado y se agregará el Cargo de Viaje por Cancelación.",
+      cancelTripChargeIntro: "Este trabajo pasará a Cancelado. Elija si desea agregar el Cargo de Viaje por Cancelación.",
       cancellationTripCharge: "Cargo de Viaje por Cancelación",
       subcontractorPay: "Pago del Subcontratista",
+      noTripCharge: "Sin Cargo de Viaje",
+      cancelWithTripCharge: "Cancelar con Cargo de Viaje",
       keepJobActive: "Mantener Trabajo Activo",
       confirmCancelJob: "Confirmar Cancelación",
       cancellingJob: "Cancelando...",
@@ -766,6 +771,7 @@ export function SubcontractorDashboard() {
           assignment_status,
           assignment_decision_at,
           assigned_at,
+          assignment_notification_sent_at,
           assignment_deadline,
           declined_reason_code,
           declined_reason_text,
@@ -797,6 +803,7 @@ export function SubcontractorDashboard() {
           cancellation_trip_charge_sub_pay_amount
         `)
         .eq('assigned_to', userId)
+        .not('assignment_notification_sent_at', 'is', null)
         .in('current_phase_id', activePhaseIds)
         .lte('scheduled_date', endOfDate)
         .or(`scheduled_end_date.gte.${selectedDateOnly},and(scheduled_end_date.is.null,scheduled_date.gte.${startOfDate})`)
@@ -1354,7 +1361,7 @@ export function SubcontractorDashboard() {
     }
   };
 
-  const confirmCancelJobWithTripCharge = async () => {
+  const confirmCancelJob = async (includeTripCharge: boolean) => {
     const job = cancelJobModal.job;
     if (!job) return;
 
@@ -1366,8 +1373,8 @@ export function SubcontractorDashboard() {
         'cancel_assigned_job_with_trip_charge',
         {
           p_job_id: job.id,
-          p_bill_amount: cancelJobModal.billAmount,
-          p_sub_pay_amount: cancelJobModal.subPayAmount
+          p_bill_amount: includeTripCharge ? cancelJobModal.billAmount : 0,
+          p_sub_pay_amount: includeTripCharge ? cancelJobModal.subPayAmount : 0
         }
       );
 
@@ -2194,24 +2201,32 @@ export function SubcontractorDashboard() {
               </div>
             </div>
 
-            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <button
                 type="button"
-                onClick={closeCancelJobModal}
+                onClick={() => confirmCancelJob(false)}
                 disabled={cancelJobModal.submitting}
                 className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-[#2D3B4E] rounded-lg hover:bg-gray-200 dark:hover:bg-[#374151] transition-colors disabled:opacity-50"
               >
-                {text.keepJobActive}
+                {cancelJobModal.submitting ? text.cancellingJob : text.noTripCharge}
               </button>
               <button
                 type="button"
-                onClick={confirmCancelJobWithTripCharge}
+                onClick={() => confirmCancelJob(true)}
                 disabled={cancelJobModal.loading || cancelJobModal.submitting}
                 className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
               >
-                {cancelJobModal.submitting ? text.cancellingJob : text.confirmCancelJob}
+                {cancelJobModal.submitting ? text.cancellingJob : text.cancelWithTripCharge}
               </button>
             </div>
+            <button
+              type="button"
+              onClick={closeCancelJobModal}
+              disabled={cancelJobModal.submitting}
+              className="mt-3 w-full px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors disabled:opacity-50"
+            >
+              {text.keepJobActive}
+            </button>
           </div>
         </div>
       )}

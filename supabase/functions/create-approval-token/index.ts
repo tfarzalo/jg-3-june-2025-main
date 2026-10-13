@@ -46,7 +46,7 @@ serve(async (req) => {
       throw error
     }
 
-    return new Response(JSON.stringify({ token: data.token, expires_at: data.expires_at, reused: data.reused }), {
+    return new Response(JSON.stringify({ token: data.token, reused: data.reused }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
