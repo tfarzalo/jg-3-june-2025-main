@@ -13,6 +13,10 @@ const dashboard = readFileSync(
   new URL('../src/components/SubcontractorDashboard.tsx', import.meta.url),
   'utf8',
 );
+const compatibilityMigration = readFileSync(
+  new URL('../supabase/migrations/20261012100000_finalize_assignment_from_sent_notification.sql', import.meta.url),
+  'utf8',
+);
 
 describe('subcontractor assignment visibility gate', () => {
   it('resets finalized visibility whenever the assignment revision changes', () => {
@@ -50,5 +54,12 @@ describe('subcontractor assignment visibility gate', () => {
 
   it('also filters administrator dashboard previews to finalized assignments', () => {
     expect(dashboard).toContain(".not('assignment_notification_sent_at', 'is', null)");
+  });
+
+  it('supports deployed senders that mark the notification row sent directly', () => {
+    expect(compatibilityMigration).toContain("NEW.status = 'sent'");
+    expect(compatibilityMigration).toContain('j.assigned_to = NEW.subcontractor_id');
+    expect(compatibilityMigration).toContain('j.assigned_at = NEW.assignment_assigned_at');
+    expect(compatibilityMigration).toContain("j.assignment_status = 'pending'");
   });
 });
