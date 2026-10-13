@@ -196,14 +196,14 @@ const formatWufooExtraChargeItem = (item: ExtraChargeReportItem, includeNotes = 
   if (item.qty) parts.push(`Quantity/Hours: ${item.qty}${item.unit ? ` ${item.unit}` : ''}`);
   if (description && description !== name) parts.push(description);
   if (includeNotes && item.notes?.trim()) parts.push(`Notes: ${item.notes.trim()}`);
-  return `${parts.join(' - ')}.`;
+  return parts.join(' - ');
 };
 
 const buildWufooChargeDetails = (job: ReportJob, includeNotes = true) => {
   const parts = (job.extra_item_details || []).map(item => {
     if (item.type !== 'cancellation_trip_charge') return formatWufooExtraChargeItem(item, includeNotes);
     const reason = job.cancellation_reason?.trim();
-    return `${normalizeCurrencyForSentence(formatCurrency(item.bill))} Cancellation Trip Charge${reason ? ` - Reason: ${reason}` : ''}.`;
+    return `${normalizeCurrencyForSentence(formatCurrency(item.bill))} Cancellation Trip Charge${reason ? ` - Reason: ${reason}` : ''}`;
   });
 
   (job.misc_additional_cost_item_details || []).forEach(item => {
@@ -212,10 +212,10 @@ const buildWufooChargeDetails = (job: ReportJob, includeNotes = true) => {
       item.description?.trim(),
       includeNotes && item.notes?.trim() ? `Notes: ${item.notes.trim()}` : '',
     ].filter(Boolean).join(' - ');
-    parts.push(`${detail}.`);
+    parts.push(detail);
   });
 
-  return parts.join(' ');
+  return parts.join(' | ');
 };
 
 const cleanCombinedChargeText = (value?: string) => String(value || '').trim().replace(/\s*\|\s*/g, ' / ');

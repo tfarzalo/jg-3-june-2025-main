@@ -56,9 +56,11 @@ describe('Wufoo combined charge details', () => {
     const descriptionHeader = report.headers.find(header => header.startsWith('Description,'))!;
     const value = String(report.rows[0][descriptionHeader]);
 
-    expect(value).toContain('$10 Extra Charge - Prep Work: Repair 1 - Quantity/Hours: 1 hours - Edited description 1 - Notes: Note 1.');
-    expect(value).toContain('$120 Extra Charge - Prep Work: Repair 12 - Quantity/Hours: 12 hours - Edited description 12 - Notes: Note 12.');
+    expect(value).toContain('$10 Extra Charge - Prep Work: Repair 1 - Quantity/Hours: 1 hours - Edited description 1 - Notes: Note 1');
+    expect(value).toContain('$120 Extra Charge - Prep Work: Repair 12 - Quantity/Hours: 12 hours - Edited description 12 - Notes: Note 12');
     expect(value.match(/ Extra Charge/g)).toHaveLength(12);
+    expect(value.split(' | ')).toHaveLength(12);
+    expect(value).not.toContain('. $');
     expect(value).not.toContain('Paint apartment');
   });
 
@@ -73,8 +75,7 @@ describe('Wufoo combined charge details', () => {
     const header = report.headers.find(value => value.startsWith('Description,'))!;
     const value = String(report.rows[0][header]);
 
-    expect(value).toContain('$35 Misc Additional Cost - Replacement lock - Notes: Manager approved.');
-    expect(value).toContain('$18.50 Misc Additional Cost - Extra plastic.');
+    expect(value).toBe('$35 Misc Additional Cost - Replacement lock - Notes: Manager approved | $18.50 Misc Additional Cost - Extra plastic');
   });
 
   it('includes legacy extra-charge amount and description', async () => {
@@ -84,7 +85,7 @@ describe('Wufoo combined charge details', () => {
       work_order: {},
     });
     const header = report.headers.find(value => value.startsWith('Description,'))!;
-    expect(String(report.rows[0][header])).toContain('$75 Extra Charge - Extra Charges - Legacy cabinet repair.');
+    expect(String(report.rows[0][header])).toContain('$75 Extra Charge - Extra Charges - Legacy cabinet repair');
   });
 
   it('includes the cancellation trip amount and recorded cancellation reason', async () => {
@@ -111,6 +112,6 @@ describe('Wufoo combined charge details', () => {
 
     const report = await generateReport({ from: '2026-10-01', to: '2026-10-09', template, persistRun: false });
     const header = report.headers.find(value => value.startsWith('Description,'))!;
-    expect(String(report.rows[0][header])).toContain('$95 Cancellation Trip Charge - Reason: Unit still occupied.');
+    expect(String(report.rows[0][header])).toContain('$95 Cancellation Trip Charge - Reason: Unit still occupied');
   });
 });
