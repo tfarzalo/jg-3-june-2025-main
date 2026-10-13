@@ -280,6 +280,17 @@ const escapeHtml = (value: string) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 
+const APPROVAL_RESPONSE_LANGUAGE = 'Please review the additional charges and respond using the link below. Work associated with these additional charges will proceed after approval is received.';
+
+const removeLegacyApprovalDeadlineLanguage = (value: string) => value
+  .replace(
+    /(?:<p[^>]*>\s*)?If we do not receive a response within 15 minutes,?\s*we will proceed with the additional work to avoid project delays\.?(?:\s*<\/p>)?/gi,
+    APPROVAL_RESPONSE_LANGUAGE,
+  )
+  .replace(/(?:<p[^>]*>\s*)?[^<.!?]*(?:15\s+minutes|15-minute)[^<.!?]*[.!?](?:\s*<\/p>)?/gi, '')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
+
 const buildApprovalLinkHtml = (link: string) => `
   <div style="margin: 24px 0">
     <a
@@ -296,7 +307,7 @@ const buildApprovalLinkHtml = (link: string) => `
       target="_blank"
       rel="noopener noreferrer"
     >
-      Review & Approve
+      Review Extra Charges
     </a>
     <div style="margin-top:12px;font-size:12px;color:#6b7280">
       If the button above does not work, copy and paste this link into your browser:<br/>
@@ -386,7 +397,28 @@ export function EnhancedPropertyNotificationModal({
     const triggerPhase = selectedTemplate.trigger_phase?.toLowerCase() ?? '';
     return templateType === 'approval' || triggerPhase.includes('extra_charges');
   }, [selectedTemplate]);
-  const isApprovalEmail = notificationType === 'extra_charges' || isSelectedApprovalTemplate;
+  const detectedExtraChargeItems = Array.isArray(job?.work_order?.extra_charges_line_items)
+    ? job.work_order.extra_charges_line_items
+    : [];
+  const detectedMiscCostItems = Array.isArray(job?.work_order?.misc_additional_cost_items)
+    ? job.work_order.misc_additional_cost_items
+    : [];
+  const hasApprovalRequiredExtraCharges = Boolean(
+    detectedExtraChargeItems.length > 0
+    || job?.work_order?.has_extra_charges
+    || detectedMiscCostItems.some((item) => {
+      const { billAmount, subPayAmount } = getMiscAdditionalCostAmounts(item);
+      return billAmount > 0 || (subPayAmount ?? 0) > 0 || Boolean(item.description?.trim());
+    })
+    || Number(job?.repair_amount ?? job?.work_order?.repair_cost ?? 0) > 0
+    || Number(job?.extra_charges_details?.bill_amount ?? 0) > 0
+  );
+  const isApprovalEmail = notificationType === 'extra_charges'
+    || isSelectedApprovalTemplate
+    || hasApprovalRequiredExtraCharges;
+  const approvalWasAutoDetected = hasApprovalRequiredExtraCharges
+    && notificationType !== 'extra_charges'
+    && !isSelectedApprovalTemplate;
   const showsEmailImageSelection = isApprovalEmail || safeSections.some((section) =>
     ['before_images', 'after_images', 'sprinkler_images', 'other_images'].includes(section)
   );
@@ -551,7 +583,9 @@ export function EnhancedPropertyNotificationModal({
     if (!job?.property?.id) return;
     
     // Determine if this is approval or notification email
-    const mode = notificationType === 'extra_charges' ? 'approval' : 'notification';
+    const mode = hasApprovalRequiredExtraCharges || notificationType === 'extra_charges'
+      ? 'approval'
+      : 'notification';
     console.log(`📧 Initializing ${mode} recipients for property:`, job.property.id);
     
     try {
@@ -594,7 +628,7 @@ export function EnhancedPropertyNotificationModal({
       setPrimaryRecipientName(job.property?.ap_name || '');
       setContactTemplateTokens({});
     }
-  }, [job, notificationType]);
+  }, [hasApprovalRequiredExtraCharges, job, notificationType]);
 
   const fetchAssignedSubcontractor = useCallback(async () => {
     const existingName = job?.assigned_to_name || '';
@@ -697,6 +731,7 @@ export function EnhancedPropertyNotificationModal({
         .from('files')
         .select('id, name, path, storage_path, category, type, created_at, work_order_id, job_id')
         .in('category', relevantCategories)
+        .is('removed_from_current_work_order_at', null)
         .order('created_at', { ascending: true });
 
       if (job?.work_order?.id && job?.id) {
@@ -746,38 +781,12 @@ export function EnhancedPropertyNotificationModal({
             };
           } catch (previewError) {
             console.error('Error creating preview URL for notification image:', storagePath, previewError);
-            const publicUrl = getPublicUrl('files', storagePath);
-            return {
-              id: file.id,
-              file_name: file.name,
-              file_path: storagePath,
-              image_type: file.category || file.name,
-              category: file.category,
-              created_at: file.created_at,
-              normalizedType: normalizeImageType({
-                id: file.id,
-                file_path: storagePath,
-                file_name: file.name,
-                image_type: file.category || file.name,
-                category: file.category,
-                created_at: file.created_at,
-              }),
-              approvalType: normalizeApprovalImageType({
-                id: file.id,
-                file_path: storagePath,
-                file_name: file.name,
-                image_type: file.category || file.name,
-                category: file.category,
-                created_at: file.created_at,
-              }),
-              publicUrl,
-              source: 'files' as const,
-            };
+            return null;
           }
         })
       );
 
-      return resolvedFiles.filter((file): file is JobImageWithMeta => Boolean(file));
+      return resolvedFiles.filter(Boolean) as JobImageWithMeta[];
     } catch (error) {
       console.error('Error loading work order images from files table:', error);
       return [];
@@ -800,6 +809,7 @@ export function EnhancedPropertyNotificationModal({
 
       const normalizedTemplates = (templateData || []).map((template) => ({
           ...template,
+          body: removeLegacyApprovalDeadlineLanguage(template.body || ''),
           included_sections: template.included_sections ?? [],
         }));
 
@@ -1537,25 +1547,30 @@ export function EnhancedPropertyNotificationModal({
       if (!isApprovalEmail && !safeSections.includes(key)) return;
       const images = selectedImages.filter((img) => img.normalizedType === bucket);
       if (!images.length) return;
-      const cards = images
-        .map(
-          (image) => {
+      const imageRows = Array.from({ length: Math.ceil(images.length / 2) }, (_, rowIndex) => {
+        const rowImages = images.slice(rowIndex * 2, rowIndex * 2 + 2);
+        const cards = rowImages
+          .map((image) => {
             // Use CID inline reference if available; fall back to public URL
             const src = cidMap?.[image.id]
               ? `cid:${cidMap[image.id]}`
               : image.publicUrl;
             return `
-              <td style="padding:8px;">
-                <img src="${src}" alt="${escapeHtml(image.file_name)}" style="width:100%;max-width:200px;height:150px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;" />
+              <td width="216" valign="top" style="width:216px;max-width:216px;padding:8px;vertical-align:top;">
+                <img src="${src}" alt="${escapeHtml(image.file_name)}" width="200" height="150" style="display:block;width:200px;max-width:200px;height:150px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;" />
                 <p style="font-size:12px;color:#6b7280;margin-top:4px;">${escapeHtml(image.file_name)}</p>
               </td>
             `;
-          }
-        )
-        .join('');
+          })
+          .join('');
+        const emptyCell = rowImages.length === 1
+          ? '<td width="216" style="width:216px;max-width:216px;padding:8px;"></td>'
+          : '';
+        return `<tr>${cards}${emptyCell}</tr>`;
+      }).join('');
       sections.push(`
         <h3 style="margin:24px 0 8px;font-size:16px;color:#111827;">${IMAGE_TYPE_LABELS[bucket]} Images</h3>
-        <table style="width:100%;border-collapse:collapse;font-size:14px;"><tbody><tr>${cards}</tr></tbody></table>
+        <table role="presentation" width="100%" style="width:100%;max-width:464px;border-collapse:collapse;font-size:14px;"><tbody>${imageRows}</tbody></table>
       `);
     };
 
@@ -1786,6 +1801,12 @@ export function EnhancedPropertyNotificationModal({
       }
 
       if (isApprovalEmail) {
+        if (approvalWasAutoDetected) {
+          toast.info(
+            'Extra charges were detected. This message will be sent as an approval email with a Review Extra Charges link.',
+            { duration: 8000 },
+          );
+        }
         const tokenRecord = await createApprovalToken({ isPreview: false });
         approvalTokenId = tokenRecord.id;
         approvalTokenReused = Boolean(tokenRecord.reused);
@@ -1812,6 +1833,7 @@ export function EnhancedPropertyNotificationModal({
           jobId: job.id,
           metadata: {
             notification_type: effectiveNotificationType,
+            approval_auto_detected: approvalWasAutoDetected,
             selected_image_count: selectedImages.length,
             inline_attachment_count: inlineAttachments.length,
             skipped_inline_image_count: skippedInlineImages.length,
@@ -2476,6 +2498,18 @@ export function EnhancedPropertyNotificationModal({
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {approvalWasAutoDetected && (
+        <div className="flex items-start space-x-3 rounded-md border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-100">
+          <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold">Extra charges detected — approval email required</p>
+            <p className="text-xs mt-1">
+              Although a notification template was selected, this message will automatically be sent as an extra-charge approval email and will include a Review Extra Charges link.
+            </p>
           </div>
         </div>
       )}

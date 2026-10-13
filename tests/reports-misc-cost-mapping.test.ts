@@ -16,6 +16,28 @@ const detailsWithWorkOrder = (workOrder: Record<string, unknown>) => ({
 });
 
 describe('report misc additional cost mapping', () => {
+  it('excludes unapproved standard and miscellaneous charges from financial totals', () => {
+    const totals = calculateBillingTotals(
+      detailsWithWorkOrder({
+        extra_charges_line_items: [
+          { categoryName: 'Drywall', detailName: 'Patch', quantity: 2, billRate: 50, subRate: 25 },
+        ],
+        misc_additional_cost_items: [
+          { description: 'Materials', price: 30, subPay: 10 },
+        ],
+      }),
+      { ...baseJob, job_phase: { job_phase_label: 'Pending Work Order' }, total_billing_amount: 230 },
+      false
+    );
+
+    expect(totals.bill).toBe(100);
+    expect(totals.sub).toBe(50);
+    expect(totals.extra).toBe(0);
+    expect(totals.extraSub).toBe(0);
+    expect(totals.extraItems).toEqual([]);
+    expect(totals.miscAdditionalCostItems).toEqual([]);
+  });
+
   it('keeps misc cost out of numbered Extra Charge items when there are no extra charges', () => {
     const totals = calculateBillingTotals(
       detailsWithWorkOrder({

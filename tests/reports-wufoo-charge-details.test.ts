@@ -24,7 +24,14 @@ async function run(details: Record<string, unknown>, job: Record<string, unknown
     job_phase: { job_phase_label: 'Completed Work Orders' }, work_orders: [], ...job,
   }];
   database.from.mockImplementation((table: string) => queryWith(table === 'jobs' ? jobs : []));
-  database.rpc.mockResolvedValue({ data: details, error: null });
+  database.rpc.mockResolvedValue({ data: {
+    ...details,
+    authoritative_billing_totals: {
+      base_bill: 100, base_sub_pay: 50, standard_extra_bill: 0, standard_extra_sub_pay: 0,
+      misc_bill: 0, misc_sub_pay: 0, total_bill: 100, total_sub_pay: 50,
+      charges_approved: true, source: 'live_job_details',
+    },
+  }, error: null });
   return generateReport({ from: '2026-10-01', to: '2026-10-09', template, persistRun: false });
 }
 
@@ -93,7 +100,14 @@ describe('Wufoo combined charge details', () => {
       change_reason: 'Job cancelled by admin: Unit still occupied; Cancellation Trip Charge added ($95 bill / $40 sub pay)',
       changed_at: '2026-10-09T12:00:00Z',
     }]));
-    database.rpc.mockResolvedValue({ data: cancelledJob, error: null });
+    database.rpc.mockResolvedValue({ data: {
+      ...cancelledJob,
+      authoritative_billing_totals: {
+        base_bill: 0, base_sub_pay: 0, standard_extra_bill: 0, standard_extra_sub_pay: 0,
+        misc_bill: 0, misc_sub_pay: 0, total_bill: 95, total_sub_pay: 40,
+        charges_approved: false, source: 'cancellation_trip_charge',
+      },
+    }, error: null });
 
     const report = await generateReport({ from: '2026-10-01', to: '2026-10-09', template, persistRun: false });
     const header = report.headers.find(value => value.startsWith('Description,'))!;

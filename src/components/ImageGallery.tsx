@@ -106,7 +106,7 @@ export function ImageGallery({ workOrderId, jobId, folder, allowDelete = false }
       console.log('[ImageGallery] 📸 Processing', filteredData.length, 'files for preview URLs');
 
       // Generate preview URLs for all files
-      const filesWithPreviews = await Promise.all((filteredData || []).map(async (file) => {
+      const previewCandidates = await Promise.all((filteredData || []).map(async (file) => {
         try {
           console.log('[ImageGallery] Getting preview for:', file.storage_path || file.path);
           const previewResult = await getPreviewUrl(supabase, 'files', file.storage_path || file.path);
@@ -122,21 +122,12 @@ export function ImageGallery({ workOrderId, jobId, folder, allowDelete = false }
           };
         } catch (error) {
           console.error('[ImageGallery] ❌ Error getting preview URL for file:', file.storage_path || file.path, error);
-          // Fallback to public URL if preview fails
-          const { data: urlData } = supabase.storage
-            .from('files')
-            .getPublicUrl(file.storage_path || file.path);
-          return {
-            id: file.id,
-            file_path: file.storage_path || file.path,
-            file_name: file.name,
-            file_type: file.type,
-            file_size: file.size,
-            created_at: file.created_at,
-            previewResult: { kind: 'signed' as const, url: urlData.publicUrl }
-          };
+          // A public URL cannot repair a missing private Storage object. Omit
+          // stale records so current work-order views never show broken images.
+          return null;
         }
       }));
+      const filesWithPreviews = previewCandidates.filter(Boolean) as WorkOrderFile[];
 
       console.log('[ImageGallery] ✅ All files processed, setting state');
       setFiles(filesWithPreviews);

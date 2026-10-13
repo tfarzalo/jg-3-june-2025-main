@@ -21,6 +21,11 @@ async function run(filters: Record<string, unknown> = {}, columns = preset.colum
   query.then = (resolve: (value: unknown) => unknown) => Promise.resolve({ data: jobs, error: null }).then(resolve);
   database.from.mockReturnValue(query);
   database.rpc.mockResolvedValue({ data: {
+    authoritative_billing_totals: {
+      base_bill: 100, base_sub_pay: 50, standard_extra_bill: 100, standard_extra_sub_pay: 40,
+      misc_bill: 0, misc_sub_pay: 0, total_bill: 200, total_sub_pay: 90,
+      charges_approved: true, source: 'live_job_details',
+    },
     billing_details: { bill_amount: 100, sub_pay_amount: 50 },
     work_order: { extra_charges_line_items: [
       charge('Repair walls', note), charge('Repair door', 'Door note'),

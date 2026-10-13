@@ -218,6 +218,39 @@ const buildWufooChargeDetails = (job: ReportJob, includeNotes = true) => {
   return parts.join(' ');
 };
 
+const cleanCombinedChargeText = (value?: string) => String(value || '').trim().replace(/\s*\|\s*/g, ' / ');
+
+const buildCombinedExtraChargeDetails = (job: ReportJob, includeNotes = true) => {
+  const entries = (job.extra_item_details || []).map(item => {
+    const name = cleanCombinedChargeText(item.name) || 'Extra Charge';
+    const description = cleanCombinedChargeText(item.description);
+    const notes = includeNotes ? cleanCombinedChargeText(item.notes) : '';
+    const quantity = item.qty
+      ? `${item.qty}${item.unit ? ` ${cleanCombinedChargeText(item.unit)}` : ''}`
+      : '';
+    return [
+      name,
+      description && description !== name ? description : '',
+      quantity,
+      `Total: ${formatCurrency(item.bill)}`,
+      notes ? `Notes: ${notes}` : '',
+    ].filter(Boolean).join(' — ');
+  });
+
+  (job.misc_additional_cost_item_details || []).forEach(item => {
+    const description = cleanCombinedChargeText(item.description);
+    const notes = includeNotes ? cleanCombinedChargeText(item.notes) : '';
+    entries.push([
+      'Misc Additional Cost',
+      description,
+      `Total: ${formatCurrency(item.bill)}`,
+      notes ? `Notes: ${notes}` : '',
+    ].filter(Boolean).join(' — '));
+  });
+
+  return entries.join(' | ');
+};
+
 const EXTRA_CHARGE_ITEM_REPORT_COLUMNS: ReportColumn[] = EXTRA_CHARGE_ITEM_COLUMN_KEYS.map((key, index) => ({
   key,
   label: `Extra Charge ${index + 1}`,
@@ -244,7 +277,7 @@ export const REPORT_COLUMNS: ReportColumn[] = [
   { key: 'sub_pay', label: 'Sub Pay', value: job => job.sub_pay_total },
   // Extra charges breakdown
   ...EXTRA_CHARGE_ITEM_REPORT_COLUMNS,
-  { key: 'extra_items', label: 'Extra Charge Items (Combined)', value: job => job.extra_items },
+  { key: 'extra_items', label: 'Extra Charge Items (Combined)', value: job => buildCombinedExtraChargeDetails(job) },
   { key: 'misc_additional_cost_description', label: 'Miscellaneous Additional Cost Description', value: job => job.misc_additional_cost_description || '' },
   { key: 'misc_additional_cost_bill', label: 'Miscellaneous Additional Cost Bill', value: job => job.misc_additional_cost_bill },
   { key: 'misc_additional_cost_sub_pay', label: 'Miscellaneous Additional Cost Sub Pay', value: job => job.misc_additional_cost_sub_pay },
@@ -737,6 +770,8 @@ export async function generateReport(params: {
       const extraItemIndex = EXTRA_CHARGE_ITEM_COLUMN_KEYS.indexOf(column.key);
       row[column.label] = column.key === 'wufoo_charge_details'
         ? buildWufooChargeDetails(job, includeExtraChargeNotes)
+        : column.key === 'extra_items'
+          ? buildCombinedExtraChargeDetails(job, true)
         : includeExtraChargeNotes && extraItemIndex >= 0
         ? formatExtraChargeReportItemText(job.extra_item_details?.[extraItemIndex], true)
         : includeExtraChargeNotes && column.key === 'extra_items'
@@ -1073,7 +1108,7 @@ export function openReportInNewWindow(report: GeneratedReport) {
     .meta { color: #4b5563; margin-bottom: 20px; }
     .wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
     table { border-collapse: collapse; width: 100%; min-width: 900px; }
-    th, td { border-bottom: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-size: 13px; vertical-align: top; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-size: 13px; vertical-align: top; overflow-wrap: anywhere; }
     th { background: #f9fafb; font-weight: 700; position: sticky; top: 0; }
     tr:nth-child(even) td { background: #fcfcfd; }
   </style>
@@ -1115,46 +1150,136 @@ async function saveReportRun(template: ReportTemplate, report: GeneratedReport) 
   }
 }
 
+function extractChargePresentation(details: unknown, job: ReportJob, includeApprovalCharges: boolean) {
+  const jobDetails = objectFrom(details);
+  const workOrder = objectFrom(jobDetails?.work_order);
+  const legacyExtra = objectFrom(jobDetails?.extra_charges_details);
+  const extraItems: ExtraChargeReportItem[] = [];
+  const miscItems: MiscAdditionalCostReportItem[] = [];
+  const miscDescriptions: string[] = [];
+
+  if (isCancellationTripChargeJob(job, jobDetails)) {
+    const bill = numberFrom(job.cancellation_trip_charge_bill_amount, jobDetails?.cancellation_trip_charge_bill_amount);
+    const sub = numberFrom(job.cancellation_trip_charge_sub_pay_amount, jobDetails?.cancellation_trip_charge_sub_pay_amount);
+    extraItems.push({
+      name: 'Cancellation Trip Charge', type: 'cancellation_trip_charge', description: '',
+      bill: Number(bill.toFixed(2)), sub: Number(sub.toFixed(2)), profit: Number((bill - sub).toFixed(2)),
+    });
+    return { extraItems, miscItems, miscDescriptions };
+  }
+
+  if (!includeApprovalCharges) return { extraItems, miscItems, miscDescriptions };
+
+  const lineItems = arrayFrom(workOrder?.extra_charges_line_items);
+  lineItems.forEach(item => {
+    const quantity = numberFrom(item.quantity);
+    const isHourly = Boolean(item.isHourly);
+    const reportQuantity = isHourly && item.customizeHours ? numberFrom(item.billHours, quantity) : quantity;
+    const name = [
+      String(item.categoryName ?? item.category_name ?? item.category ?? '').trim(),
+      String(item.detailName ?? item.detail_name ?? item.name ?? item.item ?? '').trim(),
+    ].filter(Boolean).join(': ');
+    const bill = numberFrom(item.calculatedBillAmount, quantity * numberFrom(item.billRate));
+    const sub = numberFrom(item.calculatedSubAmount, quantity * numberFrom(item.subRate));
+    extraItems.push({
+      name: name || undefined,
+      type: 'extra_charge',
+      description: String(item.description ?? '').trim() || name || 'Extra Charge',
+      notes: String(item.notes ?? '').trim() || undefined,
+      unit: String(item.unit ?? item.unit_type ?? '').trim() || (isHourly ? 'hours' : 'units'),
+      qty: reportQuantity || undefined,
+      bill: Number(bill.toFixed(2)),
+      sub: Number(sub.toFixed(2)),
+      profit: Number((bill - sub).toFixed(2)),
+    });
+  });
+
+  if (lineItems.length === 0 && legacyExtra) {
+    const bill = numberFrom(legacyExtra.bill_amount);
+    const sub = numberFrom(legacyExtra.sub_pay_amount);
+    if (bill || sub) extraItems.push({
+      name: 'Extra Charges', type: 'extra_charge',
+      description: String(legacyExtra.description ?? '').trim(),
+      bill: Number(bill.toFixed(2)), sub: Number(sub.toFixed(2)), profit: Number((bill - sub).toFixed(2)),
+    });
+  }
+
+  const miscCosts = arrayFrom(workOrder?.misc_additional_cost_items);
+  miscCosts.forEach(item => {
+    const { billAmount, subPayAmount } = getMiscAdditionalCostAmounts(item);
+    const description = getMiscAdditionalCostItemDescription(item) || GENERIC_MISC_ADDITIONAL_COST_DESCRIPTION;
+    addUniqueDescription(miscDescriptions, description);
+    miscItems.push({
+      description,
+      notes: String(item.notes ?? item.note ?? '').trim() || undefined,
+      bill: Number(billAmount.toFixed(2)),
+      sub: Number((subPayAmount ?? 0).toFixed(2)),
+    });
+  });
+
+  if (miscCosts.length === 0) {
+    const bill = numberFrom(jobDetails?.repair_amount, workOrder?.repair_cost);
+    const sub = numberFrom(jobDetails?.repair_sub_pay);
+    if (bill || sub) {
+      const description = normalizeMiscAdditionalCostDescription(workOrder?.repair_description) || GENERIC_MISC_ADDITIONAL_COST_DESCRIPTION;
+      addUniqueDescription(miscDescriptions, description);
+      miscItems.push({ description, bill: Number(bill.toFixed(2)), sub: Number(sub.toFixed(2)) });
+    }
+  }
+
+  return { extraItems, miscItems, miscDescriptions };
+}
+
 async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob[]> {
   const snapshotTotals = await fetchSnapshotTotals(jobs);
   const cancellationReasons = await fetchCancellationReasons(jobs);
 
   return Promise.all(jobs.map(async job => {
-    const directMiscAdditionalCostDetails = getMiscAdditionalCostReportDetails(firstWorkOrder(job));
-    // Always attempt to fetch detailed billing via RPC for the most accurate breakdown.
     try {
-      const { data, error } = await supabase.rpc('get_job_details', { p_job_id: job.id });
+      const { data, error } = await supabase.rpc('get_job_details_with_billing_totals', { p_job_id: job.id });
       if (!error && data) {
-        const totals = calculateBillingTotals(data, job);
-        const miscAdditionalCostDescription = directMiscAdditionalCostDetails.description || totals.miscAdditionalCostDescription || '';
-        const miscAdditionalCostBill = totals.miscAdditionalCostBill || directMiscAdditionalCostDetails.bill || 0;
-        const miscAdditionalCostSubPay = totals.miscAdditionalCostSubPay || directMiscAdditionalCostDetails.subPay || 0;
-        const extraItemDetails = totals.extraItems || [];
+        const authoritative = objectFrom(objectFrom(data)?.authoritative_billing_totals);
+        if (!authoritative) throw new Error('The authoritative billing payload was not returned. Run the billing totals migration first.');
+        const chargesApproved = authoritative.charges_approved === true;
+        const presentation = extractChargePresentation(data, job, chargesApproved);
+        const totalBill = numberFrom(authoritative.total_bill);
+        const totalSub = numberFrom(authoritative.total_sub_pay);
+        const source = String(authoritative.source ?? '');
+        const isSnapshot = source === 'financial_snapshot';
+        const baseBill = isSnapshot ? totalBill : numberFrom(authoritative.base_bill);
+        const baseSub = isSnapshot ? totalSub : numberFrom(authoritative.base_sub_pay);
+        const standardExtraBill = numberFrom(authoritative.standard_extra_bill);
+        const standardExtraSub = numberFrom(authoritative.standard_extra_sub_pay);
+        const miscBill = numberFrom(authoritative.misc_bill);
+        const miscSub = numberFrom(authoritative.misc_sub_pay);
+        const extraBill = standardExtraBill;
+        const extraSub = standardExtraSub;
         return {
           ...job,
-          report_total_billing_amount: totals.bill,
-          sub_pay_total: totals.sub,
-          extra_charges_total: totals.extra ?? 0,
-          extra_charges_list: totals.extraList ?? '',
-          base_billing_total: totals.base ?? 0,
-          base_pay_to_sub: totals.baseSub ?? 0,
-          base_profit: Number(((totals.base ?? 0) - (totals.baseSub ?? 0)).toFixed(2)),
-          base_profit_margin: totals.base ? Number(((((totals.base ?? 0) - (totals.baseSub ?? 0)) / (totals.base ?? 1)) * 100).toFixed(2)) : 0,
-          extra_sub_total: totals.extraSub ?? 0,
-          extra_profit: Number(((totals.extra ?? 0) - (totals.extraSub ?? 0)).toFixed(2)),
-          extra_profit_margin: totals.extra ? Number((((totals.extra ?? 0) - (totals.extraSub ?? 0)) / (totals.extra ?? 1) * 100).toFixed(2)) : 0,
-          extra_items: extraItemDetails.map(i => `${formatExtraChargeReportItemText(i)}`).join(';; '),
-          extra_item_details: extraItemDetails,
-          misc_additional_cost_description: miscAdditionalCostDescription,
-          misc_additional_cost_bill: miscAdditionalCostBill,
-          misc_additional_cost_sub_pay: miscAdditionalCostSubPay,
-          misc_additional_cost_item_details: totals.miscAdditionalCostItems || [],
+          report_total_billing_amount: totalBill,
+          sub_pay_total: totalSub,
+          extra_charges_total: extraBill,
+          extra_charges_list: presentation.extraItems.map(i => `${i.description}${i.qty ? ' x' + i.qty : ''} (${i.bill.toFixed(2)})`).join('; '),
+          base_billing_total: baseBill,
+          base_pay_to_sub: baseSub,
+          base_profit: Number((baseBill - baseSub).toFixed(2)),
+          base_profit_margin: baseBill ? Number((((baseBill - baseSub) / baseBill) * 100).toFixed(2)) : 0,
+          extra_sub_total: extraSub,
+          extra_profit: Number((extraBill - extraSub).toFixed(2)),
+          extra_profit_margin: extraBill ? Number((((extraBill - extraSub) / extraBill) * 100).toFixed(2)) : 0,
+          extra_items: presentation.extraItems.map(i => `${formatExtraChargeReportItemText(i)}`).join(';; '),
+          extra_item_details: presentation.extraItems,
+          misc_additional_cost_description: presentation.miscDescriptions.join('; '),
+          misc_additional_cost_bill: miscBill,
+          misc_additional_cost_sub_pay: miscSub,
+          misc_additional_cost_item_details: presentation.miscItems,
           cancellation_reason: cancellationReasons.get(job.id) || null,
           wufoo_charge_details: '',
         };
       }
+      if (error) throw error;
     } catch (e) {
-      console.warn(`get_job_details RPC failed for job ${job.id}, will fall back to snapshot totals if available`, e);
+      console.warn(`Authoritative billing RPC failed for job ${job.id}; checking immutable snapshot fallback`, e);
     }
 
     // If RPC failed or returned no data, fall back to snapshot totals when available
@@ -1207,26 +1332,7 @@ async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob
       };
     }
 
-    // Last resort: unable to fetch details or snapshot, fall back to best-effort numbers from job
-    return {
-      ...job,
-      report_total_billing_amount: billingTotalForReport(job),
-      sub_pay_total: '',
-      extra_charges_total: 0,
-      extra_charges_list: '',
-      base_billing_total: 0,
-      base_pay_to_sub: 0,
-      base_profit: 0,
-      base_profit_margin: 0,
-      extra_sub_total: 0,
-      extra_profit: 0,
-      extra_profit_margin: 0,
-      extra_items: '',
-      extra_item_details: [],
-      misc_additional_cost_description: '',
-      misc_additional_cost_bill: 0,
-      misc_additional_cost_sub_pay: 0,
-    };
+    throw new Error(`Unable to load authoritative billing totals for work order ${job.work_order_num ?? job.id}. Run the report billing migration before generating reports.`);
   }));
 }
 
@@ -1411,13 +1517,14 @@ function numericReportValue(value: unknown) {
 
 function shouldWrapExcelColumn(header: string) {
   return header === WUFOO_STYLE_DESCRIPTION_HEADER ||
+    header === 'Extra Charge Items (Combined)' ||
     header.toLowerCase().includes('description') ||
     header.toLowerCase().includes('comments');
 }
 
 // End of helpers
 
-export function calculateBillingTotals(details: unknown, job: ReportJob): BillingTotals & {
+export function calculateBillingTotals(details: unknown, job: ReportJob, includeApprovalCharges = true): BillingTotals & {
   extra?: number;
   extraList?: string;
   base?: number;
@@ -1472,6 +1579,7 @@ export function calculateBillingTotals(details: unknown, job: ReportJob): Billin
   let nonBaseSub: number = 0;
   let extraChargeBill: number = 0;
   let extraChargeSub: number = 0;
+  let excludedApprovalBill: number = 0;
 
   const extraItems: ExtraChargeReportItem[] = [];
   const miscDescriptions: string[] = [];
@@ -1492,13 +1600,21 @@ export function calculateBillingTotals(details: unknown, job: ReportJob): Billin
     }, { bill: 0, sub: 0 } as { bill: number; sub: number });
 
     // Coerce to Number to satisfy TypeScript narrowing (reduce items may be unknown)
-    nonBaseBill += Number(lineTotals.bill);
-    nonBaseSub += Number(lineTotals.sub);
-    extraChargeBill += Number(lineTotals.bill);
-    extraChargeSub += Number(lineTotals.sub);
+    if (includeApprovalCharges) {
+      nonBaseBill += Number(lineTotals.bill);
+      nonBaseSub += Number(lineTotals.sub);
+      extraChargeBill += Number(lineTotals.bill);
+      extraChargeSub += Number(lineTotals.sub);
+    } else {
+      excludedApprovalBill += Number(lineTotals.bill);
+    }
 
-    extraLineItems.forEach((item: any) => {
+    if (includeApprovalCharges) extraLineItems.forEach((item: any) => {
       const qty = numberFrom(item.quantity);
+      const isHourly = Boolean(item.isHourly);
+      const reportQuantity = isHourly && item.customizeHours
+        ? numberFrom(item.billHours, qty)
+        : qty;
       const itemName = [
         String(item.categoryName ?? item.category_name ?? item.category ?? '').trim(),
         String(item.detailName ?? item.detail_name ?? item.name ?? item.item ?? '').trim(),
@@ -1513,8 +1629,8 @@ export function calculateBillingTotals(details: unknown, job: ReportJob): Billin
         type: 'extra_charge',
         description: desc || itemName || 'Extra Charge',
         notes: String(item.notes ?? '').trim() || undefined,
-        unit: unit || undefined,
-        qty: qty || undefined,
+        unit: unit || (isHourly ? 'hours' : 'units'),
+        qty: reportQuantity || undefined,
         bill: Number(amt.toFixed(2)),
         sub: Number(subAmt.toFixed(2)),
         profit
@@ -1523,11 +1639,15 @@ export function calculateBillingTotals(details: unknown, job: ReportJob): Billin
   } else {
     const eBill = numberFrom(extra?.bill_amount);
     const eSub = numberFrom(extra?.sub_pay_amount);
-    nonBaseBill += eBill;
-    nonBaseSub += eSub;
-    extraChargeBill += eBill;
-    extraChargeSub += eSub;
-    if (extra && (extra?.bill_amount || extra?.sub_pay_amount)) {
+    if (includeApprovalCharges) {
+      nonBaseBill += eBill;
+      nonBaseSub += eSub;
+      extraChargeBill += eBill;
+      extraChargeSub += eSub;
+    } else {
+      excludedApprovalBill += eBill;
+    }
+    if (includeApprovalCharges && extra && (extra?.bill_amount || extra?.sub_pay_amount)) {
       extraItems.push({ name: 'Extra Charges', description: String(extra?.description ?? '').trim(), bill: Number(eBill.toFixed(2)), sub: Number(eSub.toFixed(2)), profit: Number((eBill - eSub).toFixed(2)) });
     }
   }
@@ -1566,24 +1686,32 @@ export function calculateBillingTotals(details: unknown, job: ReportJob): Billin
       const { billAmount, subPayAmount } = getMiscAdditionalCostAmounts(item);
       const subAmount = subPayAmount ?? 0;
       const description = getMiscAdditionalCostItemDescription(item) || GENERIC_MISC_ADDITIONAL_COST_DESCRIPTION;
-      nonBaseBill += billAmount;
-      nonBaseSub += subAmount;
-      miscAdditionalCostBill += billAmount;
-      miscAdditionalCostSubPay += subAmount;
-      addUniqueDescription(miscDescriptions, description);
-      miscAdditionalCostReportItems.push({
-        description,
-        notes: String(item.notes ?? item.note ?? '').trim() || undefined,
-        bill: Number(billAmount.toFixed(2)),
-        sub: Number(subAmount.toFixed(2)),
-      });
+      if (includeApprovalCharges) {
+        nonBaseBill += billAmount;
+        nonBaseSub += subAmount;
+        miscAdditionalCostBill += billAmount;
+        miscAdditionalCostSubPay += subAmount;
+        addUniqueDescription(miscDescriptions, description);
+        miscAdditionalCostReportItems.push({
+          description,
+          notes: String(item.notes ?? item.note ?? '').trim() || undefined,
+          bill: Number(billAmount.toFixed(2)),
+          sub: Number(subAmount.toFixed(2)),
+        });
+      } else {
+        excludedApprovalBill += billAmount;
+      }
     });
   } else {
     const repairBill = numberFrom(jobDetails.repair_amount, workOrder?.repair_cost);
     const repairSub = numberFrom(jobDetails.repair_sub_pay);
-    nonBaseBill += repairBill;
-    nonBaseSub += repairSub;
-    if (repairBill > 0 || repairSub > 0) {
+    if (includeApprovalCharges) {
+      nonBaseBill += repairBill;
+      nonBaseSub += repairSub;
+    } else {
+      excludedApprovalBill += repairBill;
+    }
+    if (includeApprovalCharges && (repairBill > 0 || repairSub > 0)) {
       const description = normalizeMiscAdditionalCostDescription(workOrder?.repair_description) || GENERIC_MISC_ADDITIONAL_COST_DESCRIPTION;
       miscAdditionalCostBill += repairBill;
       miscAdditionalCostSubPay += repairSub;
@@ -1606,7 +1734,7 @@ export function calculateBillingTotals(details: unknown, job: ReportJob): Billin
   } else if (baseBill > 0) {
     basePortion = baseBill;
   } else if (storedBill > 0) {
-    basePortion = Math.max(0, storedBill - nonBaseBill);
+    basePortion = Math.max(0, storedBill - nonBaseBill - excludedApprovalBill);
   } else {
     basePortion = 0;
   }
@@ -1616,13 +1744,15 @@ export function calculateBillingTotals(details: unknown, job: ReportJob): Billin
   // where some billing components may only exist in jobs.total_billing_amount.
   const bill = isPhaseCancelled
     ? nonBaseBill
-    : Math.max(calculatedBill, storedBill);
+    : includeApprovalCharges
+      ? Math.max(calculatedBill, storedBill)
+      : calculatedBill;
   const baseSubTotal = Number((!isPhaseCancelled && basePortion > 0 ? baseSub : 0).toFixed(2));
   const sub = bill > 0 ? baseSubTotal + nonBaseSub : 0;
 
   const extraPortion = Number((extraChargeBill || 0).toFixed(2));
   const extraSubTotal = Number((extraChargeSub || 0).toFixed(2));
-  if (directMiscAdditionalCostDetails.description) {
+  if (includeApprovalCharges && directMiscAdditionalCostDetails.description) {
     addUniqueDescription(miscDescriptions, directMiscAdditionalCostDetails.description);
   }
 
@@ -1910,7 +2040,6 @@ function normalizeColumns(columns: unknown): string[] {
 
 function expandReportColumnKey(column: string): string[] {
   if (column === 'paint_type') return ['job_category'];
-  if (column === 'extra_items') return EXTRA_CHARGE_ITEM_COLUMN_KEYS;
   return [column];
 }
 

@@ -78,15 +78,9 @@ export async function deleteFilesByStoragePaths(filePaths: Iterable<string>): Pr
         continue;
       }
 
-      const { error: storageError } = await supabase.storage
-        .from('files')
-        .remove(Array.from(storagePaths));
-
-      if (storageError) {
-        errors.push(`Unable to delete storage file ${filePath}: ${storageError.message}`);
-        continue;
-      }
-
+      // Delete the database record before the Storage object. Database triggers
+      // protect original-submission evidence; deleting Storage first could leave
+      // a protected row pointing at an object that no longer exists.
       if (recordIds.length > 0) {
         const { error: dbError } = await supabase
           .from('files')
@@ -109,7 +103,18 @@ export async function deleteFilesByStoragePaths(filePaths: Iterable<string>): Pr
         }
       }
 
+      // The current-work-order reference is now gone. Count that removal even
+      // if the best-effort Storage cleanup below needs an administrator retry.
       deleted += 1;
+
+      const { error: storageError } = await supabase.storage
+        .from('files')
+        .remove(Array.from(storagePaths));
+
+      if (storageError) {
+        errors.push(`The file was removed from the work order, but Storage cleanup failed for ${filePath}: ${storageError.message}`);
+        continue;
+      }
     } catch (error) {
       errors.push(`Unable to delete ${filePath}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }

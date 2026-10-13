@@ -67,7 +67,6 @@ interface ApprovalData {
   decision_maker_email?: string | null;
   decision_maker_name?: string | null;
   decision_source?: 'internal_manual' | 'approval_link' | 'historical_record' | null;
-  expires_at?: string | null;
   used_at?: string | null;
   decision?: 'approved' | 'declined' | null;
   decision_at?: string | null;

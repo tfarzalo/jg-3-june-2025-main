@@ -873,7 +873,7 @@ export function EmailTemplateManager() {
                     </label>
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                    This is the first paragraph of the email. The link to review and approve will be automatically added after this.
+                    This is the first paragraph of the email. The link to review the extra charges will be automatically added after this.
                   </p>
                   
                   <div className="flex flex-wrap gap-1 mb-2">
@@ -1005,7 +1005,7 @@ export function EmailTemplateManager() {
 
           const generateReviewLink = () => {
             const linkText = template.template_type === 'approval'
-              ? 'Click here to review and approve'
+              ? 'Review Extra Charges'
               : 'Click here to review the details';
             
             return `<p style="margin: 20px 0; font-size: 16px; text-align: left;">

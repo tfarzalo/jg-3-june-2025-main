@@ -7,6 +7,7 @@ import { buildStoragePath } from '../utils/storagePaths';
 import { FILE_CATEGORY_PATHS, FOLDER_KEY_TO_CATEGORY, LEGACY_CATEGORY_ALIASES } from '../utils/fileCategories';
 import { getPreviewUrl, uploadAndPreview, PreviewResult } from '../utils/storagePreviews';
 import { optimizeImage } from '../lib/utils/imageOptimization';
+import { deleteFilesByStoragePaths } from '../lib/utils/fileUpload';
 
 interface ImageUploadProps {
   jobId: string;
@@ -75,7 +76,6 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   readOnly = false,
   required = false,
   resetTrigger,
-  onImageDelete,
   onUploadingChange,
   onExistingFilesChange,
   language = 'en'
@@ -85,7 +85,6 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [selectedImage, setSelectedImage] = useState<UploadedFile | null>(null);
-  const [filesToDelete, setFilesToDelete] = useState<Set<string>>(new Set());
   const { user, initializing: authLoading } = useAuth();
   const fileInputId = useId();
   const revokeRef = useRef<(() => void) | null>(null);
@@ -752,12 +751,19 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
     );
   };
 
-  const handleDeleteImage = (filePath: string) => {
-    if (onImageDelete) {
-      onImageDelete(filePath);
+  const handleDeleteImage = async (filePath: string) => {
+    const result = await deleteFilesByStoragePaths([filePath]);
+    if (result.errors.length > 0 && result.deleted === 0) {
+      onError?.(result.errors.join(' '));
+      return;
     }
-    setFilesToDelete(prev => new Set([...prev, filePath]));
-    setUploadedFiles(prev => prev.filter(file => file.file_path !== filePath));
+
+    setUploadedFiles((previous) => {
+      const remaining = previous.filter((file) => file.file_path !== filePath);
+      onExistingFilesChangeRef.current?.(remaining.length > 0, remaining.length);
+      return remaining;
+    });
+    if (result.errors.length > 0) onError?.(result.errors.join(' '));
   };
 
   return (
@@ -910,7 +916,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      handleDeleteImage(file.file_path);
+                      void handleDeleteImage(file.file_path);
                     }}
                     className="shrink-0 touch-manipulation text-red-500 opacity-60 transition-opacity hover:text-red-700 group-hover:opacity-100 dark:text-red-400 dark:hover:text-red-300 sm:opacity-0 sm:group-hover:opacity-100"
                     title="Delete file"

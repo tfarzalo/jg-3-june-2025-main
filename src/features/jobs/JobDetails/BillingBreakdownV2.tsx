@@ -157,24 +157,27 @@ const ExtraChargeHoursEditor: React.FC<{
   const getInitialSubPayHours = () => lineItem.customize_hours && lineItem.sub_pay_hours !== undefined
     ? String(lineItem.sub_pay_hours)
     : '';
-  const [customizeHours, setCustomizeHours] = useState(lineItem.customize_hours);
+  const [customizeHours, setCustomizeHours] = useState(Boolean(lineItem.customize_hours));
+  const [baseHours, setBaseHours] = useState(String(lineItem.quantity_or_hours));
   const [billHours, setBillHours] = useState(getInitialBillHours);
   const [subPayHours, setSubPayHours] = useState(getInitialSubPayHours);
 
   useEffect(() => {
-    setCustomizeHours(lineItem.customize_hours);
+    setCustomizeHours(Boolean(lineItem.customize_hours));
+    setBaseHours(String(lineItem.quantity_or_hours));
     setBillHours(getInitialBillHours());
     setSubPayHours(getInitialSubPayHours());
   }, [lineItem.customize_hours, lineItem.bill_hours, lineItem.sub_pay_hours, lineItem.quantity_or_hours]);
 
+  const parsedBaseHours = baseHours.trim() === '' ? Number.NaN : Number(baseHours);
   const parsedBillHours = billHours.trim() === '' ? Number.NaN : Number(billHours);
   const parsedSubPayHours = subPayHours.trim() === '' ? Number.NaN : Number(subPayHours);
-  const isValid = !customizeHours || (
+  const isValid = Number.isFinite(parsedBaseHours) && parsedBaseHours >= 0 && (!customizeHours || (
     Number.isFinite(parsedBillHours) &&
     Number.isFinite(parsedSubPayHours) &&
     parsedBillHours >= 0 &&
     parsedSubPayHours >= 0
-  );
+  ));
 
   return (
     <div className="rounded-lg border border-amber-200 bg-white/80 p-4 dark:border-amber-900/50 dark:bg-zinc-900/40">
@@ -200,6 +203,21 @@ const ExtraChargeHoursEditor: React.FC<{
             />
             Customize Hour Totals
           </label>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-200">
+              Base Hours
+            </label>
+            <input
+              type="number"
+              min="0"
+              step="0.25"
+              value={baseHours}
+              onChange={(event) => setBaseHours(event.target.value)}
+              disabled={saving}
+              inputMode="decimal"
+              className="mt-1 w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:opacity-60 dark:border-amber-800 dark:bg-zinc-800 dark:text-white"
+            />
+          </div>
           {customizeHours && (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
@@ -241,9 +259,10 @@ const ExtraChargeHoursEditor: React.FC<{
           type="button"
           onClick={() => onSave?.({
             itemId: lineItem.source_item_id,
+            baseHours: parsedBaseHours,
             customizeHours,
-            billHours: customizeHours ? parsedBillHours : lineItem.quantity_or_hours,
-            subPayHours: customizeHours ? parsedSubPayHours : lineItem.quantity_or_hours,
+            billHours: customizeHours ? parsedBillHours : parsedBaseHours,
+            subPayHours: customizeHours ? parsedSubPayHours : parsedBaseHours,
           })}
           disabled={saving || !isValid}
           className="inline-flex items-center justify-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"

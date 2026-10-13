@@ -57,6 +57,7 @@ export type JobBillingPayload = {
   saving_extra_charge_hours?: boolean;
   on_extra_charge_hours_save?: (params: {
     itemId: string;
+    baseHours: number;
     customizeHours: boolean;
     billHours: number;
     subPayHours: number;

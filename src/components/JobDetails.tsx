@@ -2599,6 +2599,7 @@ export function JobDetails() {
       let fileQuery = supabase
         .from('files')
         .select('id, storage_path, path, name, category')
+        .is('removed_from_current_work_order_at', null)
         .order('created_at', { ascending: true });
 
       if (workOrderId && jobIdForFiles) {
@@ -3952,11 +3953,13 @@ export function JobDetails() {
 
   const handleSaveExtraChargeHours = async ({
     itemId,
+    baseHours,
     customizeHours,
     billHours,
     subPayHours,
   }: {
     itemId: string;
+    baseHours: number;
     customizeHours: boolean;
     billHours: number;
     subPayHours: number;
@@ -3974,10 +3977,12 @@ export function JobDetails() {
       return;
     }
 
-    const quantity = Number(existingItem.quantity) || 0;
+    const quantity = Number(baseHours);
     const nextBillHours = customizeHours ? Number(billHours) : quantity;
     const nextSubPayHours = customizeHours ? Number(subPayHours) : quantity;
     if (
+      !Number.isFinite(quantity) ||
+      quantity < 0 ||
       !Number.isFinite(nextBillHours) ||
       !Number.isFinite(nextSubPayHours) ||
       nextBillHours < 0 ||
@@ -4001,6 +4006,7 @@ export function JobDetails() {
       item.id === itemId
         ? {
             ...item,
+            quantity,
             customizeHours,
             billHours: nextBillHours,
             subPayHours: nextSubPayHours,

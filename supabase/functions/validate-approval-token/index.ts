@@ -253,12 +253,14 @@ serve(async (req) => {
         .select('id, name, path, storage_path, category, type, created_at')
         .eq('job_id', approval.job_id)
         .in('category', approvalImageCategories)
+        .is('removed_from_current_work_order_at', null)
         .order('created_at', { ascending: true }),
       workOrderIds.length
         ? supabase.from('files')
           .select('id, name, path, storage_path, category, type, created_at')
           .in('work_order_id', workOrderIds)
           .in('category', approvalImageCategories)
+          .is('removed_from_current_work_order_at', null)
           .order('created_at', { ascending: true })
         : Promise.resolve({ data: [], error: null }),
     ]);
@@ -317,18 +319,22 @@ serve(async (req) => {
       const { data: signedUrlData, error: signedUrlError } = await supabase.storage
         .from(image.bucket)
         .createSignedUrl(image.file_path, 259200);
-      if (signedUrlError) console.error(`Error creating approval image URL for ${image.file_path}:`, signedUrlError);
+      if (signedUrlError || !signedUrlData?.signedUrl) {
+        console.error(`Error creating approval image URL for ${image.file_path}:`, signedUrlError);
+        return null;
+      }
       return {
         id: image.id,
         file_path: image.file_path,
         file_name: image.file_name,
         image_type: image.image_type,
         mime_type: image.mime_type,
-        signedUrl: signedUrlData?.signedUrl || null,
+        signedUrl: signedUrlData.signedUrl,
         source: image.source,
         selected: true,
       };
     }));
+    const availableImagesWithSignedUrls = imagesWithSignedUrls.filter((image) => image !== null);
 
     // Determine the actual status
     let resolvedStatus: string;
@@ -373,7 +379,8 @@ serve(async (req) => {
 
     // Never expose the legacy expiration column for customer extra-charge
     // links. These links are governed by job/request state, not by a clock.
-    const { expires_at: _legacyExpiresAt, ...approvalWithoutLegacyExpiration } = approval;
+    const approvalWithoutLegacyExpiration = { ...approval };
+    delete approvalWithoutLegacyExpiration.expires_at;
 
     // Return success response with the approval data needed by the page.
     return new Response(
@@ -423,7 +430,7 @@ serve(async (req) => {
             || (manualApprovalRecorded ? 'internal_manual' : 'approval_link'),
         },
         job: normalizedJob,
-        images: imagesWithSignedUrls
+        images: availableImagesWithSignedUrls
       }),
       { 
         headers: { 

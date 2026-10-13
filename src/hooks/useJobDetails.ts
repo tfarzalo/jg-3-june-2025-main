@@ -301,7 +301,7 @@ export function useJobDetails(jobId: string | undefined) {
 
       // Get the job details with better error handling
       const { data, error: rpcError } = await supabase
-        .rpc('get_job_details', { p_job_id: jobId });
+        .rpc('get_job_details_with_billing_totals', { p_job_id: jobId });
 
       if (rpcError) {
         console.error('Supabase RPC error:', rpcError);
