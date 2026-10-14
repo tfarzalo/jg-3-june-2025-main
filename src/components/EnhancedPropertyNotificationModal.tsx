@@ -2161,6 +2161,7 @@ export function EnhancedPropertyNotificationModal({
             <p className="text-sm font-bold">Extra charges require customer approval</p>
             <p className="mt-1 text-xs">
               The selected template is not natively an approval template. The system will upgrade this message to an approval email and insert a secure Review Extra Charges button before sending.
+              {' '}You can permanently update this template to include approval wording and conditions in Admin Settings → Email Templates.
             </p>
           </div>
         </div>
@@ -2554,6 +2555,7 @@ export function EnhancedPropertyNotificationModal({
               <p className="text-sm font-bold">Selected template is not natively approval-based</p>
               <p className="mt-1 text-xs">
                 Extra charges were detected. This email will be sent in approval mode with a secure Review Extra Charges button automatically included.
+                {' '}You can permanently update this template to include approval wording and conditions in Admin Settings → Email Templates.
               </p>
             </div>
           </div>
