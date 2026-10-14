@@ -419,6 +419,9 @@ export function EnhancedPropertyNotificationModal({
   const approvalWasAutoDetected = hasApprovalRequiredExtraCharges
     && notificationType !== 'extra_charges'
     && !isSelectedApprovalTemplate;
+  const selectedTemplateNeedsApprovalUpgrade = Boolean(
+    selectedTemplate && hasApprovalRequiredExtraCharges && !isSelectedApprovalTemplate
+  );
   const showsEmailImageSelection = isApprovalEmail || safeSections.some((section) =>
     ['before_images', 'after_images', 'sprinkler_images', 'other_images'].includes(section)
   );
@@ -2151,6 +2154,17 @@ export function EnhancedPropertyNotificationModal({
       <div>
         <p className="text-sm text-gray-600 dark:text-gray-400">Choose the template that best matches the email you need to send.</p>
       </div>
+      {selectedTemplateNeedsApprovalUpgrade && (
+        <div className="flex items-start gap-3 rounded-md border-2 border-red-300 bg-red-50 p-4 text-red-900 dark:border-red-700 dark:bg-red-950/40 dark:text-red-100">
+          <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-bold">Extra charges require customer approval</p>
+            <p className="mt-1 text-xs">
+              The selected template is not natively an approval template. The system will upgrade this message to an approval email and insert a secure Review Extra Charges button before sending.
+            </p>
+          </div>
+        </div>
+      )}
       {loading ? (
         <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-300">
           Loading templates…
@@ -2179,7 +2193,7 @@ export function EnhancedPropertyNotificationModal({
                   <div>
                     <p className="text-base font-semibold text-gray-900 dark:text-white">{template.name}</p>
                     <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      {template.template_type === 'extra_charges' ? 'Approval' : notificationType === 'general_work_order' ? 'Work Order Email' : 'Notification'} Template
+                      {(template.template_type?.toLowerCase() === 'approval' || template.trigger_phase?.toLowerCase().includes('extra_charges')) ? 'Approval' : notificationType === 'general_work_order' ? 'Work Order Email' : 'Notification'} Template
                     </p>
                   </div>
                   {isSelected && <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />}
@@ -2437,7 +2451,9 @@ export function EnhancedPropertyNotificationModal({
         minute: '2-digit',
         hour12: true
       }).format(new Date(sentAt));
-    const previewEmailContent = applyEmailTokens(emailContent);
+    const previewEmailContent = applyEmailTokens(emailContent)
+      .replace(/\{+\s*(?:\{+\s*)?approval_link\s*(?:\}+\s*)?\}+/gi, '')
+      .replace(/\{+\s*(?:\{+\s*)?approval_button\s*(?:\}+\s*)?\}+/gi, '');
     const previewEmailSignature = applyEmailTokens(emailSignature);
     const currentSizeEstimate = reviewSizeEstimate?.key === imagePreparationKey ? reviewSizeEstimate : null;
     const estimatedBytes = currentSizeEstimate?.estimatedMessageBytes || 0;
@@ -2531,10 +2547,39 @@ export function EnhancedPropertyNotificationModal({
 
       <div className="space-y-4 rounded-lg border border-gray-200 p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900/50">
         <h3 className="text-base font-semibold text-gray-900 dark:text-white">Email Preview</h3>
+        {selectedTemplateNeedsApprovalUpgrade ? (
+          <div className="flex items-start gap-3 rounded-md border-2 border-red-300 bg-red-50 p-3 text-red-900 dark:border-red-700 dark:bg-red-950/40 dark:text-red-100">
+            <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-bold">Selected template is not natively approval-based</p>
+              <p className="mt-1 text-xs">
+                Extra charges were detected. This email will be sent in approval mode with a secure Review Extra Charges button automatically included.
+              </p>
+            </div>
+          </div>
+        ) : isApprovalEmail ? (
+          <div className="flex items-start gap-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-100">
+            <CheckCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-bold">Approval email confirmed</p>
+              <p className="mt-1 text-xs">A secure Review Extra Charges button will be included in the recipient email.</p>
+            </div>
+          </div>
+        ) : null}
         <p className="text-sm font-semibold text-gray-900 dark:text-white">
           Subject: {applyEmailTokens(emailSubject)}
         </p>
         <div className="prose prose-sm max-w-none text-gray-900 dark:text-gray-100 dark:prose-invert" dangerouslySetInnerHTML={{ __html: previewEmailContent.replace(/\n/g, '<br/>') }} />
+        {isApprovalEmail && (
+          <div className="my-5 rounded-md border border-blue-200 bg-blue-50 p-4 text-center dark:border-blue-800 dark:bg-blue-950/30">
+            <span className="inline-flex rounded-md bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm">
+              Review Extra Charges
+            </span>
+            <p className="mt-2 text-xs text-blue-800 dark:text-blue-200">
+              Recipient preview: the live email will contain a unique secure approval-page URL here.
+            </p>
+          </div>
+        )}
         {renderJobDetailsPreview()}
         {renderBillingPreview()}
         {renderAdditionalCommentsPreview()}
