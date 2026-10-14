@@ -3622,6 +3622,9 @@ export function JobDetails() {
       subRate?: number;
       billHours?: number;
       subPayHours?: number;
+      customizeHours?: boolean;
+      hoursEditedAt?: string;
+      hoursEditedByName?: string;
       billAmount: number;
       subAmount: number;
       notes?: string;
@@ -3658,6 +3661,9 @@ export function JobDetails() {
         subRate,
         billHours: item.isHourly ? billHours : undefined,
         subPayHours: item.isHourly ? subPayHours : undefined,
+        customizeHours: Boolean(item.customizeHours),
+        hoursEditedAt: item.hoursEditedAt,
+        hoursEditedByName: item.hoursEditedByName,
         billAmount,
         subAmount,
         notes: item.notes ?? undefined
@@ -4195,6 +4201,39 @@ export function JobDetails() {
             Edit Notes
           </button>
         )}
+      </div>
+    );
+  };
+
+  const renderExtraChargeHourContext = (line: {
+    quantity: number;
+    unit: string;
+    rate?: number;
+    billHours?: number;
+    subPayHours?: number;
+    customizeHours?: boolean;
+    hoursEditedAt?: string;
+    hoursEditedByName?: string;
+  }, rate: number) => {
+    const hoursWereCustomized = Boolean(
+      line.customizeHours &&
+      ((line.billHours !== undefined && line.billHours !== line.quantity) ||
+        (line.subPayHours !== undefined && line.subPayHours !== line.quantity))
+    );
+
+    if (!hoursWereCustomized) {
+      return <>{line.quantity} {line.unit} × {formatCurrency(rate)}</>;
+    }
+
+    const editedAt = line.hoursEditedAt ? new Date(line.hoursEditedAt).toLocaleString() : '';
+    return (
+      <div className="space-y-1">
+        <div>Original/Base Hours: {line.quantity} hrs × {formatCurrency(rate)}</div>
+        <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+          Bill and/or Sub Pay Hours were edited from the original {line.quantity} hours
+          {editedAt ? ` on ${editedAt}` : ''}
+          {line.hoursEditedByName ? ` by ${line.hoursEditedByName}` : ''}.
+        </div>
       </div>
     );
   };
@@ -6280,7 +6319,7 @@ export function JobDetails() {
                                   </div>
                                   <div className="text-right">
                                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                                      {line.quantity} {line.unit} × {formatCurrency(rate)}
+                                      {renderExtraChargeHourContext(line, rate)}
                                     </div>
                                     {line.billHours !== undefined && (
                                       <div className="text-xs text-gray-600 dark:text-gray-400">
@@ -6591,7 +6630,7 @@ export function JobDetails() {
                             <div className="flex-1">
                               {renderExtraChargeLineDescription(line, 'font-medium text-gray-900 dark:text-white')}
                               <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                                {line.quantity} {line.unit} × {formatCurrency(rate)}
+                                {renderExtraChargeHourContext(line, rate)}
                               </div>
                               {line.billHours !== undefined && (
                                 <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
