@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   Check,
+  CheckCircle,
   ChevronLeft,
   ChevronRight,
   Eye,
