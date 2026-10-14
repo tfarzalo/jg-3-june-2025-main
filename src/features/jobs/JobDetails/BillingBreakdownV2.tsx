@@ -41,6 +41,7 @@ type UnifiedChargeItem = {
   label: string;
   unit_label?: string;
   quantity_or_hours: number;
+  base_quantity_or_hours?: number;
   is_hours: boolean;
   extra_charge_number?: number;
   show_extra_charge_number?: boolean;
@@ -158,16 +159,16 @@ const ExtraChargeHoursEditor: React.FC<{
     ? String(lineItem.sub_pay_hours)
     : '';
   const [customizeHours, setCustomizeHours] = useState(Boolean(lineItem.customize_hours));
-  const [baseHours, setBaseHours] = useState(String(lineItem.quantity_or_hours));
+  const [baseHours, setBaseHours] = useState(String(lineItem.base_quantity_or_hours ?? lineItem.quantity_or_hours));
   const [billHours, setBillHours] = useState(getInitialBillHours);
   const [subPayHours, setSubPayHours] = useState(getInitialSubPayHours);
 
   useEffect(() => {
     setCustomizeHours(Boolean(lineItem.customize_hours));
-    setBaseHours(String(lineItem.quantity_or_hours));
+    setBaseHours(String(lineItem.base_quantity_or_hours ?? lineItem.quantity_or_hours));
     setBillHours(getInitialBillHours());
     setSubPayHours(getInitialSubPayHours());
-  }, [lineItem.customize_hours, lineItem.bill_hours, lineItem.sub_pay_hours, lineItem.quantity_or_hours]);
+  }, [lineItem.customize_hours, lineItem.bill_hours, lineItem.sub_pay_hours, lineItem.base_quantity_or_hours, lineItem.quantity_or_hours]);
 
   const parsedBaseHours = baseHours.trim() === '' ? Number.NaN : Number(baseHours);
   const parsedBillHours = billHours.trim() === '' ? Number.NaN : Number(billHours);
@@ -322,7 +323,11 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
         extra_charge_number: index + 1,
         show_extra_charge_number: extraLineItems.length > 1,
         unit_label: item.isHourly ? 'Hours' : 'Units',
-        quantity_or_hours: quantity,
+        // The summary Qty/Hrs column represents the effective customer-billing
+        // hours. Preserve the original quantity separately for the Base Hours
+        // editor so customized bill/sub hours can legitimately differ.
+        quantity_or_hours: item.isHourly ? billHours : quantity,
+        base_quantity_or_hours: quantity,
         is_hours: item.isHourly,
         customize_hours: Boolean(item.customizeHours),
         rate: billRate,
