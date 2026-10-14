@@ -4018,9 +4018,32 @@ export function JobDetails() {
 
     setSavingExtraChargeHours(true);
     try {
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!userData.user) throw new Error('User not found');
+      const editingUser = userData.user;
+
+      const editedAt = new Date().toISOString();
+      const editedByName = String(
+        editingUser.user_metadata?.full_name
+        || editingUser.user_metadata?.name
+        || editingUser.email
+        || 'Admin user'
+      );
+      const auditedItems = updatedItems.map((item) => (
+        item.id === itemId
+          ? {
+              ...item,
+              hoursEditedAt: editedAt,
+              hoursEditedBy: editingUser.id,
+              hoursEditedByName: editedByName,
+            }
+          : item
+      ));
+
       const { error } = await supabase
         .from('work_orders')
-        .update({ extra_charges_line_items: updatedItems })
+        .update({ extra_charges_line_items: auditedItems })
         .eq('id', workOrderId);
 
       if (error) throw error;

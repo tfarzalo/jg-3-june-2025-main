@@ -51,6 +51,8 @@ type UnifiedChargeItem = {
   sub_rate?: number;
   bill_hours?: number;
   sub_pay_hours?: number;
+  hours_edited_at?: string;
+  hours_edited_by_name?: string;
   bill_amount: number;
   sub_pay_amount: number;
   profit_amount: number;
@@ -179,6 +181,14 @@ const ExtraChargeHoursEditor: React.FC<{
     parsedBillHours >= 0 &&
     parsedSubPayHours >= 0
   ));
+  const hoursDifferFromBase = Boolean(
+    lineItem.customize_hours &&
+    ((lineItem.bill_hours !== undefined && lineItem.bill_hours !== (lineItem.base_quantity_or_hours ?? lineItem.quantity_or_hours)) ||
+      (lineItem.sub_pay_hours !== undefined && lineItem.sub_pay_hours !== (lineItem.base_quantity_or_hours ?? lineItem.quantity_or_hours)))
+  );
+  const editedAt = lineItem.hours_edited_at
+    ? new Date(lineItem.hours_edited_at).toLocaleString()
+    : '';
 
   return (
     <div className="rounded-lg border border-amber-200 bg-white/80 p-4 dark:border-amber-900/50 dark:bg-zinc-900/40">
@@ -254,6 +264,14 @@ const ExtraChargeHoursEditor: React.FC<{
                 />
               </div>
             </div>
+          )}
+          {hoursDifferFromBase && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+              Base Hours ({lineItem.base_quantity_or_hours ?? lineItem.quantity_or_hours}) are the original set hours.
+              {' '}Bill and/or Sub Pay Hours were edited
+              {editedAt ? ` on ${editedAt}` : ''}
+              {lineItem.hours_edited_by_name ? ` by ${lineItem.hours_edited_by_name}` : ''}.
+            </p>
           )}
         </div>
         <button
@@ -334,6 +352,8 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
         sub_rate: subRate,
         bill_hours: item.isHourly ? billHours : undefined,
         sub_pay_hours: item.isHourly ? subPayHours : undefined,
+        hours_edited_at: item.hoursEditedAt,
+        hours_edited_by_name: item.hoursEditedByName,
         bill_amount: billAmount,
         sub_pay_amount: subAmount,
         profit_amount: billAmount - subAmount

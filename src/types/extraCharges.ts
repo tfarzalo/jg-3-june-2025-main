@@ -41,6 +41,9 @@ export interface ExtraChargeLineItem {
   customizeHours?: boolean; // Allows different customer bill hours and subcontractor pay hours
   billHours?: number; // Customer-facing hours used for billRate when customizeHours is true
   subPayHours?: number; // Subcontractor pay hours used for subRate when customizeHours is true
+  hoursEditedAt?: string; // Latest admin customization timestamp
+  hoursEditedBy?: string; // Auth user id for the latest customization
+  hoursEditedByName?: string; // Display name/email captured for the audit note
   jobBillingCategory: 'owner' | 'warranty' | 'tenant';
   notes: string; // Optional description
   calculatedBillAmount: number; // quantity * billRate
