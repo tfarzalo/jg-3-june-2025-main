@@ -590,6 +590,10 @@ export default function DevCalendar3Page() {
   const [pendingNotifications, setPendingNotifications] = useState<PendingNotification[]>([]);
   const [notificationRows, setNotificationRows] = useState<AssignmentNotificationRow[]>([]);
   const [printSnapshot, setPrintSnapshot] = useState<CalendarPrintSnapshot | null>(null);
+  const [printRangeModalOpen, setPrintRangeModalOpen] = useState(false);
+  const [printRangeMode, setPrintRangeMode] = useState<'single' | 'range'>('range');
+  const [printStartDate, setPrintStartDate] = useState('');
+  const [printEndDate, setPrintEndDate] = useState('');
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
   const [batchSending, setBatchSending] = useState(false);
   const [sessionStartedAt] = useState(() => new Date().toISOString());
@@ -1079,12 +1083,29 @@ export default function DevCalendar3Page() {
 
   const selectedDayItems = itemsByDate[selectedDate] || [];
 
-  const handlePrintCalendar = () => {
-    const printDates = viewMode === 'week'
-      ? weekDays.map(dateOnlyFromDate)
-      : viewMode === 'day'
-        ? [dateOnlyFromDate(currentDate)]
-        : agendaDays.map(dateOnlyFromDate);
+  const openPrintRangeModal = () => {
+    const visibleStart = dateOnlyFromDate(visibleRange.start);
+    const visibleEnd = dateOnlyFromDate(visibleRange.end);
+    setPrintRangeMode(viewMode === 'day' ? 'single' : 'range');
+    setPrintStartDate(viewMode === 'day' ? dateOnlyFromDate(currentDate) : visibleStart);
+    setPrintEndDate(viewMode === 'day' ? dateOnlyFromDate(currentDate) : visibleEnd);
+    setPrintRangeModalOpen(true);
+  };
+
+  const handlePrintCalendar = (rangeStart: string, rangeEnd: string) => {
+    if (!rangeStart || !rangeEnd) {
+      toast.error('Select a date to print.');
+      return;
+    }
+    if (rangeEnd < rangeStart) {
+      toast.error('The end date must be on or after the start date.');
+      return;
+    }
+
+    const printDates: string[] = [];
+    for (let day = parseDateOnly(rangeStart); day <= parseDateOnly(rangeEnd); day = addDays(day, 1)) {
+      printDates.push(format(day, 'yyyy-MM-dd'));
+    }
     const printItemsByDate: Record<string, PrintCalendarItem[]> = {};
     printDates.forEach((date) => {
       printItemsByDate[date] = (itemsByDate[date] || []).map((item) => {
@@ -1113,9 +1134,9 @@ export default function DevCalendar3Page() {
     const visiblePhaseLabels = phases
       .filter(phase => visibility.statuses[phase.job_phase_label] !== false)
       .map(phase => formatJobPhaseLabel(phase.job_phase_label));
-    const rangeLabel = viewMode === 'day'
-      ? format(currentDate, 'EEEE, MMMM d, yyyy')
-      : `${format(visibleRange.start, 'MMMM d, yyyy')} – ${format(visibleRange.end, 'MMMM d, yyyy')}`;
+    const rangeLabel = rangeStart === rangeEnd
+      ? format(parseDateOnly(rangeStart), 'EEEE, MMMM d, yyyy')
+      : `${format(parseDateOnly(rangeStart), 'MMMM d, yyyy')} – ${format(parseDateOnly(rangeEnd), 'MMMM d, yyyy')}`;
     setPrintSnapshot({
       view: viewMode,
       heading: `${viewMode.charAt(0).toUpperCase()}${viewMode.slice(1)} Schedule — ${calendarHeading}`,
@@ -1126,6 +1147,7 @@ export default function DevCalendar3Page() {
       dates: printDates,
       itemsByDate: printItemsByDate,
     });
+    setPrintRangeModalOpen(false);
   };
 
   useEffect(() => {
@@ -2184,7 +2206,7 @@ JG Painting Pros Inc.`,
                   </button>
                 )}
                 {viewMode !== 'month' && (
-                  <button onClick={handlePrintCalendar} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#2D3B4E] dark:bg-[#1E293B] dark:text-gray-200 dark:hover:bg-[#0F172A]" aria-label={`Print current ${viewMode} calendar view`} title={`Print ${viewMode} view`}>
+                  <button onClick={openPrintRangeModal} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-[#2D3B4E] dark:bg-[#1E293B] dark:text-gray-200 dark:hover:bg-[#0F172A]" aria-label={`Print current ${viewMode} calendar view`} title={`Print ${viewMode} view`}>
                     <Printer className="h-4 w-4" />
                     <span className="hidden sm:inline">Print</span>
                   </button>
@@ -2339,6 +2361,101 @@ JG Painting Pros Inc.`,
         </main>
       </div>
       <CalendarPrintView snapshot={printSnapshot} />
+
+      {printRangeModalOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="calendar-print-range-title">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-[#111827]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="calendar-print-range-title" className="text-lg font-semibold text-gray-900 dark:text-white">Choose dates to print</h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Select one date or a date range within the current {viewMode} view.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPrintRangeModalOpen(false)}
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-[#1E293B] dark:hover:text-white"
+                aria-label="Close print date selection"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1 dark:bg-[#0F172A]">
+              <button
+                type="button"
+                onClick={() => setPrintRangeMode('single')}
+                className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${printRangeMode === 'single' ? 'bg-white text-blue-700 shadow-sm dark:bg-[#1E293B] dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'}`}
+                aria-pressed={printRangeMode === 'single'}
+              >
+                Specific date
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrintRangeMode('range')}
+                className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${printRangeMode === 'range' ? 'bg-white text-blue-700 shadow-sm dark:bg-[#1E293B] dark:text-blue-300' : 'text-gray-600 dark:text-gray-400'}`}
+                aria-pressed={printRangeMode === 'range'}
+              >
+                Date range
+              </button>
+            </div>
+
+            <div className={`mt-5 grid gap-4 ${printRangeMode === 'range' ? 'sm:grid-cols-2' : ''}`}>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                {printRangeMode === 'single' ? 'Date' : 'Start date'}
+                <input
+                  type="date"
+                  value={printStartDate}
+                  min={dateOnlyFromDate(visibleRange.start)}
+                  max={dateOnlyFromDate(visibleRange.end)}
+                  onChange={(event) => setPrintStartDate(event.target.value)}
+                  className="mt-1 block h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-gray-900 dark:border-[#2D3B4E] dark:bg-[#0F172A] dark:text-white"
+                />
+              </label>
+              {printRangeMode === 'range' && (
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                  End date
+                  <input
+                    type="date"
+                    value={printEndDate}
+                    min={printStartDate || dateOnlyFromDate(visibleRange.start)}
+                    max={dateOnlyFromDate(visibleRange.end)}
+                    onChange={(event) => setPrintEndDate(event.target.value)}
+                    className="mt-1 block h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-gray-900 dark:border-[#2D3B4E] dark:bg-[#0F172A] dark:text-white"
+                  />
+                </label>
+              )}
+            </div>
+
+            <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+              Available dates: {format(visibleRange.start, 'MMM d, yyyy')} – {format(visibleRange.end, 'MMM d, yyyy')}
+            </p>
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setPrintRangeModalOpen(false)}
+                className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 dark:bg-[#1E293B] dark:text-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePrintCalendar(
+                  printStartDate,
+                  printRangeMode === 'single' ? printStartDate : printEndDate,
+                )}
+                disabled={!printStartDate || (printRangeMode === 'range' && (!printEndDate || printEndDate < printStartDate))}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Printer className="h-4 w-4" />
+                Continue to Print
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pendingJobMove && (() => {
         const spanDays = Math.round(
