@@ -996,6 +996,35 @@ const ApprovalPage: React.FC = () => {
             {approvalData.job.property.name}
           </p>
 
+          {!isReadOnly && (
+            <button
+              type="button"
+              onClick={() => {
+                setPendingAction('approve');
+                setApproverFormError('');
+                setShowApproverForm(true);
+              }}
+              disabled={processing || declining}
+              className={`mt-6 inline-flex items-center px-8 py-4 border border-transparent text-lg font-bold rounded-lg text-white transition-all shadow-lg ${
+                processing || declining
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 hover:shadow-xl transform hover:scale-105'
+              }`}
+            >
+              {processing ? (
+                <>
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mr-3"></div>
+                  Processing Approval...
+                </>
+              ) : (
+                <>
+                  <span className="text-2xl mr-2">✅</span>
+                  Approve Extra Charges - ${approvalData.extra_charges_data.total.toFixed(2)}
+                </>
+              )}
+            </button>
+          )}
+
           {approvalData.is_updated_cumulative_request && (
             <div className="mt-6 mx-auto max-w-2xl rounded-lg border-2 border-blue-300 bg-blue-50 p-4 text-left shadow-md">
               <p className="font-semibold text-blue-900">Updated Cumulative Extra Charges</p>

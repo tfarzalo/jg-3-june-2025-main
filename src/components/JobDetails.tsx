@@ -6020,11 +6020,12 @@ export function JobDetails() {
             {(() => {
               const needsExtraChargesApproval =
                 isPendingWorkOrder && !effectiveApprovalDecision?.decision && hasExtraChargesForApproval;
-              const archivedUnansweredApproval =
-                phaseLabel === 'Archived'
-                && Boolean(latestApprovalPageToken)
-                && !effectiveApprovalDecision?.decision
-                && !approvalNeedsUpdatedRequest;
+              const interruptedApproval =
+                !isPendingWorkOrder
+                && hasExtraChargesForApproval
+                && !effectiveApprovalDecision?.decision;
+              const interruptedApprovalWithLink = interruptedApproval && Boolean(latestApprovalPageToken);
+              const bypassedApprovalWithoutLink = interruptedApproval && !latestApprovalPageToken;
               const hasActiveApprovalEmail = needsExtraChargesApproval && Boolean(pendingApproval);
               const isApprovalMissingBillAmount = needsExtraChargesApproval && hasMiscAdditionalCostItemsMissingBillAmount;
               const showBlueVariant =
@@ -6032,20 +6033,34 @@ export function JobDetails() {
                 !needsExtraChargesApproval &&
                 !hasExtraChargesForApproval &&
                 (needsSprinklerPaintNotification || hasDrywallSignal);
-              if (!hasWorkOrder || (!needsExtraChargesApproval && !showBlueVariant && !archivedUnansweredApproval)) return null;
-              const containerClasses = needsExtraChargesApproval
+              if (!hasWorkOrder || (
+                !needsExtraChargesApproval
+                && !showBlueVariant
+                && !interruptedApprovalWithLink
+                && !bypassedApprovalWithoutLink
+              )) return null;
+              const isInterruptedOrBypassed = interruptedApprovalWithLink || bypassedApprovalWithoutLink;
+              const containerClasses = needsExtraChargesApproval || isInterruptedOrBypassed
                 ? 'bg-yellow-50 dark:bg-yellow-900/20 border-b border-yellow-300 dark:border-yellow-700/30 text-yellow-900 dark:text-yellow-200'
                 : 'bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-700/30 text-blue-800 dark:text-blue-200';
-              const iconClasses = needsExtraChargesApproval
+              const iconClasses = needsExtraChargesApproval || isInterruptedOrBypassed
                 ? 'text-yellow-600 dark:text-yellow-400'
                 : 'text-blue-600 dark:text-blue-400';
-              const heading = needsExtraChargesApproval
+              const heading = interruptedApprovalWithLink
+                ? 'Approval Process Interrupted'
+                : bypassedApprovalWithoutLink
+                  ? 'Approval Process Bypassed'
+                  : needsExtraChargesApproval
                 ? (approvalNeedsUpdatedRequest
                     ? 'Extra Charges Modified — New Approval Required'
                     : hasActiveApprovalEmail ? 'Approval Email Already Sent' : 'Extra Charges Approval Needed')
-                : archivedUnansweredApproval ? 'Approval Notification Sent' : 'Notification Needed';
+                : 'Notification Needed';
               const itemLabel = needsSprinklerPaintNotification ? 'Sprinkler Paint' : 'Drywall Repairs';
-              const message = needsExtraChargesApproval
+              const message = interruptedApprovalWithLink
+                ? `An approval request was sent, but no customer response or manual approval was recorded before this job moved to ${phaseLabel}. The original approval page remains available as a view-only record.`
+                : bypassedApprovalWithoutLink
+                  ? `This job moved to ${phaseLabel} without a customer approval link being sent and without a manual approval being recorded.`
+                  : needsExtraChargesApproval
                 ? (approvalNeedsUpdatedRequest
                     ? 'Modifications were made to the extra charges for this job after the previous request. An updated cumulative approval notification must be sent and approved before this job can proceed.'
                     : hasActiveApprovalEmail
@@ -6055,20 +6070,20 @@ export function JobDetails() {
                     : (needsSprinklerPaintNotification
                         ? 'Extra charges need approval. The sprinkler update should be included in the approval email via template sections.'
                         : 'Extra charges need approval. Recommended: send approval email.'))
-                : archivedUnansweredApproval
-                  ? 'No approval response was recorded before this job was archived. The approval page remains available as a view-only record.'
-                  : `Notification email needed: ${itemLabel}`;
+                : `Notification email needed: ${itemLabel}`;
               const recommended: 'extra_charges' | 'sprinkler_paint' | 'drywall_repairs' =
                 needsExtraChargesApproval ? 'extra_charges' : (needsSprinklerPaintNotification ? 'sprinkler_paint' : 'drywall_repairs');
               return (
                 <div className={`${containerClasses} px-6 py-4 relative z-[50]`}>
                   <div className="flex items-start">
-                    <Mail className={`h-5 w-5 mr-2 ${iconClasses} mt-0.5`} />
+                    {isInterruptedOrBypassed
+                      ? <AlertTriangle className={`h-5 w-5 mr-2 ${iconClasses} mt-0.5`} />
+                      : <Mail className={`h-5 w-5 mr-2 ${iconClasses} mt-0.5`} />}
                     <div className="flex-1">
                       <p className="font-medium">{heading}</p>
                       <p className="mt-1 text-sm">{message}</p>
                       <div className="mt-3 flex flex-col md:flex-row md:items-center gap-3">
-                        {!archivedUnansweredApproval && <button
+                        {(needsExtraChargesApproval || showBlueVariant) && <button
                           onClick={() => {
                             if (isApprovalMissingBillAmount) {
                               toast.error('Enter Bill to Customer for miscellaneous additional costs before sending approval.');
@@ -6088,14 +6103,17 @@ export function JobDetails() {
                           <Mail className="h-4 w-4 mr-2" />
                           {approvalNeedsUpdatedRequest ? 'Prepare Updated Approval' : 'Prepare Email'}
                         </button>}
-                        {(needsExtraChargesApproval || archivedUnansweredApproval) && latestApprovalPageToken && (isAdmin || isJGManagement) && (
+                        {(needsExtraChargesApproval || interruptedApprovalWithLink) && latestApprovalPageToken && (isAdmin || isJGManagement) && (
                           <button
                             type="button"
                             onClick={viewLatestApprovalPage}
+                            disabled={openingApprovalRecord}
                             className="inline-flex items-center px-3 py-1.5 bg-white hover:bg-blue-50 text-blue-700 text-sm font-medium rounded-lg border border-blue-300 transition-colors"
                           >
                             <Eye className="h-4 w-4 mr-2" />
-                            {approvalNeedsUpdatedRequest ? 'View Previous Approval' : 'View Approval Page'}
+                            {openingApprovalRecord
+                              ? 'Opening Approval Page...'
+                              : approvalNeedsUpdatedRequest ? 'View Previous Approval' : 'View Approval Page'}
                           </button>
                         )}
                         {needsExtraChargesApproval && previousApprovalPageToken && !approvalNeedsUpdatedRequest && (isAdmin || isJGManagement) && (
@@ -6125,7 +6143,7 @@ export function JobDetails() {
                             Approve Manually
                           </button>
                         )}
-                        {(!needsExtraChargesApproval && (isAdmin || isJGManagement)) && (
+                        {(showBlueVariant && (isAdmin || isJGManagement)) && (
                           <button
                             onClick={handleMarkNotificationSent}
                             className="inline-flex items-center px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
