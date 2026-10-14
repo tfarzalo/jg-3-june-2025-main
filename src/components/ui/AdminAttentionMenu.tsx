@@ -7,12 +7,12 @@ interface AdminAttentionMenuProps {
   enabled: boolean;
 }
 
-const relativeTime = (value: string) => {
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
-  if (seconds < 60) return 'Just now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
+const elapsedTime = (value: string, now: number) => {
+  const totalSeconds = Math.max(0, Math.floor((now - new Date(value).getTime()) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [hours, minutes, seconds].map(part => String(part).padStart(2, '0')).join(':');
 };
 
 const statusStyles: Record<AdminAttentionItem['kind'], { icon: React.ElementType; badge: string; iconClass: string }> = {
@@ -26,6 +26,7 @@ const statusStyles: Record<AdminAttentionItem['kind'], { icon: React.ElementType
 export function AdminAttentionMenu({ enabled }: AdminAttentionMenuProps) {
   const [open, setOpen] = useState(false);
   const [pulse, setPulse] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const containerRef = useRef<HTMLDivElement>(null);
   const pulseTimeoutRef = useRef<number | null>(null);
   const knownVersionsRef = useRef<Set<string>>(new Set());
@@ -64,6 +65,13 @@ export function AdminAttentionMenu({ enabled }: AdminAttentionMenuProps) {
       if (pulseTimeoutRef.current) window.clearTimeout(pulseTimeoutRef.current);
     };
   }, [activeItems, open]);
+
+  useEffect(() => {
+    if (!open || items.length === 0) return;
+    setNow(Date.now());
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [items.length, open]);
 
   if (!enabled) return null;
 
@@ -145,7 +153,13 @@ export function AdminAttentionMenu({ enabled }: AdminAttentionMenuProps) {
                     <button type="button" onClick={() => openItem(item)} className="min-w-0 flex-1 text-left group">
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-sm font-semibold text-gray-900 group-hover:text-blue-600 dark:text-white dark:group-hover:text-blue-400">{item.title}</span>
-                        <span className="flex-none text-[11px] text-gray-400">{relativeTime(item.updatedAt)}</span>
+                        <span
+                          className="inline-flex flex-none items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-[10px] font-semibold tabular-nums text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                          title={`Unaddressed since ${new Date(item.updatedAt).toLocaleString()}`}
+                        >
+                          <Clock3 className="h-3 w-3" />
+                          Unaddressed {elapsedTime(item.updatedAt, now)}
+                        </span>
                       </div>
                       <p className="mt-0.5 truncate text-xs text-gray-600 dark:text-gray-300">{item.detail}</p>
                       <span className={`mt-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${style.badge}`}>{item.statusLabel}</span>
