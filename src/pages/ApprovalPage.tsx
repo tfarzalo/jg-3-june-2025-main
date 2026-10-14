@@ -787,10 +787,6 @@ const ApprovalPage: React.FC = () => {
               ${approvalData?.extra_charges_data.total.toFixed(2)}
             </span>
           </p>
-          <p className="text-sm text-gray-500 mb-6">
-            We will proceed with the work order phase immediately. A copy of these charges and photos is being emailed to you for your records.
-          </p>
-          
           {/* Itemized Breakdown (Approved View) */}
           {approvalData?.extra_charges_data?.items?.length ? (
             <div className="text-left bg-white border border-gray-200 rounded-lg overflow-hidden mb-6">
@@ -858,13 +854,6 @@ const ApprovalPage: React.FC = () => {
                 Download Approved Response PDF
               </>
             )}
-          </button>
-          <button
-            type="button"
-            onClick={() => window.open(window.location.href, '_blank', 'noopener,noreferrer')}
-            className="inline-flex items-center px-6 py-3 border border-green-300 rounded-lg text-green-700 bg-green-50 hover:bg-green-100 transition-colors"
-          >
-            View Approved Response Online
           </button>
           </div>
 
@@ -1147,20 +1136,6 @@ const ApprovalPage: React.FC = () => {
                   </>
                 )}
               </button>
-
-              {isReadOnly && (
-                <button
-                  type="button"
-                  onClick={() => window.open(window.location.href, '_blank', 'noopener,noreferrer')}
-                  className="inline-flex items-center px-6 py-3 border-2 border-blue-300 rounded-lg text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors font-medium shadow-sm"
-                >
-                  {postDecisionView?.decision === 'approved'
-                    ? 'View Approved Response Online'
-                    : postDecisionView?.decision === 'declined'
-                      ? 'View Declined Response Online'
-                      : 'View Original Request Online'}
-                </button>
-              )}
 
               {!isReadOnly && (
                 <>
