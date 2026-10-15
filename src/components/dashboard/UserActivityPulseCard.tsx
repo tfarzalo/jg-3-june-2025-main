@@ -1,6 +1,6 @@
 import { Users } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { usePresence } from '../../hooks/usePresence';
 
@@ -46,7 +46,7 @@ function contextLabel(user: ActivityUser) {
 }
 
 export function UserActivityPulseCard() {
-  const { onlineUsers, isConnected } = usePresence();
+  const { onlineUsers } = usePresence();
   const [tooltip, setTooltip] = useState<{ user: ActivityUser; left: number; top: number } | null>(null);
   const users = useMemo(() => Array.from(onlineUsers.values()) as ActivityUser[], [onlineUsers]);
   const subcontractors = users.filter((user) => user.role === 'subcontractor');
@@ -55,7 +55,7 @@ export function UserActivityPulseCard() {
     (user.context_type === 'job' || user.context_type === 'work_order') && (user.activity_level ?? 0) >= 0.2
   )).length;
 
-  const showTooltip = (element: SVGCircleElement, user: ActivityUser) => {
+  const showTooltip = (element: HTMLButtonElement, user: ActivityUser) => {
     const bounds = element.getBoundingClientRect();
     setTooltip({
       user,
@@ -69,16 +69,11 @@ export function UserActivityPulseCard() {
     const heat = Math.max(0.08, Math.min(1, user.activity_level ?? 0.08));
     const y = baseline - 3 - heat * 10;
     return (
-      <circle
+      <button
+        type="button"
         key={user.user_id}
-        cx={x}
-        cy={y}
-        r="3.5"
-        fill={color}
-        opacity={0.35 + heat * 0.65}
-        className="cursor-pointer transition-opacity"
-        tabIndex={0}
-        role="button"
+        className="pulse-wave__event absolute z-[2] -translate-x-1/2 -translate-y-1/2"
+        style={{ left: `${(x / 220) * 100}%`, top: `${(y / 56) * 100}%`, backgroundColor: color, opacity: 0.35 + heat * 0.65 }}
         aria-label={`${user.display_name || user.email || 'User'}, ${user.role || 'user'}, ${contextLabel(user)}`}
         onMouseEnter={(event) => showTooltip(event.currentTarget, user)}
         onMouseLeave={() => setTooltip(null)}
@@ -96,20 +91,28 @@ export function UserActivityPulseCard() {
             <Users className="h-4 w-4" />
           </span>
           <div className="min-w-0">
-            <h3 className="truncate text-xs font-bold text-gray-800 dark:text-slate-100">User Activity</h3>
+            <div className="flex items-center gap-1.5">
+              <h3 className="truncate text-xs font-bold text-gray-800 dark:text-slate-100">User Activity</h3>
+              <span className="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-300">Live Only</span>
+            </div>
             <p className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-500">Currently online</p>
           </div>
         </div>
         <span className="text-2xl font-black leading-none text-gray-950 dark:text-white">{users.length}</span>
       </div>
 
-      <div className="mt-3 h-[61px] rounded-lg bg-gradient-to-r from-transparent via-cyan-500/5 to-transparent">
-        <svg viewBox="0 0 220 56" preserveAspectRatio="none" className="h-14 w-full overflow-visible" aria-label={`${admins.length} admins and ${subcontractors.length} subcontractors online`}>
-          <path d={buildPresenceLine(admins, 20)} fill="none" stroke={ADMIN_COLOR} strokeWidth="1.5" opacity={lineOpacity(admins)} vectorEffect="non-scaling-stroke" />
-          <path d={buildPresenceLine(subcontractors, 45)} fill="none" stroke={SUBCONTRACTOR_COLOR} strokeWidth="1.5" opacity={lineOpacity(subcontractors)} vectorEffect="non-scaling-stroke" />
-          {renderPoints(admins, 20, ADMIN_COLOR)}
-          {renderPoints(subcontractors, 45, SUBCONTRACTOR_COLOR)}
+      <div className="relative mt-3 h-[61px] overflow-hidden rounded-lg bg-gradient-to-r from-transparent via-cyan-500/5 to-transparent">
+        <svg viewBox="0 0 220 56" preserveAspectRatio="none" className="pulse-wave__svg h-14" aria-label={`${admins.length} admins and ${subcontractors.length} subcontractors online`}>
+          <g style={{ color: ADMIN_COLOR }} opacity={lineOpacity(users)}>
+            <path className="pulse-wave__trail" d={buildPresenceLine(users, 28)} />
+            <path className="pulse-wave__line" pathLength="100" d={buildPresenceLine(users, 28)} style={{ '--pulse-duration': '5s', '--pulse-delay': '-1s' } as CSSProperties} />
+            <circle className="pulse-wave__moving-dot" r="2.25">
+              <animateMotion dur="5s" begin="-1s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.2;1" calcMode="linear" path={buildPresenceLine(users, 28)} />
+              <animate attributeName="opacity" values="0.72;0.72;0;0" keyTimes="0;0.2;0.23;1" dur="5s" begin="-1s" repeatCount="indefinite" />
+            </circle>
+          </g>
         </svg>
+        {renderPoints(users, 28, ADMIN_COLOR)}
       </div>
 
       <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[9px] font-semibold">
@@ -117,8 +120,6 @@ export function UserActivityPulseCard() {
         <span style={{ color: SUBCONTRACTOR_COLOR }}>{subcontractors.length} Subs <span className="ml-1 text-gray-300 dark:text-slate-600">|</span></span>
         <span className="text-gray-500 dark:text-slate-400">{activelyWorking} Working</span>
       </div>
-      <span className={`absolute right-2 top-2 h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} aria-hidden="true" />
-
       {tooltip && typeof document !== 'undefined' && createPortal(
         <div
           role="tooltip"

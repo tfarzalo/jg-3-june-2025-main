@@ -135,15 +135,10 @@ body {
   background-color: #3b82f6;
 }
 @keyframes operations-pulse-trace {
-  0% { stroke-dashoffset: 100; opacity: 0.16; }
-  12% { opacity: 0.52; }
-  82% { opacity: 0.52; }
-  100% { stroke-dashoffset: -100; opacity: 0.14; }
-}
-
-@keyframes operations-pulse-dot {
-  from { left: 0; }
-  to { left: calc(100% - 6px); }
+  0% { stroke-dashoffset: 18; opacity: 0.16; }
+  4% { opacity: 0.52; }
+  20% { stroke-dashoffset: -82; opacity: 0.52; }
+  23%, 100% { stroke-dashoffset: -82; opacity: 0; }
 }
 
 @keyframes operations-pulse-accent {
@@ -190,21 +185,14 @@ body {
   stroke: currentColor;
   stroke-width: 1.35;
   vector-effect: non-scaling-stroke;
-  stroke-dasharray: 22 78;
+  stroke-dasharray: 18 82;
   animation: operations-pulse-trace var(--pulse-duration, 16s) linear var(--pulse-delay, 0s) infinite;
 }
 
 .pulse-wave__moving-dot {
-  position: absolute;
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  margin-top: -3px;
-  border-radius: 9999px;
-  background: currentColor;
-  box-shadow: 0 0 5px currentColor;
+  fill: currentColor;
+  filter: drop-shadow(0 0 3px currentColor);
   opacity: 0.72;
-  animation: operations-pulse-dot var(--pulse-duration, 10s) linear var(--pulse-delay, 0s) infinite;
 }
 
 .pulse-wave__event-wrap {
@@ -251,9 +239,9 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .pulse-wave__line,
-  .pulse-wave__moving-dot,
   .pulse-wave__event,
   .pulse-wave--accent { animation: none; }
   .pulse-wave__line { stroke-dasharray: none; }
   .pulse-wave__moving-dot { display: none; }
+  .pulse-wave__moving-dot animateMotion { display: none; }
 }

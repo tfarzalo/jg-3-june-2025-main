@@ -7,23 +7,10 @@ export function usePresence() {
   const [onlineUsers, setOnlineUsers] = useState<Map<string, any>>(new Map());
   const [isConnected, setIsConnected] = useState(false);
 
-  const updateOnlineUsers = useCallback(() => {
-    const channel = presenceManager.getChannel();
-    if (channel) {
-      const presenceState = channel.presenceState();
-      const onlineIds = new Set<string>();
-      const usersMap = new Map<string, any>();
-      
-      Object.entries(presenceState).forEach(([userId, presenceData]) => {
-        onlineIds.add(userId);
-        if (presenceData && presenceData.length > 0) {
-          usersMap.set(userId, presenceData[0]);
-        }
-      });
-      
-      setOnlineUserIds(onlineIds);
-      setOnlineUsers(usersMap);
-    }
+  const updateOnlineUsers = useCallback((users?: Map<string, any>) => {
+    const usersMap = users || new Map<string, any>();
+    setOnlineUserIds(new Set(usersMap.keys()));
+    setOnlineUsers(usersMap);
   }, []);
 
   const isOnline = useCallback((userId: string) => {
@@ -47,7 +34,7 @@ export function usePresence() {
         
         const userRole = profileData?.role || 'user';
         
-        const channel = await presenceManager.joinChannel(
+        await presenceManager.joinChannel(
           user.id,
           user.email || '',
           user.user_metadata?.full_name || user.email || '',
@@ -55,25 +42,9 @@ export function usePresence() {
         );
 
         if (mounted) {
-          channel.on('presence', { event: 'sync' }, () => {
-            if (mounted) {
-              updateOnlineUsers();
-            }
+          unsubscribePresence = presenceManager.subscribe((users) => {
+            if (mounted) updateOnlineUsers(users);
           });
-
-          channel.on('presence', { event: 'join' }, () => {
-            if (mounted) {
-              updateOnlineUsers();
-            }
-          });
-
-          channel.on('presence', { event: 'leave' }, () => {
-            if (mounted) {
-              updateOnlineUsers();
-            }
-          });
-
-          updateOnlineUsers();
           setIsConnected(true);
         }
       } catch (error) {
@@ -81,10 +52,12 @@ export function usePresence() {
       }
     };
 
+    let unsubscribePresence: (() => void) | undefined;
     setupPresence();
 
     return () => {
       mounted = false;
+      unsubscribePresence?.();
       presenceManager.leaveChannel();
       setIsConnected(false);
     };

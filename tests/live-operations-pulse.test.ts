@@ -6,6 +6,7 @@ const pulseSource = readFileSync(new URL('../src/components/dashboard/LiveOperat
 const hookSource = readFileSync(new URL('../src/hooks/useLiveOperationsPulse.ts', import.meta.url), 'utf8');
 const userActivitySource = readFileSync(new URL('../src/components/dashboard/UserActivityPulseCard.tsx', import.meta.url), 'utf8');
 const presenceSource = readFileSync(new URL('../src/lib/presence.ts', import.meta.url), 'utf8');
+const styleSource = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
 
 describe('Live Operations Pulse dashboard contract', () => {
   it('uses the five real workflow phases in the requested order', () => {
@@ -57,26 +58,39 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(pulseSource).toContain("showsSubmissions ? 'submitted' : 'entered'");
   });
 
-  it('draws slower phase-specific timelines from saved entered and left events', () => {
+  it('draws quick, paused phase-specific timelines from saved entered and left events', () => {
     expect(pulseSource).toContain('function buildActivityPath(');
     expect(pulseSource).toContain("event.direction === 'entered'");
     expect(pulseSource).toContain('eventPosition(event.timestamp, pulse.period)');
-    expect(pulseSource).toContain("pulse.period === 'today' || pulse.period === 'yesterday' ? 9");
+    expect(pulseSource).toContain('const animationSeconds = 5');
     expect(pulseSource).toContain('className="pulse-wave__moving-dot"');
+    expect(pulseSource).toContain('path={activityPath}');
+    expect(pulseSource).toContain('<animateMotion');
+    expect(pulseSource).toContain('keyTimes="0;0.2;1"');
+    expect(pulseSource).toContain('values="0.72;0.72;0;0"');
   });
 
   it('supports yesterday and labels points by time or date for the selected period', () => {
     expect(hookSource).toContain("PulsePeriod = 'today' | 'yesterday' | '7d' | '30d'");
     expect(pulseSource).toContain('<option value="yesterday">Yesterday</option>');
     expect(pulseSource).toContain("period === 'today' || period === 'yesterday' ? 'h:mm a' : 'MMM d'");
-    expect(pulseSource).toContain('updateVisibleRange(event.currentTarget, pulse.period)');
+    expect(pulseSource).toContain('onScroll={(event) => synchronizeTimelines(event.currentTarget)}');
   });
 
   it('uses a hidden-scrollbar timeline with the full 8 AM to 5 PM business view', () => {
     expect(pulseSource).toContain('return 11 / 9');
     expect(pulseSource).toContain('className="pulse-wave-scroll"');
-    expect(pulseSource).toContain('scrollTimelineToLatest(timeline, pulse.period)');
-    expect(pulseSource).toContain('timelineScale(pulse.period) * 100');
+    expect(pulseSource).toContain('timeline.scrollWidth / 11');
+    expect(pulseSource).toContain('timelineZoom * 100');
+  });
+
+  it('synchronizes every timeline and supports wheel zoom down to two hours', () => {
+    expect(pulseSource).toContain('function maximumTimelineScale(');
+    expect(pulseSource).toContain('(end - start) / (2 * 60 * 60 * 1000)');
+    expect(pulseSource).toContain('const synchronizeTimelines =');
+    expect(pulseSource).toContain('onScroll={(event) => synchronizeTimelines(event.currentTarget)}');
+    expect(pulseSource).toContain('onWheel={zoomTimeline}');
+    expect(pulseSource).toContain('Scroll to zoom; drag left or right to move through time');
   });
 
   it('keeps point details on hover and replaces permanent labels with a visible range', () => {
@@ -133,6 +147,7 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(pulseSource).toContain("definition.phase === 'Quality Control'");
     expect(pulseSource).toContain('<UserActivityPulseCard key="user-activity" />');
     expect(userActivitySource).toContain('User Activity');
+    expect(userActivitySource).toContain('Live Only');
     expect(userActivitySource).toContain('admins.length');
     expect(userActivitySource).toContain('subcontractors.length');
     expect(userActivitySource).toContain('{subcontractors.length} Subs <span');
@@ -142,6 +157,18 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(presenceSource).toContain('activity_level');
     expect(presenceSource).toContain("context_type: (jobMatch");
     expect(presenceSource).toContain('setInterval(() => void this.trackActivity(true), 15000)');
+    expect(presenceSource).toContain('this.listeners.forEach((listener)');
+    expect(userActivitySource).toContain('className="pulse-wave__trail"');
+    expect(userActivitySource).toContain('className="pulse-wave__line"');
+    expect(userActivitySource).toContain('className="pulse-wave__moving-dot"');
+    expect(userActivitySource).toContain('path={buildPresenceLine(users, 28)}');
+    expect(userActivitySource).not.toContain('path={buildPresenceLine(admins, 20)}');
+    expect(userActivitySource).not.toContain('path={buildPresenceLine(subcontractors, 45)}');
+    expect(userActivitySource).toContain('className="pulse-wave__event absolute');
+    expect(styleSource).toContain('@keyframes operations-pulse-trace');
+    expect(styleSource).toContain('stroke-dashoffset: 18');
+    expect(styleSource).toContain('stroke-dashoffset: -82');
+    expect(styleSource).toContain('23%, 100%');
   });
 
   it('uses the 7 AM through 6 PM operating window for Today and Yesterday', () => {
@@ -149,6 +176,6 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(hookSource).toContain("yyyy-MM-dd'T'18:00:00XXX");
     expect(pulseSource).toContain("yyyy-MM-dd'T'07:00:00XXX");
     expect(pulseSource).toContain("yyyy-MM-dd'T'18:00:00XXX");
-    expect(pulseSource).toContain('timeline.scrollLeft = timeline.scrollWidth / 11');
+    expect(pulseSource).toContain("? timeline.scrollWidth / 11 : 0");
   });
 });

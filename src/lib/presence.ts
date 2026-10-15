@@ -22,6 +22,26 @@ class PresenceManager {
   private lastTrackAt = 0;
   private coolingTimer: ReturnType<typeof setInterval> | null = null;
   private interactionHandler: (() => void) | null = null;
+  private listeners = new Set<(users: Map<string, PresencePayload>) => void>();
+  private onlineUsers = new Map<string, PresencePayload>();
+
+  private publishPresenceState() {
+    const nextUsers = new Map<string, PresencePayload>();
+    const state = this.channel?.presenceState() || {};
+    Object.entries(state).forEach(([userId, presences]) => {
+      const entries = presences as unknown as PresencePayload[];
+      const latest = entries[entries.length - 1];
+      if (latest) nextUsers.set(userId, { ...latest, user_id: latest.user_id || userId });
+    });
+    this.onlineUsers = nextUsers;
+    this.listeners.forEach((listener) => listener(new Map(nextUsers)));
+  }
+
+  subscribe(listener: (users: Map<string, PresencePayload>) => void) {
+    this.listeners.add(listener);
+    listener(new Map(this.onlineUsers));
+    return () => this.listeners.delete(listener);
+  }
 
   private getContext() {
     const path = window.location.pathname;
@@ -103,7 +123,13 @@ class PresenceManager {
 
     this.channel
       .on('presence', { event: 'sync' }, () => {
-        // This will be handled by the hook
+        this.publishPresenceState();
+      })
+      .on('presence', { event: 'join' }, () => {
+        this.publishPresenceState();
+      })
+      .on('presence', { event: 'leave' }, () => {
+        this.publishPresenceState();
       })
       .subscribe((status: string) => {
         if (status === 'SUBSCRIBED') {
@@ -111,6 +137,7 @@ class PresenceManager {
           this.lastActivityAt = Date.now();
           this.startActivityTracking();
           void this.trackActivity(true);
+          this.publishPresenceState();
         }
       });
 
@@ -140,6 +167,8 @@ class PresenceManager {
       this.userId = null;
       this.basePayload = null;
       this.consumers = 0;
+      this.onlineUsers = new Map();
+      this.listeners.forEach((listener) => listener(new Map()));
     }
   }
 

@@ -70,22 +70,16 @@ function eventPosition(timestamp: string, period: ReturnType<typeof useLiveOpera
   return Math.max(4, Math.min(96, ((new Date(timestamp).getTime() - start) / Math.max(1, end - start)) * 92 + 4));
 }
 
-function timelineScale(period: ReturnType<typeof useLiveOperationsPulse>['period']) {
+function defaultTimelineScale(period: ReturnType<typeof useLiveOperationsPulse>['period']) {
   if (period === 'today' || period === 'yesterday') {
     return 11 / 9;
   }
   return 1;
 }
 
-function scrollTimelineToLatest(
-  timeline: HTMLDivElement,
-  period: ReturnType<typeof useLiveOperationsPulse>['period'],
-) {
-  if (period !== 'today' && period !== 'yesterday') {
-    timeline.scrollLeft = 0;
-    return;
-  }
-  timeline.scrollLeft = timeline.scrollWidth / 11;
+function maximumTimelineScale(period: ReturnType<typeof useLiveOperationsPulse>['period']) {
+  const { start, end } = periodBoundsMs(period);
+  return Math.max(defaultTimelineScale(period), (end - start) / (2 * 60 * 60 * 1000));
 }
 
 function orderedEvents(events: ReturnType<typeof useLiveOperationsPulse>['data'][OperationsPhase]['events']) {
@@ -150,6 +144,9 @@ export function LiveOperationsPulse() {
     startX: number;
     startScrollLeft: number;
   } | null>(null);
+  const synchronizingScrollRef = useRef(false);
+  const zoomAnchorRef = useRef<{ contentFraction: number; pointerFraction: number } | null>(null);
+  const [timelineZoom, setTimelineZoom] = useState(() => defaultTimelineScale('today'));
   const [tooltip, setTooltip] = useState<{
     event: ReturnType<typeof useLiveOperationsPulse>['data'][OperationsPhase]['events'][number];
     left: number;
@@ -187,6 +184,37 @@ export function LiveOperationsPulse() {
     drag.element.scrollLeft = drag.startScrollLeft - (event.clientX - drag.startX);
   };
 
+  const synchronizeTimelines = (source: HTMLDivElement) => {
+    if (synchronizingScrollRef.current) return;
+    synchronizingScrollRef.current = true;
+    const maxScroll = Math.max(0, source.scrollWidth - source.clientWidth);
+    const scrollRatio = maxScroll > 0 ? source.scrollLeft / maxScroll : 0;
+    Object.values(timelineRefs.current).forEach((timeline) => {
+      if (!timeline || timeline === source) return;
+      timeline.scrollLeft = scrollRatio * Math.max(0, timeline.scrollWidth - timeline.clientWidth);
+    });
+    Object.values(timelineRefs.current).forEach((timeline) => {
+      if (timeline) updateVisibleRange(timeline, pulse.period);
+    });
+    requestAnimationFrame(() => { synchronizingScrollRef.current = false; });
+  };
+
+  const zoomTimeline = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const timeline = event.currentTarget;
+    const bounds = timeline.getBoundingClientRect();
+    const pointerFraction = Math.max(0, Math.min(1, (event.clientX - bounds.left) / Math.max(1, bounds.width)));
+    zoomAnchorRef.current = {
+      contentFraction: (timeline.scrollLeft + pointerFraction * timeline.clientWidth) / Math.max(1, timeline.scrollWidth),
+      pointerFraction,
+    };
+    const factor = event.deltaY < 0 ? 1.25 : 0.8;
+    setTimelineZoom((current) => Math.max(
+      defaultTimelineScale(pulse.period),
+      Math.min(maximumTimelineScale(pulse.period), current * factor),
+    ));
+  };
+
   const endTimelineDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
@@ -196,13 +224,30 @@ export function LiveOperationsPulse() {
   };
 
   useEffect(() => {
-    Object.values(timelineRefs.current).forEach((timeline) => {
-      if (timeline) {
-        scrollTimelineToLatest(timeline, pulse.period);
+    zoomAnchorRef.current = null;
+    setTimelineZoom(defaultTimelineScale(pulse.period));
+    requestAnimationFrame(() => {
+      Object.values(timelineRefs.current).forEach((timeline) => {
+        if (!timeline) return;
+        timeline.scrollLeft = pulse.period === 'today' || pulse.period === 'yesterday' ? timeline.scrollWidth / 11 : 0;
         updateVisibleRange(timeline, pulse.period);
-      }
+      });
     });
-  }, [pulse.period, pulse.propertyId, pulse.workerId, pulse.lastSyncedAt]);
+  }, [pulse.period, pulse.propertyId, pulse.workerId]);
+
+  useEffect(() => {
+    const anchor = zoomAnchorRef.current;
+    requestAnimationFrame(() => {
+      Object.values(timelineRefs.current).forEach((timeline) => {
+        if (!timeline) return;
+        if (anchor) {
+          timeline.scrollLeft = anchor.contentFraction * timeline.scrollWidth - anchor.pointerFraction * timeline.clientWidth;
+        }
+        updateVisibleRange(timeline, pulse.period);
+      });
+      zoomAnchorRef.current = null;
+    });
+  }, [timelineZoom, pulse.period, pulse.lastSyncedAt]);
 
   return (
     <section className="operations-pulse mb-4 rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-lg dark:border-slate-700/80 dark:bg-[#111C2F] sm:p-4" aria-labelledby="live-operations-heading">
@@ -287,7 +332,7 @@ export function LiveOperationsPulse() {
           const showsPendingOutcomes = definition.phase === 'Pending Work Order';
           const color = pulse.phaseColors[definition.phase] || '#64748B';
           const activityPath = buildActivityPath(phaseData.events, pulse.period, phaseIndex);
-          const animationSeconds = (pulse.period === 'today' || pulse.period === 'yesterday' ? 9 : pulse.period === '7d' ? 12 : 16) + phaseIndex * 0.8;
+          const animationSeconds = 5;
           return (
             <article
               key={definition.phase}
@@ -337,24 +382,44 @@ export function LiveOperationsPulse() {
                 <div
                   ref={(element) => { timelineRefs.current[definition.phase] = element; }}
                   className="pulse-wave-scroll"
-                  onScroll={(event) => updateVisibleRange(event.currentTarget, pulse.period)}
+                  onScroll={(event) => synchronizeTimelines(event.currentTarget)}
+                  onWheel={zoomTimeline}
                   onPointerDown={startTimelineDrag}
                   onPointerMove={moveTimelineDrag}
                   onPointerUp={endTimelineDrag}
                   onPointerCancel={endTimelineDrag}
                   tabIndex={0}
+                  title="Scroll to zoom; drag left or right to move through time"
                   aria-label={showsSubmissions
                     ? `${definition.label} scrollable activity timeline: ${phaseData.entered} submitted during ${pulse.periodLabel}`
                     : showsPendingOutcomes
                       ? `${definition.label} scrollable activity timeline: ${phaseData.approved} approvals, ${phaseData.declined} declines, and ${phaseData.skipped} bypassed during ${pulse.periodLabel}`
                       : `${definition.label} scrollable activity timeline: ${phaseData.entered} entered and ${phaseData.left} left during ${pulse.periodLabel}`}
                 >
-                  <div className="pulse-wave" style={{ width: `${timelineScale(pulse.period) * 100}%` }}>
+                  <div className="pulse-wave" style={{ width: `${timelineZoom * 100}%` }}>
                     <svg viewBox="0 0 440 52" preserveAspectRatio="none" className="pulse-wave__svg" aria-hidden="true">
                       <path className="pulse-wave__trail" d={activityPath} />
                       <path className="pulse-wave__line" pathLength="100" d={activityPath} />
+                      <circle className="pulse-wave__moving-dot" r="2.5">
+                        <animateMotion
+                          dur={`${animationSeconds}s`}
+                          begin={`${-phaseIndex * 2.2}s`}
+                          repeatCount="indefinite"
+                          keyPoints="0;1;1"
+                          keyTimes="0;0.2;1"
+                          calcMode="linear"
+                          path={activityPath}
+                        />
+                        <animate
+                          attributeName="opacity"
+                          values="0.72;0.72;0;0"
+                          keyTimes="0;0.2;0.23;1"
+                          dur={`${animationSeconds}s`}
+                          begin={`${-phaseIndex * 2.2}s`}
+                          repeatCount="indefinite"
+                        />
+                      </circle>
                     </svg>
-                    <span className="pulse-wave__moving-dot" aria-hidden="true" />
                     {phaseData.events.map((event) => (
                       <div
                         key={`${event.id}-${event.direction}`}
