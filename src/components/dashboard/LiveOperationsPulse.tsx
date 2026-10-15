@@ -146,10 +146,9 @@ export function LiveOperationsPulse() {
     startX: number;
     startScrollLeft: number;
   } | null>(null);
-  const synchronizingScrollRef = useRef(false);
-  const zoomAnchorRef = useRef<{ contentFraction: number; pointerFraction: number } | null>(null);
-  const [zoomStep, setZoomStep] = useState(0);
-  const timelineZoom = timelineScaleForStep(pulse.period, zoomStep);
+  const zoomAnchorsRef = useRef<Record<string, { contentFraction: number; pointerFraction: number } | null>>({});
+  const zoomResetTimersRef = useRef<Record<string, number>>({});
+  const [zoomSteps, setZoomSteps] = useState<Record<string, number>>({});
   const [tooltip, setTooltip] = useState<{
     event: ReturnType<typeof useLiveOperationsPulse>['data'][OperationsPhase]['events'][number];
     left: number;
@@ -187,30 +186,37 @@ export function LiveOperationsPulse() {
     drag.element.scrollLeft = drag.startScrollLeft - (event.clientX - drag.startX);
   };
 
-  const synchronizeTimelines = (source: HTMLDivElement) => {
-    if (synchronizingScrollRef.current) return;
-    synchronizingScrollRef.current = true;
-    const maxScroll = Math.max(0, source.scrollWidth - source.clientWidth);
-    const scrollRatio = maxScroll > 0 ? source.scrollLeft / maxScroll : 0;
-    Object.values(timelineRefs.current).forEach((timeline) => {
-      if (!timeline || timeline === source) return;
-      timeline.scrollLeft = scrollRatio * Math.max(0, timeline.scrollWidth - timeline.clientWidth);
-    });
-    Object.values(timelineRefs.current).forEach((timeline) => {
-      if (timeline) updateVisibleRange(timeline, pulse.period);
-    });
-    requestAnimationFrame(() => { synchronizingScrollRef.current = false; });
-  };
-
-  const adjustTimelineZoom = (direction: 'in' | 'out') => {
-    const timeline = Object.values(timelineRefs.current).find((candidate): candidate is HTMLDivElement => Boolean(candidate));
+  const adjustTimelineZoom = (phase: OperationsPhase, direction: 'in' | 'out') => {
+    const timeline = timelineRefs.current[phase];
     if (!timeline) return;
     const pointerFraction = 0.5;
-    zoomAnchorRef.current = {
+    zoomAnchorsRef.current[phase] = {
       contentFraction: (timeline.scrollLeft + pointerFraction * timeline.clientWidth) / Math.max(1, timeline.scrollWidth),
       pointerFraction,
     };
-    setZoomStep((current) => direction === 'in' ? Math.min(2, current + 1) : Math.max(0, current - 1));
+    setZoomSteps((current) => {
+      const currentStep = current[phase] || 0;
+      return { ...current, [phase]: direction === 'in' ? Math.min(2, currentStep + 1) : Math.max(0, currentStep - 1) };
+    });
+  };
+
+  const cancelZoomReset = (phase: OperationsPhase) => {
+    window.clearTimeout(zoomResetTimersRef.current[phase]);
+    delete zoomResetTimersRef.current[phase];
+  };
+
+  const scheduleZoomReset = (phase: OperationsPhase) => {
+    cancelZoomReset(phase);
+    zoomResetTimersRef.current[phase] = window.setTimeout(() => {
+      zoomAnchorsRef.current[phase] = null;
+      setZoomSteps((current) => ({ ...current, [phase]: 0 }));
+      requestAnimationFrame(() => {
+        const timeline = timelineRefs.current[phase];
+        if (!timeline) return;
+        timeline.scrollLeft = pulse.period === 'today' || pulse.period === 'yesterday' ? timeline.scrollWidth / 11 : 0;
+        updateVisibleRange(timeline, pulse.period);
+      });
+    }, 5000);
   };
 
   const endTimelineDrag = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -222,8 +228,8 @@ export function LiveOperationsPulse() {
   };
 
   useEffect(() => {
-    zoomAnchorRef.current = null;
-    setZoomStep(0);
+    zoomAnchorsRef.current = {};
+    setZoomSteps({});
     requestAnimationFrame(() => {
       Object.values(timelineRefs.current).forEach((timeline) => {
         if (!timeline) return;
@@ -234,18 +240,24 @@ export function LiveOperationsPulse() {
   }, [pulse.period, pulse.propertyId, pulse.workerId]);
 
   useEffect(() => {
-    const anchor = zoomAnchorRef.current;
     requestAnimationFrame(() => {
-      Object.values(timelineRefs.current).forEach((timeline) => {
+      Object.entries(timelineRefs.current).forEach(([phase, timeline]) => {
         if (!timeline) return;
+        const anchor = zoomAnchorsRef.current[phase];
         if (anchor) {
           timeline.scrollLeft = anchor.contentFraction * timeline.scrollWidth - anchor.pointerFraction * timeline.clientWidth;
+        } else if ((zoomSteps[phase] || 0) === 0) {
+          timeline.scrollLeft = pulse.period === 'today' || pulse.period === 'yesterday' ? timeline.scrollWidth / 11 : 0;
         }
         updateVisibleRange(timeline, pulse.period);
+        zoomAnchorsRef.current[phase] = null;
       });
-      zoomAnchorRef.current = null;
     });
-  }, [timelineZoom, pulse.period, pulse.lastSyncedAt]);
+  }, [zoomSteps, pulse.period, pulse.lastSyncedAt]);
+
+  useEffect(() => () => {
+    Object.values(zoomResetTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+  }, []);
 
   return (
     <section className="operations-pulse mb-4 rounded-2xl border border-gray-200 bg-white/95 p-3 shadow-lg dark:border-slate-700/80 dark:bg-[#111C2F] sm:p-4" aria-labelledby="live-operations-heading">
@@ -329,6 +341,8 @@ export function LiveOperationsPulse() {
           const showsSubmissions = definition.phase === 'Work Order';
           const showsPendingOutcomes = definition.phase === 'Pending Work Order';
           const color = pulse.phaseColors[definition.phase] || '#64748B';
+          const zoomStep = zoomSteps[definition.phase] || 0;
+          const timelineZoom = timelineScaleForStep(pulse.period, zoomStep);
           const activityPath = buildActivityPath(phaseData.events, pulse.period, phaseIndex);
           const animationSeconds = 5;
           return (
@@ -371,6 +385,8 @@ export function LiveOperationsPulse() {
               <div
                 key={phaseData.accentKey}
                 className={`pulse-wave-frame mt-3 ${phaseData.accentKey ? 'pulse-wave--accent' : ''}`}
+                onMouseEnter={() => cancelZoomReset(definition.phase)}
+                onMouseLeave={() => scheduleZoomReset(definition.phase)}
                 style={{
                   color,
                   '--pulse-duration': `${animationSeconds}s`,
@@ -380,7 +396,7 @@ export function LiveOperationsPulse() {
                 <div
                   ref={(element) => { timelineRefs.current[definition.phase] = element; }}
                   className="pulse-wave-scroll"
-                  onScroll={(event) => synchronizeTimelines(event.currentTarget)}
+                  onScroll={(event) => updateVisibleRange(event.currentTarget, pulse.period)}
                   onPointerDown={startTimelineDrag}
                   onPointerMove={moveTimelineDrag}
                   onPointerUp={endTimelineDrag}
@@ -446,7 +462,7 @@ export function LiveOperationsPulse() {
                   <button
                     type="button"
                     className="pulse-wave__zoom-button"
-                    onClick={() => adjustTimelineZoom('out')}
+                    onClick={() => adjustTimelineZoom(definition.phase, 'out')}
                     disabled={zoomStep === 0}
                     aria-label={`Zoom out ${definition.label} timeline`}
                   >
@@ -455,7 +471,7 @@ export function LiveOperationsPulse() {
                   <button
                     type="button"
                     className="pulse-wave__zoom-button"
-                    onClick={() => adjustTimelineZoom('in')}
+                    onClick={() => adjustTimelineZoom(definition.phase, 'in')}
                     disabled={zoomStep === 2}
                     aria-label={`Zoom in ${definition.label} timeline`}
                   >

@@ -74,7 +74,7 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(hookSource).toContain("PulsePeriod = 'today' | 'yesterday' | '7d' | '30d'");
     expect(pulseSource).toContain('<option value="yesterday">Yesterday</option>');
     expect(pulseSource).toContain("period === 'today' || period === 'yesterday' ? 'h:mm a' : 'MMM d'");
-    expect(pulseSource).toContain('onScroll={(event) => synchronizeTimelines(event.currentTarget)}');
+    expect(pulseSource).toContain('onScroll={(event) => updateVisibleRange(event.currentTarget, pulse.period)}');
   });
 
   it('uses a hidden-scrollbar timeline with the full 8 AM to 5 PM business view', () => {
@@ -84,17 +84,20 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(pulseSource).toContain('timelineZoom * 100');
   });
 
-  it('synchronizes every timeline and supports button zoom down to two hours', () => {
+  it('supports independent centered button zoom down to two hours', () => {
     expect(pulseSource).toContain('function timelineScaleForStep(');
     expect(pulseSource).toContain('const visibleHours = step === 1 ? 4 : 2');
-    expect(pulseSource).toContain('Math.min(2, current + 1)');
-    expect(pulseSource).toContain('Math.max(0, current - 1)');
-    expect(pulseSource).toContain('const synchronizeTimelines =');
-    expect(pulseSource).toContain('onScroll={(event) => synchronizeTimelines(event.currentTarget)}');
+    expect(pulseSource).toContain('Math.min(2, currentStep + 1)');
+    expect(pulseSource).toContain('Math.max(0, currentStep - 1)');
+    expect(pulseSource).not.toContain('synchronizeTimelines');
+    expect(pulseSource).toContain('zoomAnchorsRef.current[phase]');
+    expect(pulseSource).toContain('pointerFraction = 0.5');
     expect(pulseSource).not.toContain('onWheel=');
-    expect(pulseSource).toContain("onClick={() => adjustTimelineZoom('out')}");
-    expect(pulseSource).toContain("onClick={() => adjustTimelineZoom('in')}");
+    expect(pulseSource).toContain("onClick={() => adjustTimelineZoom(definition.phase, 'out')}");
+    expect(pulseSource).toContain("onClick={() => adjustTimelineZoom(definition.phase, 'in')}");
     expect(pulseSource).toContain('Drag left or right to move through time');
+    expect(pulseSource).toContain('onMouseLeave={() => scheduleZoomReset(definition.phase)}');
+    expect(pulseSource).toContain('}, 5000)');
   });
 
   it('keeps point details on hover and replaces permanent labels with a visible range', () => {
