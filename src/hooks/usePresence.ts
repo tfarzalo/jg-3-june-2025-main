@@ -28,7 +28,7 @@ export function usePresence() {
         // Get user role from profiles table
         const { data: profileData } = await supabase
           .from('profiles')
-          .select('role')
+          .select('role, full_name')
           .eq('id', user.id)
           .single();
         
@@ -37,7 +37,7 @@ export function usePresence() {
         await presenceManager.joinChannel(
           user.id,
           user.email || '',
-          user.user_metadata?.full_name || user.email || '',
+          profileData?.full_name || user.user_metadata?.full_name || 'Name unavailable',
           userRole
         );
 

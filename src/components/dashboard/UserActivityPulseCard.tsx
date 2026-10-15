@@ -64,17 +64,19 @@ export function UserActivityPulseCard() {
     });
   };
 
-  const renderPoints = (group: ActivityUser[], baseline: number, color: string) => group.map((user, index) => {
+  const renderPoints = (group: ActivityUser[], baseline: number) => group.map((user, index) => {
     const x = ((index + 1) / (group.length + 1)) * 220;
     const heat = Math.max(0.08, Math.min(1, user.activity_level ?? 0.08));
     const y = baseline - 3 - heat * 10;
+    const color = user.role === 'subcontractor' ? SUBCONTRACTOR_COLOR : ADMIN_COLOR;
+    const name = user.display_name && !user.display_name.includes('@') ? user.display_name : 'Name unavailable';
     return (
       <button
         type="button"
         key={user.user_id}
         className="pulse-wave__event absolute z-[2] -translate-x-1/2 -translate-y-1/2"
         style={{ left: `${(x / 220) * 100}%`, top: `${(y / 56) * 100}%`, backgroundColor: color, opacity: 0.35 + heat * 0.65 }}
-        aria-label={`${user.display_name || user.email || 'User'}, ${user.role || 'user'}, ${contextLabel(user)}`}
+        aria-label={`${name}, ${user.role || 'user'}, ${contextLabel(user)}`}
         onMouseEnter={(event) => showTooltip(event.currentTarget, user)}
         onMouseLeave={() => setTooltip(null)}
         onFocus={(event) => showTooltip(event.currentTarget, user)}
@@ -112,7 +114,7 @@ export function UserActivityPulseCard() {
             </circle>
           </g>
         </svg>
-        {renderPoints(users, 28, ADMIN_COLOR)}
+        {renderPoints(users, 28)}
       </div>
 
       <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[9px] font-semibold">
@@ -127,7 +129,9 @@ export function UserActivityPulseCard() {
           style={{ left: tooltip.left, top: tooltip.top }}
         >
           <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-1.5 dark:border-slate-700">
-            <span className="truncate text-[11px] font-bold text-gray-950 dark:text-white">{tooltip.user.display_name || tooltip.user.email || 'Unknown user'}</span>
+            <span className="truncate text-[11px] font-bold text-gray-950 dark:text-white">
+              {tooltip.user.display_name && !tooltip.user.display_name.includes('@') ? tooltip.user.display_name : 'Name unavailable'}
+            </span>
             <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-gray-600 dark:bg-slate-800 dark:text-slate-300">{tooltip.user.role || 'User'}</span>
           </div>
           <p className="mt-1.5 text-[10px] font-medium text-gray-700 dark:text-slate-200">{contextLabel(tooltip.user)}</p>

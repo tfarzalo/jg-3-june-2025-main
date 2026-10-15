@@ -5,6 +5,7 @@ const dashboardSource = readFileSync(new URL('../src/components/DashboardHome.ts
 const pulseSource = readFileSync(new URL('../src/components/dashboard/LiveOperationsPulse.tsx', import.meta.url), 'utf8');
 const hookSource = readFileSync(new URL('../src/hooks/useLiveOperationsPulse.ts', import.meta.url), 'utf8');
 const userActivitySource = readFileSync(new URL('../src/components/dashboard/UserActivityPulseCard.tsx', import.meta.url), 'utf8');
+const usePresenceSource = readFileSync(new URL('../src/hooks/usePresence.ts', import.meta.url), 'utf8');
 const presenceSource = readFileSync(new URL('../src/lib/presence.ts', import.meta.url), 'utf8');
 const styleSource = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
 
@@ -157,6 +158,10 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(userActivitySource).toContain('Live Only');
     expect(userActivitySource).toContain('admins.length');
     expect(userActivitySource).toContain('subcontractors.length');
+    expect(userActivitySource).toContain("user.role === 'subcontractor' ? SUBCONTRACTOR_COLOR : ADMIN_COLOR");
+    expect(userActivitySource).toContain("!tooltip.user.display_name.includes('@')");
+    expect(userActivitySource).toContain("'Name unavailable'");
+    expect(usePresenceSource.replace(/\s/g, '')).toContain(".select('role,full_name')");
     expect(userActivitySource).toContain('{subcontractors.length} Subs <span');
     expect(userActivitySource).toContain('activity_level');
     expect(userActivitySource).toContain('role="tooltip"');
