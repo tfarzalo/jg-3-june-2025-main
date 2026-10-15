@@ -77,6 +77,19 @@ function defaultTimelineScale(period: ReturnType<typeof useLiveOperationsPulse>[
   return 1;
 }
 
+function currentTotalLabel(period: ReturnType<typeof useLiveOperationsPulse>['period']) {
+  switch (period) {
+    case 'yesterday':
+      return 'Current now · Yesterday activity';
+    case '7d':
+      return 'Current now · 7-day activity';
+    case '30d':
+      return 'Current now · 30-day activity';
+    default:
+      return 'Current now · Today activity';
+  }
+}
+
 function timelineScaleForStep(period: ReturnType<typeof useLiveOperationsPulse>['period'], step: number) {
   if (step === 0) return defaultTimelineScale(period);
   const { start, end } = periodBoundsMs(period);
@@ -311,7 +324,7 @@ export function LiveOperationsPulse() {
             </span>
           </div>
           <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
-            Current totals and live activity for {pulse.periodLabel}.
+            Current phase totals as of now; activity shown for {pulse.periodLabel}.
             {pulse.lastSyncedAt && (
               <> Last synced {formatInTimeZone(pulse.lastSyncedAt, APP_TIME_ZONE, 'h:mm:ss a zzz')}.</>
             )}
@@ -405,7 +418,9 @@ export function LiveOperationsPulse() {
                   </span>
                   <div className="min-w-0">
                     <h3 className="truncate text-xs font-bold text-gray-800 dark:text-slate-100">{definition.label}</h3>
-                    <p className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-slate-500">Current total</p>
+                    <p className="truncate text-[9px] uppercase tracking-wide text-gray-500 dark:text-slate-500" title={currentTotalLabel(pulse.period)}>
+                      {currentTotalLabel(pulse.period)}
+                    </p>
                   </div>
                 </div>
                 <span className="text-2xl font-black leading-none text-gray-950 dark:text-white">

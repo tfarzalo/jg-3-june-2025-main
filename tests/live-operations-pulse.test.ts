@@ -204,4 +204,12 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(pulseSource).toContain("yyyy-MM-dd'T'18:00:00XXX");
     expect(pulseSource).toContain("? timeline.scrollWidth / 11 : 0");
   });
+
+  it('distinguishes current phase totals from period activity', () => {
+    expect(pulseSource).toContain('Current phase totals as of now; activity shown for {pulse.periodLabel}.');
+    expect(pulseSource).toContain("return 'Current now · Today activity'");
+    expect(pulseSource).toContain("return 'Current now · Yesterday activity'");
+    expect(pulseSource).toContain("return 'Current now · 7-day activity'");
+    expect(pulseSource).toContain("return 'Current now · 30-day activity'");
+  });
 });
