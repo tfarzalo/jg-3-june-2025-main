@@ -164,6 +164,9 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(userActivitySource).toContain('function userLabel(user: ActivityUser)');
     expect(userActivitySource).toContain('user.display_name || user.email || `User ${user.user_id.slice(0, 8)}`');
     expect(userActivitySource).not.toContain('Name unavailable');
+    expect(userActivitySource).toContain(".select('id, full_name, email')");
+    expect(userActivitySource).toContain(".in('id', userIds)");
+    expect(userActivitySource).toContain('profileLabels.get(user.user_id) || user.display_name');
     expect(usePresenceSource.replace(/\s/g, '')).toContain(".select('role,full_name')");
     expect(usePresenceSource).toContain('profileData?.full_name || user.user_metadata?.full_name || user.email');
     expect(userActivitySource).toContain('{subcontractors.length} Subs <span');

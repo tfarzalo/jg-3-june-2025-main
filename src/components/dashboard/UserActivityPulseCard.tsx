@@ -1,8 +1,9 @@
 import { Users } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { usePresence } from '../../hooks/usePresence';
+import { supabase } from '../../utils/supabase';
 
 interface ActivityUser {
   user_id: string;
@@ -52,7 +53,37 @@ function userLabel(user: ActivityUser) {
 export function UserActivityPulseCard() {
   const { onlineUsers } = usePresence();
   const [tooltip, setTooltip] = useState<{ user: ActivityUser; left: number; top: number } | null>(null);
-  const users = useMemo(() => Array.from(onlineUsers.values()) as ActivityUser[], [onlineUsers]);
+  const [profileLabels, setProfileLabels] = useState<Map<string, string>>(new Map());
+  const presenceUsers = useMemo(() => Array.from(onlineUsers.values()) as ActivityUser[], [onlineUsers]);
+  const onlineUserKey = useMemo(() => presenceUsers.map((user) => user.user_id).sort().join(','), [presenceUsers]);
+
+  useEffect(() => {
+    let active = true;
+    const userIds = onlineUserKey ? onlineUserKey.split(',') : [];
+    if (!userIds.length) {
+      setProfileLabels(new Map());
+      return () => { active = false; };
+    }
+
+    void supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .in('id', userIds)
+      .then(({ data, error }) => {
+        if (!active || error) return;
+        setProfileLabels(new Map((data || []).map((profile) => [
+          profile.id,
+          profile.full_name || profile.email || `User ${profile.id.slice(0, 8)}`,
+        ])));
+      });
+
+    return () => { active = false; };
+  }, [onlineUserKey]);
+
+  const users = useMemo(() => presenceUsers.map((user) => ({
+    ...user,
+    display_name: profileLabels.get(user.user_id) || user.display_name,
+  })), [presenceUsers, profileLabels]);
   const subcontractors = users.filter((user) => user.role === 'subcontractor');
   const admins = users.filter((user) => user.role !== 'subcontractor');
   const activelyWorking = users.filter((user) => (
