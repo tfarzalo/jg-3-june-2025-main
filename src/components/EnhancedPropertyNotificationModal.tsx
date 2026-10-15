@@ -395,8 +395,7 @@ export function EnhancedPropertyNotificationModal({
   const isSelectedApprovalTemplate = useMemo(() => {
     if (!selectedTemplate) return false;
     const templateType = selectedTemplate.template_type?.toLowerCase() ?? '';
-    const triggerPhase = selectedTemplate.trigger_phase?.toLowerCase() ?? '';
-    return templateType === 'approval' || triggerPhase.includes('extra_charges');
+    return templateType === 'approval';
   }, [selectedTemplate]);
   const detectedExtraChargeItems = Array.isArray(job?.work_order?.extra_charges_line_items)
     ? job.work_order.extra_charges_line_items
@@ -414,14 +413,13 @@ export function EnhancedPropertyNotificationModal({
     || Number(job?.repair_amount ?? job?.work_order?.repair_cost ?? 0) > 0
     || Number(job?.extra_charges_details?.bill_amount ?? 0) > 0
   );
-  const isApprovalEmail = notificationType === 'extra_charges'
-    || isSelectedApprovalTemplate
-    || hasApprovalRequiredExtraCharges;
-  const approvalWasAutoDetected = hasApprovalRequiredExtraCharges
-    && notificationType !== 'extra_charges'
-    && !isSelectedApprovalTemplate;
-  const selectedTemplateNeedsApprovalUpgrade = Boolean(
-    selectedTemplate && hasApprovalRequiredExtraCharges && !isSelectedApprovalTemplate
+  // The configured template type is authoritative. In particular, drywall
+  // repair amounts can be included in an informational notification without
+  // turning that message back into an approval request behind the admin's back.
+  const isApprovalEmail = notificationType === 'extra_charges' || isSelectedApprovalTemplate;
+  const approvalWasAutoDetected = false;
+  const notificationHasApprovalRequiredCharges = Boolean(
+    selectedTemplate && !isApprovalEmail && hasApprovalRequiredExtraCharges
   );
   const showsEmailImageSelection = isApprovalEmail || safeSections.some((section) =>
     ['before_images', 'after_images', 'sprinkler_images', 'other_images'].includes(section)
@@ -587,7 +585,7 @@ export function EnhancedPropertyNotificationModal({
     if (!job?.property?.id) return;
     
     // Determine if this is approval or notification email
-    const mode = hasApprovalRequiredExtraCharges || notificationType === 'extra_charges'
+    const mode = notificationType === 'extra_charges'
       ? 'approval'
       : 'notification';
     console.log(`📧 Initializing ${mode} recipients for property:`, job.property.id);
@@ -632,7 +630,7 @@ export function EnhancedPropertyNotificationModal({
       setPrimaryRecipientName(job.property?.ap_name || '');
       setContactTemplateTokens({});
     }
-  }, [hasApprovalRequiredExtraCharges, job, notificationType]);
+  }, [job, notificationType]);
 
   const fetchAssignedSubcontractor = useCallback(async () => {
     const existingName = job?.assigned_to_name || '';
@@ -2155,14 +2153,13 @@ export function EnhancedPropertyNotificationModal({
       <div>
         <p className="text-sm text-gray-600 dark:text-gray-400">Choose the template that best matches the email you need to send.</p>
       </div>
-      {selectedTemplateNeedsApprovalUpgrade && (
+      {notificationHasApprovalRequiredCharges && (
         <div className="flex items-start gap-3 rounded-md border-2 border-red-300 bg-red-50 p-4 text-red-900 dark:border-red-700 dark:bg-red-950/40 dark:text-red-100">
           <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
           <div>
-            <p className="text-sm font-bold">Extra charges require customer approval</p>
+            <p className="text-sm font-bold">Extra charges detected</p>
             <p className="mt-1 text-xs">
-              The selected template is not natively an approval template. The system will upgrade this message to an approval email and insert a secure Review Extra Charges button before sending.
-              {' '}You can permanently update this template to include approval wording and conditions in Admin Settings → Email Templates.
+              This job includes extra charges, and the selected email template is notification-only. This email will not include an approval request or approval link.
             </p>
           </div>
         </div>
@@ -2195,7 +2192,7 @@ export function EnhancedPropertyNotificationModal({
                   <div>
                     <p className="text-base font-semibold text-gray-900 dark:text-white">{template.name}</p>
                     <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      {(template.template_type?.toLowerCase() === 'approval' || template.trigger_phase?.toLowerCase().includes('extra_charges')) ? 'Approval' : notificationType === 'general_work_order' ? 'Work Order Email' : 'Notification'} Template
+                      {template.template_type?.toLowerCase() === 'approval' ? 'Approval' : notificationType === 'general_work_order' ? 'Work Order Email' : 'Notification'} Template
                     </p>
                   </div>
                   {isSelected && <Check className="h-5 w-5 text-blue-600 dark:text-blue-400" />}
@@ -2520,13 +2517,13 @@ export function EnhancedPropertyNotificationModal({
         </div>
       )}
 
-      {approvalWasAutoDetected && (
+      {notificationHasApprovalRequiredCharges && (
         <div className="flex items-start space-x-3 rounded-md border border-amber-300 bg-amber-50 p-4 text-amber-900 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-100">
           <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
           <div className="flex-1">
-            <p className="text-sm font-semibold">Extra charges detected — approval email required</p>
+            <p className="text-sm font-semibold">Extra charges detected</p>
             <p className="text-xs mt-1">
-              Although a notification template was selected, this message will automatically be sent as an extra-charge approval email and will include a Review Extra Charges link.
+              The selected email template is notification-only. This email will not include an approval request or approval link.
             </p>
           </div>
         </div>
@@ -2549,14 +2546,13 @@ export function EnhancedPropertyNotificationModal({
 
       <div className="space-y-4 rounded-lg border border-gray-200 p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900/50">
         <h3 className="text-base font-semibold text-gray-900 dark:text-white">Email Preview</h3>
-        {selectedTemplateNeedsApprovalUpgrade ? (
+        {notificationHasApprovalRequiredCharges ? (
           <div className="flex items-start gap-3 rounded-md border-2 border-red-300 bg-red-50 p-3 text-red-900 dark:border-red-700 dark:bg-red-950/40 dark:text-red-100">
             <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0" />
             <div>
-              <p className="text-sm font-bold">Selected template is not natively approval-based</p>
+              <p className="text-sm font-bold">Extra charges with a notification-only template</p>
               <p className="mt-1 text-xs">
-                Extra charges were detected. This email will be sent in approval mode with a secure Review Extra Charges button automatically included.
-                {' '}You can permanently update this template to include approval wording and conditions in Admin Settings → Email Templates.
+                This email will be sent as a notification and will not include a Review Extra Charges button or approval link.
               </p>
             </div>
           </div>
