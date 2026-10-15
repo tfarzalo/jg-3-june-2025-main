@@ -73,6 +73,7 @@ export function usePresence() {
             }
           });
 
+          updateOnlineUsers();
           setIsConnected(true);
         }
       } catch (error) {

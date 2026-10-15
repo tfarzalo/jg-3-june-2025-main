@@ -1,19 +1,14 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  ClipboardList, 
-  FileText, 
-  DollarSign, 
-  CheckCircle,
   Plus,
   Activity,
   Clock,
-  ArrowRight,
-  Mailbox
+  ArrowRight
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { MetricTile } from './ui/MetricTile';
 import { DashboardCard } from './ui/DashboardCard';
+import { LiveOperationsPulse } from './dashboard/LiveOperationsPulse';
 import { supabase } from '../utils/supabase';
 import { formatDate, formatDateTime } from '../lib/dateUtils';
 import { useDashboardJobs } from './shared/useDashboardJobs';
@@ -66,12 +61,10 @@ export function DashboardHome() {
   const [loading, setLoading] = useState(true);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
-  const [phaseCounts, setPhaseCounts] = useState<Record<string, number>>({});
   const [phaseColors, setPhaseColors] = useState<Record<string, string>>({});
   const [completedJobs, setCompletedJobs] = useState<any[]>([]);
   const [loadingCompletedDates, setLoadingCompletedDates] = useState(false);
   const [phases, setPhases] = useState<any[]>([]);
-  const phaseLabelByIdRef = useRef<Record<string, string>>({});
   
   // Use the dedicated dashboard jobs hook for specific job categories
   const { 
@@ -123,23 +116,6 @@ export function DashboardHome() {
           acc[phase.job_phase_label] = phase.id;
           return acc;
         }, {});
-        phaseLabelByIdRef.current = phasesData.reduce((acc: Record<string, string>, phase: JobPhase) => {
-          acc[phase.id] = phase.job_phase_label;
-          return acc;
-        }, {});
-
-        const countPhase = async (label: string) => {
-          const phaseId = phaseIdByLabel[label];
-          if (!phaseId) return [label, 0] as const;
-
-          const { count, error } = await supabase
-            .from('jobs')
-            .select('id', { count: 'exact', head: true })
-            .eq('current_phase_id', phaseId);
-
-          if (error) throw error;
-          return [label, count || 0] as const;
-        };
 
         const jobListSelect = `
           id,
@@ -156,20 +132,9 @@ export function DashboardHome() {
         `;
 
         const [
-          countEntries,
           pendingJobsResult,
           completedJobsResult
         ] = await Promise.all([
-          Promise.all([
-            'Job Request',
-            'Work Order',
-            'Pending Work Order',
-            'Completed Work Orders',
-            'Completed',
-            'Quality Control',
-            'Invoicing',
-            'Cancelled',
-          ].map(countPhase)),
           phaseIdByLabel['Pending Work Order']
             ? supabase
                 .from('jobs')
@@ -191,7 +156,6 @@ export function DashboardHome() {
         if (pendingJobsResult.error) throw pendingJobsResult.error;
         if (completedJobsResult.error) throw completedJobsResult.error;
 
-        setPhaseCounts(Object.fromEntries(countEntries));
         setJobs([
           ...(pendingJobsResult.data || []),
           ...(completedJobsResult.data || []),
@@ -250,18 +214,6 @@ export function DashboardHome() {
       });
     };
 
-    const adjustPhaseCounts = (fromPhaseId?: string | null, toPhaseId?: string | null) => {
-      if (!fromPhaseId || !toPhaseId || fromPhaseId === toPhaseId) return;
-      const fromLabel = phaseLabelByIdRef.current[fromPhaseId];
-      const toLabel = phaseLabelByIdRef.current[toPhaseId];
-      setPhaseCounts((current) => {
-        const next = { ...current };
-        if (fromLabel) next[fromLabel] = Math.max(0, (next[fromLabel] || 0) - 1);
-        if (toLabel) next[toLabel] = (next[toLabel] || 0) + 1;
-        return next;
-      });
-    };
-
     // Set up real-time subscriptions for automatic updates
     let jobsConnectedOnce = false;
     const jobsSubscription = supabase
@@ -270,13 +222,6 @@ export function DashboardHome() {
         { event: 'INSERT', schema: 'public', table: 'jobs' },
         (payload) => {
           console.log('New job added:', payload.new);
-          const phaseLabel = phaseLabelByIdRef.current[(payload.new as any).current_phase_id];
-          if (phaseLabel) {
-            setPhaseCounts((current) => ({
-              ...current,
-              [phaseLabel]: (current[phaseLabel] || 0) + 1,
-            }));
-          }
           void fetchChangedJob((payload.new as any).id);
         }
       )
@@ -316,7 +261,6 @@ export function DashboardHome() {
         (payload) => {
           console.log('New activity detected, refreshing activities...');
           const change = payload.new as any;
-          adjustPhaseCounts(change.from_phase_id, change.to_phase_id);
           void fetchChangedJob(change.job_id);
           void fetchActivities();
         }
@@ -674,58 +618,6 @@ export function DashboardHome() {
     }
   };
 
-  const metrics = [
-    { 
-      icon: ClipboardList,
-      label: 'Job Requests',
-      value: (phaseCounts['Job Request'] || 0).toString(),
-      trend: { value: 12, isPositive: true },
-      color: 'blue',
-      notation: 'New / Scheduled'
-    },
-    {
-      icon: FileText,
-      label: 'Work Orders',
-      value: (phaseCounts['Work Order'] || 0).toString(),
-      trend: { value: 15, isPositive: true },
-      color: 'orange',
-      notation: 'In House'
-    },
-    {
-      icon: Clock,
-      label: 'Pending Work Orders',
-      value: (phaseCounts['Pending Work Order'] || 0).toString(),
-      trend: { value: 8, isPositive: true },
-      color: 'yellow',
-      notation: 'Per Customer'
-    },
-    {
-      icon: CheckCircle,
-      label: 'Completed Work Orders',
-      value: (phaseCounts['Completed Work Orders'] || 0).toString(),
-      trend: { value: 5, isPositive: true },
-      color: phaseColors['Completed Work Orders'] || '#0369A1',
-      notation: 'Ready for QC'
-    },
-    {
-      icon: ClipboardList,
-      label: 'All Jobs',
-      value: [
-        'Job Request',
-        'Pending Work Order',
-        'Work Order',
-        'Completed Work Orders',
-        'Completed',
-        'Quality Control',
-        'Invoicing',
-        'Cancelled',
-      ].reduce((sum, label) => sum + (phaseCounts[label] || 0), 0).toString(),
-      trend: { value: 4, isPositive: true },
-      color: 'purple',
-      notation: 'All Phases'
-    }
-  ];
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -736,44 +628,7 @@ export function DashboardHome() {
 
   return (
     <div className="p-3 sm:p-4 lg:p-6 bg-background dark:bg-background-dark min-h-screen">
-      {/* Metrics Grid - Hidden on mobile */}
-      <div className="hidden lg:grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 auto-rows-fr gap-6 mb-8">
-        {metrics.map((metric, index) => (
-          <Link 
-            key={index} 
-            to={
-              metric.label === 'Job Requests' 
-                ? '/dashboard/jobs/requests'
-                : metric.label === 'Work Orders'
-                ? '/dashboard/jobs/work-orders'
-                : metric.label === 'Pending Work Orders'
-                ? '/dashboard/jobs/pending-work-orders'
-                : metric.label === 'Invoicing'
-                ? '/dashboard/jobs/invoicing'
-                : metric.label === 'Completed Work Orders'
-                ? '/dashboard/jobs/completed-work-orders'
-                : '/dashboard/jobs'
-            } 
-            state={
-              metric.label === 'Work Orders'
-                ? { sortField: 'job_phase', sortDirection: 'desc' }
-                : metric.label === 'Pending Work Orders'
-                ? { sortField: 'job_phase', sortDirection: 'asc' }
-                : undefined
-            }
-            className="block h-full"
-          >
-            <MetricTile
-              icon={metric.icon}
-              label={metric.label}
-              value={metric.value}
-              trend={metric.trend}
-              color={metric.color}
-              notation={(metric as any).notation}
-            />
-          </Link>
-        ))}
-      </div>
+      <LiveOperationsPulse />
 
       {/* Mobile Layout - Today's Agenda First */}
       <div className="lg:hidden mb-6">

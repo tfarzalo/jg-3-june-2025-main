@@ -134,3 +134,126 @@ body {
 .dark .calendar-wrapper .rbc-current-time-indicator {
   background-color: #3b82f6;
 }
+@keyframes operations-pulse-trace {
+  0% { stroke-dashoffset: 100; opacity: 0.16; }
+  12% { opacity: 0.52; }
+  82% { opacity: 0.52; }
+  100% { stroke-dashoffset: -100; opacity: 0.14; }
+}
+
+@keyframes operations-pulse-dot {
+  from { left: 0; }
+  to { left: calc(100% - 6px); }
+}
+
+@keyframes operations-pulse-accent {
+  0%, 100% { filter: none; }
+  35% { filter: drop-shadow(0 0 7px currentColor); }
+}
+
+.pulse-wave-frame {
+  position: relative;
+  height: 61px;
+}
+
+.pulse-wave-scroll {
+  height: 52px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-radius: 0.5rem;
+  overscroll-behavior-x: contain;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.pulse-wave-scroll::-webkit-scrollbar { display: none; }
+.pulse-wave-scroll:hover { cursor: ew-resize; }
+.pulse-wave-scroll--dragging,
+.pulse-wave-scroll--dragging:hover { cursor: grabbing; user-select: none; }
+.pulse-wave-scroll:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+.pulse-wave {
+  position: relative;
+  min-width: 100%;
+  height: 52px;
+  background: linear-gradient(90deg, transparent, currentColor 50%, transparent);
+  background-size: 100% 1px;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.pulse-wave__svg { width: 100%; height: 100%; overflow: visible; }
+.pulse-wave__trail { fill: none; stroke: currentColor; stroke-width: 4; opacity: 0.07; }
+.pulse-wave__line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 22 78;
+  animation: operations-pulse-trace var(--pulse-duration, 16s) linear var(--pulse-delay, 0s) infinite;
+}
+
+.pulse-wave__moving-dot {
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 9999px;
+  background: currentColor;
+  box-shadow: 0 0 5px currentColor;
+  opacity: 0.72;
+  animation: operations-pulse-dot var(--pulse-duration, 10s) linear var(--pulse-delay, 0s) infinite;
+}
+
+.pulse-wave__event-wrap {
+  position: absolute;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+}
+
+.pulse-wave__event {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border: 1px solid rgba(255,255,255,0.9);
+  border-radius: 9999px;
+  box-shadow: 0 0 9px currentColor;
+  cursor: pointer;
+  animation: operations-event-point 2.4s ease-in-out infinite;
+}
+
+@keyframes operations-event-point {
+  0%, 100% { transform: scale(0.9); opacity: 0.78; }
+  50% { transform: scale(1); opacity: 1; }
+}
+
+.pulse-wave__range {
+  position: absolute;
+  right: 2px;
+  bottom: 3px;
+  left: 2px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: rgb(100 116 139);
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.pulse-wave__range-line { height: 1px; flex: 1; background: currentColor; opacity: 0.22; }
+.dark .pulse-wave__range { color: rgb(148 163 184); }
+.pulse-wave--accent { animation: operations-pulse-accent 1.2s ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-wave__line,
+  .pulse-wave__moving-dot,
+  .pulse-wave__event,
+  .pulse-wave--accent { animation: none; }
+  .pulse-wave__line { stroke-dasharray: none; }
+  .pulse-wave__moving-dot { display: none; }
+}
