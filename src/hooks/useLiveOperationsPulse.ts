@@ -21,7 +21,7 @@ export interface PulseEvent {
   jobId: string;
   phase: OperationsPhase;
   direction: 'entered' | 'left';
-  activityType: 'phase_change' | 'work_order_submitted' | 'pending_outcome';
+  activityType: 'job_created' | 'phase_change' | 'work_order_submitted' | 'pending_outcome';
   outcome?: 'approved' | 'declined' | 'skipped';
   timestamp: string;
   workOrderNumber: number | null;
@@ -39,6 +39,7 @@ interface SelectOption {
 
 interface PhasePulseData {
   total: number;
+  remaining: number;
   entered: number;
   left: number;
   approved: number;
@@ -54,7 +55,7 @@ const APP_TIME_ZONE = 'America/New_York';
 const phaseNames = OPERATIONS_PHASES.map((item) => item.phase);
 
 const emptyPulseData = (): PulseDataMap => Object.fromEntries(
-  phaseNames.map((phase) => [phase, { total: 0, entered: 0, left: 0, approved: 0, declined: 0, skipped: 0, events: [], accentKey: 0 }]),
+  phaseNames.map((phase) => [phase, { total: 0, remaining: 0, entered: 0, left: 0, approved: 0, declined: 0, skipped: 0, events: [], accentKey: 0 }]),
 ) as PulseDataMap;
 
 function getPeriodBounds(period: PulsePeriod) {
@@ -124,20 +125,6 @@ export function useLiveOperationsPulse() {
       const phaseNameById = Object.fromEntries(phaseRows.map((phase) => [phase.id, phase.job_phase_label]));
       phaseIdByNameRef.current = phaseIdByName;
 
-      const countResults = await Promise.all(OPERATIONS_PHASES.map(async ({ phase }) => {
-        const phaseId = phaseIdByName[phase];
-        if (!phaseId) return [phase, 0] as const;
-        let query = supabase
-          .from('jobs')
-          .select('id', { count: 'exact', head: true })
-          .eq('current_phase_id', phaseId);
-        if (propertyId) query = query.eq('property_id', propertyId);
-        if (workerId) query = query.eq('assigned_to', workerId);
-        const { count, error: countError } = await query;
-        if (countError) throw countError;
-        return [phase, count || 0] as const;
-      }));
-
       const periodBounds = getPeriodBounds(period);
       const [changesResult, workOrdersResult, approvalsResult] = await Promise.all([
         supabase
@@ -147,14 +134,14 @@ export function useLiveOperationsPulse() {
           .lt('changed_at', periodBounds.end)
           .or(`from_phase_id.in.(${phaseRows.map((phase) => phase.id).join(',')}),to_phase_id.in.(${phaseRows.map((phase) => phase.id).join(',')})`)
           .order('changed_at', { ascending: false })
-          .limit(250),
+          .range(0, 9999),
         supabase
           .from('work_orders')
           .select('id, job_id, prepared_by, submission_date')
           .gte('submission_date', periodBounds.start)
           .lt('submission_date', periodBounds.end)
           .order('submission_date', { ascending: false })
-          .limit(250),
+          .range(0, 9999),
         supabase
           .from('approval_tokens')
           .select('id, job_id, decision, decision_at, decision_maker_name, approver_name, decline_reason')
@@ -162,7 +149,7 @@ export function useLiveOperationsPulse() {
           .gte('decision_at', periodBounds.start)
           .lt('decision_at', periodBounds.end)
           .order('decision_at', { ascending: false })
-          .limit(250),
+          .range(0, 9999),
       ]);
       const { data: changeRows, error: changesError } = changesResult;
       const { data: workOrderRows, error: workOrdersError } = workOrdersResult;
@@ -171,21 +158,22 @@ export function useLiveOperationsPulse() {
       if (workOrdersError) throw workOrdersError;
       if (approvalsError) throw approvalsError;
 
-      const jobIds = [...new Set([
+      const activityJobIds = [...new Set([
         ...(changeRows || []).map((row) => row.job_id),
         ...(workOrderRows || []).map((row) => row.job_id),
         ...(approvalRows || []).map((row) => row.job_id),
       ].filter(Boolean))];
 
       const [activityJobsResult, createdJobsResult] = await Promise.all([
-        jobIds.length
-          ? supabase.from('jobs').select('property_id').in('id', jobIds)
+        activityJobIds.length
+          ? supabase.from('jobs').select('property_id').in('id', activityJobIds)
           : Promise.resolve({ data: [], error: null }),
         supabase
           .from('jobs')
-          .select('property_id')
+          .select('id, property_id, created_at, created_by')
           .gte('created_at', periodBounds.start)
           .lt('created_at', periodBounds.end)
+          .order('created_at', { ascending: false })
           .range(0, 9999),
       ]);
       if (activityJobsResult.error) throw activityJobsResult.error;
@@ -216,14 +204,20 @@ export function useLiveOperationsPulse() {
         setPropertyId('');
       }
 
+      const jobIds = [...new Set([
+        ...activityJobIds,
+        ...(createdJobsResult.data || []).map((job) => job.id),
+      ])];
+
       const actorIds = [...new Set([
         ...(changeRows || []).map((row) => row.changed_by),
         ...(workOrderRows || []).map((row) => row.prepared_by),
+        ...(createdJobsResult.data || []).map((row) => row.created_by),
       ].filter(Boolean))];
 
       let jobsQuery = supabase
         .from('jobs')
-        .select('id, work_order_num, unit_number, property_id, assigned_to, property:properties(property_name), worker:profiles(full_name)')
+        .select('id, work_order_num, unit_number, property_id, assigned_to, current_phase_id, property:properties(property_name), worker:profiles(full_name)')
         .in('id', jobIds.length ? jobIds : ['00000000-0000-0000-0000-000000000000']);
       if (propertyId) jobsQuery = jobsQuery.eq('property_id', propertyId);
       if (workerId) jobsQuery = jobsQuery.eq('assigned_to', workerId);
@@ -240,7 +234,54 @@ export function useLiveOperationsPulse() {
       const jobsById = new Map((jobsResult.data || []).map((job) => [job.id, job]));
       const actorsById = new Map((actorsResult.data || []).map((actor) => [actor.id, actor.full_name || 'Unknown user']));
       const next = emptyPulseData();
-      countResults.forEach(([phase, count]) => { next[phase].total = count; });
+
+      const createdCohort = (createdJobsResult.data || []).filter((row) => jobsById.has(row.id));
+      const workOrderCohort = (workOrderRows || []).filter((row) => jobsById.has(row.job_id));
+      const pendingJobIds = new Set((changeRows || [])
+        .filter((row) => phaseNameById[row.to_phase_id] === 'Pending Work Order' && jobsById.has(row.job_id))
+        .map((row) => row.job_id));
+      const completedJobIds = new Set((changeRows || [])
+        .filter((row) => phaseNameById[row.to_phase_id] === 'Completed Work Orders' && jobsById.has(row.job_id))
+        .map((row) => row.job_id));
+      const workOrderJobIds = new Set(workOrderCohort.map((row) => row.job_id));
+      const createdJobIds = new Set(createdCohort.map((row) => row.id));
+
+      next['Job Request'].total = createdJobIds.size;
+      next['Job Request'].entered = createdJobIds.size;
+      next['Work Order'].total = workOrderCohort.length;
+      next['Work Order'].entered = workOrderCohort.length;
+      next['Pending Work Order'].total = pendingJobIds.size;
+      next['Pending Work Order'].entered = pendingJobIds.size;
+      next['Completed Work Orders'].total = completedJobIds.size;
+      next['Completed Work Orders'].entered = completedJobIds.size;
+
+      const isStillInPhase = (jobId: string, phase: OperationsPhase) => (
+        jobsById.get(jobId)?.current_phase_id === phaseIdByName[phase]
+      );
+      next['Job Request'].remaining = [...createdJobIds].filter((jobId) => isStillInPhase(jobId, 'Job Request')).length;
+      next['Work Order'].remaining = [...workOrderJobIds].filter((jobId) => isStillInPhase(jobId, 'Work Order')).length;
+      next['Completed Work Orders'].remaining = [...completedJobIds].filter((jobId) => isStillInPhase(jobId, 'Completed Work Orders')).length;
+
+      createdCohort.forEach((row) => {
+        const job = jobsById.get(row.id);
+        if (!job || next['Job Request'].events.length >= 5) return;
+        const property = normalizeRelation(job.property as any) as { property_name?: string } | null;
+        const worker = normalizeRelation(job.worker as any) as { full_name?: string } | null;
+        next['Job Request'].events.push({
+          id: `created-${row.id}`,
+          jobId: row.id,
+          phase: 'Job Request',
+          direction: 'entered',
+          activityType: 'job_created',
+          timestamp: row.created_at,
+          workOrderNumber: job.work_order_num ?? null,
+          unitNumber: job.unit_number ?? null,
+          propertyName: property?.property_name || 'Unknown property',
+          assignedWorker: worker?.full_name || 'Unassigned',
+          actorName: actorsById.get(row.created_by) || 'System',
+          reason: null,
+        });
+      });
 
       (changeRows || []).forEach((row) => {
         const job = jobsById.get(row.job_id);
@@ -262,8 +303,7 @@ export function useLiveOperationsPulse() {
           activityType: 'phase_change' as const,
         };
 
-        if (toPhase && toPhase !== 'Work Order' && toPhase !== 'Pending Work Order' && next[toPhase]) {
-          next[toPhase].entered += 1;
+        if (toPhase && toPhase !== 'Job Request' && toPhase !== 'Work Order' && toPhase !== 'Pending Work Order' && next[toPhase]) {
           if (next[toPhase].events.length < 5) next[toPhase].events.push({ ...base, phase: toPhase, direction: 'entered' });
         }
         if (fromPhase && fromPhase !== 'Work Order' && fromPhase !== 'Pending Work Order' && next[fromPhase] && fromPhase !== toPhase) {
@@ -272,7 +312,27 @@ export function useLiveOperationsPulse() {
         }
       });
 
-      const pendingEvents: PulseEvent[] = [];
+      const pendingEvents: PulseEvent[] = (changeRows || []).flatMap((row) => {
+        if (phaseNameById[row.to_phase_id] !== 'Pending Work Order') return [];
+        const job = jobsById.get(row.job_id);
+        if (!job) return [];
+        const property = normalizeRelation(job.property as any) as { property_name?: string } | null;
+        const worker = normalizeRelation(job.worker as any) as { full_name?: string } | null;
+        return [{
+          id: row.id,
+          jobId: row.job_id,
+          phase: 'Pending Work Order' as const,
+          direction: 'entered' as const,
+          activityType: 'phase_change' as const,
+          timestamp: row.changed_at,
+          workOrderNumber: job.work_order_num ?? null,
+          unitNumber: job.unit_number ?? null,
+          propertyName: property?.property_name || 'Unknown property',
+          assignedWorker: worker?.full_name || 'Unassigned',
+          actorName: actorsById.get(row.changed_by) || 'System',
+          reason: row.change_reason,
+        }];
+      });
       (approvalRows || []).forEach((row) => {
         const job = jobsById.get(row.job_id);
         if (!job || !row.decision_at || (row.decision !== 'approved' && row.decision !== 'declined')) return;
@@ -331,7 +391,6 @@ export function useLiveOperationsPulse() {
         if (!job) return;
         const property = normalizeRelation(job.property as any) as { property_name?: string } | null;
         const worker = normalizeRelation(job.worker as any) as { full_name?: string } | null;
-        next['Work Order'].entered += 1;
         if (next['Work Order'].events.length < 5) {
           next['Work Order'].events.push({
             id: row.id,

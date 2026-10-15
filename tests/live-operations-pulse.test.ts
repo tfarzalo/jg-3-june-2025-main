@@ -51,14 +51,20 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(hookSource).toContain('void supabase.removeChannel(channel)');
   });
 
-  it('plots submitted work orders independently from the current Work Order phase total', () => {
+  it('uses period milestones for headline totals and cohort remnants for the smaller figures', () => {
     expect(hookSource).toContain(".from('work_orders')");
     expect(hookSource).toContain(".gte('submission_date', periodBounds.start)");
     expect(hookSource).toContain("activityType: 'work_order_submitted'");
     expect(hookSource).toContain("toPhase !== 'Work Order'");
-    expect(pulseSource).toContain("if (phase === 'Job Request') return 'Added'");
-    expect(pulseSource).toContain("if (phase === 'Work Order') return 'Submitted'");
+    expect(hookSource).toContain("next['Job Request'].total = createdJobIds.size");
+    expect(hookSource).toContain("next['Work Order'].total = workOrderCohort.length");
+    expect(hookSource).toContain("next['Pending Work Order'].total = pendingJobIds.size");
+    expect(hookSource).toContain("next['Completed Work Orders'].total = completedJobIds.size");
+    expect(hookSource).toContain("activityType: 'job_created'");
+    expect(pulseSource).toContain("if (phase === 'Job Request') return 'Job Requests Remaining'");
+    expect(pulseSource).toContain("if (phase === 'Work Order') return 'Work Orders Remaining'");
     expect(pulseSource).toContain("if (phase === 'Completed Work Orders') return 'Ready for QC'");
+    expect(pulseSource).toContain('{phaseData.remaining} {phaseActivityLabel(definition.phase)}');
     expect(pulseSource).toContain('{phaseActivityLabel(definition.phase)}');
     expect(pulseSource).not.toContain('`${phaseData.left} left • ${pulse.periodLabel}`');
   });
@@ -219,8 +225,8 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(pulseSource).toContain("? timeline.scrollWidth / 11 : 0");
   });
 
-  it('distinguishes current phase totals from period activity', () => {
-    expect(pulseSource).toContain('Current phase totals as of now; activity shown for {pulse.periodLabel}.');
+  it('labels headline values as selected-period activity', () => {
+    expect(pulseSource).toContain('Milestone totals and remaining phase counts for {pulse.periodLabel}.');
     expect(pulseSource).toContain('return "Today\'s activity"');
     expect(pulseSource).toContain('return "Yesterday\'s activity"');
     expect(pulseSource).toContain("return '7-day activity'");

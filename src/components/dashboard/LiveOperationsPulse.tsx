@@ -29,6 +29,8 @@ function eventTitle(event: ReturnType<typeof useLiveOperationsPulse>['data'][Ope
   return [
     event.activityType === 'pending_outcome'
       ? `${workOrder} ${event.outcome}`
+      : event.activityType === 'job_created'
+      ? `${workOrder} added`
       : event.activityType === 'work_order_submitted'
       ? `${workOrder} submitted`
       : `${workOrder} ${event.direction} ${event.phase}`,
@@ -45,6 +47,8 @@ function eventHeading(event: ReturnType<typeof useLiveOperationsPulse>['data'][O
     : 'Job request';
   const action = event.activityType === 'pending_outcome'
     ? event.outcome === 'approved' ? 'Approved' : event.outcome === 'declined' ? 'Declined' : 'Bypassed'
+    : event.activityType === 'job_created'
+      ? 'Added'
     : event.activityType === 'work_order_submitted'
       ? 'Submitted'
       : event.direction === 'entered' ? `Entered ${event.phase}` : `Left ${event.phase}`;
@@ -91,10 +95,10 @@ function currentTotalLabel(period: ReturnType<typeof useLiveOperationsPulse>['pe
 }
 
 function phaseActivityLabel(phase: OperationsPhase) {
-  if (phase === 'Job Request') return 'Added';
-  if (phase === 'Work Order') return 'Submitted';
+  if (phase === 'Job Request') return 'Job Requests Remaining';
+  if (phase === 'Work Order') return 'Work Orders Remaining';
   if (phase === 'Completed Work Orders') return 'Ready for QC';
-  return 'Entered';
+  return 'Remaining';
 }
 
 function timelineScaleForStep(period: ReturnType<typeof useLiveOperationsPulse>['period'], step: number) {
@@ -331,7 +335,7 @@ export function LiveOperationsPulse() {
             </span>
           </div>
           <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
-            Current phase totals as of now; activity shown for {pulse.periodLabel}.
+            Milestone totals and remaining phase counts for {pulse.periodLabel}.
             {pulse.lastSyncedAt && (
               <> Last synced {formatInTimeZone(pulse.lastSyncedAt, APP_TIME_ZONE, 'h:mm:ss a zzz')}.</>
             )}
@@ -546,7 +550,7 @@ export function LiveOperationsPulse() {
                 </div>
               ) : (
                 <div className="mt-2 text-[11px]">
-                  <span className="font-semibold" style={{ color }}><span className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: color }} />{phaseData.entered} {phaseActivityLabel(definition.phase)}</span>
+                  <span className="font-semibold" style={{ color }}><span className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: color }} />{phaseData.remaining} {phaseActivityLabel(definition.phase)}</span>
                 </div>
               )}
             </article>
