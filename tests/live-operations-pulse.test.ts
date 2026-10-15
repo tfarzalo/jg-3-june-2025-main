@@ -61,9 +61,9 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(hookSource).toContain("next['Pending Work Order'].total = pendingJobIds.size");
     expect(hookSource).toContain("next['Completed Work Orders'].total = completedJobIds.size");
     expect(hookSource).toContain("activityType: 'job_created'");
-    expect(pulseSource).toContain("if (phase === 'Job Request') return 'Job Requests Remaining'");
-    expect(pulseSource).toContain("if (phase === 'Work Order') return 'Work Orders Remaining'");
-    expect(pulseSource).toContain("if (phase === 'Completed Work Orders') return 'Ready for QC'");
+    expect(hookSource).toContain('countResults.forEach(([phase, count]) => { next[phase].remaining = count; })');
+    expect(pulseSource).toContain("if (phase === 'Completed Work Orders') return 'Ready for QC · Overall Total'");
+    expect(pulseSource).toContain("return 'Overall Total'");
     expect(pulseSource).toContain('{phaseData.remaining} {phaseActivityLabel(definition.phase)}');
     expect(pulseSource).toContain('{phaseActivityLabel(definition.phase)}');
     expect(pulseSource).not.toContain('`${phaseData.left} left • ${pulse.periodLabel}`');
@@ -92,10 +92,11 @@ describe('Live Operations Pulse dashboard contract', () => {
   it('limits the property filter to active properties with activity in the selected period', () => {
     expect(hookSource).toContain(".gte('created_at', periodBounds.start)");
     expect(hookSource).toContain(".lt('created_at', periodBounds.end)");
-    expect(hookSource).toContain(".in('id', activePropertyIds)");
+    expect(hookSource).toContain('inBatches(activePropertyIds)');
+    expect(hookSource).toContain(".in('id', ids)");
     expect(hookSource).toContain(".eq('is_active', true)");
     expect(hookSource).toContain(".eq('is_archived', false)");
-    expect(hookSource).toContain('activityJobsResult.data');
+    expect(hookSource).toContain('activityJobs.map((job) => job.property_id)');
     expect(hookSource).toContain('createdJobsResult.data');
   });
 
@@ -227,9 +228,16 @@ describe('Live Operations Pulse dashboard contract', () => {
 
   it('labels headline values as selected-period activity', () => {
     expect(pulseSource).toContain('Milestone totals and remaining phase counts for {pulse.periodLabel}.');
-    expect(pulseSource).toContain('return "Today\'s activity"');
-    expect(pulseSource).toContain('return "Yesterday\'s activity"');
-    expect(pulseSource).toContain("return '7-day activity'");
-    expect(pulseSource).toContain("return '30-day activity'");
+    expect(pulseSource).toContain("? 'Last 7 Days'");
+    expect(pulseSource).toContain(": 'Last 30 Days'");
+    expect(pulseSource).toContain('periodMilestoneLabel(pulse.period, definition.phase)');
+  });
+
+  it('batches long activity lookups so the 30-day view does not exceed request limits', () => {
+    expect(hookSource).toContain('const QUERY_BATCH_SIZE = 150');
+    expect(hookSource).toContain('function inBatches<T>(values: T[])');
+    expect(hookSource).toContain('Promise.all(inBatches(activityJobIds)');
+    expect(hookSource).toContain('Promise.all(inBatches(jobIds)');
+    expect(hookSource).toContain('Promise.all(inBatches(actorIds)');
   });
 });

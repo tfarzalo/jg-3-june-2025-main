@@ -53,6 +53,13 @@ type PulseDataMap = Record<OperationsPhase, PhasePulseData>;
 
 const APP_TIME_ZONE = 'America/New_York';
 const phaseNames = OPERATIONS_PHASES.map((item) => item.phase);
+const QUERY_BATCH_SIZE = 150;
+
+function inBatches<T>(values: T[]) {
+  return Array.from({ length: Math.ceil(values.length / QUERY_BATCH_SIZE) }, (_, index) => (
+    values.slice(index * QUERY_BATCH_SIZE, (index + 1) * QUERY_BATCH_SIZE)
+  ));
+}
 
 const emptyPulseData = (): PulseDataMap => Object.fromEntries(
   phaseNames.map((phase) => [phase, { total: 0, remaining: 0, entered: 0, left: 0, approved: 0, declined: 0, skipped: 0, events: [], accentKey: 0 }]),
@@ -125,6 +132,20 @@ export function useLiveOperationsPulse() {
       const phaseNameById = Object.fromEntries(phaseRows.map((phase) => [phase.id, phase.job_phase_label]));
       phaseIdByNameRef.current = phaseIdByName;
 
+      const countResults = await Promise.all(OPERATIONS_PHASES.map(async ({ phase }) => {
+        const phaseId = phaseIdByName[phase];
+        if (!phaseId) return [phase, 0] as const;
+        let query = supabase
+          .from('jobs')
+          .select('id', { count: 'exact', head: true })
+          .eq('current_phase_id', phaseId);
+        if (propertyId) query = query.eq('property_id', propertyId);
+        if (workerId) query = query.eq('assigned_to', workerId);
+        const { count, error: countError } = await query;
+        if (countError) throw countError;
+        return [phase, count || 0] as const;
+      }));
+
       const periodBounds = getPeriodBounds(period);
       const [changesResult, workOrdersResult, approvalsResult] = await Promise.all([
         supabase
@@ -164,10 +185,10 @@ export function useLiveOperationsPulse() {
         ...(approvalRows || []).map((row) => row.job_id),
       ].filter(Boolean))];
 
-      const [activityJobsResult, createdJobsResult] = await Promise.all([
-        activityJobIds.length
-          ? supabase.from('jobs').select('property_id').in('id', activityJobIds)
-          : Promise.resolve({ data: [], error: null }),
+      const [activityJobBatches, createdJobsResult] = await Promise.all([
+        Promise.all(inBatches(activityJobIds).map((ids) => (
+          supabase.from('jobs').select('property_id').in('id', ids)
+        ))),
         supabase
           .from('jobs')
           .select('id, property_id, created_at, created_by')
@@ -176,29 +197,34 @@ export function useLiveOperationsPulse() {
           .order('created_at', { ascending: false })
           .range(0, 9999),
       ]);
-      if (activityJobsResult.error) throw activityJobsResult.error;
+      const activityJobsError = activityJobBatches.find((result) => result.error)?.error;
+      if (activityJobsError) throw activityJobsError;
       if (createdJobsResult.error) throw createdJobsResult.error;
+      const activityJobs = activityJobBatches.flatMap((result) => result.data || []);
 
       const activePropertyIds = [...new Set([
-        ...(activityJobsResult.data || []).map((job) => job.property_id),
+        ...activityJobs.map((job) => job.property_id),
         ...(createdJobsResult.data || []).map((job) => job.property_id),
       ].filter(Boolean))];
-      const propertiesResult = activePropertyIds.length
-        ? await supabase
+      const propertyBatches = await Promise.all(inBatches(activePropertyIds).map((ids) => (
+        supabase
           .from('properties')
           .select('id, property_name')
-          .in('id', activePropertyIds)
+          .in('id', ids)
           .eq('is_active', true)
           .eq('is_archived', false)
-          .order('property_name')
-        : { data: [], error: null };
-      if (propertiesResult.error) throw propertiesResult.error;
+      )));
+      const propertiesError = propertyBatches.find((result) => result.error)?.error;
+      if (propertiesError) throw propertiesError;
       if (!mountedRef.current) return;
 
-      const nextProperties = (propertiesResult.data || []).map((property) => ({
-        id: property.id,
-        label: property.property_name || 'Unnamed property',
-      }));
+      const nextProperties = propertyBatches
+        .flatMap((result) => result.data || [])
+        .map((property) => ({
+          id: property.id,
+          label: property.property_name || 'Unnamed property',
+        }))
+        .sort((left, right) => left.label.localeCompare(right.label));
       setProperties(nextProperties);
       if (propertyId && !nextProperties.some((property) => property.id === propertyId)) {
         setPropertyId('');
@@ -215,24 +241,27 @@ export function useLiveOperationsPulse() {
         ...(createdJobsResult.data || []).map((row) => row.created_by),
       ].filter(Boolean))];
 
-      let jobsQuery = supabase
-        .from('jobs')
-        .select('id, work_order_num, unit_number, property_id, assigned_to, current_phase_id, property:properties(property_name), worker:profiles(full_name)')
-        .in('id', jobIds.length ? jobIds : ['00000000-0000-0000-0000-000000000000']);
-      if (propertyId) jobsQuery = jobsQuery.eq('property_id', propertyId);
-      if (workerId) jobsQuery = jobsQuery.eq('assigned_to', workerId);
-
-      const [jobsResult, actorsResult] = await Promise.all([
-        jobsQuery,
-        actorIds.length
-          ? supabase.from('profiles').select('id, full_name').in('id', actorIds)
-          : Promise.resolve({ data: [], error: null }),
+      const [jobBatches, actorBatches] = await Promise.all([
+        Promise.all(inBatches(jobIds).map((ids) => {
+          let query = supabase
+            .from('jobs')
+            .select('id, work_order_num, unit_number, property_id, assigned_to, current_phase_id, property:properties(property_name), worker:profiles(full_name)')
+            .in('id', ids);
+          if (propertyId) query = query.eq('property_id', propertyId);
+          if (workerId) query = query.eq('assigned_to', workerId);
+          return query;
+        })),
+        Promise.all(inBatches(actorIds).map((ids) => (
+          supabase.from('profiles').select('id, full_name').in('id', ids)
+        ))),
       ]);
-      if (jobsResult.error) throw jobsResult.error;
-      if (actorsResult.error) throw actorsResult.error;
+      const jobsError = jobBatches.find((result) => result.error)?.error;
+      const actorsError = actorBatches.find((result) => result.error)?.error;
+      if (jobsError) throw jobsError;
+      if (actorsError) throw actorsError;
 
-      const jobsById = new Map((jobsResult.data || []).map((job) => [job.id, job]));
-      const actorsById = new Map((actorsResult.data || []).map((actor) => [actor.id, actor.full_name || 'Unknown user']));
+      const jobsById = new Map(jobBatches.flatMap((result) => result.data || []).map((job) => [job.id, job]));
+      const actorsById = new Map(actorBatches.flatMap((result) => result.data || []).map((actor) => [actor.id, actor.full_name || 'Unknown user']));
       const next = emptyPulseData();
 
       const createdCohort = (createdJobsResult.data || []).filter((row) => jobsById.has(row.id));
@@ -243,7 +272,6 @@ export function useLiveOperationsPulse() {
       const completedJobIds = new Set((changeRows || [])
         .filter((row) => phaseNameById[row.to_phase_id] === 'Completed Work Orders' && jobsById.has(row.job_id))
         .map((row) => row.job_id));
-      const workOrderJobIds = new Set(workOrderCohort.map((row) => row.job_id));
       const createdJobIds = new Set(createdCohort.map((row) => row.id));
 
       next['Job Request'].total = createdJobIds.size;
@@ -255,12 +283,7 @@ export function useLiveOperationsPulse() {
       next['Completed Work Orders'].total = completedJobIds.size;
       next['Completed Work Orders'].entered = completedJobIds.size;
 
-      const isStillInPhase = (jobId: string, phase: OperationsPhase) => (
-        jobsById.get(jobId)?.current_phase_id === phaseIdByName[phase]
-      );
-      next['Job Request'].remaining = [...createdJobIds].filter((jobId) => isStillInPhase(jobId, 'Job Request')).length;
-      next['Work Order'].remaining = [...workOrderJobIds].filter((jobId) => isStillInPhase(jobId, 'Work Order')).length;
-      next['Completed Work Orders'].remaining = [...completedJobIds].filter((jobId) => isStillInPhase(jobId, 'Completed Work Orders')).length;
+      countResults.forEach(([phase, count]) => { next[phase].remaining = count; });
 
       createdCohort.forEach((row) => {
         const job = jobsById.get(row.id);

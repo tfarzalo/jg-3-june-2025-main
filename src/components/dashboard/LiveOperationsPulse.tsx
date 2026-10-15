@@ -81,24 +81,30 @@ function defaultTimelineScale(period: ReturnType<typeof useLiveOperationsPulse>[
   return 1;
 }
 
-function currentTotalLabel(period: ReturnType<typeof useLiveOperationsPulse>['period']) {
-  switch (period) {
-    case 'yesterday':
-      return "Yesterday's activity";
-    case '7d':
-      return '7-day activity';
-    case '30d':
-      return '30-day activity';
-    default:
-      return "Today's activity";
-  }
+function periodMilestoneLabel(
+  period: ReturnType<typeof useLiveOperationsPulse>['period'],
+  phase: OperationsPhase,
+) {
+  const action = phase === 'Job Request'
+    ? 'Added'
+    : phase === 'Work Order'
+      ? 'Submitted'
+      : phase === 'Pending Work Order'
+        ? 'Pending'
+        : 'Completed';
+  const periodLabel = period === 'today'
+    ? 'Today'
+    : period === 'yesterday'
+      ? 'Yesterday'
+      : period === '7d'
+        ? 'Last 7 Days'
+        : 'Last 30 Days';
+  return `${action} · ${periodLabel}`;
 }
 
 function phaseActivityLabel(phase: OperationsPhase) {
-  if (phase === 'Job Request') return 'Job Requests Remaining';
-  if (phase === 'Work Order') return 'Work Orders Remaining';
-  if (phase === 'Completed Work Orders') return 'Ready for QC';
-  return 'Remaining';
+  if (phase === 'Completed Work Orders') return 'Ready for QC · Overall Total';
+  return 'Overall Total';
 }
 
 function timelineScaleForStep(period: ReturnType<typeof useLiveOperationsPulse>['period'], step: number) {
@@ -429,8 +435,8 @@ export function LiveOperationsPulse() {
                   </span>
                   <div className="min-w-0">
                     <h3 className="truncate text-xs font-bold text-gray-800 dark:text-slate-100">{definition.label}</h3>
-                    <p className="truncate text-[9px] uppercase tracking-wide text-gray-500 dark:text-slate-500" title={currentTotalLabel(pulse.period)}>
-                      {currentTotalLabel(pulse.period)}
+                    <p className="truncate text-[10px] font-bold uppercase tracking-wide" style={{ color }} title={periodMilestoneLabel(pulse.period, definition.phase)}>
+                      {periodMilestoneLabel(pulse.period, definition.phase)}
                     </p>
                   </div>
                 </div>
