@@ -179,7 +179,13 @@ body {
 }
 
 .pulse-wave__svg { width: 100%; height: 100%; overflow: visible; }
-.pulse-wave__trail { fill: none; stroke: currentColor; stroke-width: 4; opacity: 0.07; }
+.pulse-wave__trail {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.24;
+}
 .pulse-wave__line {
   fill: none;
   stroke: currentColor;
@@ -211,6 +217,42 @@ body {
   cursor: pointer;
   animation: operations-event-point 2.4s ease-in-out infinite;
 }
+
+.pulse-wave__zoom {
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  z-index: 4;
+  display: flex;
+  gap: 3px;
+  padding: 0 4px;
+  background: rgb(249 250 251 / 0.92);
+  transform: translateX(-50%);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.pulse-wave-frame:hover .pulse-wave__zoom,
+.pulse-wave-frame:focus-within .pulse-wave__zoom { opacity: 1; }
+
+.pulse-wave__zoom-button {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.9);
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.14);
+  opacity: 0.72;
+}
+
+.pulse-wave__zoom-button:hover:not(:disabled),
+.pulse-wave__zoom-button:focus-visible { opacity: 1; }
+.pulse-wave__zoom-button:disabled { cursor: default; opacity: 0.24; }
+.pulse-wave__zoom-button svg { width: 10px; height: 10px; stroke-width: 2.5; }
+.dark .pulse-wave__zoom { background: rgb(2 6 23 / 0.92); }
+.dark .pulse-wave__zoom-button { background: rgb(15 23 42 / 0.9); }
 
 @keyframes operations-event-point {
   0%, 100% { transform: scale(0.9); opacity: 0.78; }

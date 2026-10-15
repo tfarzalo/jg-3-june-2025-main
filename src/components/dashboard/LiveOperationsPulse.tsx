@@ -1,4 +1,4 @@
-import { Activity, CheckCircle, ClipboardCheck, ClipboardList, Clock, FileText, Wifi, WifiOff } from 'lucide-react';
+import { Activity, CheckCircle, ClipboardCheck, ClipboardList, Clock, FileText, Minus, Plus, Wifi, WifiOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { formatInTimeZone } from 'date-fns-tz';
@@ -77,9 +77,11 @@ function defaultTimelineScale(period: ReturnType<typeof useLiveOperationsPulse>[
   return 1;
 }
 
-function maximumTimelineScale(period: ReturnType<typeof useLiveOperationsPulse>['period']) {
+function timelineScaleForStep(period: ReturnType<typeof useLiveOperationsPulse>['period'], step: number) {
+  if (step === 0) return defaultTimelineScale(period);
   const { start, end } = periodBoundsMs(period);
-  return Math.max(defaultTimelineScale(period), (end - start) / (2 * 60 * 60 * 1000));
+  const visibleHours = step === 1 ? 4 : 2;
+  return (end - start) / (visibleHours * 60 * 60 * 1000);
 }
 
 function orderedEvents(events: ReturnType<typeof useLiveOperationsPulse>['data'][OperationsPhase]['events']) {
@@ -146,7 +148,8 @@ export function LiveOperationsPulse() {
   } | null>(null);
   const synchronizingScrollRef = useRef(false);
   const zoomAnchorRef = useRef<{ contentFraction: number; pointerFraction: number } | null>(null);
-  const [timelineZoom, setTimelineZoom] = useState(() => defaultTimelineScale('today'));
+  const [zoomStep, setZoomStep] = useState(0);
+  const timelineZoom = timelineScaleForStep(pulse.period, zoomStep);
   const [tooltip, setTooltip] = useState<{
     event: ReturnType<typeof useLiveOperationsPulse>['data'][OperationsPhase]['events'][number];
     left: number;
@@ -199,20 +202,15 @@ export function LiveOperationsPulse() {
     requestAnimationFrame(() => { synchronizingScrollRef.current = false; });
   };
 
-  const zoomTimeline = (event: React.WheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const timeline = event.currentTarget;
-    const bounds = timeline.getBoundingClientRect();
-    const pointerFraction = Math.max(0, Math.min(1, (event.clientX - bounds.left) / Math.max(1, bounds.width)));
+  const adjustTimelineZoom = (direction: 'in' | 'out') => {
+    const timeline = Object.values(timelineRefs.current).find((candidate): candidate is HTMLDivElement => Boolean(candidate));
+    if (!timeline) return;
+    const pointerFraction = 0.5;
     zoomAnchorRef.current = {
       contentFraction: (timeline.scrollLeft + pointerFraction * timeline.clientWidth) / Math.max(1, timeline.scrollWidth),
       pointerFraction,
     };
-    const factor = event.deltaY < 0 ? 1.25 : 0.8;
-    setTimelineZoom((current) => Math.max(
-      defaultTimelineScale(pulse.period),
-      Math.min(maximumTimelineScale(pulse.period), current * factor),
-    ));
+    setZoomStep((current) => direction === 'in' ? Math.min(2, current + 1) : Math.max(0, current - 1));
   };
 
   const endTimelineDrag = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -225,7 +223,7 @@ export function LiveOperationsPulse() {
 
   useEffect(() => {
     zoomAnchorRef.current = null;
-    setTimelineZoom(defaultTimelineScale(pulse.period));
+    setZoomStep(0);
     requestAnimationFrame(() => {
       Object.values(timelineRefs.current).forEach((timeline) => {
         if (!timeline) return;
@@ -383,13 +381,12 @@ export function LiveOperationsPulse() {
                   ref={(element) => { timelineRefs.current[definition.phase] = element; }}
                   className="pulse-wave-scroll"
                   onScroll={(event) => synchronizeTimelines(event.currentTarget)}
-                  onWheel={zoomTimeline}
                   onPointerDown={startTimelineDrag}
                   onPointerMove={moveTimelineDrag}
                   onPointerUp={endTimelineDrag}
                   onPointerCancel={endTimelineDrag}
                   tabIndex={0}
-                  title="Scroll to zoom; drag left or right to move through time"
+                  title="Drag left or right to move through time"
                   aria-label={showsSubmissions
                     ? `${definition.label} scrollable activity timeline: ${phaseData.entered} submitted during ${pulse.periodLabel}`
                     : showsPendingOutcomes
@@ -444,6 +441,26 @@ export function LiveOperationsPulse() {
                       </div>
                     ))}
                   </div>
+                </div>
+                <div className="pulse-wave__zoom" aria-label="Timeline zoom controls">
+                  <button
+                    type="button"
+                    className="pulse-wave__zoom-button"
+                    onClick={() => adjustTimelineZoom('out')}
+                    disabled={zoomStep === 0}
+                    aria-label={`Zoom out ${definition.label} timeline`}
+                  >
+                    <Minus aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="pulse-wave__zoom-button"
+                    onClick={() => adjustTimelineZoom('in')}
+                    disabled={zoomStep === 2}
+                    aria-label={`Zoom in ${definition.label} timeline`}
+                  >
+                    <Plus aria-hidden="true" />
+                  </button>
                 </div>
                 <div className="pulse-wave__range" aria-hidden="true">
                   <span data-range-start />

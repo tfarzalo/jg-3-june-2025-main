@@ -84,13 +84,17 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(pulseSource).toContain('timelineZoom * 100');
   });
 
-  it('synchronizes every timeline and supports wheel zoom down to two hours', () => {
-    expect(pulseSource).toContain('function maximumTimelineScale(');
-    expect(pulseSource).toContain('(end - start) / (2 * 60 * 60 * 1000)');
+  it('synchronizes every timeline and supports button zoom down to two hours', () => {
+    expect(pulseSource).toContain('function timelineScaleForStep(');
+    expect(pulseSource).toContain('const visibleHours = step === 1 ? 4 : 2');
+    expect(pulseSource).toContain('Math.min(2, current + 1)');
+    expect(pulseSource).toContain('Math.max(0, current - 1)');
     expect(pulseSource).toContain('const synchronizeTimelines =');
     expect(pulseSource).toContain('onScroll={(event) => synchronizeTimelines(event.currentTarget)}');
-    expect(pulseSource).toContain('onWheel={zoomTimeline}');
-    expect(pulseSource).toContain('Scroll to zoom; drag left or right to move through time');
+    expect(pulseSource).not.toContain('onWheel=');
+    expect(pulseSource).toContain("onClick={() => adjustTimelineZoom('out')}");
+    expect(pulseSource).toContain("onClick={() => adjustTimelineZoom('in')}");
+    expect(pulseSource).toContain('Drag left or right to move through time');
   });
 
   it('keeps point details on hover and replaces permanent labels with a visible range', () => {
@@ -169,6 +173,8 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(styleSource).toContain('stroke-dashoffset: 18');
     expect(styleSource).toContain('stroke-dashoffset: -82');
     expect(styleSource).toContain('23%, 100%');
+    expect(styleSource).toContain('stroke-width: 1.2');
+    expect(styleSource).toContain('opacity: 0.24');
   });
 
   it('uses the 7 AM through 6 PM operating window for Today and Yesterday', () => {
