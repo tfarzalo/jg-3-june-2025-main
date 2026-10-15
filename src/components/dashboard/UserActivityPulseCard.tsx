@@ -114,7 +114,7 @@ export function UserActivityPulseCard() {
 
       <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[9px] font-semibold">
         <span style={{ color: ADMIN_COLOR }}>{admins.length} Admin</span>
-        <span style={{ color: SUBCONTRACTOR_COLOR }}>{subcontractors.length} Subcontractor</span>
+        <span style={{ color: SUBCONTRACTOR_COLOR }}>{subcontractors.length} Subs <span className="ml-1 text-gray-300 dark:text-slate-600">|</span></span>
         <span className="text-gray-500 dark:text-slate-400">{activelyWorking} Working</span>
       </div>
       <span className={`absolute right-2 top-2 h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} aria-hidden="true" />

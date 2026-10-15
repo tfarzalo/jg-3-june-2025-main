@@ -135,6 +135,7 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(userActivitySource).toContain('User Activity');
     expect(userActivitySource).toContain('admins.length');
     expect(userActivitySource).toContain('subcontractors.length');
+    expect(userActivitySource).toContain('{subcontractors.length} Subs <span');
     expect(userActivitySource).toContain('activity_level');
     expect(userActivitySource).toContain('role="tooltip"');
     expect(presenceSource).toContain('last_activity_at');
