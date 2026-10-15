@@ -62,7 +62,7 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(hookSource).toContain("next['Completed Work Orders'].total = completedJobIds.size");
     expect(hookSource).toContain("activityType: 'job_created'");
     expect(hookSource).toContain('countResults.forEach(([phase, count]) => { next[phase].remaining = count; })');
-    expect(pulseSource).toContain("if (phase === 'Completed Work Orders') return 'Ready for QC · Overall Total'");
+    expect(pulseSource).toContain("if (phase === 'Completed Work Orders') return 'Jobs Ready for QC'");
     expect(pulseSource).toContain("if (phase === 'Job Request' || phase === 'Work Order') return 'Jobs Currently in this Phase'");
     expect(pulseSource).toContain("return 'Overall Total'");
     expect(pulseSource).toContain('{phaseData.remaining} {phaseActivityLabel(definition.phase)}');

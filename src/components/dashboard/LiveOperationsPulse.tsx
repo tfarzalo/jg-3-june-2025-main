@@ -103,7 +103,7 @@ function periodMilestoneLabel(
 }
 
 function phaseActivityLabel(phase: OperationsPhase) {
-  if (phase === 'Completed Work Orders') return 'Ready for QC · Overall Total';
+  if (phase === 'Completed Work Orders') return 'Jobs Ready for QC';
   if (phase === 'Job Request' || phase === 'Work Order') return 'Jobs Currently in this Phase';
   return 'Overall Total';
 }
