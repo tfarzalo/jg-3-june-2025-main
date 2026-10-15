@@ -97,20 +97,11 @@ export function useLiveOperationsPulse() {
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectedOnceRef = useRef(false);
 
-  const loadFilterOptions = useCallback(async () => {
-    const [propertiesResult, workersResult] = await Promise.all([
-      supabase.from('properties').select('id, property_name').order('property_name'),
-      fetchActiveSubcontractors<{ id: string; full_name: string | null }>('id, full_name'),
-    ]);
-
-    if (propertiesResult.error) throw propertiesResult.error;
+  const loadWorkerOptions = useCallback(async () => {
+    const workersResult = await fetchActiveSubcontractors<{ id: string; full_name: string | null }>('id, full_name');
     if (workersResult.error) throw workersResult.error;
     if (!mountedRef.current) return;
 
-    setProperties((propertiesResult.data || []).map((property) => ({
-      id: property.id,
-      label: property.property_name || 'Unnamed property',
-    })));
     setWorkers((workersResult.data || []).map((worker) => ({
       id: worker.id,
       label: worker.full_name || 'Unnamed worker',
@@ -185,6 +176,46 @@ export function useLiveOperationsPulse() {
         ...(workOrderRows || []).map((row) => row.job_id),
         ...(approvalRows || []).map((row) => row.job_id),
       ].filter(Boolean))];
+
+      const [activityJobsResult, createdJobsResult] = await Promise.all([
+        jobIds.length
+          ? supabase.from('jobs').select('property_id').in('id', jobIds)
+          : Promise.resolve({ data: [], error: null }),
+        supabase
+          .from('jobs')
+          .select('property_id')
+          .gte('created_at', periodBounds.start)
+          .lt('created_at', periodBounds.end)
+          .range(0, 9999),
+      ]);
+      if (activityJobsResult.error) throw activityJobsResult.error;
+      if (createdJobsResult.error) throw createdJobsResult.error;
+
+      const activePropertyIds = [...new Set([
+        ...(activityJobsResult.data || []).map((job) => job.property_id),
+        ...(createdJobsResult.data || []).map((job) => job.property_id),
+      ].filter(Boolean))];
+      const propertiesResult = activePropertyIds.length
+        ? await supabase
+          .from('properties')
+          .select('id, property_name')
+          .in('id', activePropertyIds)
+          .eq('is_active', true)
+          .eq('is_archived', false)
+          .order('property_name')
+        : { data: [], error: null };
+      if (propertiesResult.error) throw propertiesResult.error;
+      if (!mountedRef.current) return;
+
+      const nextProperties = (propertiesResult.data || []).map((property) => ({
+        id: property.id,
+        label: property.property_name || 'Unnamed property',
+      }));
+      setProperties(nextProperties);
+      if (propertyId && !nextProperties.some((property) => property.id === propertyId)) {
+        setPropertyId('');
+      }
+
       const actorIds = [...new Set([
         ...(changeRows || []).map((row) => row.changed_by),
         ...(workOrderRows || []).map((row) => row.prepared_by),
@@ -348,11 +379,11 @@ export function useLiveOperationsPulse() {
 
   useEffect(() => {
     mountedRef.current = true;
-    void loadFilterOptions().catch((filterError) => {
+    void loadWorkerOptions().catch((filterError) => {
       console.error('Unable to load pulse filters:', filterError);
     });
     return () => { mountedRef.current = false; };
-  }, [loadFilterOptions]);
+  }, [loadWorkerOptions]);
 
   useEffect(() => {
     void refresh();

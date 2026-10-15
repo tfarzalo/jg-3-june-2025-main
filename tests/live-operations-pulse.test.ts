@@ -79,6 +79,16 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(pulseSource).toContain('onScroll={(event) => updateVisibleRange(event.currentTarget, pulse.period)}');
   });
 
+  it('limits the property filter to active properties with activity in the selected period', () => {
+    expect(hookSource).toContain(".gte('created_at', periodBounds.start)");
+    expect(hookSource).toContain(".lt('created_at', periodBounds.end)");
+    expect(hookSource).toContain(".in('id', activePropertyIds)");
+    expect(hookSource).toContain(".eq('is_active', true)");
+    expect(hookSource).toContain(".eq('is_archived', false)");
+    expect(hookSource).toContain('activityJobsResult.data');
+    expect(hookSource).toContain('createdJobsResult.data');
+  });
+
   it('uses a hidden-scrollbar timeline with the full 8 AM to 5 PM business view', () => {
     expect(pulseSource).toContain('return 11 / 9');
     expect(pulseSource).toContain('className="pulse-wave-scroll"');
