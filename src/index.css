@@ -136,9 +136,9 @@ body {
 }
 @keyframes operations-pulse-trace {
   0% { stroke-dashoffset: 18; opacity: 0.16; }
-  4% { opacity: 0.52; }
-  20% { stroke-dashoffset: -82; opacity: 0.52; }
-  23%, 100% { stroke-dashoffset: -82; opacity: 0; }
+  3% { opacity: 0.52; }
+  14.3% { stroke-dashoffset: -82; opacity: 0.52; }
+  17%, 100% { stroke-dashoffset: -82; opacity: 0; }
 }
 
 @keyframes operations-pulse-accent {

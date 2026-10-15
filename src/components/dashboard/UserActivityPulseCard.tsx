@@ -45,6 +45,10 @@ function contextLabel(user: ActivityUser) {
   return 'Using the application';
 }
 
+function userLabel(user: ActivityUser) {
+  return user.display_name || user.email || `User ${user.user_id.slice(0, 8)}`;
+}
+
 export function UserActivityPulseCard() {
   const { onlineUsers } = usePresence();
   const [tooltip, setTooltip] = useState<{ user: ActivityUser; left: number; top: number } | null>(null);
@@ -69,7 +73,7 @@ export function UserActivityPulseCard() {
     const heat = Math.max(0.08, Math.min(1, user.activity_level ?? 0.08));
     const y = baseline - 3 - heat * 10;
     const color = user.role === 'subcontractor' ? SUBCONTRACTOR_COLOR : ADMIN_COLOR;
-    const name = user.display_name && !user.display_name.includes('@') ? user.display_name : 'Name unavailable';
+    const name = userLabel(user);
     return (
       <button
         type="button"
@@ -107,10 +111,10 @@ export function UserActivityPulseCard() {
         <svg viewBox="0 0 220 56" preserveAspectRatio="none" className="pulse-wave__svg h-14" aria-label={`${admins.length} admins and ${subcontractors.length} subcontractors online`}>
           <g style={{ color: ADMIN_COLOR }} opacity={lineOpacity(users)}>
             <path className="pulse-wave__trail" d={buildPresenceLine(users, 28)} />
-            <path className="pulse-wave__line" pathLength="100" d={buildPresenceLine(users, 28)} style={{ '--pulse-duration': '5s', '--pulse-delay': '-1s' } as CSSProperties} />
+            <path className="pulse-wave__line" pathLength="100" d={buildPresenceLine(users, 28)} style={{ '--pulse-duration': '7s', '--pulse-delay': '0s' } as CSSProperties} />
             <circle className="pulse-wave__moving-dot" r="2.25">
-              <animateMotion dur="5s" begin="-1s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.2;1" calcMode="linear" path={buildPresenceLine(users, 28)} />
-              <animate attributeName="opacity" values="0.72;0.72;0;0" keyTimes="0;0.2;0.23;1" dur="5s" begin="-1s" repeatCount="indefinite" />
+              <animateMotion dur="7s" begin="0s" repeatCount="indefinite" keyPoints="0;1;1" keyTimes="0;0.143;1" calcMode="linear" path={buildPresenceLine(users, 28)} />
+              <animate attributeName="opacity" values="0.72;0.72;0;0" keyTimes="0;0.143;0.17;1" dur="7s" begin="0s" repeatCount="indefinite" />
             </circle>
           </g>
         </svg>
@@ -130,7 +134,7 @@ export function UserActivityPulseCard() {
         >
           <div className="flex items-center justify-between gap-2 border-b border-gray-100 pb-1.5 dark:border-slate-700">
             <span className="truncate text-[11px] font-bold text-gray-950 dark:text-white">
-              {tooltip.user.display_name && !tooltip.user.display_name.includes('@') ? tooltip.user.display_name : 'Name unavailable'}
+              {userLabel(tooltip.user)}
             </span>
             <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-gray-600 dark:bg-slate-800 dark:text-slate-300">{tooltip.user.role || 'User'}</span>
           </div>

@@ -37,7 +37,7 @@ export function usePresence() {
         await presenceManager.joinChannel(
           user.id,
           user.email || '',
-          profileData?.full_name || user.user_metadata?.full_name || 'Name unavailable',
+          profileData?.full_name || user.user_metadata?.full_name || user.email || `User ${user.id.slice(0, 8)}`,
           userRole
         );
 

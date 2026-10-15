@@ -84,6 +84,28 @@ function timelineScaleForStep(period: ReturnType<typeof useLiveOperationsPulse>[
   return (end - start) / (visibleHours * 60 * 60 * 1000);
 }
 
+function centeredZoomTarget(
+  timeline: HTMLDivElement,
+  eventFractions: number[],
+  nextScale: number,
+  preferData: boolean,
+) {
+  const viewportStart = timeline.scrollLeft / Math.max(1, timeline.scrollWidth);
+  const viewportSize = timeline.clientWidth / Math.max(1, timeline.scrollWidth);
+  const viewportEnd = viewportStart + viewportSize;
+  const currentCenter = viewportStart + viewportSize / 2;
+  const visibleEvents = eventFractions.filter((fraction) => fraction >= viewportStart && fraction <= viewportEnd);
+  if (!preferData || !visibleEvents.length) return currentCenter;
+
+  const nextViewportSize = 1 / nextScale;
+  return visibleEvents.reduce((best, candidate) => {
+    const candidateCount = visibleEvents.filter((fraction) => Math.abs(fraction - candidate) <= nextViewportSize / 2).length;
+    const bestCount = visibleEvents.filter((fraction) => Math.abs(fraction - best) <= nextViewportSize / 2).length;
+    if (candidateCount !== bestCount) return candidateCount > bestCount ? candidate : best;
+    return Math.abs(candidate - currentCenter) < Math.abs(best - currentCenter) ? candidate : best;
+  }, visibleEvents[0]);
+}
+
 function orderedEvents(events: ReturnType<typeof useLiveOperationsPulse>['data'][OperationsPhase]['events']) {
   return [...events].sort((left, right) => (
     new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime()
@@ -186,18 +208,27 @@ export function LiveOperationsPulse() {
     drag.element.scrollLeft = drag.startScrollLeft - (event.clientX - drag.startX);
   };
 
-  const adjustTimelineZoom = (phase: OperationsPhase, direction: 'in' | 'out') => {
+  const adjustTimelineZoom = (
+    phase: OperationsPhase,
+    direction: 'in' | 'out',
+    events: ReturnType<typeof useLiveOperationsPulse>['data'][OperationsPhase]['events'],
+  ) => {
     const timeline = timelineRefs.current[phase];
     if (!timeline) return;
+    const currentStep = zoomSteps[phase] || 0;
+    const nextStep = direction === 'in' ? Math.min(2, currentStep + 1) : Math.max(0, currentStep - 1);
+    if (nextStep === currentStep) return;
     const pointerFraction = 0.5;
     zoomAnchorsRef.current[phase] = {
-      contentFraction: (timeline.scrollLeft + pointerFraction * timeline.clientWidth) / Math.max(1, timeline.scrollWidth),
+      contentFraction: centeredZoomTarget(
+        timeline,
+        events.map((event) => eventPosition(event.timestamp, pulse.period) / 100),
+        timelineScaleForStep(pulse.period, nextStep),
+        direction === 'in',
+      ),
       pointerFraction,
     };
-    setZoomSteps((current) => {
-      const currentStep = current[phase] || 0;
-      return { ...current, [phase]: direction === 'in' ? Math.min(2, currentStep + 1) : Math.max(0, currentStep - 1) };
-    });
+    setZoomSteps((current) => ({ ...current, [phase]: nextStep }));
   };
 
   const cancelZoomReset = (phase: OperationsPhase) => {
@@ -344,7 +375,7 @@ export function LiveOperationsPulse() {
           const zoomStep = zoomSteps[definition.phase] || 0;
           const timelineZoom = timelineScaleForStep(pulse.period, zoomStep);
           const activityPath = buildActivityPath(phaseData.events, pulse.period, phaseIndex);
-          const animationSeconds = 5;
+          const animationSeconds = 7;
           return (
             <article
               key={definition.phase}
@@ -390,7 +421,7 @@ export function LiveOperationsPulse() {
                 style={{
                   color,
                   '--pulse-duration': `${animationSeconds}s`,
-                  '--pulse-delay': `${-phaseIndex * 2.2}s`,
+                  '--pulse-delay': '0s',
                 } as CSSProperties}
               >
                 <div
@@ -416,19 +447,19 @@ export function LiveOperationsPulse() {
                       <circle className="pulse-wave__moving-dot" r="2.5">
                         <animateMotion
                           dur={`${animationSeconds}s`}
-                          begin={`${-phaseIndex * 2.2}s`}
+                          begin="0s"
                           repeatCount="indefinite"
                           keyPoints="0;1;1"
-                          keyTimes="0;0.2;1"
+                          keyTimes="0;0.143;1"
                           calcMode="linear"
                           path={activityPath}
                         />
                         <animate
                           attributeName="opacity"
                           values="0.72;0.72;0;0"
-                          keyTimes="0;0.2;0.23;1"
+                          keyTimes="0;0.143;0.17;1"
                           dur={`${animationSeconds}s`}
-                          begin={`${-phaseIndex * 2.2}s`}
+                          begin="0s"
                           repeatCount="indefinite"
                         />
                       </circle>
@@ -462,7 +493,7 @@ export function LiveOperationsPulse() {
                   <button
                     type="button"
                     className="pulse-wave__zoom-button"
-                    onClick={() => adjustTimelineZoom(definition.phase, 'out')}
+                    onClick={() => adjustTimelineZoom(definition.phase, 'out', phaseData.events)}
                     disabled={zoomStep === 0}
                     aria-label={`Zoom out ${definition.label} timeline`}
                   >
@@ -471,7 +502,7 @@ export function LiveOperationsPulse() {
                   <button
                     type="button"
                     className="pulse-wave__zoom-button"
-                    onClick={() => adjustTimelineZoom(definition.phase, 'in')}
+                    onClick={() => adjustTimelineZoom(definition.phase, 'in', phaseData.events)}
                     disabled={zoomStep === 2}
                     aria-label={`Zoom in ${definition.label} timeline`}
                   >

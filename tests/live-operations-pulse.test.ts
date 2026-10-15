@@ -63,12 +63,13 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(pulseSource).toContain('function buildActivityPath(');
     expect(pulseSource).toContain("event.direction === 'entered'");
     expect(pulseSource).toContain('eventPosition(event.timestamp, pulse.period)');
-    expect(pulseSource).toContain('const animationSeconds = 5');
+    expect(pulseSource).toContain('const animationSeconds = 7');
     expect(pulseSource).toContain('className="pulse-wave__moving-dot"');
     expect(pulseSource).toContain('path={activityPath}');
     expect(pulseSource).toContain('<animateMotion');
-    expect(pulseSource).toContain('keyTimes="0;0.2;1"');
+    expect(pulseSource).toContain('keyTimes="0;0.143;1"');
     expect(pulseSource).toContain('values="0.72;0.72;0;0"');
+    expect(pulseSource).toContain("'--pulse-delay': '0s'");
   });
 
   it('supports yesterday and labels points by time or date for the selected period', () => {
@@ -88,14 +89,15 @@ describe('Live Operations Pulse dashboard contract', () => {
   it('supports independent centered button zoom down to two hours', () => {
     expect(pulseSource).toContain('function timelineScaleForStep(');
     expect(pulseSource).toContain('const visibleHours = step === 1 ? 4 : 2');
-    expect(pulseSource).toContain('Math.min(2, currentStep + 1)');
-    expect(pulseSource).toContain('Math.max(0, currentStep - 1)');
+    expect(pulseSource).toContain('function centeredZoomTarget(');
+    expect(pulseSource).toContain('const visibleEvents = eventFractions.filter');
+    expect(pulseSource).toContain('candidateCount > bestCount');
     expect(pulseSource).not.toContain('synchronizeTimelines');
     expect(pulseSource).toContain('zoomAnchorsRef.current[phase]');
     expect(pulseSource).toContain('pointerFraction = 0.5');
     expect(pulseSource).not.toContain('onWheel=');
-    expect(pulseSource).toContain("onClick={() => adjustTimelineZoom(definition.phase, 'out')}");
-    expect(pulseSource).toContain("onClick={() => adjustTimelineZoom(definition.phase, 'in')}");
+    expect(pulseSource).toContain("onClick={() => adjustTimelineZoom(definition.phase, 'out', phaseData.events)}");
+    expect(pulseSource).toContain("onClick={() => adjustTimelineZoom(definition.phase, 'in', phaseData.events)}");
     expect(pulseSource).toContain('Drag left or right to move through time');
     expect(pulseSource).toContain('onMouseLeave={() => scheduleZoomReset(definition.phase)}');
     expect(pulseSource).toContain('}, 5000)');
@@ -159,14 +161,21 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(userActivitySource).toContain('admins.length');
     expect(userActivitySource).toContain('subcontractors.length');
     expect(userActivitySource).toContain("user.role === 'subcontractor' ? SUBCONTRACTOR_COLOR : ADMIN_COLOR");
-    expect(userActivitySource).toContain("!tooltip.user.display_name.includes('@')");
-    expect(userActivitySource).toContain("'Name unavailable'");
+    expect(userActivitySource).toContain('function userLabel(user: ActivityUser)');
+    expect(userActivitySource).toContain('user.display_name || user.email || `User ${user.user_id.slice(0, 8)}`');
+    expect(userActivitySource).not.toContain('Name unavailable');
     expect(usePresenceSource.replace(/\s/g, '')).toContain(".select('role,full_name')");
+    expect(usePresenceSource).toContain('profileData?.full_name || user.user_metadata?.full_name || user.email');
     expect(userActivitySource).toContain('{subcontractors.length} Subs <span');
     expect(userActivitySource).toContain('activity_level');
     expect(userActivitySource).toContain('role="tooltip"');
     expect(presenceSource).toContain('last_activity_at');
     expect(presenceSource).toContain('activity_level');
+    expect(presenceSource).toContain('private engagementScore = 0.18');
+    expect(presenceSource).toContain('this.engagementScore + 0.1');
+    expect(presenceSource).toContain('this.engagementScore - 0.08');
+    expect(presenceSource).toContain('this.engagementScore * freshness');
+    expect(presenceSource).toContain('this.trackActivity(false, true)');
     expect(presenceSource).toContain("context_type: (jobMatch");
     expect(presenceSource).toContain('setInterval(() => void this.trackActivity(true), 15000)');
     expect(presenceSource).toContain('this.listeners.forEach((listener)');
@@ -180,7 +189,7 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(styleSource).toContain('@keyframes operations-pulse-trace');
     expect(styleSource).toContain('stroke-dashoffset: 18');
     expect(styleSource).toContain('stroke-dashoffset: -82');
-    expect(styleSource).toContain('23%, 100%');
+    expect(styleSource).toContain('17%, 100%');
     expect(styleSource).toContain('stroke-width: 1.2');
     expect(styleSource).toContain('opacity: 0.24');
   });

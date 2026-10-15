@@ -20,6 +20,7 @@ class PresenceManager {
   private consumers = 0;
   private lastActivityAt = Date.now();
   private lastTrackAt = 0;
+  private engagementScore = 0.18;
   private coolingTimer: ReturnType<typeof setInterval> | null = null;
   private interactionHandler: (() => void) | null = null;
   private listeners = new Set<(users: Map<string, PresencePayload>) => void>();
@@ -57,17 +58,19 @@ class PresenceManager {
 
   private activityLevel() {
     const idleSeconds = (Date.now() - this.lastActivityAt) / 1000;
-    if (idleSeconds < 15) return 1;
-    if (idleSeconds < 60) return 0.72;
-    if (idleSeconds < 180) return 0.42;
-    if (idleSeconds < 300) return 0.2;
-    return 0.08;
+    const freshness = idleSeconds < 15 ? 1 : idleSeconds < 60 ? 0.72 : idleSeconds < 180 ? 0.42 : idleSeconds < 300 ? 0.2 : 0.08;
+    return Math.max(0.08, Math.min(1, this.engagementScore * freshness));
   }
 
-  private async trackActivity(force = false) {
+  private async trackActivity(force = false, interaction = false) {
     if (!this.channel || !this.isSubscribed || !this.basePayload) return;
     if (!force && Date.now() - this.lastTrackAt < 5000) return;
     this.lastTrackAt = Date.now();
+    if (interaction) {
+      this.engagementScore = Math.min(1, this.engagementScore + 0.1);
+    } else if (Date.now() - this.lastActivityAt > 15000) {
+      this.engagementScore = Math.max(0.08, this.engagementScore - 0.08);
+    }
     await this.channel.track({
       ...this.basePayload,
       ...this.getContext(),
@@ -80,7 +83,7 @@ class PresenceManager {
     if (this.interactionHandler) return;
     this.interactionHandler = () => {
       this.lastActivityAt = Date.now();
-      void this.trackActivity();
+      void this.trackActivity(false, true);
     };
     ['pointerdown', 'pointermove', 'keydown', 'input', 'scroll'].forEach((eventName) => {
       window.addEventListener(eventName, this.interactionHandler!, { passive: true });
@@ -135,6 +138,7 @@ class PresenceManager {
         if (status === 'SUBSCRIBED') {
           this.isSubscribed = true;
           this.lastActivityAt = Date.now();
+          this.engagementScore = 0.18;
           this.startActivityTracking();
           void this.trackActivity(true);
           this.publishPresenceState();
@@ -166,6 +170,7 @@ class PresenceManager {
       this.isSubscribed = false;
       this.userId = null;
       this.basePayload = null;
+      this.engagementScore = 0.18;
       this.consumers = 0;
       this.onlineUsers = new Map();
       this.listeners.forEach((listener) => listener(new Map()));
