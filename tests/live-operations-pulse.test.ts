@@ -56,7 +56,11 @@ describe('Live Operations Pulse dashboard contract', () => {
     expect(hookSource).toContain(".gte('submission_date', periodBounds.start)");
     expect(hookSource).toContain("activityType: 'work_order_submitted'");
     expect(hookSource).toContain("toPhase !== 'Work Order'");
-    expect(pulseSource).toContain("showsSubmissions ? 'submitted' : 'entered'");
+    expect(pulseSource).toContain("if (phase === 'Job Request') return 'Added'");
+    expect(pulseSource).toContain("if (phase === 'Work Order') return 'Submitted'");
+    expect(pulseSource).toContain("if (phase === 'Completed Work Orders') return 'Ready for QC'");
+    expect(pulseSource).toContain('{phaseActivityLabel(definition.phase)}');
+    expect(pulseSource).not.toContain('`${phaseData.left} left • ${pulse.periodLabel}`');
   });
 
   it('draws quick, paused phase-specific timelines from saved entered and left events', () => {

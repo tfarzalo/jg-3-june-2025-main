@@ -90,6 +90,13 @@ function currentTotalLabel(period: ReturnType<typeof useLiveOperationsPulse>['pe
   }
 }
 
+function phaseActivityLabel(phase: OperationsPhase) {
+  if (phase === 'Job Request') return 'Added';
+  if (phase === 'Work Order') return 'Submitted';
+  if (phase === 'Completed Work Orders') return 'Ready for QC';
+  return 'Entered';
+}
+
 function timelineScaleForStep(period: ReturnType<typeof useLiveOperationsPulse>['period'], step: number) {
   if (step === 0) return defaultTimelineScale(period);
   const { start, end } = periodBoundsMs(period);
@@ -538,9 +545,8 @@ export function LiveOperationsPulse() {
                   <span className="text-gray-500 dark:text-slate-400">{phaseData.skipped} Bypassed</span>
                 </div>
               ) : (
-                <div className="mt-2 flex items-center justify-between text-[11px]">
-                  <span className="font-semibold" style={{ color }}><span className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: color }} />{phaseData.entered} {showsSubmissions ? 'submitted' : 'entered'}</span>
-                  <span className="text-gray-500 dark:text-slate-400">{showsSubmissions ? pulse.periodLabel : `${phaseData.left} left • ${pulse.periodLabel}`}</span>
+                <div className="mt-2 text-[11px]">
+                  <span className="font-semibold" style={{ color }}><span className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: color }} />{phaseData.entered} {phaseActivityLabel(definition.phase)}</span>
                 </div>
               )}
             </article>
