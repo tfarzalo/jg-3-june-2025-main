@@ -80,13 +80,13 @@ function defaultTimelineScale(period: ReturnType<typeof useLiveOperationsPulse>[
 function currentTotalLabel(period: ReturnType<typeof useLiveOperationsPulse>['period']) {
   switch (period) {
     case 'yesterday':
-      return 'Current now · Yesterday activity';
+      return "Yesterday's activity";
     case '7d':
-      return 'Current now · 7-day activity';
+      return '7-day activity';
     case '30d':
-      return 'Current now · 30-day activity';
+      return '30-day activity';
     default:
-      return 'Current now · Today activity';
+      return "Today's activity";
   }
 }
 
