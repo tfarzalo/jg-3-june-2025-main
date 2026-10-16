@@ -208,6 +208,7 @@ export function SubcontractorDashboard() {
     job: Job | null;
     billAmount: number;
     subPayAmount: number;
+    cancellationReason: string;
     loading: boolean;
     submitting: boolean;
   }>({
@@ -215,6 +216,7 @@ export function SubcontractorDashboard() {
     job: null,
     billAmount: DEFAULT_CANCELLATION_TRIP_CHARGE.billAmount,
     subPayAmount: DEFAULT_CANCELLATION_TRIP_CHARGE.subPayAmount,
+    cancellationReason: '',
     loading: false,
     submitting: false
   });
@@ -248,6 +250,9 @@ export function SubcontractorDashboard() {
       cancelJobTitle: "Cancel Job",
       cancelJobPrompt: "Are you sure you want to cancel this job?",
       cancelTripChargeIntro: "This job will be moved to Cancelled. Choose whether to add the Cancellation Trip Charge.",
+      cancellationReason: "Reason for Cancellation",
+      cancellationReasonPlaceholder: "Enter the reason this job is being cancelled",
+      cancellationReasonRequired: "A cancellation reason is required.",
       cancellationTripCharge: "Cancellation Trip Charge",
       subcontractorPay: "Subcontractor Pay",
       noTripCharge: "No Trip Charge",
@@ -318,6 +323,9 @@ export function SubcontractorDashboard() {
       cancelJobTitle: "Cancelar Trabajo",
       cancelJobPrompt: "¿Está seguro de que desea cancelar este trabajo?",
       cancelTripChargeIntro: "Este trabajo pasará a Cancelado. Elija si desea agregar el Cargo de Viaje por Cancelación.",
+      cancellationReason: "Motivo de la Cancelación",
+      cancellationReasonPlaceholder: "Ingrese el motivo por el que se cancela este trabajo",
+      cancellationReasonRequired: "Se requiere un motivo de cancelación.",
       cancellationTripCharge: "Cargo de Viaje por Cancelación",
       subcontractorPay: "Pago del Subcontratista",
       noTripCharge: "Sin Cargo de Viaje",
@@ -1326,6 +1334,7 @@ export function SubcontractorDashboard() {
       job: null,
       billAmount: DEFAULT_CANCELLATION_TRIP_CHARGE.billAmount,
       subPayAmount: DEFAULT_CANCELLATION_TRIP_CHARGE.subPayAmount,
+      cancellationReason: '',
       loading: false,
       submitting: false
     });
@@ -1337,6 +1346,7 @@ export function SubcontractorDashboard() {
       job,
       billAmount: DEFAULT_CANCELLATION_TRIP_CHARGE.billAmount,
       subPayAmount: DEFAULT_CANCELLATION_TRIP_CHARGE.subPayAmount,
+      cancellationReason: '',
       loading: true,
       submitting: false
     });
@@ -1365,6 +1375,12 @@ export function SubcontractorDashboard() {
     const job = cancelJobModal.job;
     if (!job) return;
 
+    const cancellationReason = cancelJobModal.cancellationReason.trim();
+    if (!cancellationReason) {
+      setError(text.cancellationReasonRequired);
+      return;
+    }
+
     setCancelJobModal(prev => ({ ...prev, submitting: true }));
     setError(null);
 
@@ -1374,7 +1390,8 @@ export function SubcontractorDashboard() {
         {
           p_job_id: job.id,
           p_bill_amount: includeTripCharge ? cancelJobModal.billAmount : 0,
-          p_sub_pay_amount: includeTripCharge ? cancelJobModal.subPayAmount : 0
+          p_sub_pay_amount: includeTripCharge ? cancelJobModal.subPayAmount : 0,
+          p_cancellation_reason: cancellationReason
         }
       );
 
@@ -2189,6 +2206,22 @@ export function SubcontractorDashboard() {
               {text.cancelTripChargeIntro}
             </p>
 
+            <div className="mb-5">
+              <label htmlFor="subcontractor-cancellation-reason" className="block text-sm font-semibold text-gray-900 dark:text-white mb-2">
+                {text.cancellationReason} <span className="text-red-600" aria-hidden="true">*</span>
+              </label>
+              <textarea
+                id="subcontractor-cancellation-reason"
+                value={cancelJobModal.cancellationReason}
+                onChange={(event) => setCancelJobModal(prev => ({ ...prev, cancellationReason: event.target.value }))}
+                placeholder={text.cancellationReasonPlaceholder}
+                rows={3}
+                required
+                disabled={cancelJobModal.submitting}
+                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-[#0F172A] px-3 py-2 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50"
+              />
+            </div>
+
             <div className="rounded-lg border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-900/10 p-4 mb-6">
               <p className="text-sm font-semibold text-red-900 dark:text-red-100">
                 {text.cancellationTripCharge}
@@ -2205,7 +2238,7 @@ export function SubcontractorDashboard() {
               <button
                 type="button"
                 onClick={() => confirmCancelJob(false)}
-                disabled={cancelJobModal.submitting}
+                disabled={cancelJobModal.submitting || !cancelJobModal.cancellationReason.trim()}
                 className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-[#2D3B4E] rounded-lg hover:bg-gray-200 dark:hover:bg-[#374151] transition-colors disabled:opacity-50"
               >
                 {cancelJobModal.submitting ? text.cancellingJob : text.noTripCharge}
@@ -2213,7 +2246,7 @@ export function SubcontractorDashboard() {
               <button
                 type="button"
                 onClick={() => confirmCancelJob(true)}
-                disabled={cancelJobModal.loading || cancelJobModal.submitting}
+                disabled={cancelJobModal.loading || cancelJobModal.submitting || !cancelJobModal.cancellationReason.trim()}
                 className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
               >
                 {cancelJobModal.submitting ? text.cancellingJob : text.cancelWithTripCharge}

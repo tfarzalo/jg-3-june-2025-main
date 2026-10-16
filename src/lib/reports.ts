@@ -228,11 +228,15 @@ const buildCombinedExtraChargeDetails = (job: ReportJob, includeNotes = true) =>
     const quantity = item.qty
       ? `${item.qty}${item.unit ? ` ${cleanCombinedChargeText(item.unit)}` : ''}`
       : '';
+    const cancellationReason = item.type === 'cancellation_trip_charge'
+      ? cleanCombinedChargeText(job.cancellation_reason || undefined)
+      : '';
     return [
       name,
       description && description !== name ? description : '',
       quantity,
       `Total: ${formatCurrency(item.bill)}`,
+      cancellationReason ? `Reason: ${cancellationReason}` : '',
       notes ? `Notes: ${notes}` : '',
     ].filter(Boolean).join(' — ');
   });

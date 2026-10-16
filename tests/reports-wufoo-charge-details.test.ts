@@ -113,5 +113,15 @@ describe('Wufoo combined charge details', () => {
     const report = await generateReport({ from: '2026-10-01', to: '2026-10-09', template, persistRun: false });
     const header = report.headers.find(value => value.startsWith('Description,'))!;
     expect(String(report.rows[0][header])).toContain('$95 Cancellation Trip Charge - Reason: Unit still occupied');
+
+    const standardReport = await generateReport({
+      from: '2026-10-01',
+      to: '2026-10-09',
+      template: { ...template, id: 'cancelled-combined', name: 'Cancelled Jobs' },
+      persistRun: false,
+    });
+    expect(String(standardReport.rows[0]['Extra Charge Items (Combined)'])).toContain(
+      'Cancellation Trip Charge — Total: $95.00 — Reason: Unit still occupied'
+    );
   });
 });

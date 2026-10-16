@@ -26,7 +26,7 @@ export function extractJobCancellationReason(changeReason: string | null | undef
     return null;
   }
 
-  const selectedReasonMatch = normalizedReason.match(/^Job cancelled(?:[^:]+)?:\s*(.+)$/i);
+  const selectedReasonMatch = normalizedReason.match(/^Job cancelled(?:\s+by\s+[^:;]+|\s+after\s+[^:;]+)?:\s*(.+?)(?:;\s*Cancellation Trip Charge.*|;\s*no Cancellation Trip Charge added)?$/i);
   if (selectedReasonMatch?.[1]) {
     return selectedReasonMatch[1].trim();
   }
@@ -36,6 +36,10 @@ export function extractJobCancellationReason(changeReason: string | null | undef
   }
 
   if (/^Job cancelled$/i.test(normalizedReason)) {
+    return 'No reason recorded';
+  }
+
+  if (/^Job cancelled by subcontractor(?:;|$)/i.test(normalizedReason)) {
     return 'No reason recorded';
   }
 

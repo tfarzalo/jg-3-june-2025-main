@@ -395,7 +395,9 @@ export function JobDetails() {
   const jobIdForFiles = job?.id ?? null;
   const canUseQualityControl = isAdmin || isJGManagement || isSuperAdmin;
   const canManagePainterNotes = isAdmin || isJGManagement;
-  const canEditCancellationReason = canEditInlineJobDetails;
+  // Cancellation reasons remain editable by internal managers even though the
+  // rest of a cancelled job is frozen as an immutable financial snapshot.
+  const canEditCancellationReason = isAdmin || isJGManagement || isSuperAdmin;
   const canEditExtraChargeNotes = canEditInlineJobDetails;
   const {
     activityItems,
@@ -3799,6 +3801,10 @@ export function JobDetails() {
 
     if (existing.toLowerCase().includes('job cancelled by admin:')) {
       return `Job cancelled by admin: ${trimmed}${suffix}`;
+    }
+
+    if (existing.toLowerCase().includes('job cancelled by subcontractor')) {
+      return `Job cancelled by subcontractor: ${trimmed}${suffix}`;
     }
 
     if (existing.toLowerCase().includes('job cancelled after extra charges were declined')) {
