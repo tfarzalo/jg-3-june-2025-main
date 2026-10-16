@@ -155,6 +155,21 @@ type ReportJob = {
   quality_control_subcontractor_average_percent?: number;
 };
 
+const REPORT_CHARGE_PHASES = new Set([
+  'work order',
+  'completed work orders',
+  'quality control',
+  'completed',
+  'invoicing',
+  'archived',
+]);
+
+const isCancelledReportJob = (job: ReportJob) =>
+  /cancel/i.test(textFrom(job.job_phase, 'job_phase_label'));
+
+const phaseIncludesChargesInReports = (job: ReportJob) =>
+  REPORT_CHARGE_PHASES.has(textFrom(job.job_phase, 'job_phase_label').trim().toLowerCase());
+
 const QUALITY_CONTROL_ITEM_REPORT_COLUMNS: ReportColumn[] = QUALITY_CONTROL_SCORE_ITEMS.map(item => ({
   key: `qc_score_${item.key}`,
   label: `QC - ${item.label}`,
@@ -215,6 +230,13 @@ const buildWufooChargeDetails = (job: ReportJob, includeNotes = true) => {
     parts.push(detail);
   });
 
+  const hasCancellationTripCharge = (job.extra_item_details || [])
+    .some(item => item.type === 'cancellation_trip_charge');
+  if (isCancelledReportJob(job) && !hasCancellationTripCharge) {
+    const reason = cleanCombinedChargeText(job.cancellation_reason || undefined);
+    parts.push(`Cancelled${reason ? ` - Reason: ${reason}` : ''}`);
+  }
+
   return parts.join(' | ');
 };
 
@@ -251,6 +273,13 @@ const buildCombinedExtraChargeDetails = (job: ReportJob, includeNotes = true) =>
       notes ? `Notes: ${notes}` : '',
     ].filter(Boolean).join(' — '));
   });
+
+  const hasCancellationTripCharge = (job.extra_item_details || [])
+    .some(item => item.type === 'cancellation_trip_charge');
+  if (isCancelledReportJob(job) && !hasCancellationTripCharge) {
+    const reason = cleanCombinedChargeText(job.cancellation_reason || undefined);
+    entries.push(['Cancelled', reason ? `Reason: ${reason}` : ''].filter(Boolean).join(' — '));
+  }
 
   return entries.join(' | ');
 };
@@ -1074,8 +1103,10 @@ export function openReportInNewWindow(report: GeneratedReport) {
     throw new Error('The report window was blocked by the browser.');
   }
 
+  const combinedHeader = 'Extra Charge Items (Combined)';
+  const cellClass = (header: string) => header === combinedHeader ? 'combined-charge-cell' : 'nowrap-cell';
   const tableHead = report.headers
-    .map(header => `<th>${escapeHtml(header)}</th>`)
+    .map(header => `<th class="${cellClass(header)}">${escapeHtml(header)}</th>`)
     .join('');
   const tableRows = report.rows
     .map(row => {
@@ -1094,7 +1125,7 @@ export function openReportInNewWindow(report: GeneratedReport) {
         } else {
           display = String(raw);
         }
-        return `<td>${escapeHtml(display)}</td>`;
+        return `<td class="${cellClass(header)}">${escapeHtml(display)}</td>`;
       }).join('');
       return `<tr>${cells}</tr>`;
     })
@@ -1111,8 +1142,10 @@ export function openReportInNewWindow(report: GeneratedReport) {
     h1 { font-size: 20px; margin: 0 0 4px; }
     .meta { color: #4b5563; margin-bottom: 20px; }
     .wrap { overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
-    table { border-collapse: collapse; width: 100%; min-width: 900px; }
-    th, td { border-bottom: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-size: 13px; vertical-align: top; overflow-wrap: anywhere; }
+    table { border-collapse: collapse; width: max-content; min-width: 100%; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 10px 12px; text-align: left; font-size: 13px; vertical-align: top; }
+    .nowrap-cell { white-space: nowrap; width: 1%; }
+    .combined-charge-cell { white-space: normal; overflow-wrap: anywhere; min-width: 320px; max-width: 560px; }
     th { background: #f9fafb; font-weight: 700; position: sticky; top: 0; }
     tr:nth-child(even) td { background: #fcfcfd; }
   </style>
@@ -1244,18 +1277,27 @@ async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob
       if (!error && data) {
         const authoritative = objectFrom(objectFrom(data)?.authoritative_billing_totals);
         if (!authoritative) throw new Error('The authoritative billing payload was not returned. Run the billing totals migration first.');
-        const chargesApproved = authoritative.charges_approved === true;
-        const presentation = extractChargePresentation(data, job, chargesApproved);
-        const totalBill = numberFrom(authoritative.total_bill);
-        const totalSub = numberFrom(authoritative.total_sub_pay);
+        const phaseAdvancedPastApproval = phaseIncludesChargesInReports(job);
+        const chargesIncludedInReport = authoritative.charges_included_in_report === true ||
+          authoritative.charges_approved === true ||
+          phaseAdvancedPastApproval;
+        const presentation = extractChargePresentation(data, job, chargesIncludedInReport);
+        // Approval records remain authoritative for approval status. For reporting only,
+        // an admin-advanced job includes its saved charges even when its token is still
+        // pending or absent.
+        const phaseAdvancedTotals = phaseAdvancedPastApproval && authoritative.charges_approved !== true
+          ? calculateBillingTotals(data, job, true)
+          : null;
+        const totalBill = phaseAdvancedTotals?.bill ?? numberFrom(authoritative.total_bill);
+        const totalSub = phaseAdvancedTotals?.sub ?? numberFrom(authoritative.total_sub_pay);
         const source = String(authoritative.source ?? '');
         const isSnapshot = source === 'financial_snapshot';
-        const baseBill = isSnapshot ? totalBill : numberFrom(authoritative.base_bill);
-        const baseSub = isSnapshot ? totalSub : numberFrom(authoritative.base_sub_pay);
-        const standardExtraBill = numberFrom(authoritative.standard_extra_bill);
-        const standardExtraSub = numberFrom(authoritative.standard_extra_sub_pay);
-        const miscBill = numberFrom(authoritative.misc_bill);
-        const miscSub = numberFrom(authoritative.misc_sub_pay);
+        const baseBill = isSnapshot ? totalBill : phaseAdvancedTotals?.base ?? numberFrom(authoritative.base_bill);
+        const baseSub = isSnapshot ? totalSub : phaseAdvancedTotals?.baseSub ?? numberFrom(authoritative.base_sub_pay);
+        const standardExtraBill = phaseAdvancedTotals?.extra ?? numberFrom(authoritative.standard_extra_bill);
+        const standardExtraSub = phaseAdvancedTotals?.extraSub ?? numberFrom(authoritative.standard_extra_sub_pay);
+        const miscBill = phaseAdvancedTotals?.miscAdditionalCostBill ?? numberFrom(authoritative.misc_bill);
+        const miscSub = phaseAdvancedTotals?.miscAdditionalCostSubPay ?? numberFrom(authoritative.misc_sub_pay);
         const extraBill = standardExtraBill;
         const extraSub = standardExtraSub;
         return {
@@ -1342,7 +1384,7 @@ async function enrichJobsWithBillingTotals(jobs: ReportJob[]): Promise<ReportJob
 
 async function fetchCancellationReasons(jobs: ReportJob[]) {
   const jobIds = jobs
-    .filter(job => Boolean(job.cancellation_trip_charge_added))
+    .filter(job => isCancelledReportJob(job))
     .map(job => job.id);
   const reasons = new Map<string, string>();
   if (jobIds.length === 0) return reasons;

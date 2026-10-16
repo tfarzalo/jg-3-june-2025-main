@@ -42,6 +42,7 @@ const COLUMN_CATEGORIES = [
       'total_billing_amount',
       'sub_pay',
       ...EXTRA_CHARGE_ITEM_COLUMN_KEYS,
+      'extra_items',
       'misc_additional_cost_description',
       'misc_additional_cost_bill',
       'misc_additional_cost_sub_pay',

@@ -124,4 +124,35 @@ describe('Wufoo combined charge details', () => {
       'Cancellation Trip Charge — Total: $95.00 — Reason: Unit still occupied'
     );
   });
+
+  it('shows cancelled and the reason when there is no cancellation trip charge', async () => {
+    const jobs = [{
+      id: 'job-1', work_order_num: 501, description: 'Repair unit', work_orders: [],
+      job_phase: { job_phase_label: 'Cancelled' }, cancellation_trip_charge_added: false,
+    }];
+    database.from.mockImplementation((table: string) => queryWith(table === 'jobs' ? jobs : [{
+      job_id: 'job-1', change_reason: 'Job cancelled by admin: Resident declined access',
+      changed_at: '2026-10-10T12:00:00Z',
+    }]));
+    database.rpc.mockResolvedValue({ data: {
+      authoritative_billing_totals: {
+        base_bill: 0, base_sub_pay: 0, standard_extra_bill: 0, standard_extra_sub_pay: 0,
+        misc_bill: 0, misc_sub_pay: 0, total_bill: 0, total_sub_pay: 0,
+        charges_approved: false, source: 'live_job_details',
+      },
+      work_order: {},
+    }, error: null });
+
+    const report = await generateReport({ from: '2026-10-01', to: '2026-10-31', template, persistRun: false });
+    const header = report.headers.find(value => value.startsWith('Description,'))!;
+    expect(report.rows[0][header]).toBe('Cancelled - Reason: Resident declined access');
+
+    const standardReport = await generateReport({
+      from: '2026-10-01', to: '2026-10-31', persistRun: false,
+      template: { ...template, id: 'cancelled-no-trip', name: 'Cancelled Jobs' },
+    });
+    expect(standardReport.rows[0]['Extra Charge Items (Combined)']).toBe(
+      'Cancelled — Reason: Resident declined access'
+    );
+  });
 });
