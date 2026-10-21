@@ -9,6 +9,21 @@ export interface ApprovalStatusRecord {
   created_at: string;
 }
 
+export type ExtraChargeApprovalDecision = 'approved' | 'declined';
+
+/**
+ * Supports tokenless legacy phase history without treating workflow language
+ * such as "for approval" or "approval required" as an approval decision.
+ */
+export function legacyExtraChargeDecisionFromReason(
+  reason?: string | null,
+): ExtraChargeApprovalDecision | null {
+  const explicitDecision = reason?.match(/\bextra charges (approved|declined|rejected)\b/i)?.[1]?.toLowerCase();
+  if (explicitDecision === 'approved') return 'approved';
+  if (explicitDecision === 'declined' || explicitDecision === 'rejected') return 'declined';
+  return null;
+}
+
 export function latestApprovalStatuses(records: ApprovalStatusRecord[]) {
   const result: Record<string, ApprovalListStatus> = {};
   const sorted = [...records].sort((a, b) => b.created_at.localeCompare(a.created_at));

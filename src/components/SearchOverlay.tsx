@@ -21,10 +21,16 @@ import { Link } from 'react-router-dom';
 import { supabase } from '@/utils/supabase';
 import { format, parseISO, subDays } from 'date-fns';
 import { debounce } from '../lib/utils/debounce';
+import {
+  canRunGlobalSearch,
+  GLOBAL_SEARCH_MIN_LENGTH,
+  normalizeGlobalSearchTerm,
+  type GlobalSearchRow,
+} from '../lib/globalSearch';
 
 interface SearchResult {
   id: string;
-  type: 'page' | 'job' | 'property' | 'file' | 'user' | 'work_order' | 'job_request' | 'activity' | 'property_group';
+  type: 'page' | 'job' | 'property' | 'file' | 'user' | 'work_order' | 'job_request' | 'activity' | 'property_group' | 'contact';
   title: string;
   subtitle: string;
   description?: string;
@@ -33,6 +39,7 @@ interface SearchResult {
   url: string;
   icon: React.ReactNode;
   priority?: 'high' | 'medium' | 'low';
+  matchedField?: string;
 }
 
 interface SearchFilters {
@@ -45,6 +52,7 @@ interface SearchFilters {
     job_requests: boolean;
     activity: boolean;
     property_groups: boolean;
+    contacts: boolean;
   };
   dateRange: 'all' | 'today' | 'week' | 'month' | 'year';
   customDateRange?: {
@@ -69,7 +77,8 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
       work_orders: true,
       job_requests: true,
       activity: false,
-      property_groups: true
+      property_groups: true,
+      contacts: true
     },
     dateRange: 'all'
   });
@@ -131,7 +140,7 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
   // Debounced search function
   const debouncedSearch = useMemo(
     () => debounce(async (term: string, searchFilters: SearchFilters) => {
-      if (!term.trim() || !isMountedRef.current) {
+      if (!canRunGlobalSearch(term) || !isMountedRef.current) {
         setResults([]);
         setLoading(false);
         return;
@@ -149,7 +158,7 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
       const searchRequestId = ++searchRequestRef.current;
 
       try {
-        const normalizedTerm = term.trim();
+        const normalizedTerm = normalizeGlobalSearchTerm(term);
         const safeTerm = escapePostgrestSearchTerm(normalizedTerm);
         const unitSearchTerms = getUnitSearchTerms(normalizedTerm);
         const exactDate = parseSearchDate(normalizedTerm);
@@ -159,6 +168,26 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
         if (isMountedRef.current && searchRequestId === searchRequestRef.current) {
           setLoading(false);
         }
+
+        // Prefer the centralized, permission-aware search endpoint. During a
+        // rolling deployment the legacy searches below remain as a safe
+        // fallback until the additive database migration is available.
+        const enabledTypes = getEnabledSearchTypes(searchFilters);
+        const { data: globalRows, error: globalSearchError } = await supabase.rpc('global_search_v2', {
+          p_query: normalizedTerm,
+          p_types: enabledTypes,
+          p_limit: 60,
+          p_offset: 0,
+          p_date_from: getSearchDateFrom(searchFilters.dateRange),
+        });
+
+        if (!globalSearchError) {
+          (globalRows as GlobalSearchRow[] | null || []).forEach((row) => addSearchResult(mapGlobalSearchRow(row)));
+          publishSearchResults(searchRequestId, searchRequestRef.current, isMountedRef.current, searchResults, setResults);
+          return;
+        }
+
+        console.warn('Centralized global search unavailable; using compatibility search.', globalSearchError.message);
 
         // Get date filter
         const getDateFilter = () => {
@@ -769,10 +798,12 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
 
   // Trigger search when term or filters change
   useEffect(() => {
-    if (searchTerm) {
+    if (canRunGlobalSearch(searchTerm)) {
       debouncedSearch(searchTerm, filters);
     } else {
+      searchRequestRef.current += 1;
       setResults([]);
+      setLoading(false);
     }
   }, [searchTerm, filters, debouncedSearch]);
 
@@ -955,6 +986,18 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
                     )}
                   </button>
                   <button
+                    onClick={() => toggleTypeFilter('contacts')}
+                    className={`px-4 py-2 rounded-full text-sm font-medium flex items-center transition-all duration-200 ${
+                      filters.types.contacts
+                        ? 'bg-cyan-600 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <User className="h-4 w-4 mr-1.5" />
+                    Contacts
+                    {filters.types.contacts ? <CheckCircle className="h-4 w-4 ml-1.5" /> : <XCircle className="h-4 w-4 ml-1.5" />}
+                  </button>
+                  <button
                     onClick={() => toggleTypeFilter('activity')}
                     className={`px-4 py-2 rounded-full text-sm font-medium flex items-center transition-all duration-200 ${
                       filters.types.activity 
@@ -1043,6 +1086,14 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
             </div>
+          ) : searchTerm && !canRunGlobalSearch(searchTerm) ? (
+            <div className="text-center py-12">
+              <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Keep typing to search</h3>
+              <p className="text-gray-600 dark:text-gray-400">
+                Enter at least {GLOBAL_SEARCH_MIN_LENGTH} characters for real-time results.
+              </p>
+            </div>
           ) : searchTerm && results.length === 0 ? (
             <div className="text-center py-12">
               <Search className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -1067,7 +1118,7 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
               </div>
               
               {/* Group results by type */}
-              {['page', 'job', 'property', 'file', 'user', 'work_order', 'job_request', 'activity', 'property_group'].map(type => {
+              {['page', 'job', 'property', 'work_order', 'job_request', 'property_group', 'contact', 'user', 'file', 'activity'].map(type => {
                 const typeResults = results.filter(result => result.type === type);
                 if (typeResults.length === 0) return null;
                 
@@ -1083,10 +1134,12 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
                       {type === 'job_request' && <FileText className="h-5 w-5 mr-2 text-indigo-500" />}
                       {type === 'activity' && <Clock className="h-5 w-5 mr-2 text-gray-500" />}
                       {type === 'property_group' && <Building2 className="h-5 w-5 mr-2 text-teal-500" />}
+                      {type === 'contact' && <User className="h-5 w-5 mr-2 text-cyan-600" />}
                       {type === 'page' ? 'Pages' :
                        type === 'work_order' ? 'Work Orders' : 
                        type === 'job_request' ? 'Job Requests' :
                        type === 'property_group' ? 'Property Groups' :
+                       type === 'contact' ? 'Contacts' :
                        type === 'activity' ? 'Activity Logs' :
                        type.charAt(0).toUpperCase() + type.slice(1) + 's'} ({typeResults.length})
                     </h3>
@@ -1115,6 +1168,11 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
                               {result.description && (
                                 <p className="text-sm text-gray-500 dark:text-gray-500 mt-1 truncate">
                                   {result.description}
+                                </p>
+                              )}
+                              {result.matchedField && (
+                                <p className="mt-1 text-xs font-medium text-blue-600 dark:text-blue-300">
+                                  Matched {result.matchedField}
                                 </p>
                               )}
                               <div className="mt-2 flex items-center justify-between">
@@ -1470,6 +1528,67 @@ function formatWorkOrderNumber(value: number | string | null | undefined) {
   }
 
   return String(value).startsWith('WO-') ? String(value) : `WO-${value}`;
+}
+
+function getEnabledSearchTypes(filters: SearchFilters) {
+  const typeMap: Record<keyof SearchFilters['types'], SearchResult['type']> = {
+    jobs: 'job',
+    properties: 'property',
+    files: 'file',
+    users: 'user',
+    work_orders: 'work_order',
+    job_requests: 'job_request',
+    activity: 'activity',
+    property_groups: 'property_group',
+    contacts: 'contact',
+  };
+
+  return (Object.keys(filters.types) as Array<keyof SearchFilters['types']>)
+    .filter((key) => filters.types[key])
+    .map((key) => typeMap[key]);
+}
+
+function getSearchDateFrom(dateRange: SearchFilters['dateRange']) {
+  switch (dateRange) {
+    case 'today':
+      return new Date().toISOString().split('T')[0];
+    case 'week':
+      return subDays(new Date(), 7).toISOString();
+    case 'month':
+      return subDays(new Date(), 30).toISOString();
+    case 'year':
+      return subDays(new Date(), 365).toISOString();
+    default:
+      return null;
+  }
+}
+
+function mapGlobalSearchRow(row: GlobalSearchRow): SearchResult {
+  const iconByType: Record<GlobalSearchRow['result_type'], React.ReactNode> = {
+    job: <FileText className="h-5 w-5 text-blue-500" />,
+    property: <Building2 className="h-5 w-5 text-green-500" />,
+    file: <FileText className="h-5 w-5 text-yellow-500" />,
+    user: <User className="h-5 w-5 text-purple-500" />,
+    work_order: <FileText className="h-5 w-5 text-orange-500" />,
+    job_request: <FileText className="h-5 w-5 text-indigo-500" />,
+    activity: <Clock className="h-5 w-5 text-gray-500" />,
+    property_group: <Building2 className="h-5 w-5 text-teal-500" />,
+    contact: <User className="h-5 w-5 text-cyan-600" />,
+  };
+
+  return {
+    id: row.id,
+    type: row.result_type,
+    title: row.title,
+    subtitle: row.subtitle || '',
+    description: row.description || undefined,
+    date: formatDateLabel(row.result_date),
+    tags: row.tags || undefined,
+    url: row.url,
+    matchedField: row.matched_field || undefined,
+    icon: iconByType[row.result_type],
+    priority: row.relevance >= 90 ? 'high' : row.relevance >= 60 ? 'medium' : 'low',
+  };
 }
 
 function searchPages(term: string): SearchResult[] {

@@ -107,6 +107,7 @@ import {
   type QualityControlScoreKey,
 } from '../lib/qualityControl';
 import { usePinnedWorkspace } from '../contexts/PinnedWorkspaceContext';
+import { legacyExtraChargeDecisionFromReason } from '../lib/approvals/approvalStatus';
 
 type Property = {
   id: string;
@@ -753,9 +754,8 @@ export function JobDetails() {
       (a, b) => new Date(b.changed_at).getTime() - new Date(a.changed_at).getTime()
     );
     for (const change of sorted) {
-      const reason = (change.change_reason || '').toLowerCase();
-      if (!reason.includes('extra charges')) continue;
-      if (reason.includes('declin')) {
+      const legacyDecision = legacyExtraChargeDecisionFromReason(change.change_reason);
+      if (legacyDecision === 'declined') {
         const declineReasonMatch = change.change_reason?.match(/reason:\s*(.+)$/i);
         const approverName = parseExtraChargeApproverFromReason(change.change_reason);
         return {
@@ -766,7 +766,7 @@ export function JobDetails() {
           decline_reason: declineReasonMatch ? declineReasonMatch[1] : null
         };
       }
-      if (reason.includes('approv')) {
+      if (legacyDecision === 'approved') {
         const approverName = parseExtraChargeApproverFromReason(change.change_reason);
         return {
           decision: 'approved',

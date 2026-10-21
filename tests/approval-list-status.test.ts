@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { latestApprovalStatuses } from '../src/lib/approvals/approvalStatus';
+import {
+  latestApprovalStatuses,
+  legacyExtraChargeDecisionFromReason,
+} from '../src/lib/approvals/approvalStatus';
 
 describe('pending work order approval status', () => {
   it('uses the newest request as the authoritative status', () => {
@@ -42,5 +45,33 @@ describe('pending work order approval status', () => {
         created_at: '2026-10-08T19:00:00Z',
       },
     ])).toEqual({ modified: 'modified' });
+  });
+});
+
+describe('legacy extra-charge phase-history decisions', () => {
+  it('does not treat first-charge pending workflow language as approved', () => {
+    expect(legacyExtraChargeDecisionFromReason(
+      'Customer-billable extra charges were added - job moved to Pending Work Order for approval',
+    )).toBeNull();
+  });
+
+  it.each([
+    'Extra charges approval required',
+    'Extra charges approval email sent to manager@example.com',
+    'Extra charges were modified after an approval request',
+  ])('does not infer a decision from %s', (reason) => {
+    expect(legacyExtraChargeDecisionFromReason(reason)).toBeNull();
+  });
+
+  it('recognizes only explicit legacy approval and decline decisions', () => {
+    expect(legacyExtraChargeDecisionFromReason(
+      'Extra charges approved manually by Office Admin - job advanced to Work Order',
+    )).toBe('approved');
+    expect(legacyExtraChargeDecisionFromReason(
+      'Extra charges declined by Property Manager. Reason: Not authorized',
+    )).toBe('declined');
+    expect(legacyExtraChargeDecisionFromReason(
+      'Extra charges rejected by Property Manager',
+    )).toBe('declined');
   });
 });
