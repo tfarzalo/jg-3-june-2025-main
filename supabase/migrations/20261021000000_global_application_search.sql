@@ -47,14 +47,14 @@ AS $function$
     SELECT lower(trim(regexp_replace(coalesce(p_query, ''), '\s+', ' ', 'g'))) AS q
   ), candidates AS (
     SELECT
-      j.id,
-      CASE WHEN lower(coalesce(ph.job_phase_label, '')) = 'job request' THEN 'job_request' ELSE 'job' END AS result_type,
-      concat('WO-', lpad(j.work_order_num::text, 6, '0'), ' · Unit ', coalesce(j.unit_number, 'N/A')) AS title,
-      concat_ws(' · ', pr.property_name, concat_ws(', ', pr.address, pr.city, pr.state, pr.zip)) AS subtitle,
-      j.description,
-      j.created_at AS result_date,
-      array_remove(ARRAY[ph.job_phase_label, jt.job_type_label, assignee.full_name], NULL) AS tags,
-      '/dashboard/jobs/' || j.id::text AS url,
+      j.id::uuid,
+      (CASE WHEN lower(coalesce(ph.job_phase_label, '')) = 'job request' THEN 'job_request' ELSE 'job' END)::text AS result_type,
+      concat('WO-', lpad(j.work_order_num::text, 6, '0'), ' · Unit ', coalesce(j.unit_number, 'N/A'))::text AS title,
+      concat_ws(' · ', pr.property_name, concat_ws(', ', pr.address, pr.city, pr.state, pr.zip))::text AS subtitle,
+      j.description::text,
+      j.created_at::timestamptz AS result_date,
+      array_remove(ARRAY[ph.job_phase_label, jt.job_type_label, assignee.full_name], NULL)::text[] AS tags,
+      ('/dashboard/jobs/' || j.id::text)::text AS url,
       CASE
         WHEN lower(concat('wo-', lpad(j.work_order_num::text, 6, '0'))) = p.q OR j.work_order_num::text = regexp_replace(p.q, '\D', '', 'g') THEN 'work order number'
         WHEN lower(coalesce(j.unit_number, '')) LIKE '%' || p.q || '%' THEN 'unit number'
@@ -65,7 +65,7 @@ AS $function$
         WHEN lower(coalesce(ph.job_phase_label, '')) LIKE '%' || p.q || '%' THEN 'job phase'
         WHEN lower(coalesce(jt.job_type_label, '')) LIKE '%' || p.q || '%' THEN 'job type'
         ELSE 'job description'
-      END AS matched_field,
+      END::text AS matched_field,
       CASE
         WHEN lower(concat('wo-', lpad(j.work_order_num::text, 6, '0'))) = p.q OR j.work_order_num::text = regexp_replace(p.q, '\D', '', 'g') THEN 100
         WHEN lower(coalesce(j.purchase_order, '')) = p.q THEN 95
@@ -73,7 +73,7 @@ AS $function$
         WHEN lower(coalesce(pr.property_name, '')) LIKE p.q || '%' THEN 80
         WHEN lower(coalesce(j.unit_number, '')) = p.q THEN 78
         ELSE 50
-      END AS relevance
+      END::integer AS relevance
     FROM public.jobs j
     CROSS JOIN params p
     JOIN public.properties pr ON pr.id = j.property_id
@@ -89,12 +89,12 @@ AS $function$
 
     UNION ALL
 
-    SELECT pr.id, 'property', coalesce(pr.property_name, 'Unnamed Property'),
-      concat_ws(', ', pr.address, pr.city, pr.state, pr.zip),
-      pmg.company_name, pr.created_at, ARRAY[pmg.company_name],
-      '/dashboard/properties/' || pr.id::text,
-      CASE WHEN lower(coalesce(pr.property_name, '')) LIKE '%' || p.q || '%' THEN 'property name' ELSE 'property address' END,
-      CASE WHEN lower(coalesce(pr.property_name, '')) = p.q THEN 100 WHEN lower(coalesce(pr.property_name, '')) LIKE p.q || '%' THEN 85 ELSE 55 END
+    SELECT pr.id::uuid, 'property'::text, coalesce(pr.property_name, 'Unnamed Property')::text,
+      concat_ws(', ', pr.address, pr.city, pr.state, pr.zip)::text,
+      pmg.company_name::text, pr.created_at::timestamptz, ARRAY[pmg.company_name]::text[],
+      ('/dashboard/properties/' || pr.id::text)::text,
+      (CASE WHEN lower(coalesce(pr.property_name, '')) LIKE '%' || p.q || '%' THEN 'property name' ELSE 'property address' END)::text,
+      (CASE WHEN lower(coalesce(pr.property_name, '')) = p.q THEN 100 WHEN lower(coalesce(pr.property_name, '')) LIKE p.q || '%' THEN 85 ELSE 55 END)::integer
     FROM public.properties pr
     CROSS JOIN params p
     LEFT JOIN public.property_management_groups pmg ON pmg.id = pr.property_management_group_id
@@ -103,12 +103,12 @@ AS $function$
 
     UNION ALL
 
-    SELECT wo.id, 'work_order', concat('Work Order · WO-', lpad(j.work_order_num::text, 6, '0')),
-      concat_ws(' · ', pr.property_name, 'Unit ' || coalesce(j.unit_number, wo.unit_number)),
-      coalesce(wo.additional_comments, wo.extra_charges_description), wo.created_at,
-      ARRAY[CASE WHEN wo.has_extra_charges THEN 'Extra Charges' END],
-      '/dashboard/jobs/' || j.id::text, 'work order details',
-      CASE WHEN j.work_order_num::text = regexp_replace(p.q, '\D', '', 'g') THEN 100 ELSE 60 END
+    SELECT wo.id::uuid, 'work_order'::text, concat('Work Order · WO-', lpad(j.work_order_num::text, 6, '0'))::text,
+      concat_ws(' · ', pr.property_name, 'Unit ' || coalesce(j.unit_number, wo.unit_number))::text,
+      coalesce(wo.additional_comments, wo.extra_charges_description)::text, wo.created_at::timestamptz,
+      ARRAY[CASE WHEN wo.has_extra_charges THEN 'Extra Charges' END]::text[],
+      ('/dashboard/jobs/' || j.id::text)::text, 'work order details'::text,
+      (CASE WHEN j.work_order_num::text = regexp_replace(p.q, '\D', '', 'g') THEN 100 ELSE 60 END)::integer
     FROM public.work_orders wo
     CROSS JOIN params p
     JOIN public.jobs j ON j.id = wo.job_id
@@ -116,26 +116,26 @@ AS $function$
     LEFT JOIN public.profiles preparer ON preparer.id = wo.prepared_by
     WHERE length(p.q) >= 3 AND (p_types IS NULL OR 'work_order' = ANY(p_types))
       AND lower(concat_ws(' ', j.work_order_num::text, 'wo-' || j.work_order_num::text,
-        wo.unit_number, wo.paint_type, wo.extra_charges_description,
+        wo.unit_number, wo.extra_charges_description,
         wo.additional_comments, pr.property_name, pr.address, preparer.full_name)) LIKE '%' || p.q || '%'
 
     UNION ALL
 
-    SELECT pf.id, 'user', coalesce(pf.full_name, 'Unnamed User'), pf.email,
-      'Role: ' || coalesce(pf.role, 'user'), pf.created_at, ARRAY[pf.role],
-      CASE WHEN pf.role = 'subcontractor' THEN '/dashboard/users/subcontractors/' || pf.id::text ELSE '/dashboard/users' END,
-      CASE WHEN lower(coalesce(pf.full_name, '')) LIKE '%' || p.q || '%' THEN 'name' ELSE 'email' END,
-      CASE WHEN lower(coalesce(pf.full_name, '')) = p.q OR lower(pf.email) = p.q THEN 100 WHEN lower(coalesce(pf.full_name, '')) LIKE p.q || '%' THEN 85 ELSE 60 END
+    SELECT pf.id::uuid, 'user'::text, coalesce(pf.full_name, 'Unnamed User')::text, pf.email::text,
+      ('Role: ' || coalesce(pf.role, 'user'))::text, pf.created_at::timestamptz, ARRAY[pf.role]::text[],
+      (CASE WHEN pf.role = 'subcontractor' THEN '/dashboard/users/subcontractors/' || pf.id::text ELSE '/dashboard/users' END)::text,
+      (CASE WHEN lower(coalesce(pf.full_name, '')) LIKE '%' || p.q || '%' THEN 'name' ELSE 'email' END)::text,
+      (CASE WHEN lower(coalesce(pf.full_name, '')) = p.q OR lower(pf.email) = p.q THEN 100 WHEN lower(coalesce(pf.full_name, '')) LIKE p.q || '%' THEN 85 ELSE 60 END)::integer
     FROM public.profiles pf CROSS JOIN params p
     WHERE length(p.q) >= 3 AND (p_types IS NULL OR 'user' = ANY(p_types))
       AND lower(concat_ws(' ', pf.full_name, pf.email, pf.role)) LIKE '%' || p.q || '%'
 
     UNION ALL
 
-    SELECT pc.id, 'contact', coalesce(pc.name, pc.email, 'Property Contact'),
-      concat_ws(' · ', pr.property_name, pc.position), concat_ws(' · ', pc.email, pc.secondary_email, pc.phone),
-      pc.created_at, ARRAY['Property Contact'], '/dashboard/properties/' || pr.id::text,
-      'property contact', CASE WHEN lower(coalesce(pc.name, '')) = p.q THEN 95 ELSE 65 END
+    SELECT pc.id::uuid, 'contact'::text, coalesce(pc.name, pc.email, 'Property Contact')::text,
+      concat_ws(' · ', pr.property_name, pc.position)::text, concat_ws(' · ', pc.email, pc.secondary_email, pc.phone)::text,
+      pc.created_at::timestamptz, ARRAY['Property Contact']::text[], ('/dashboard/properties/' || pr.id::text)::text,
+      'property contact'::text, (CASE WHEN lower(coalesce(pc.name, '')) = p.q THEN 95 ELSE 65 END)::integer
     FROM public.property_contacts pc CROSS JOIN params p
     JOIN public.properties pr ON pr.id = pc.property_id
     WHERE length(p.q) >= 3 AND (p_types IS NULL OR 'contact' = ANY(p_types))
@@ -145,11 +145,11 @@ AS $function$
 
     UNION ALL
 
-    SELECT c.id, 'contact', trim(concat_ws(' ', c.first_name, c.last_name)),
-      concat_ws(' · ', c.company, c.job_title),
-      concat_ws(' · ', c.email, c.phone, c.address::text), c.created_at,
-      coalesce(c.tags, ARRAY['Contact']), '/dashboard/contacts/' || c.id::text,
-      'contact', CASE WHEN lower(trim(concat_ws(' ', c.first_name, c.last_name))) = p.q THEN 95 ELSE 60 END
+    SELECT c.id::uuid, 'contact'::text, trim(concat_ws(' ', c.first_name, c.last_name))::text,
+      concat_ws(' · ', c.company, c.job_title)::text,
+      concat_ws(' · ', c.email, c.phone, c.address::text)::text, c.created_at::timestamptz,
+      coalesce(c.tags, ARRAY['Contact'])::text[], ('/dashboard/contacts/' || c.id::text)::text,
+      'contact'::text, (CASE WHEN lower(trim(concat_ws(' ', c.first_name, c.last_name))) = p.q THEN 95 ELSE 60 END)::integer
     FROM public.contacts c CROSS JOIN params p
     WHERE length(p.q) >= 3 AND (p_types IS NULL OR 'contact' = ANY(p_types))
       AND lower(concat_ws(' ', c.first_name, c.last_name, c.email,
@@ -159,10 +159,10 @@ AS $function$
 
     UNION ALL
 
-    SELECT pmg.id, 'property_group', pmg.company_name, coalesce(pmg.contact_name, 'No contact'),
-      concat_ws(' · ', pmg.address, pmg.city, pmg.state, pmg.zip, pmg.contact_email, pmg.contact_phone),
-      pmg.created_at, ARRAY['Property Group'], '/dashboard/property-groups/' || pmg.id::text,
-      'property group', CASE WHEN lower(pmg.company_name) = p.q THEN 100 WHEN lower(pmg.company_name) LIKE p.q || '%' THEN 85 ELSE 55 END
+    SELECT pmg.id::uuid, 'property_group'::text, pmg.company_name::text, coalesce(pmg.contact_name, 'No contact')::text,
+      concat_ws(' · ', pmg.address, pmg.city, pmg.state, pmg.zip, pmg.contact_email, pmg.contact_phone)::text,
+      pmg.created_at::timestamptz, ARRAY['Property Group']::text[], ('/dashboard/property-groups/' || pmg.id::text)::text,
+      'property group'::text, (CASE WHEN lower(pmg.company_name) = p.q THEN 100 WHEN lower(pmg.company_name) LIKE p.q || '%' THEN 85 ELSE 55 END)::integer
     FROM public.property_management_groups pmg CROSS JOIN params p
     WHERE length(p.q) >= 3 AND (p_types IS NULL OR 'property_group' = ANY(p_types))
       AND (lower(concat_ws(' ', pmg.company_name, pmg.address, pmg.address_2, pmg.city,
@@ -172,10 +172,10 @@ AS $function$
 
     UNION ALL
 
-    SELECT f.id, 'file', f.name, concat_ws(' · ', pr.property_name, CASE WHEN j.id IS NOT NULL THEN 'WO-' || lpad(j.work_order_num::text, 6, '0') END),
-      concat_ws(' · ', f.path, f.type), f.created_at, ARRAY[f.type],
-      CASE WHEN j.id IS NOT NULL THEN '/dashboard/files?job_id=' || j.id::text WHEN pr.id IS NOT NULL THEN '/dashboard/files?property_id=' || pr.id::text ELSE '/dashboard/files' END,
-      'file name', CASE WHEN lower(f.name) = p.q THEN 100 WHEN lower(f.name) LIKE p.q || '%' THEN 85 ELSE 50 END
+    SELECT f.id::uuid, 'file'::text, f.name::text, concat_ws(' · ', pr.property_name, CASE WHEN j.id IS NOT NULL THEN 'WO-' || lpad(j.work_order_num::text, 6, '0') END)::text,
+      concat_ws(' · ', f.path, f.type)::text, f.created_at::timestamptz, ARRAY[f.type]::text[],
+      (CASE WHEN j.id IS NOT NULL THEN '/dashboard/files?job_id=' || j.id::text WHEN pr.id IS NOT NULL THEN '/dashboard/files?property_id=' || pr.id::text ELSE '/dashboard/files' END)::text,
+      'file name'::text, (CASE WHEN lower(f.name) = p.q THEN 100 WHEN lower(f.name) LIKE p.q || '%' THEN 85 ELSE 50 END)::integer
     FROM public.files f CROSS JOIN params p
     LEFT JOIN public.jobs j ON j.id = f.job_id
     LEFT JOIN public.properties pr ON pr.id = coalesce(f.property_id, j.property_id)
@@ -185,8 +185,8 @@ AS $function$
 
     UNION ALL
 
-    SELECT a.id, 'activity', a.action, coalesce(pf.full_name, 'System'), a.description,
-      a.created_at, ARRAY[a.entity_type], '/dashboard/activity', 'activity', 40
+    SELECT a.id::uuid, 'activity'::text, a.action::text, coalesce(pf.full_name, 'System')::text, a.description::text,
+      a.created_at::timestamptz, ARRAY[a.entity_type]::text[], '/dashboard/activity'::text, 'activity'::text, 40::integer
     FROM public.activity_log a CROSS JOIN params p
     LEFT JOIN public.profiles pf ON pf.id = a.changed_by
     WHERE length(p.q) >= 3 AND (p_types IS NULL OR 'activity' = ANY(p_types))
