@@ -92,6 +92,10 @@ import {
 import { isFrozenHistoricalSnapshot } from '../lib/jobs/historicalDataMode';
 import { logJobActivity } from '../lib/jobActivity';
 import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
+import {
+  findBillingMetricDuplicateIds,
+  shouldUseLegacyMiscAdditionalCostFallback,
+} from '../lib/billing/miscAdditionalCostEditing';
 import { OriginalWorkOrderSubmission } from './OriginalWorkOrderSubmission';
 import {
   QUALITY_CONTROL_LIKERT_VALUES,
@@ -292,7 +296,7 @@ const normalizeMiscAdditionalCostItems = (items: unknown): MiscAdditionalCostIte
 
 const miscAdditionalCostItemsFromWorkOrder = (workOrder?: WorkOrder | null): MiscAdditionalCostItem[] => {
   const normalized = normalizeMiscAdditionalCostItems(workOrder?.misc_additional_cost_items);
-  if (normalized.length > 0) return normalized;
+  if (!shouldUseLegacyMiscAdditionalCostFallback(workOrder?.misc_additional_cost_items)) return normalized;
   const legacyAmount = Number(workOrder?.repair_cost ?? 0);
   if (legacyAmount > 0) {
     return [{
@@ -837,6 +841,21 @@ export function JobDetails() {
     () => miscAdditionalCostItemsInput.some(item => (item.description.trim() || (Number(item.subPay) || 0) > 0) && (Number(item.price) || 0) <= 0),
     [miscAdditionalCostItemsInput]
   );
+
+  const duplicateBillingMetricMiscItemIds = useMemo(() => findBillingMetricDuplicateIds(
+    miscAdditionalCostItemsInput,
+    job?.billing_details
+      ? {
+          label: job.unit_size?.label,
+          billAmount: job.billing_details.bill_amount,
+          subPayAmount: job.billing_details.sub_pay_amount,
+        }
+      : null,
+  ), [
+    job?.billing_details,
+    job?.unit_size?.label,
+    miscAdditionalCostItemsInput,
+  ]);
 
   // Initialize recipient email with property AP contact when job loads
   useEffect(() => {
@@ -3343,31 +3362,18 @@ export function JobDetails() {
     const amount = miscTotal;
     const previousBillAmount = job?.repair_amount ?? 0;
     const billingAmountChanged = amountToCents(amount) !== amountToCents(previousBillAmount);
-    const miscDescription = miscItems
-      .filter(item => item.description.trim())
-      .map(item => item.description.trim())
-      .join('; ');
     setSavingRepairAmount(true);
     try {
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
       if (!userData.user) throw new Error('User not found');
 
-      const { error } = await supabase
-        .from('jobs')
-        .update({ repair_amount: amount, repair_sub_pay: subPay })
-        .eq('id', jobId);
+      const { error } = await supabase.rpc('save_misc_additional_costs', {
+        p_job_id: jobId,
+        p_work_order_id: job.work_order.id,
+        p_items: miscItems,
+      });
       if (error) throw error;
-
-      const { error: workOrderError } = await supabase
-        .from('work_orders')
-        .update({
-          misc_additional_cost_items: miscItems,
-          repair_cost: miscTotal,
-          repair_description: miscDescription
-        })
-        .eq('id', job.work_order.id);
-      if (workOrderError) throw workOrderError;
 
       const currentPhase = job?.job_phase?.label?.trim();
       const hadRepairBefore = (job?.repair_amount ?? 0) > 0;
@@ -5133,6 +5139,12 @@ export function JobDetails() {
                               Enter Bill to Customer for one or more subcontractor-submitted items before sending approval.
                             </div>
                           )}
+                          {duplicateBillingMetricMiscItemIds.length > 0 && (
+                            <div className="rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-900 dark:border-orange-700 dark:bg-orange-950/30 dark:text-orange-100">
+                              {duplicateBillingMetricMiscItemIds.length === 1 ? 'This miscellaneous item' : 'These miscellaneous items'} match the selected billing metric amounts
+                              {job?.unit_size?.label ? ` for “${job.unit_size.label}”` : ''}. Confirm the service is not already included before saving.
+                            </div>
+                          )}
                           {miscAdditionalCostItemsInput.length === 0 ? (
                             <div className="rounded-lg border border-dashed border-zinc-300 dark:border-zinc-600 p-4 text-sm text-zinc-500 dark:text-zinc-400">
                               No miscellaneous additional costs added.
@@ -5149,7 +5161,7 @@ export function JobDetails() {
                                       className="inline-flex items-center px-2 py-1 text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
                                     >
                                       <Trash2 className="h-3.5 w-3.5 mr-1" />
-                                      Remove
+                                      Remove (save required)
                                     </button>
                                   </div>
                                   <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(240px,1fr)_220px_300px]">

@@ -28,6 +28,7 @@ import { validateAllExtraCharges } from '../utils/extraChargesValidation';
 import { isFrozenHistoricalSnapshot } from '../lib/jobs/historicalDataMode';
 import { dispatchSmsNotification, dispatchSmsNotificationBatch } from '../lib/sms/dispatchSmsNotification';
 import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
+import { shouldUseLegacyMiscAdditionalCostFallback } from '../lib/billing/miscAdditionalCostEditing';
 import { deleteFilesByStoragePaths } from '../lib/utils/fileUpload';
 import { fetchPropertyUnitSizesForCategory } from '../lib/propertyUnitSizes';
 import { getWorkOrderReadiness } from '../lib/workOrders/formReadiness';
@@ -1162,7 +1163,7 @@ const NewWorkOrder = () => {
         extra_hours: existingWorkOrder.extra_hours ?? 0,
         repair_cost: existingWorkOrder.repair_cost ?? 0,
         repair_description: existingWorkOrder.repair_description || '',
-        misc_additional_cost_items: normalizeMiscAdditionalCostItems(existingWorkOrder.misc_additional_cost_items).length > 0
+        misc_additional_cost_items: !shouldUseLegacyMiscAdditionalCostFallback(existingWorkOrder.misc_additional_cost_items)
           ? normalizeMiscAdditionalCostItems(existingWorkOrder.misc_additional_cost_items)
           : ((existingWorkOrder.repair_cost ?? 0) > 0
             ? [{

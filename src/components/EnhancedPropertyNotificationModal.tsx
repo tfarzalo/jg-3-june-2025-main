@@ -32,6 +32,7 @@ import { logJobActivity } from '../lib/jobActivity';
 import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
 import { config } from '../config/environment';
 import { detectImageMime, extensionForImageMime } from '../lib/utils/imageOptimization';
+import { resolveEmailSendMode, type EmailTemplateMode } from '../lib/emailTemplateMode';
 
 const readableErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error && error.message) return error.message;
@@ -254,6 +255,12 @@ const mergeRecipientOptions = (
   return merged;
 };
 
+const replaceRecipientOptionsForSource = (
+  current: SelectableEmailRecipient[],
+  emails: string[],
+  source: SelectableEmailRecipient['source'],
+) => mergeRecipientOptions(current.filter((recipient) => recipient.source !== source), emails, source);
+
 const formatCurrency = (value?: number | null) => {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return '$0.00';
@@ -359,6 +366,7 @@ export function EnhancedPropertyNotificationModal({
   const subjectInputRef = useRef<HTMLInputElement>(null);
   const stepContentRef = useRef<HTMLDivElement>(null);
   const initializedForCurrentOpenRef = useRef(false);
+  const recipientRequestIdRef = useRef(0);
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null);
   const [emailSubject, setEmailSubject] = useState('');
@@ -392,11 +400,10 @@ export function EnhancedPropertyNotificationModal({
   }, [currentStep]);
 
   const safeSections = useMemo(() => selectedTemplate?.included_sections ?? [], [selectedTemplate]);
-  const isSelectedApprovalTemplate = useMemo(() => {
-    if (!selectedTemplate) return false;
-    const templateType = selectedTemplate.template_type?.toLowerCase() ?? '';
-    return templateType === 'approval';
-  }, [selectedTemplate]);
+  const sendMode = useMemo(
+    () => resolveEmailSendMode(notificationType, selectedTemplate?.template_type),
+    [notificationType, selectedTemplate?.template_type],
+  );
   const detectedExtraChargeItems = Array.isArray(job?.work_order?.extra_charges_line_items)
     ? job.work_order.extra_charges_line_items
     : [];
@@ -416,7 +423,7 @@ export function EnhancedPropertyNotificationModal({
   // The configured template type is authoritative. In particular, drywall
   // repair amounts can be included in an informational notification without
   // turning that message back into an approval request behind the admin's back.
-  const isApprovalEmail = notificationType === 'extra_charges' || isSelectedApprovalTemplate;
+  const isApprovalEmail = sendMode === 'approval';
   const approvalWasAutoDetected = false;
   const notificationHasApprovalRequiredCharges = Boolean(
     selectedTemplate && !isApprovalEmail && hasApprovalRequiredExtraCharges
@@ -581,13 +588,12 @@ export function EnhancedPropertyNotificationModal({
     return contact?.secondary_email || '';
   }, []);
 
-  const initializeRecipient = useCallback(async () => {
+  const initializeRecipient = useCallback(async (modeOverride?: EmailTemplateMode) => {
     if (!job?.property?.id) return;
+    const requestId = ++recipientRequestIdRef.current;
     
     // Determine if this is approval or notification email
-    const mode = notificationType === 'extra_charges'
-      ? 'approval'
-      : 'notification';
+    const mode = modeOverride ?? resolveEmailSendMode(notificationType, selectedTemplate?.template_type);
     console.log(`📧 Initializing ${mode} recipients for property:`, job.property.id);
     
     try {
@@ -595,6 +601,7 @@ export function EnhancedPropertyNotificationModal({
       const recipients = await getEmailRecipients(job.property.id, mode, {
         fallbackToManager: true
       });
+      if (requestId !== recipientRequestIdRef.current) return;
       
       console.log(`📧 ${mode} email recipients loaded:`, recipients);
       
@@ -603,7 +610,7 @@ export function EnhancedPropertyNotificationModal({
         setRecipientEmail(recipients.to.join(', '));
       }
       
-      setCcRecipientOptions((current) => mergeRecipientOptions(current, recipients.cc, 'property'));
+      setCcRecipientOptions((current) => replaceRecipientOptionsForSource(current, recipients.cc, 'property'));
       
       // Show CC/BCC fields if there are any
       if (recipients.cc.length > 0) {
@@ -611,6 +618,7 @@ export function EnhancedPropertyNotificationModal({
       }
       
       const contactTokens = await fetchContactTemplateTokens(job.property.id);
+      if (requestId !== recipientRequestIdRef.current) return;
       setContactTemplateTokens(contactTokens);
       setApContactName(contactTokens.ap_contact_name || job.property?.ap_name || '');
       setPrimaryRecipientName(
@@ -622,6 +630,7 @@ export function EnhancedPropertyNotificationModal({
       );
       
     } catch (error) {
+      if (requestId !== recipientRequestIdRef.current) return;
       console.error(`❌ Error loading ${mode} recipients:`, error);
       // Fallback to property AP email
       const fallback = job.property?.ap_email || '';
@@ -630,7 +639,7 @@ export function EnhancedPropertyNotificationModal({
       setPrimaryRecipientName(job.property?.ap_name || '');
       setContactTemplateTokens({});
     }
-  }, [job, notificationType]);
+  }, [job, notificationType, selectedTemplate?.template_type]);
 
   const fetchAssignedSubcontractor = useCallback(async () => {
     const existingName = job?.assigned_to_name || '';
@@ -1073,6 +1082,14 @@ export function EnhancedPropertyNotificationModal({
       setEmailSignature(processed.signature);
     }
   }, [selectedTemplate, processTemplate]);
+
+  // Keep recipient routing synchronized with the type saved in the template
+  // builder. Switching between notification and approval templates updates the
+  // property contact set before the message can be sent.
+  useEffect(() => {
+    if (!isOpen || !selectedTemplate) return;
+    void initializeRecipient(sendMode);
+  }, [isOpen, selectedTemplate, sendMode, initializeRecipient]);
 
   // Keep the recipient controls visible when automatic CC recipients exist.
   useEffect(() => {
@@ -1825,7 +1842,7 @@ export function EnhancedPropertyNotificationModal({
           bcc: finalRecipientLists.bcc,
           from: emailConfig ? `${emailConfig.from_name} <${emailConfig.from_email}>` : undefined,
           attachments: inlineAttachments.length > 0 ? inlineAttachments : undefined,
-          emailType: effectiveNotificationType === 'extra_charges'
+          emailType: isApprovalEmail
             ? 'extra_charge_approval'
             : effectiveNotificationType === 'sprinkler_paint'
               ? 'sprinkler_notification'
@@ -2648,7 +2665,11 @@ export function EnhancedPropertyNotificationModal({
         <div className="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
           <div className="flex items-center space-x-2">
             <Mail className="h-5 w-5 text-blue-600" />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Send {NOTIFICATION_TYPE_LABELS[notificationType]}</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Send {selectedTemplate
+                ? (isApprovalEmail ? 'Approval Request' : 'Property Notification')
+                : NOTIFICATION_TYPE_LABELS[notificationType]}
+            </h2>
           </div>
           <button onClick={onClose} className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700">
             <X className="h-5 w-5" />
