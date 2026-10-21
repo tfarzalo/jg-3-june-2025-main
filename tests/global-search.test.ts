@@ -49,4 +49,12 @@ describe('global application search', () => {
     expect(migrationSource).toContain('CREATE INDEX IF NOT EXISTS');
     expect(migrationSource).not.toMatch(/\b(DELETE FROM|TRUNCATE|DROP TABLE|DROP COLUMN)\b/i);
   });
+
+  it('normalizes padded work-order searches and exposes close-number suggestions', () => {
+    expect(migrationSource).toContain('canonical_digits');
+    expect(migrationSource).toContain("ltrim(regexp_replace(normalized.q, '\\D', '', 'g'), '0')");
+    expect(migrationSource).toContain("'closest work order number'");
+    expect(migrationSource).toContain("similarity(lpad(j.work_order_num::text, 6, '0')");
+    expect(overlaySource).toContain('Did you mean?');
+  });
 });

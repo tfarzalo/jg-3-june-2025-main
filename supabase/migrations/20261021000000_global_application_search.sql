@@ -44,7 +44,13 @@ SECURITY INVOKER
 SET search_path = public, extensions
 AS $function$
   WITH params AS (
-    SELECT lower(trim(regexp_replace(coalesce(p_query, ''), '\s+', ' ', 'g'))) AS q
+    SELECT
+      normalized.q,
+      regexp_replace(normalized.q, '\D', '', 'g') AS digits,
+      coalesce(nullif(ltrim(regexp_replace(normalized.q, '\D', '', 'g'), '0'), ''), '0') AS canonical_digits
+    FROM (
+      SELECT lower(trim(regexp_replace(coalesce(p_query, ''), '\s+', ' ', 'g'))) AS q
+    ) normalized
   ), candidates AS (
     SELECT
       j.id::uuid,
@@ -56,7 +62,9 @@ AS $function$
       array_remove(ARRAY[ph.job_phase_label, jt.job_type_label, assignee.full_name], NULL)::text[] AS tags,
       ('/dashboard/jobs/' || j.id::text)::text AS url,
       CASE
-        WHEN lower(concat('wo-', lpad(j.work_order_num::text, 6, '0'))) = p.q OR j.work_order_num::text = regexp_replace(p.q, '\D', '', 'g') THEN 'work order number'
+        WHEN lower(concat('wo-', lpad(j.work_order_num::text, 6, '0'))) = p.q THEN 'work order number'
+        WHEN j.work_order_num::text = p.canonical_digits THEN 'closest work order number'
+        WHEN p.digits <> '' AND similarity(lpad(j.work_order_num::text, 6, '0'), lpad(p.digits, 6, '0')) >= 0.45 THEN 'closest work order number'
         WHEN lower(coalesce(j.unit_number, '')) LIKE '%' || p.q || '%' THEN 'unit number'
         WHEN lower(coalesce(j.purchase_order, '')) LIKE '%' || p.q || '%' THEN 'purchase order'
         WHEN lower(coalesce(pr.property_name, '')) LIKE '%' || p.q || '%' THEN 'property name'
@@ -67,7 +75,9 @@ AS $function$
         ELSE 'job description'
       END::text AS matched_field,
       CASE
-        WHEN lower(concat('wo-', lpad(j.work_order_num::text, 6, '0'))) = p.q OR j.work_order_num::text = regexp_replace(p.q, '\D', '', 'g') THEN 100
+        WHEN lower(concat('wo-', lpad(j.work_order_num::text, 6, '0'))) = p.q THEN 100
+        WHEN j.work_order_num::text = p.canonical_digits THEN 98
+        WHEN p.digits <> '' AND similarity(lpad(j.work_order_num::text, 6, '0'), lpad(p.digits, 6, '0')) >= 0.45 THEN 88
         WHEN lower(coalesce(j.purchase_order, '')) = p.q THEN 95
         WHEN lower(coalesce(pr.property_name, '')) = p.q THEN 90
         WHEN lower(coalesce(pr.property_name, '')) LIKE p.q || '%' THEN 80
@@ -82,10 +92,12 @@ AS $function$
     LEFT JOIN public.job_types jt ON jt.id = j.job_type_id
     WHERE length(p.q) >= 3
       AND (p_types IS NULL OR 'job' = ANY(p_types) OR 'job_request' = ANY(p_types))
-      AND lower(concat_ws(' ', j.work_order_num::text, 'wo-' || j.work_order_num::text,
+      AND (lower(concat_ws(' ', j.work_order_num::text, 'wo-' || j.work_order_num::text,
         j.unit_number, j.purchase_order, j.description, pr.property_name, pr.address,
         pr.city, pr.state, pr.zip, assignee.full_name, assignee.email,
         ph.job_phase_label, jt.job_type_label)) LIKE '%' || p.q || '%'
+        OR j.work_order_num::text = p.canonical_digits
+        OR (p.digits <> '' AND similarity(lpad(j.work_order_num::text, 6, '0'), lpad(p.digits, 6, '0')) >= 0.45))
 
     UNION ALL
 
@@ -107,17 +119,29 @@ AS $function$
       concat_ws(' · ', pr.property_name, 'Unit ' || coalesce(j.unit_number, wo.unit_number))::text,
       coalesce(wo.additional_comments, wo.extra_charges_description)::text, wo.created_at::timestamptz,
       ARRAY[CASE WHEN wo.has_extra_charges THEN 'Extra Charges' END]::text[],
-      ('/dashboard/jobs/' || j.id::text)::text, 'work order details'::text,
-      (CASE WHEN j.work_order_num::text = regexp_replace(p.q, '\D', '', 'g') THEN 100 ELSE 60 END)::integer
+      ('/dashboard/jobs/' || j.id::text)::text,
+      (CASE
+        WHEN lower(concat('wo-', lpad(j.work_order_num::text, 6, '0'))) = p.q THEN 'work order number'
+        WHEN j.work_order_num::text = p.canonical_digits THEN 'closest work order number'
+        WHEN p.digits <> '' AND similarity(lpad(j.work_order_num::text, 6, '0'), lpad(p.digits, 6, '0')) >= 0.45 THEN 'closest work order number'
+        ELSE 'work order details'
+      END)::text,
+      (CASE
+        WHEN j.work_order_num::text = p.canonical_digits THEN 98
+        WHEN p.digits <> '' AND similarity(lpad(j.work_order_num::text, 6, '0'), lpad(p.digits, 6, '0')) >= 0.45 THEN 88
+        ELSE 60
+      END)::integer
     FROM public.work_orders wo
     CROSS JOIN params p
     JOIN public.jobs j ON j.id = wo.job_id
     JOIN public.properties pr ON pr.id = j.property_id
     LEFT JOIN public.profiles preparer ON preparer.id = wo.prepared_by
     WHERE length(p.q) >= 3 AND (p_types IS NULL OR 'work_order' = ANY(p_types))
-      AND lower(concat_ws(' ', j.work_order_num::text, 'wo-' || j.work_order_num::text,
+      AND (lower(concat_ws(' ', j.work_order_num::text, 'wo-' || j.work_order_num::text,
         wo.unit_number, wo.extra_charges_description,
         wo.additional_comments, pr.property_name, pr.address, preparer.full_name)) LIKE '%' || p.q || '%'
+        OR j.work_order_num::text = p.canonical_digits
+        OR (p.digits <> '' AND similarity(lpad(j.work_order_num::text, 6, '0'), lpad(p.digits, 6, '0')) >= 0.45))
 
     UNION ALL
 

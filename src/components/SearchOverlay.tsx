@@ -825,6 +825,8 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
     }));
   };
 
+  const didYouMeanResult = results.find((result) => result.matchedField === 'closest work order number');
+
   if (!isOpen) return null;
 
   return (
@@ -1113,6 +1115,17 @@ export function SearchOverlay({ isOpen, onClose }: { isOpen: boolean; onClose: (
             </div>
           ) : searchTerm ? (
             <div className="space-y-4">
+              {didYouMeanResult && (
+                <Link
+                  to={didYouMeanResult.url}
+                  onClick={onClose}
+                  className="block rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-sm transition hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950/60"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wide">Did you mean?</p>
+                  <p className="mt-1 text-base font-bold">{didYouMeanResult.title}</p>
+                  <p className="mt-1 text-sm">{didYouMeanResult.subtitle}</p>
+                </Link>
+              )}
               <div className="text-sm text-gray-500 dark:text-gray-400">
                 Found {results.length} results for "{searchTerm}"
               </div>
