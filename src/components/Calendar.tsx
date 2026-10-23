@@ -66,8 +66,10 @@ interface Job {
 
 type JobTypeTotals = {
   paint: number;
+  clean: number;
   callback: number;
   repair: number;
+  other: number;
   total: number;
 };
 
@@ -118,17 +120,21 @@ export function Calendar() {
       ? job.job_type[0]
       : job.job_type;
 
-    return String(jobTypeObj?.job_type_label || 'Paint');
+    return String(jobTypeObj?.job_type_label || 'Unknown');
   };
 
   const addJobToTotals = (totals: JobTypeTotals, jobTypeLabel: string) => {
     const jobType = jobTypeLabel.toLowerCase();
-    if (jobType.includes('callback')) {
+    if (jobType === 'paint') {
+      totals.paint += 1;
+    } else if (jobType === 'clean') {
+      totals.clean += 1;
+    } else if (jobType === 'callback') {
       totals.callback += 1;
-    } else if (jobType.includes('repair')) {
+    } else if (jobType === 'repair') {
       totals.repair += 1;
     } else {
-      totals.paint += 1;
+      totals.other += 1;
     }
     totals.total += 1;
   };
@@ -141,7 +147,7 @@ export function Calendar() {
       if (!date) return;
 
       if (!jobsByDate.has(date)) {
-        jobsByDate.set(date, { paint: 0, callback: 0, repair: 0, total: 0 });
+        jobsByDate.set(date, { paint: 0, clean: 0, callback: 0, repair: 0, other: 0, total: 0 });
       }
 
       addJobToTotals(jobsByDate.get(date)!, getJobTypeLabel(job));
@@ -200,7 +206,7 @@ export function Calendar() {
     const dateJobs = allJobs.filter(job => 
       getDateKey(job.scheduled_date) === dateString
     );
-    const totals = { paint: 0, callback: 0, repair: 0, total: 0 };
+    const totals: JobTypeTotals = { paint: 0, clean: 0, callback: 0, repair: 0, other: 0, total: 0 };
 
     dateJobs.forEach(job => addJobToTotals(totals, getJobTypeLabel(job)));
 
@@ -453,7 +459,7 @@ export function Calendar() {
 
       // Update or create daily agenda summary events for each date
       for (const [date, counts] of jobsByDate) {
-        const totalJobs = counts.paint + counts.callback + counts.repair;
+        const totalJobs = counts.total;
         
         // Skip dates with no jobs
         if (totalJobs === 0) continue;
@@ -461,8 +467,8 @@ export function Calendar() {
         const startTime = new Date(`${date}T00:00:00`);
         const endTime = new Date(`${date}T23:59:59`);
         
-        const title = `${counts.paint} Paint | ${counts.callback} Callback | ${counts.repair} Repair | Total: ${totalJobs}`;
-        const details = `Paint: ${counts.paint} | Callback: ${counts.callback} | Repair: ${counts.repair} | Total: ${totalJobs}`;
+        const title = `${counts.paint} Paint | ${counts.clean} Clean | ${counts.callback} Callback | ${counts.repair} Repair | Total: ${totalJobs}`;
+        const details = `Paint: ${counts.paint} | Clean: ${counts.clean} | Callback: ${counts.callback} | Repair: ${counts.repair} | Other: ${counts.other} | Total: ${totalJobs}`;
 
         // Check if agenda summary event already exists for this date
         const { data: existingEvent } = await supabase
@@ -1075,6 +1081,7 @@ export function Calendar() {
                               }}
                             >
                               <span className="text-blue-600 dark:text-blue-400">{totals.paint}</span>
+                              <span className="text-emerald-600 dark:text-emerald-400"> {totals.clean}</span>
                               <span className="text-orange-500 dark:text-orange-400"> {totals.callback}</span>
                               <span className="text-red-500 dark:text-red-400"> {totals.repair}</span>
                               <span className="text-purple-700 dark:text-purple-400"> | {totals.total}</span>
@@ -1177,10 +1184,14 @@ export function Calendar() {
                 if (totals.total > 0) {
                   return (
                     <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4 mb-4 sticky top-0 z-10">
-                      <div className="grid grid-cols-4 gap-4 text-center">
+                      <div className="grid grid-cols-5 gap-4 text-center">
                         <div className="text-center">
                           <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{totals.paint}</div>
                           <div className="text-xs text-blue-600 dark:text-blue-400">Paint</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{totals.clean}</div>
+                          <div className="text-xs text-emerald-600 dark:text-emerald-400">Clean</div>
                         </div>
                         <div className="text-center">
                           <div className="text-2xl font-bold text-orange-500 dark:text-orange-400">{totals.callback}</div>
@@ -1458,10 +1469,14 @@ export function Calendar() {
               if (totals.total > 0) {
                 return (
                   <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4 mb-6">
-                    <div className="grid grid-cols-4 gap-4 text-center">
+                    <div className="grid grid-cols-5 gap-4 text-center">
                       <div className="text-center">
                         <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{totals.paint}</div>
                         <div className="text-xs text-blue-600 dark:text-blue-400">Paint</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{totals.clean}</div>
+                        <div className="text-xs text-emerald-600 dark:text-emerald-400">Clean</div>
                       </div>
                       <div className="text-center">
                         <div className="text-2xl font-bold text-orange-500 dark:text-orange-400">{totals.callback}</div>

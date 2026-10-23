@@ -14,6 +14,7 @@ import { formatDate, formatDateTime } from '../lib/dateUtils';
 import { useDashboardJobs } from './shared/useDashboardJobs';
 import { useUserRole } from '../contexts/UserRoleContext';
 import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
+import { summarizeJobTypes } from '../lib/jobTypeSummary';
 
 interface JobPhase {
   id: string;
@@ -589,6 +590,8 @@ export function DashboardHome() {
     return jobType?.job_type_label || 'Unknown Type';
   };
 
+  const todaysJobTypeSummary = summarizeJobTypes(sortedTodaysJobs);
+
   // Function to get the date when a job was moved to Completed Work Orders phase
   const getCompletedDate = async (jobId: string): Promise<string | null> => {
     try {
@@ -642,15 +645,18 @@ export function DashboardHome() {
           {/* Job Type Summary - Under the title */}
           <div className="mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
             <div className="flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
-              <div className="flex space-x-4">
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
                 <span className="text-blue-500 font-medium">
-                  Paint: {sortedTodaysJobs.filter(job => getJobType(job) === 'Paint').length}
+                  Paint: {todaysJobTypeSummary.paint}
+                </span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                  Clean: {todaysJobTypeSummary.clean}
                 </span>
                 <span className="text-orange-500 font-medium">
-                  Callback: {sortedTodaysJobs.filter(job => getJobType(job) === 'Callback').length}
+                  Callback: {todaysJobTypeSummary.callback}
                 </span>
                 <span className="text-red-500 font-medium">
-                  Repair: {sortedTodaysJobs.filter(job => getJobType(job) === 'Repair').length}
+                  Repair: {todaysJobTypeSummary.repair}
                 </span>
               </div>
               <div className="flex items-center space-x-2">
@@ -936,15 +942,18 @@ export function DashboardHome() {
           {/* Job Type Summary - Under the title */}
           <div className="mb-4 pb-3 border-b border-gray-200 dark:border-gray-700">
             <div className="flex justify-between items-center text-xs text-gray-600 dark:text-gray-400">
-              <div className="flex space-x-4">
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
                 <span className="text-blue-500 font-medium">
-                  Paint: {sortedTodaysJobs.filter(job => getJobType(job) === 'Paint').length}
+                  Paint: {todaysJobTypeSummary.paint}
+                </span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                  Clean: {todaysJobTypeSummary.clean}
                 </span>
                 <span className="text-orange-500 font-medium">
-                  Callback: {sortedTodaysJobs.filter(job => getJobType(job) === 'Callback').length}
+                  Callback: {todaysJobTypeSummary.callback}
                 </span>
                 <span className="text-red-500 font-medium">
-                  Repair: {sortedTodaysJobs.filter(job => getJobType(job) === 'Repair').length}
+                  Repair: {todaysJobTypeSummary.repair}
                 </span>
               </div>
               <div className="flex items-center space-x-2">

@@ -1191,16 +1191,16 @@ const NewWorkOrder = () => {
     } else if (job) {
       // Check job type to auto-set is_full_paint:
       // - "Paint" job type -> is_full_paint = true (Yes)
-      // - "Repair" or "Callback" job type -> is_full_paint = false (No)
+      // - "Clean", "Repair", or "Callback" job type -> is_full_paint = false (No)
       const jobTypeLabel = job.job_type?.job_type_label?.toLowerCase() || '';
       const isPaintJob = jobTypeLabel === 'paint';
-      const isRepairOrCallback = jobTypeLabel === 'repair' || jobTypeLabel === 'callback';
+      const isNonPaintJob = ['clean', 'repair', 'callback'].includes(jobTypeLabel);
       
       // Auto-set is_full_paint based on job type
       let autoSetFullPaint = job.is_full_paint ?? false;
       if (isPaintJob) {
         autoSetFullPaint = true;
-      } else if (isRepairOrCallback) {
+      } else if (isNonPaintJob) {
         autoSetFullPaint = false;
       }
       

@@ -30,7 +30,9 @@ function getNextWorkday(): Date {
 }
 
 // Function to get job counts for a specific date
-async function getJobCountsForDate(date: Date): Promise<{ paint: number; callback: number; repair: number }> {
+type JobCounts = { paint: number; clean: number; callback: number; repair: number; other: number; total: number };
+
+async function getJobCountsForDate(date: Date): Promise<JobCounts> {
   const startOfDay = new Date(date);
   startOfDay.setHours(0, 0, 0, 0);
   
@@ -47,40 +49,46 @@ async function getJobCountsForDate(date: Date): Promise<{ paint: number; callbac
   
   if (error) {
     console.error('Error fetching jobs:', error);
-    return { paint: 0, callback: 0, repair: 0 };
+    return { paint: 0, clean: 0, callback: 0, repair: 0, other: 0, total: 0 };
   }
   
   let paint = 0;
+  let clean = 0;
   let callback = 0;
   let repair = 0;
+  let other = 0;
   
   jobs?.forEach(job => {
     const jobType = Array.isArray(job.job_type) ? job.job_type[0] : job.job_type;
     const label = jobType?.job_type_label?.toLowerCase() || '';
     
-    if (label.includes('paint')) {
+    if (label === 'paint') {
       paint++;
-    } else if (label.includes('callback')) {
+    } else if (label === 'clean') {
+      clean++;
+    } else if (label === 'callback') {
       callback++;
-    } else if (label.includes('repair')) {
+    } else if (label === 'repair') {
       repair++;
+    } else {
+      other++;
     }
   });
   
-  return { paint, callback, repair };
+  return { paint, clean, callback, repair, other, total: jobs?.length || 0 };
 }
 
 // Function to create agenda summary event
-async function createAgendaSummaryEvent(date: Date, counts: { paint: number; callback: number; repair: number }) {
+async function createAgendaSummaryEvent(date: Date, counts: JobCounts) {
   const startTime = new Date(date);
   startTime.setHours(0, 0, 0, 0);
   
   const endTime = new Date(date);
   endTime.setHours(23, 59, 59, 999);
   
-  const totalJobs = counts.paint + counts.callback + counts.repair;
-  const title = `${counts.paint} Paint | ${counts.callback} Callback | ${counts.repair} Repair | Total: ${totalJobs}`;
-  const details = `Paint: ${counts.paint} | Callback: ${counts.callback} | Repair: ${counts.repair} | Total: ${totalJobs}`;
+  const totalJobs = counts.total;
+  const title = `${counts.paint} Paint | ${counts.clean} Clean | ${counts.callback} Callback | ${counts.repair} Repair | Total: ${totalJobs}`;
+  const details = `Paint: ${counts.paint} | Clean: ${counts.clean} | Callback: ${counts.callback} | Repair: ${counts.repair} | Other: ${counts.other} | Total: ${totalJobs}`;
   
   // Create the event with transparent background and job-specific colors
   const { data, error } = await supabase

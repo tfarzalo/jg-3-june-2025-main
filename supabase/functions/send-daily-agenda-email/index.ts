@@ -39,8 +39,10 @@ function formatWorkOrderNumber(woNum: string | number | null): string {
 
 interface JobSummary {
   paint: number;
+  clean: number;
   callback: number;
   repair: number;
+  other: number;
   total: number;
 }
 
@@ -170,19 +172,25 @@ async function getJobsForDate(date: string): Promise<JobData[]> {
 function calculateSummary(jobs: JobData[]): JobSummary {
   const summary = {
     paint: 0,
+    clean: 0,
     callback: 0,
     repair: 0,
+    other: 0,
     total: jobs.length
   };
   
   jobs.forEach(job => {
     const type = job.job_type.toLowerCase();
-    if (type.includes('paint')) {
+    if (type === 'paint') {
       summary.paint++;
-    } else if (type.includes('callback')) {
+    } else if (type === 'clean') {
+      summary.clean++;
+    } else if (type === 'callback') {
       summary.callback++;
-    } else if (type.includes('repair')) {
+    } else if (type === 'repair') {
       summary.repair++;
+    } else {
+      summary.other++;
     }
   });
   
@@ -255,6 +263,7 @@ function generateEmailHTML(jobs: JobData[], summary: JobSummary, date: string): 
             font-weight: 600;
         }
         .paint { color: #3b82f6; }
+        .clean { color: #059669; }
         .callback { color: #f97316; }
         .repair { color: #ef4444; }
         .total { color: #8b5cf6; }
@@ -311,6 +320,10 @@ function generateEmailHTML(jobs: JobData[], summary: JobSummary, date: string): 
                 <div class="stat" style="padding: 10px; min-width: 80px;">
                     <div class="stat-number paint" style="font-size: 48px; font-weight: bold; margin-bottom: 5px; color: #3b82f6;">${summary.paint}</div>
                     <div class="stat-label" style="font-size: 16px; color: #666; font-weight: 600;">Paint</div>
+                </div>
+                <div class="stat" style="padding: 10px; min-width: 80px;">
+                    <div class="stat-number clean" style="font-size: 48px; font-weight: bold; margin-bottom: 5px; color: #059669;">${summary.clean}</div>
+                    <div class="stat-label" style="font-size: 16px; color: #666; font-weight: 600;">Clean</div>
                 </div>
                 <div class="stat" style="padding: 10px; min-width: 80px;">
                     <div class="stat-number callback" style="font-size: 48px; font-weight: bold; margin-bottom: 5px; color: #f97316;">${summary.callback}</div>

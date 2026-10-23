@@ -5,6 +5,7 @@ import { useUserRole } from '../../contexts/UserRoleContext';
 import { WorkOrderLink } from '../shared/WorkOrderLink';
 import { PropertyLink } from '../shared/PropertyLink';
 import { formatJobPhaseLabel } from '../../lib/jobPhaseLabels';
+import { summarizeJobTypes } from '../../lib/jobTypeSummary';
 
 interface TodaysAgendaModalProps {
   open: boolean;
@@ -17,6 +18,7 @@ export const TodaysAgendaModal: React.FC<TodaysAgendaModalProps> = ({ open, onCl
 
   // Directly use jobs without sorting
   const sortedTodaysJobs = jobs;
+  const jobTypeSummary = summarizeJobTypes(sortedTodaysJobs);
 
   // Only show for internal users; subcontractors do not have operational admin access.
   if (!open || !isAdmin) {
@@ -74,30 +76,18 @@ export const TodaysAgendaModal: React.FC<TodaysAgendaModalProps> = ({ open, onCl
                   <span className="text-lg font-medium text-gray-900 dark:text-white">
                     Today's Jobs: {sortedTodaysJobs.length} Total
                   </span>
-                  <div className="flex space-x-6">
+                  <div className="flex flex-wrap gap-x-6 gap-y-2">
                     <span className="text-blue-500 font-medium">
-                      Paint: {sortedTodaysJobs.filter(job => {
-                        const jobTypeObj = Array.isArray(job.job_type) && job.job_type.length > 0 
-                          ? job.job_type[0] 
-                          : (job.job_type as any);
-                        return jobTypeObj?.job_type_label === 'Paint';
-                      }).length}
+                      Paint: {jobTypeSummary.paint}
+                    </span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                      Clean: {jobTypeSummary.clean}
                     </span>
                     <span className="text-orange-500 font-medium">
-                      Callback: {sortedTodaysJobs.filter(job => {
-                        const jobTypeObj = Array.isArray(job.job_type) && job.job_type.length > 0 
-                          ? job.job_type[0] 
-                          : (job.job_type as any);
-                        return jobTypeObj?.job_type_label === 'Callback';
-                      }).length}
+                      Callback: {jobTypeSummary.callback}
                     </span>
                     <span className="text-red-500 font-medium">
-                      Repair: {sortedTodaysJobs.filter(job => {
-                        const jobTypeObj = Array.isArray(job.job_type) && job.job_type.length > 0 
-                          ? job.job_type[0] 
-                          : (job.job_type as any);
-                        return jobTypeObj?.job_type_label === 'Repair';
-                      }).length}
+                      Repair: {jobTypeSummary.repair}
                     </span>
                   </div>
                 </div>
