@@ -7,6 +7,11 @@ import { generateApprovalPDF } from '../utils/generateApprovalPDF';
 import { sendInternalApprovalNotification } from '../utils/sendInternalApprovalNotification';
 import { Download } from 'lucide-react';
 import { dispatchSmsNotification } from '../lib/sms/dispatchSmsNotification';
+import {
+  getApprovalChargeHoursText,
+  getApprovalChargeRateText,
+  shouldShowApprovalChargeQuantity,
+} from '../utils/approvalChargeDisplay';
 
 interface JobImage {
   id: string;
@@ -127,26 +132,6 @@ const ApprovalPage: React.FC = () => {
   const [approverFormError, setApproverFormError] = useState('');
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-
-  const getChargeHoursText = (charge: ApprovalData['extra_charges_data']['items'][number]) => {
-    if (typeof charge.bill_hours === 'number') {
-      return `${charge.bill_hours} hour${charge.bill_hours !== 1 ? 's' : ''}`;
-    }
-    if (typeof charge.hours === 'number') {
-      return `${charge.hours} hour${charge.hours !== 1 ? 's' : ''}`;
-    }
-    return null;
-  };
-
-  const getChargeRateText = (charge: ApprovalData['extra_charges_data']['items'][number]) => {
-    const hasBillHours = typeof charge.bill_hours === 'number' && charge.bill_hours > 0;
-    const hasHours = typeof charge.hours === 'number' && charge.hours > 0;
-    const hasQty = typeof charge.quantity === 'number' && charge.quantity > 0;
-    const divisor = hasBillHours ? charge.bill_hours : hasHours ? charge.hours : hasQty ? charge.quantity : undefined;
-    if (!divisor) return null;
-    const rate = charge.cost / divisor;
-    return `Rate: $${rate.toFixed(2)}${hasBillHours || hasHours ? '/hr' : ` per ${charge.unit || 'item'}`}`;
-  };
 
   console.log('ApprovalPage component mounted with token:', token);
 
@@ -805,18 +790,18 @@ const ApprovalPage: React.FC = () => {
                     >
                       <div className="flex-1 pr-4">
                         <p className="font-medium text-gray-900">{charge.description}</p>
-                        {charge.quantity !== undefined && (
+                        {shouldShowApprovalChargeQuantity(charge) && (
                           <p className="text-xs text-gray-500">
                             {charge.quantity} ({charge.unit || 'items'})
                           </p>
                         )}
-                        {getChargeHoursText(charge) && (
+                        {getApprovalChargeHoursText(charge) && (
                           <p className="text-xs text-gray-500">
-                            {getChargeHoursText(charge)}
+                            {getApprovalChargeHoursText(charge)}
                           </p>
                         )}
-                        {getChargeRateText(charge) && (
-                          <p className="text-xs text-gray-500">{getChargeRateText(charge)}</p>
+                        {getApprovalChargeRateText(charge) && (
+                          <p className="text-xs text-gray-500">{getApprovalChargeRateText(charge)}</p>
                         )}
                       </div>
                       <div className="text-right flex-shrink-0">
@@ -913,18 +898,18 @@ const ApprovalPage: React.FC = () => {
                     >
                       <div className="flex-1 pr-4">
                         <p className="font-medium text-gray-900">{charge.description}</p>
-                        {charge.quantity !== undefined && (
+                        {shouldShowApprovalChargeQuantity(charge) && (
                           <p className="text-xs text-gray-500">
                             {charge.quantity} ({charge.unit || 'items'})
                           </p>
                         )}
-                        {getChargeHoursText(charge) && (
+                        {getApprovalChargeHoursText(charge) && (
                           <p className="text-xs text-gray-500">
-                            {getChargeHoursText(charge)}
+                            {getApprovalChargeHoursText(charge)}
                           </p>
                         )}
-                        {getChargeRateText(charge) && (
-                          <p className="text-xs text-gray-500">{getChargeRateText(charge)}</p>
+                        {getApprovalChargeRateText(charge) && (
+                          <p className="text-xs text-gray-500">{getApprovalChargeRateText(charge)}</p>
                         )}
                       </div>
                       <div className="text-right flex-shrink-0">

@@ -1,5 +1,10 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import {
+  getApprovalChargeHours,
+  getApprovalChargeRateText,
+  shouldShowApprovalChargeQuantity,
+} from './approvalChargeDisplay';
 
 interface JobDetails {
   work_order_num: number;
@@ -131,24 +136,13 @@ export async function generateApprovalPDF(options: GeneratePDFOptions): Promise<
   yPosition += 5;
 
   const tableData = extraChargesData.items.map(item => {
-    const hasBillHours = typeof item.bill_hours === 'number' && item.bill_hours > 0;
-    const hasHours = typeof item.hours === 'number' && item.hours > 0;
-    const hasQty = typeof item.quantity === 'number' && item.quantity > 0;
-    const rate = hasBillHours
-      ? item.cost / (item.bill_hours as number)
-      : hasHours
-      ? item.cost / (item.hours as number)
-      : hasQty
-      ? item.cost / (item.quantity as number)
-      : undefined;
-    const qtyOrHrs = typeof item.bill_hours === 'number'
-      ? `${item.bill_hours} hrs`
-      : item.quantity
+    const hours = getApprovalChargeHours(item);
+    const qtyOrHrs = hours !== undefined
+      ? `${hours} hrs`
+      : shouldShowApprovalChargeQuantity(item)
       ? `${item.quantity} (${item.unit || 'items'})`
-      : (item.hours ? `${item.hours} hrs` : '-');
-    const rateText = typeof rate === 'number'
-      ? `$${rate.toFixed(2)}${hasBillHours || hasHours ? '/hr' : ` per ${item.unit || 'item'}`}`
       : '-';
+    const rateText = getApprovalChargeRateText(item)?.replace('Rate: ', '') || '-';
     return [
       item.description,
       qtyOrHrs,
