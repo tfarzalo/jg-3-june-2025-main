@@ -374,8 +374,8 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
       sub_pay_amount: extra.sub_pay_amount || 0,
       profit_amount: (extra.bill_amount || 0) - (extra.sub_pay_amount || 0)
     }] : []),
-    // Repair line item — only shown when admin has set a repair amount
-    ...(repairAmount > 0 ? [{
+    // Keep subcontractor-submitted costs visible while customer billing is pending.
+    ...(repairAmount > 0 || repairSubPay > 0 || miscAdditionalCostItems.length > 0 ? [{
       id: 'repair',
       label: [
         'Miscellaneous Additional Cost',
