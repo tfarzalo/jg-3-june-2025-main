@@ -7,6 +7,7 @@ import {
 } from './qualityControl';
 import { formatJobPhaseLabel } from './jobPhaseLabels';
 import { getMiscAdditionalCostAmounts } from './miscAdditionalCosts';
+import { shouldUseLegacyMiscAdditionalCostFallback } from './billing/miscAdditionalCostEditing';
 import { extractJobCancellationReason } from './jobs/cancellationReasons';
 
 const GENERIC_MISC_ADDITIONAL_COST_DESCRIPTION = 'Miscellaneous additional cost';
@@ -1254,7 +1255,7 @@ function extractChargePresentation(details: unknown, job: ReportJob, includeAppr
     });
   });
 
-  if (miscCosts.length === 0) {
+  if (shouldUseLegacyMiscAdditionalCostFallback(workOrder?.misc_additional_cost_items)) {
     const bill = numberFrom(jobDetails?.repair_amount, workOrder?.repair_cost);
     const sub = numberFrom(jobDetails?.repair_sub_pay);
     if (bill || sub) {
@@ -1727,7 +1728,7 @@ export function calculateBillingTotals(details: unknown, job: ReportJob, include
   }
 
   const miscAdditionalCostItems = arrayFrom(workOrder?.misc_additional_cost_items);
-  if (miscAdditionalCostItems.length > 0) {
+  if (!shouldUseLegacyMiscAdditionalCostFallback(workOrder?.misc_additional_cost_items)) {
     miscAdditionalCostItems.forEach((item) => {
       const { billAmount, subPayAmount } = getMiscAdditionalCostAmounts(item);
       const subAmount = subPayAmount ?? 0;

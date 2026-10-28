@@ -469,7 +469,7 @@ const buildWorkOrderPayload = (
     extra_hours: toDbNumber(formData.extra_hours) || 0,
     extra_charges_line_items: formData.has_extra_charges ? extraChargesItems : [],
     repair_cost: normalizeSubcontractorMiscAdditionalCostItems(formData.misc_additional_cost_items)
-      .reduce((sum, item) => sum + (Number(item.subPay) || 0), 0),
+      .reduce((sum, item) => sum + (Number(item.price) || 0), 0),
     repair_description: formData.misc_additional_cost_items
       .filter(item => item.description.trim())
       .map(item => item.description.trim())

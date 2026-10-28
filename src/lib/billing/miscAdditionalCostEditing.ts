@@ -15,10 +15,10 @@ const cents = (value: unknown): number => Math.round((Number(value) || 0) * 100)
 
 /**
  * An array, including an empty one, is an explicit saved value. Legacy fallback
- * is only appropriate when the structured field is absent or malformed.
+ * is only appropriate when the structured field is absent or null.
  */
 export const shouldUseLegacyMiscAdditionalCostFallback = (items: unknown): boolean =>
-  !Array.isArray(items);
+  items == null;
 
 export const findBillingMetricDuplicateIds = (
   items: MiscAdditionalCostRecord[],

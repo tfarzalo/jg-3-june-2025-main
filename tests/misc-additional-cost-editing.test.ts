@@ -9,10 +9,10 @@ describe('miscellaneous additional cost editing', () => {
     expect(shouldUseLegacyMiscAdditionalCostFallback([])).toBe(false);
   });
 
-  it('uses legacy fallback only when structured items are absent or malformed', () => {
+  it('uses legacy fallback only when structured items are absent or null', () => {
     expect(shouldUseLegacyMiscAdditionalCostFallback(null)).toBe(true);
     expect(shouldUseLegacyMiscAdditionalCostFallback(undefined)).toBe(true);
-    expect(shouldUseLegacyMiscAdditionalCostFallback({})).toBe(true);
+    expect(shouldUseLegacyMiscAdditionalCostFallback({})).toBe(false);
   });
 
   it('flags a misc item that exactly duplicates the selected billing metric amounts', () => {
