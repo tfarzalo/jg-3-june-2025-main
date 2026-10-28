@@ -27,6 +27,7 @@ interface ExtraChargesSectionProps {
   onRemoveLineItem: (id: string) => void;
   language?: 'en' | 'es';
   disabled?: boolean;
+  canCustomizeBillingHours: boolean;
   draft?: ExtraChargeDraftState;
   onDraftChange?: React.Dispatch<React.SetStateAction<ExtraChargeDraftState>>;
 }
@@ -65,6 +66,7 @@ export default function ExtraChargesSection({
   onRemoveLineItem,
   language = 'en',
   disabled = false,
+  canCustomizeBillingHours,
   draft,
   onDraftChange,
 }: ExtraChargesSectionProps) {
@@ -181,8 +183,9 @@ export default function ExtraChargesSection({
   const selectedCategory = categories.find((cat) => cat.categoryId === selectedCategoryId);
   const selectedDetail = selectedCategory?.lineItems.find((item) => item.id === selectedDetailId);
   const parsedQuantity = parseFloat(quantity) || 0;
-  const parsedBillHours = customizeHours && billHours.trim() !== '' ? parseFloat(billHours) : parsedQuantity;
-  const parsedSubPayHours = customizeHours && subPayHours.trim() !== '' ? parseFloat(subPayHours) : parsedQuantity;
+  const effectiveCustomizeHours = canCustomizeBillingHours && customizeHours;
+  const parsedBillHours = effectiveCustomizeHours && billHours.trim() !== '' ? parseFloat(billHours) : parsedQuantity;
+  const parsedSubPayHours = effectiveCustomizeHours && subPayHours.trim() !== '' ? parseFloat(subPayHours) : parsedQuantity;
 
   const resetDraft = () => {
     setIsAddingNew(false);
@@ -203,7 +206,7 @@ export default function ExtraChargesSection({
     setSelectedCategoryId(item.categoryId);
     setSelectedDetailId(item.detailId);
     setQuantity(String(item.quantity));
-    setCustomizeHours(Boolean(item.isHourly && item.customizeHours));
+    setCustomizeHours(Boolean(canCustomizeBillingHours && item.isHourly && item.customizeHours));
     setBillHours(String(getLineItemBillHours(item)));
     setSubPayHours(String(getLineItemSubPayHours(item)));
     setNotes(item.notes || '');
@@ -238,9 +241,9 @@ export default function ExtraChargesSection({
       billRate: effectiveBillRate,
       subRate: effectiveSubRate,
       isHourly: selectedDetail.isHourly,
-      customizeHours: selectedDetail.isHourly ? customizeHours : false,
-      billHours: selectedDetail.isHourly && customizeHours ? parsedBillHours : undefined,
-      subPayHours: selectedDetail.isHourly && customizeHours ? parsedSubPayHours : undefined,
+      customizeHours: selectedDetail.isHourly ? effectiveCustomizeHours : false,
+      billHours: selectedDetail.isHourly && effectiveCustomizeHours ? parsedBillHours : undefined,
+      subPayHours: selectedDetail.isHourly && effectiveCustomizeHours ? parsedSubPayHours : undefined,
       jobBillingCategory: 'owner',
       notes: notes.trim(),
       calculatedBillAmount: effectiveAmounts.billAmount,
@@ -336,7 +339,7 @@ export default function ExtraChargesSection({
                   <span>
                     {text.quantity}: {item.quantity} {item.isHourly ? text.hours : text.units}
                   </span>
-                  {item.isHourly && item.customizeHours && (
+                  {canCustomizeBillingHours && item.isHourly && item.customizeHours && (
                     <>
                       <span>{text.billHoursLabel}: {getLineItemBillHours(item)} {text.hours}</span>
                       <span>{text.subPayHoursLabel}: {getLineItemSubPayHours(item)} {text.hours}</span>
@@ -458,7 +461,7 @@ export default function ExtraChargesSection({
                 />
               </div>
 
-              {selectedDetail.isHourly && (
+              {canCustomizeBillingHours && selectedDetail.isHourly && (
                 <div className="rounded-lg border border-blue-100 dark:border-blue-900/50 bg-blue-50/70 dark:bg-blue-900/20 p-3 space-y-3">
                   <label className="flex items-center gap-2 text-sm font-medium text-blue-900 dark:text-blue-100">
                     <input

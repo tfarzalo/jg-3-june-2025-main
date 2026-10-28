@@ -122,6 +122,7 @@ interface NewWorkOrderSpanishProps {
   previewUserId: string | null;
   isEditMode: boolean;
   isSubcontractor: boolean;
+  canCustomizeBillingHours: boolean;
   sprinklerImagesUploaded: boolean;
   sprinklerFormImagesUploaded: boolean;
   beforeImagesUploaded: boolean;
@@ -187,6 +188,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
   previewUserId,
   isEditMode,
   isSubcontractor,
+  canCustomizeBillingHours,
   sprinklerImagesUploaded,
   sprinklerFormImagesUploaded,
   beforeImagesUploaded,
@@ -659,6 +661,7 @@ const NewWorkOrderSpanish: React.FC<NewWorkOrderSpanishProps> = ({
                   onRemoveLineItem={handleRemoveExtraCharge}
                   language="es"
                   disabled={saving}
+                  canCustomizeBillingHours={canCustomizeBillingHours}
                   draft={extraChargeDraft}
                   onDraftChange={setExtraChargeDraft}
                 />

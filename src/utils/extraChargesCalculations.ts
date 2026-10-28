@@ -55,6 +55,34 @@ export function getLineItemSubPayHours(item: ExtraChargeLineItem): number {
 }
 
 /**
+ * Subcontractors report one operational quantity. Customer-bill and sub-pay
+ * hour overrides are an internal billing decision and must not be submitted
+ * from the subcontractor workflow.
+ */
+export function normalizeSubcontractorExtraChargeHours(
+  lineItems: ExtraChargeLineItem[]
+): ExtraChargeLineItem[] {
+  return lineItems.map((item) => {
+    const itemWithoutOverrides = { ...item };
+    delete itemWithoutOverrides.billHours;
+    delete itemWithoutOverrides.subPayHours;
+    delete itemWithoutOverrides.hoursEditedAt;
+    delete itemWithoutOverrides.hoursEditedBy;
+    delete itemWithoutOverrides.hoursEditedByName;
+    delete itemWithoutOverrides.description;
+    const amounts = calculateLineItemAmounts(item.quantity, item.billRate, item.subRate);
+
+    return {
+      ...itemWithoutOverrides,
+      customizeHours: false,
+      jobBillingCategory: 'owner',
+      calculatedBillAmount: amounts.billAmount,
+      calculatedSubAmount: amounts.subAmount,
+    };
+  });
+}
+
+/**
  * Format currency for display
  */
 export function formatCurrency(amount: number): string {

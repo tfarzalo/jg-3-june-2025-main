@@ -25,6 +25,7 @@ import { prepareCeilingAccentUpdate } from '../lib/workOrders/prepareCeilingAcce
 import ExtraChargesSection from './ExtraChargesSection';
 import { ExtraChargeLineItem } from '../types/extraCharges';
 import { validateAllExtraCharges } from '../utils/extraChargesValidation';
+import { normalizeSubcontractorExtraChargeHours } from '../utils/extraChargesCalculations';
 import { deleteFilesByStoragePaths } from '../lib/utils/fileUpload';
 import { fetchPropertyUnitSizesForCategory } from '../lib/propertyUnitSizes';
 
@@ -952,7 +953,8 @@ const NewWorkOrderPreview = () => {
   });
 
   const { previewUserId: subcontractorPreviewUserId } = useSubcontractorPreview();
-  const { role, isAdmin, isJGManagement, isSubcontractor } = useUserRole();
+  const { role, isAdmin, isJGManagement, isSubcontractor, loading: roleLoading } = useUserRole();
+  const canCustomizeBillingHours = !roleLoading && role !== null && !isSubcontractor;
 
   // State for dynamic billing options
   const [dynamicServices, setDynamicServices] = useState<Array<{
@@ -1545,6 +1547,10 @@ const NewWorkOrderPreview = () => {
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (roleLoading || role === null) {
+      setError('Your account permissions are still loading. Please wait and try again.');
+      return;
+    }
     setSaving(true);
     setError(null);
     
@@ -1627,6 +1633,9 @@ const NewWorkOrderPreview = () => {
       }
 
       // Build the DB-safe payload
+      const submittedExtraChargesItems = isSubcontractor
+        ? normalizeSubcontractorExtraChargeHours(extraChargesItems)
+        : extraChargesItems;
       const workOrderPayload = buildWorkOrderPayload(
         formData, 
         job, 
@@ -1636,7 +1645,7 @@ const NewWorkOrderPreview = () => {
         accentWallOptions,
         dynamicFormValues,
         unitSizes,
-        extraChargesItems
+        submittedExtraChargesItems
       );
       
       // Merge the ceiling/accent wall patch into the payload
@@ -2079,7 +2088,7 @@ const NewWorkOrderPreview = () => {
   };
 
   // Helper to check if required fields are filled
-  const requiredFieldsFilled = Boolean(
+  const requiredFieldsFilled = !roleLoading && role !== null && Boolean(
     formData.unit_number &&
     formData.job_category_id &&
     // For subcontractors, also require before images
@@ -2215,6 +2224,7 @@ const NewWorkOrderPreview = () => {
                 previewUserId={previewUserId}
                 isEditMode={isEditMode}
                 isSubcontractor={isSubcontractor}
+                canCustomizeBillingHours={canCustomizeBillingHours}
                 sprinklerImagesUploaded={sprinklerImagesUploaded}
                 sprinklerFormImagesUploaded={sprinklerFormImagesUploaded}
                 beforeImagesUploaded={beforeImagesUploaded}
@@ -2557,6 +2567,7 @@ const NewWorkOrderPreview = () => {
                       onRemoveLineItem={handleRemoveExtraCharge}
                       language="en"
                       disabled={saving}
+                      canCustomizeBillingHours={canCustomizeBillingHours}
                     />
                   </div>
                 )}

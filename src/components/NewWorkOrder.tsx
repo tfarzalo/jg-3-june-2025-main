@@ -25,6 +25,7 @@ import ExtraChargesSection, { createExtraChargeDraftState } from './ExtraCharges
 import MiscAdditionalCostsSection, { MiscAdditionalCostItem } from './MiscAdditionalCostsSection';
 import { ExtraChargeLineItem } from '../types/extraCharges';
 import { validateAllExtraCharges } from '../utils/extraChargesValidation';
+import { normalizeSubcontractorExtraChargeHours } from '../utils/extraChargesCalculations';
 import { isFrozenHistoricalSnapshot } from '../lib/jobs/historicalDataMode';
 import { dispatchSmsNotification, dispatchSmsNotificationBatch } from '../lib/sms/dispatchSmsNotification';
 import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
@@ -1049,7 +1050,8 @@ const NewWorkOrder = () => {
   });
 
   const { previewUserId: subcontractorPreviewUserId } = useSubcontractorPreview();
-  const { role, isAdmin, isJGManagement, isSubcontractor } = useUserRole();
+  const { role, isAdmin, isJGManagement, isSubcontractor, loading: roleLoading } = useUserRole();
+  const canCustomizeBillingHours = !roleLoading && role !== null && !isSubcontractor;
 
   // State for dynamic billing options
   const [dynamicServices, setDynamicServices] = useState<Array<{
@@ -1741,6 +1743,10 @@ const NewWorkOrder = () => {
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (roleLoading || role === null) {
+      setError('Your account permissions are still loading. Please wait and try again.');
+      return;
+    }
     const submitReadiness = getWorkOrderReadiness({
       unitNumber: formData.unit_number,
       jobCategoryId: formData.job_category_id,
@@ -1863,6 +1869,9 @@ const NewWorkOrder = () => {
       }
 
       // Build the DB-safe payload
+      const submittedExtraChargesItems = isSubcontractor
+        ? normalizeSubcontractorExtraChargeHours(extraChargesItems)
+        : extraChargesItems;
       const workOrderPayload = buildWorkOrderPayload(
         formData, 
         job, 
@@ -1872,7 +1881,7 @@ const NewWorkOrder = () => {
         accentWallOptions,
         dynamicFormValues,
         unitSizes,
-        extraChargesItems
+        submittedExtraChargesItems
       );
       
       // Merge the ceiling/accent wall patch into the payload
@@ -2511,7 +2520,7 @@ const NewWorkOrder = () => {
     hasExtraCharges: formData.has_extra_charges,
     extraCharges: extraChargesItems,
   });
-  const requiredFieldsFilled = readiness.canSubmit;
+  const requiredFieldsFilled = readiness.canSubmit && !roleLoading && role !== null;
 
   if (loading) {
     return (
@@ -2637,6 +2646,7 @@ const NewWorkOrder = () => {
                 previewUserId={previewUserId}
                 isEditMode={isEditMode}
                 isSubcontractor={isSubcontractor}
+                canCustomizeBillingHours={canCustomizeBillingHours}
                 sprinklerImagesUploaded={sprinklerImagesUploaded}
                 sprinklerFormImagesUploaded={sprinklerFormImagesUploaded}
                 beforeImagesUploaded={beforeImagesUploaded}
@@ -3028,6 +3038,7 @@ const NewWorkOrder = () => {
                       onRemoveLineItem={handleRemoveExtraCharge}
                       language="en"
                       disabled={saving}
+                      canCustomizeBillingHours={canCustomizeBillingHours}
                       draft={extraChargeDraft}
                       onDraftChange={setExtraChargeDraft}
                     />
