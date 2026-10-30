@@ -30,6 +30,7 @@ import { useEffect } from 'react';
 import { useUnreadMessages } from '../contexts/UnreadMessagesProvider';
 import { useMaintenanceMode } from '../contexts/MaintenanceModeContext';
 import { getPhaseLabelForNavigationLabel, useJobPhaseColorMap } from '../hooks/useJobPhaseColorMap';
+import { useScheduledAppLogo } from '../hooks/useScheduledAppLogo';
 
 // Lightweight live connection indicator state
 function LiveStatusBadge({ isCollapsed }: { isCollapsed: boolean }) {
@@ -108,6 +109,7 @@ interface NavGroup {
 }
 
 export function Sidebar() {
+  const appLogoUrl = useScheduledAppLogo();
   const navigate = useNavigate();
   const { isAdmin, isSuperAdmin, isJGManagement, isSubcontractor } = useUserRole();
   const canManageSettings = isAdmin || isSuperAdmin || isJGManagement;
@@ -328,13 +330,13 @@ export function Sidebar() {
       <div className="p-4 flex items-center justify-between border-b border-gray-200 dark:border-[#1E293B]">
         {!isCollapsed ? (
           <img 
-            src="https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png" 
+            src={appLogoUrl}
             alt="JG Painting" 
             className="h-12 w-auto"
           />
         ) : (
           <img 
-            src="https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png" 
+            src={appLogoUrl}
             alt="JG Painting" 
             className="h-8 w-auto"
           />

@@ -4,8 +4,10 @@ import { useAuth } from '../contexts/AuthProvider';
 import { toast } from 'sonner';
 import { supabase } from '../utils/supabase';
 import { config } from '../config/environment';
+import { useScheduledAppLogo } from '../hooks/useScheduledAppLogo';
 
 export function Auth() {
+  const appLogoUrl = useScheduledAppLogo();
   const navigate = useNavigate();
   const { signIn, session, initializing: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -172,7 +174,7 @@ export function Auth() {
          <div className="text-center">
     <div className="mx-auto h-16 w-16 flex items-center justify-center">
       <img
-        src="https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png"
+        src={appLogoUrl}
         alt="JG Portal Logo"
        className="h-16 w-auto object-contain"
 

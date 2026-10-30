@@ -37,6 +37,7 @@ import { MobileNav } from '../mobile/MobileNav';
 import { useHugh } from '../../contexts/HughContext';
 import { HughAssistant } from '../ai/HughAssistant';
 import { AdminAttentionMenu } from './AdminAttentionMenu';
+import { useScheduledAppLogo } from '../../hooks/useScheduledAppLogo';
 
 interface Profile {
   id: string;
@@ -49,6 +50,7 @@ interface TopbarProps {
 }
 
 function Topbar({ showOnlyProfile = false }: TopbarProps) {
+  const appLogoUrl = useScheduledAppLogo();
   const { theme, toggleTheme } = useTheme();
   const { session, signOut } = useAuth();
   const { role, isAdmin, isSuperAdmin, isJGManagement } = useUserRole();
@@ -349,7 +351,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
           {(isSubcontractor || window.innerWidth < 1024) && (
             <div className="flex items-center flex-shrink-0">
               <img
-                src="https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png"
+                src={appLogoUrl}
                 alt="JG Painting"
                 className="h-8 w-auto"
               />
@@ -825,7 +827,7 @@ function Topbar({ showOnlyProfile = false }: TopbarProps) {
             {/* Header */}
             <div className="sticky top-0 z-10 flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#1E293B] bg-white dark:bg-[#0F172A]">
               <img
-                src="https://tbwtfimnbmvbgesidbxh.supabase.co/storage/v1/object/public/files/fb38963b-c67e-4924-860b-312045d19d2f/1750132407578_jg-logo-icon.png"
+                src={appLogoUrl}
                 alt="JG Painting"
                 className="h-8 w-auto"
               />
