@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { formatCurrency, sum } from '../../../lib/money';
 import type { JobBillingPayload, AdditionalService } from '../../billing/types';
 import { getLineItemBillHours, getLineItemSubPayHours } from '../../../utils/extraChargesCalculations';
+import { getMiscAdditionalCostAmounts } from '../../../lib/miscAdditionalCosts';
 
 type Props = { billing: JobBillingPayload };
 
@@ -304,7 +305,16 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
   const repairSubPay = billing.repair_sub_pay ?? 0;
   const repairCost = billing.repair_cost ?? 0;
   const repairDescription = billing.repair_description?.trim();
+  const hasStructuredMiscAdditionalCosts = Array.isArray(billing.misc_additional_cost_items);
   const miscAdditionalCostItems = billing.misc_additional_cost_items ?? [];
+  const structuredMiscTotals = miscAdditionalCostItems.reduce((totals, item) => {
+    const { billAmount, subPayAmount } = getMiscAdditionalCostAmounts(item);
+    totals.bill += billAmount;
+    totals.subPay += subPayAmount ?? 0;
+    return totals;
+  }, { bill: 0, subPay: 0 });
+  const resolvedRepairAmount = hasStructuredMiscAdditionalCosts ? structuredMiscTotals.bill : repairAmount;
+  const resolvedRepairSubPay = hasStructuredMiscAdditionalCosts ? structuredMiscTotals.subPay : repairSubPay;
   const isEditingRepair = billing.is_editing_repair ?? false;
   const repairInput = billing.repair_amount_input ?? '';
   const repairSubPayInput = billing.repair_sub_pay_input ?? '';
@@ -375,7 +385,7 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
       profit_amount: (extra.bill_amount || 0) - (extra.sub_pay_amount || 0)
     }] : []),
     // Keep subcontractor-submitted costs visible while customer billing is pending.
-    ...(repairAmount > 0 || repairSubPay > 0 || miscAdditionalCostItems.length > 0 ? [{
+    ...(resolvedRepairAmount > 0 || resolvedRepairSubPay > 0 || miscAdditionalCostItems.length > 0 ? [{
       id: 'repair',
       label: [
         'Miscellaneous Additional Cost',
@@ -395,9 +405,9 @@ export const BillingBreakdownV2: React.FC<Props> = ({ billing }) => {
       unit_label: '—',
       quantity_or_hours: null as unknown as number,
       is_hours: false,
-      bill_amount: repairAmount,
-      sub_pay_amount: repairSubPay,
-      profit_amount: repairAmount - repairSubPay
+      bill_amount: resolvedRepairAmount,
+      sub_pay_amount: resolvedRepairSubPay,
+      profit_amount: resolvedRepairAmount - resolvedRepairSubPay
     }] : [])
   ];
 

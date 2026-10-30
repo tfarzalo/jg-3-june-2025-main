@@ -807,6 +807,16 @@ export function JobDetails() {
     [miscAdditionalCostItems]
   );
 
+  const usesLegacyMiscAdditionalCosts = shouldUseLegacyMiscAdditionalCostFallback(
+    job?.work_order?.misc_additional_cost_items
+  );
+  const resolvedMiscAdditionalCostBill = usesLegacyMiscAdditionalCosts
+    ? Number(job?.repair_amount ?? job?.work_order?.repair_cost ?? 0) || 0
+    : miscAdditionalCostTotal;
+  const resolvedMiscAdditionalCostSubPay = usesLegacyMiscAdditionalCosts
+    ? Number(job?.repair_sub_pay ?? 0) || 0
+    : miscAdditionalCostSubPayTotal;
+
   const hasMiscAdditionalCostItemsMissingBillAmount = useMemo(
     () => miscAdditionalCostItems.some(item => (item.description.trim() || (Number(item.subPay) || 0) > 0) && (Number(item.price) || 0) <= 0),
     [miscAdditionalCostItems]
@@ -817,7 +827,7 @@ export function JobDetails() {
     [miscAdditionalCostItems]
   );
 
-  const hasMiscAdditionalCostBilling = miscAdditionalCostTotal > 0 || miscAdditionalCostSubPayTotal > 0 || (job?.repair_amount ?? 0) > 0;
+  const hasMiscAdditionalCostBilling = resolvedMiscAdditionalCostBill > 0 || resolvedMiscAdditionalCostSubPay > 0;
   const hasSubcontractorSubmittedMiscAdditionalCosts = miscAdditionalCostItems.some(
     item => (item.description.trim() || (Number(item.subPay) || 0) > 0) && (Number(item.price) || 0) <= 0
   );
@@ -871,20 +881,20 @@ export function JobDetails() {
   // Sync repair amount input with job data when loaded/refreshed
   useEffect(() => {
     if (!isEditingRepairAmount) {
-      setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
-      setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+      setRepairAmountInput(resolvedMiscAdditionalCostBill > 0 ? String(resolvedMiscAdditionalCostBill) : '');
+      setRepairSubPayInput(resolvedMiscAdditionalCostSubPay > 0 ? String(resolvedMiscAdditionalCostSubPay) : '');
       setMiscAdditionalCostItemsInput(miscAdditionalCostItems);
     }
-  }, [job?.repair_amount, job?.repair_sub_pay, miscAdditionalCostItems, isEditingRepairAmount]);
+  }, [resolvedMiscAdditionalCostBill, resolvedMiscAdditionalCostSubPay, miscAdditionalCostItems, isEditingRepairAmount]);
 
   useEffect(() => {
     if (!canEditRepairInCurrentPhase) {
       setIsEditingRepairAmount(false);
-      setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
-      setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+      setRepairAmountInput(resolvedMiscAdditionalCostBill > 0 ? String(resolvedMiscAdditionalCostBill) : '');
+      setRepairSubPayInput(resolvedMiscAdditionalCostSubPay > 0 ? String(resolvedMiscAdditionalCostSubPay) : '');
       setMiscAdditionalCostItemsInput(miscAdditionalCostItems);
     }
-  }, [canEditRepairInCurrentPhase, job?.repair_amount, job?.repair_sub_pay, miscAdditionalCostItems]);
+  }, [canEditRepairInCurrentPhase, resolvedMiscAdditionalCostBill, resolvedMiscAdditionalCostSubPay, miscAdditionalCostItems]);
 
   const fetchJobNotes = useCallback(async () => {
     if (!jobId || !isAdmin) {
@@ -1600,46 +1610,6 @@ export function JobDetails() {
     };
   }, [jobId, fetchApprovalDecision, fetchPendingApproval, refetchJob]);
 
-  // Add effect to calculate and update total billing amount
-  useEffect(() => {
-    const calculateAndUpdateTotalBilling = async () => {
-      if (!job || !jobId) return;
-      if (isHistoricalSnapshotJob) return;
-
-      // Get base billing amount from the job's billing category
-      const standardBillAmount = job.billing_details?.bill_amount ?? 0;
-      
-      // Get extra charges amount from the calculated extra_charges_details
-      const extraChargesBillAmount = job.extra_charges_details?.bill_amount ?? 0;
-      
-      // Get supplemental billing amount (ceilings/accent walls)
-      const supplementalAmount = supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0);
-      
-      // Calculate total billing amount (same as "Total to Invoice" calculation)
-      const cancellationTripChargeAmount = job.cancellation_trip_charge_added
-        ? (job.cancellation_trip_charge_bill_amount ?? 0)
-        : 0;
-      const totalBillingAmount = phaseLabel === 'Cancelled'
-        ? cancellationTripChargeAmount
-        : standardBillAmount + extraChargesBillAmount + supplementalAmount + (job.repair_amount ?? 0);
-
-
-      try {
-        // Update the total_billing_amount in the jobs table
-        const { error } = await supabase
-          .from('jobs')
-          .update({ total_billing_amount: totalBillingAmount })
-          .eq('id', jobId);
-
-        if (error) throw error;
-      } catch (err) {
-        console.error('Error updating total billing amount:', err);
-      }
-    };
-
-    calculateAndUpdateTotalBilling();
-  }, [job, jobId, supplementalBillingLines, isHistoricalSnapshotJob, phaseLabel]);
-
   // Fetch additional billing lines for ceilings and accent walls
   useEffect(() => {
     const fetchAdditionalBillingLines = async () => {
@@ -2238,11 +2208,11 @@ export function JobDetails() {
           billAmount: Number(item.price) || 0,
           subPayAmount: item.subPay == null ? null : Number(item.subPay) || 0,
         }))
-      : (job.repair_amount ?? 0) > 0
+      : resolvedMiscAdditionalCostBill > 0 || resolvedMiscAdditionalCostSubPay > 0
         ? [{
             description: job.work_order?.repair_description?.trim() || 'Miscellaneous Additional Cost',
-            billAmount: Number(job.repair_amount) || 0,
-            subPayAmount: Number(job.repair_sub_pay) || 0,
+            billAmount: resolvedMiscAdditionalCostBill,
+            subPayAmount: resolvedMiscAdditionalCostSubPay,
           }]
         : [];
     
@@ -2964,36 +2934,13 @@ export function JobDetails() {
     setReactivatingJob(true);
 
     try {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!userData.user) throw new Error('User not found');
+      const { error: reopenError } = await supabase.rpc('reopen_job_from_snapshot', {
+        p_job_id: job.id,
+        p_reason: 'Job re-activated after extra charges decline',
+        p_target_phase_label: 'Pending Work Order',
+      });
 
-      const { data: pendingPhase, error: phaseError } = await supabase
-        .from('job_phases')
-        .select('id')
-        .eq('job_phase_label', 'Pending Work Order')
-        .single();
-
-      if (phaseError) throw phaseError;
-
-      const { error: updateError } = await supabase
-        .from('jobs')
-        .update({ current_phase_id: pendingPhase.id })
-        .eq('id', job.id);
-
-      if (updateError) throw updateError;
-
-      const { error: phaseChangeError } = await supabase
-        .from('job_phase_changes')
-        .insert({
-          job_id: job.id,
-          changed_by: userData.user.id,
-          from_phase_id: job?.job_phase?.id,
-          to_phase_id: pendingPhase.id,
-          change_reason: 'Job re-activated after extra charges decline'
-        });
-
-      if (phaseChangeError) throw phaseChangeError;
+      if (reopenError) throw reopenError;
 
       await refetchJob(true);
       await refetchPhaseChanges();
@@ -3360,72 +3307,16 @@ export function JobDetails() {
     const miscTotal = miscItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
     const subPay = miscItems.reduce((sum, item) => sum + (Number(item.subPay) || 0), 0);
     const amount = miscTotal;
-    const previousBillAmount = job?.repair_amount ?? 0;
+    const previousBillAmount = resolvedMiscAdditionalCostBill;
     const billingAmountChanged = amountToCents(amount) !== amountToCents(previousBillAmount);
     setSavingRepairAmount(true);
     try {
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (userError) throw userError;
-      if (!userData.user) throw new Error('User not found');
-
       const { error } = await supabase.rpc('save_misc_additional_costs', {
         p_job_id: jobId,
         p_work_order_id: job.work_order.id,
         p_items: miscItems,
       });
       if (error) throw error;
-
-      const currentPhase = job?.job_phase?.label?.trim();
-      const hadRepairBefore = (job?.repair_amount ?? 0) > 0;
-
-      // Determine whether other extra charges exist (besides repair)
-      const hasOtherExtraCharges = Boolean(
-        job?.work_order?.has_extra_charges ||
-        unifiedExtraLines.length > 0 ||
-        derivedExtraCharges
-      );
-
-      // --- Phase advancement: Job Request or Work Order → Pending Work Order ---
-      // Only customer-facing billing amount changes require another approval cycle.
-      if (amount > 0 && billingAmountChanged && currentPhase !== 'Pending Work Order') {
-        const { data: pendingPhase, error: phaseErr } = await supabase
-          .from('job_phases')
-          .select('id')
-          .eq('job_phase_label', 'Pending Work Order')
-          .single();
-        if (!phaseErr && pendingPhase) {
-          await supabase.from('jobs').update({ current_phase_id: pendingPhase.id }).eq('id', jobId);
-          await supabase.from('job_phase_changes').insert({
-            job_id: jobId,
-            changed_by: userData.user.id,
-            from_phase_id: job?.job_phase?.id,
-            to_phase_id: pendingPhase.id,
-            change_reason: 'Admin set miscellaneous additional cost amount - job moved to Pending Work Order for approval'
-          });
-        }
-      }
-
-      // --- Phase revert: Pending Work Order → Work Order ---
-      // When admin clears repair to 0 and no other extra charges exist
-      if (amount === 0 && hadRepairBefore && currentPhase === 'Pending Work Order' && !hasOtherExtraCharges) {
-        // Determine the right revert phase: if work order exists go to Work Order, else Job Request
-        const revertLabel = job?.work_order ? 'Work Order' : 'Job Request';
-        const { data: revertPhase, error: phaseErr } = await supabase
-          .from('job_phases')
-          .select('id')
-          .eq('job_phase_label', revertLabel)
-          .single();
-        if (!phaseErr && revertPhase) {
-          await supabase.from('jobs').update({ current_phase_id: revertPhase.id }).eq('id', jobId);
-          await supabase.from('job_phase_changes').insert({
-            job_id: jobId,
-            changed_by: userData.user.id,
-            from_phase_id: job?.job_phase?.id,
-            to_phase_id: revertPhase.id,
-            change_reason: `Admin cleared miscellaneous additional cost amount - no other extra charges, job reverted to ${revertLabel}`
-          });
-        }
-      }
 
       await logJobActivity({
         jobId,
@@ -3440,8 +3331,8 @@ export function JobDetails() {
           bill_total: amount,
           sub_pay_total: subPay,
           items: miscItems,
-          previous_bill_total: job?.repair_amount ?? 0,
-          previous_sub_pay_total: job?.repair_sub_pay ?? 0,
+          previous_bill_total: resolvedMiscAdditionalCostBill,
+          previous_sub_pay_total: resolvedMiscAdditionalCostSubPay,
           billing_amount_changed: billingAmountChanged,
         },
       });
@@ -3739,13 +3630,13 @@ export function JobDetails() {
       { bill: 0, sub: 0 }
     );
     // Include admin-set repair amounts
-    base.bill += job?.repair_amount ?? 0;
-    base.sub += job?.repair_sub_pay ?? 0;
+    base.bill += resolvedMiscAdditionalCostBill;
+    base.sub += resolvedMiscAdditionalCostSubPay;
     return base;
   }, [
     unifiedExtraLines,
-    job?.repair_amount,
-    job?.repair_sub_pay
+    resolvedMiscAdditionalCostBill,
+    resolvedMiscAdditionalCostSubPay
   ]);
   const unifiedExtraHourTotals = useMemo(() => (
     unifiedExtraLines.reduce(
@@ -3762,7 +3653,7 @@ export function JobDetails() {
     job?.work_order?.has_extra_charges ||
     unifiedExtraLines.length > 0 ||
     derivedExtraCharges ||
-    (job?.repair_amount ?? 0) > 0 ||
+    resolvedMiscAdditionalCostBill > 0 ||
     miscAdditionalCostTotal > 0 ||
     miscAdditionalCostSubPayTotal > 0
   );
@@ -5011,14 +4902,14 @@ export function JobDetails() {
                       if (isRepairLocked) return;
                       const next = !repairExpanded;
                       setRepairExpanded(next);
-                      if (next && !(job.repair_amount ?? 0)) {
+                      if (next && resolvedMiscAdditionalCostBill <= 0 && resolvedMiscAdditionalCostSubPay <= 0) {
                         setIsEditingRepairAmount(true);
                         setMiscAdditionalCostItemsInput(miscAdditionalCostItems);
                       }
                       if (!next) {
                         setIsEditingRepairAmount(false);
-                        setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
-                        setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+                        setRepairAmountInput(resolvedMiscAdditionalCostBill > 0 ? String(resolvedMiscAdditionalCostBill) : '');
+                        setRepairSubPayInput(resolvedMiscAdditionalCostSubPay > 0 ? String(resolvedMiscAdditionalCostSubPay) : '');
                         setMiscAdditionalCostItemsInput(miscAdditionalCostItems);
                       }
                     }}
@@ -5032,9 +4923,9 @@ export function JobDetails() {
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-sm">🔧</span>
                       <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider">Miscellaneous Additional Cost</span>
-                      {(job.repair_amount ?? 0) > 0 && !repairExpanded && (
+                      {(resolvedMiscAdditionalCostBill > 0 || resolvedMiscAdditionalCostSubPay > 0) && !repairExpanded && (
                         <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">
-                          &nbsp;·&nbsp;{formatCurrency(job.repair_amount ?? 0)} bill / {formatCurrency(job.repair_sub_pay ?? 0)} sub
+                          &nbsp;·&nbsp;{formatCurrency(resolvedMiscAdditionalCostBill)} bill / {formatCurrency(resolvedMiscAdditionalCostSubPay)} sub
                         </span>
                       )}
                       {miscAdditionalCostTotal > 0 && !repairExpanded && (
@@ -5241,20 +5132,20 @@ export function JobDetails() {
                       )}
 
                       {/* Read-only saved values */}
-                      {!isEditingRepairAmount && (job.repair_amount ?? 0) > 0 ? (
+                      {!isEditingRepairAmount && (resolvedMiscAdditionalCostBill > 0 || resolvedMiscAdditionalCostSubPay > 0) ? (
                         <div className="px-4 py-3">
                           <div className="grid grid-cols-1 gap-4 mb-4 sm:grid-cols-3">
                             <div>
                               <div className="text-xs text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Bill to Customer</div>
-                              <div className="text-base font-bold text-zinc-900 dark:text-white">{formatCurrency(job.repair_amount ?? 0)}</div>
+                              <div className="text-base font-bold text-zinc-900 dark:text-white">{formatCurrency(resolvedMiscAdditionalCostBill)}</div>
                             </div>
                             <div>
                               <div className="text-xs text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Sub Input Cost / Pay to Sub</div>
-                              <div className="text-base font-bold text-zinc-900 dark:text-white">{formatCurrency(job.repair_sub_pay ?? 0)}</div>
+                              <div className="text-base font-bold text-zinc-900 dark:text-white">{formatCurrency(resolvedMiscAdditionalCostSubPay)}</div>
                             </div>
                             <div>
                               <div className="text-xs text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-0.5">Profit</div>
-                              <div className="text-base font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency((job.repair_amount ?? 0) - (job.repair_sub_pay ?? 0))}</div>
+                              <div className="text-base font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(resolvedMiscAdditionalCostBill - resolvedMiscAdditionalCostSubPay)}</div>
                             </div>
                           </div>
                           <div className="mb-4 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs leading-5 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/30 dark:text-zinc-300">
@@ -5284,8 +5175,8 @@ export function JobDetails() {
                             <button
                               onClick={() => {
                                 setIsEditingRepairAmount(false);
-                                setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
-                                setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+                                setRepairAmountInput(resolvedMiscAdditionalCostBill > 0 ? String(resolvedMiscAdditionalCostBill) : '');
+                                setRepairSubPayInput(resolvedMiscAdditionalCostSubPay > 0 ? String(resolvedMiscAdditionalCostSubPay) : '');
                                 setMiscAdditionalCostItemsInput(miscAdditionalCostItems);
                               }}
                               className="px-3 py-1.5 text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-600 dark:text-zinc-300 rounded-lg border border-zinc-200 dark:border-zinc-600 transition-colors"
@@ -6320,7 +6211,7 @@ export function JobDetails() {
                         </p>
                       </div>
                       {(() => {
-                        const repairCount = (job?.repair_amount ?? 0) > 0 ? 1 : 0;
+                        const repairCount = resolvedMiscAdditionalCostBill > 0 || resolvedMiscAdditionalCostSubPay > 0 ? 1 : 0;
                         const totalCount = unifiedExtraLines.length + repairCount;
                         const hasAny = totalCount > 0;
                         return (
@@ -6336,9 +6227,9 @@ export function JobDetails() {
 
                     {/* Line item cards */}
                     {(() => {
-                      const repairAmount = job?.repair_amount ?? 0;
-                      const repairSubPay = job?.repair_sub_pay ?? 0;
-                      const hasRepair = repairAmount > 0;
+                      const repairAmount = resolvedMiscAdditionalCostBill;
+                      const repairSubPay = resolvedMiscAdditionalCostSubPay;
+                      const hasRepair = repairAmount > 0 || repairSubPay > 0;
                       const hasLines = unifiedExtraLines.length > 0;
                       if (!hasRepair && !hasLines) return null;
                       return (
@@ -6589,11 +6480,11 @@ export function JobDetails() {
                         sub_pay_amount: line.amountSub,
                         profit_amount: line.amountBill - line.amountSub
                       })),
-                  repair_amount: job.repair_amount ?? 0,
+                  repair_amount: resolvedMiscAdditionalCostBill,
                   repair_cost: job.work_order?.repair_cost ?? 0,
                   repair_description: job.work_order?.repair_description ?? null,
                   misc_additional_cost_items: miscAdditionalCostItems,
-                  repair_sub_pay: job.repair_sub_pay ?? 0,
+                  repair_sub_pay: resolvedMiscAdditionalCostSubPay,
                   is_editing_repair: isEditingRepairAmount,
                   repair_amount_input: repairAmountInput,
                   repair_sub_pay_input: repairSubPayInput,
@@ -6602,8 +6493,8 @@ export function JobDetails() {
                   on_repair_save: handleSaveRepairAmount,
                   on_repair_cancel: () => {
                     setIsEditingRepairAmount(false);
-                    setRepairAmountInput(job?.repair_amount != null && job.repair_amount > 0 ? String(job.repair_amount) : '');
-                    setRepairSubPayInput(job?.repair_sub_pay != null && job.repair_sub_pay > 0 ? String(job.repair_sub_pay) : '');
+                    setRepairAmountInput(resolvedMiscAdditionalCostBill > 0 ? String(resolvedMiscAdditionalCostBill) : '');
+                    setRepairSubPayInput(resolvedMiscAdditionalCostSubPay > 0 ? String(resolvedMiscAdditionalCostSubPay) : '');
                     setMiscAdditionalCostItemsInput(miscAdditionalCostItems);
                   },
                   on_repair_input_change: (val: string) => setRepairAmountInput(val),
@@ -6623,7 +6514,7 @@ export function JobDetails() {
                       {formatCurrency(
                         displayBaseBillAmount + displayExtraBillAmount +
                         (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)) +
-                        (job.repair_amount ?? 0)
+                        resolvedMiscAdditionalCostBill
                       )}
                     </p>
                   </div>
@@ -6634,7 +6525,8 @@ export function JobDetails() {
                     <p className="text-lg font-semibold text-blue-600 dark:text-blue-400 mt-1">
                       {formatCurrency(
                         displayBaseSubPayAmount + displayExtraSubPayAmount +
-                        (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + line.amountSub, 0))
+                        (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + line.amountSub, 0)) +
+                        resolvedMiscAdditionalCostSubPay
                       )}
                     </p>
                   </div>
@@ -6647,7 +6539,7 @@ export function JobDetails() {
                         (displayBaseBillAmount - displayBaseSubPayAmount) +
                         (displayExtraBillAmount - displayExtraSubPayAmount) +
                         (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + (line.amountBill - line.amountSub), 0)) +
-                        (job.repair_amount ?? 0)
+                        (resolvedMiscAdditionalCostBill - resolvedMiscAdditionalCostSubPay)
                       )}
                     </p>
                   </div>
@@ -6738,7 +6630,7 @@ export function JobDetails() {
                     {formatCurrency(
                       displayBaseBillAmount + displayExtraBillAmount +
                       (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)) +
-                      (job.repair_amount ?? 0)
+                      resolvedMiscAdditionalCostBill
                     )}
                   </span>
                 </div>
@@ -6752,7 +6644,7 @@ export function JobDetails() {
                         {formatCurrency(
                           displayBaseBillAmount + displayExtraBillAmount +
                           (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + line.amountBill, 0)) +
-                          (job.repair_amount ?? 0)
+                          resolvedMiscAdditionalCostBill
                         )}
                       </span>
                     </div>
@@ -6761,7 +6653,8 @@ export function JobDetails() {
                       <span className="text-base font-semibold text-gray-900 dark:text-white">
                         {formatCurrency(
                           displayBaseSubPayAmount + displayExtraSubPayAmount +
-                          (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + line.amountSub, 0))
+                          (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + line.amountSub, 0)) +
+                          resolvedMiscAdditionalCostSubPay
                         )}
                       </span>
                     </div>
@@ -6772,7 +6665,7 @@ export function JobDetails() {
                           (displayBaseBillAmount - displayBaseSubPayAmount) +
                           (displayExtraBillAmount - displayExtraSubPayAmount) +
                           (hasCancellationTripCharge ? 0 : supplementalBillingLines.reduce((sum, line) => sum + (line.amountBill - line.amountSub), 0)) +
-                          (job.repair_amount ?? 0)
+                          (resolvedMiscAdditionalCostBill - resolvedMiscAdditionalCostSubPay)
                         )}
                       </span>
                     </div>

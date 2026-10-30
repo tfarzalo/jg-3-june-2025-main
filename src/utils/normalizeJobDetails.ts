@@ -84,6 +84,10 @@ export type JobDetailsNormalized = {
   hourly_billing_details?: any;
   extra_charges_details?: any;
   debug_billing_joins?: any;
+  authoritative_billing_totals?: Record<string, unknown> | null;
+  billing_validation?: {
+    misc_additional_cost_items: 'array' | 'missing' | 'malformed';
+  };
   repair_amount?: number;
   repair_sub_pay?: number;
   cancellation_trip_charge_added?: boolean;
@@ -165,7 +169,9 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
         repair_description: work_orderRaw?.repair_description ?? null,
         misc_additional_cost_items: Array.isArray(work_orderRaw?.misc_additional_cost_items)
           ? work_orderRaw.misc_additional_cost_items
-          : null,
+          : work_orderRaw?.misc_additional_cost_items == null
+            ? null
+            : work_orderRaw.misc_additional_cost_items,
       }
     : null;
 
@@ -199,6 +205,17 @@ export function normalizeJobDetails(d: any): JobDetailsNormalized {
     hourly_billing_details: d?.hourly_billing_details ?? null,
     extra_charges_details: d?.extra_charges_details ?? null,
     debug_billing_joins: d?.debug_billing_joins ?? null,
+    authoritative_billing_totals:
+      d?.authoritative_billing_totals && typeof d.authoritative_billing_totals === 'object'
+        ? d.authoritative_billing_totals
+        : null,
+    billing_validation: {
+      misc_additional_cost_items: Array.isArray(d?.work_order?.misc_additional_cost_items)
+        ? 'array'
+        : d?.work_order?.misc_additional_cost_items == null
+          ? 'missing'
+          : 'malformed',
+    },
     repair_amount: d?.repair_amount != null ? Number(d.repair_amount) : undefined,
     repair_sub_pay: d?.repair_sub_pay != null ? Number(d.repair_sub_pay) : undefined,
     cancellation_trip_charge_added: Boolean(d?.cancellation_trip_charge_added),

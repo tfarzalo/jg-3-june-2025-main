@@ -33,6 +33,7 @@ import { getMiscAdditionalCostAmounts } from '../lib/miscAdditionalCosts';
 import { config } from '../config/environment';
 import { detectImageMime, extensionForImageMime } from '../lib/utils/imageOptimization';
 import { resolveEmailSendMode, type EmailTemplateMode } from '../lib/emailTemplateMode';
+import { shouldUseLegacyMiscAdditionalCostFallback } from '../lib/billing/miscAdditionalCostEditing';
 
 const readableErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error && error.message) return error.message;
@@ -410,6 +411,9 @@ export function EnhancedPropertyNotificationModal({
   const detectedMiscCostItems = Array.isArray(job?.work_order?.misc_additional_cost_items)
     ? job.work_order.misc_additional_cost_items
     : [];
+  const useLegacyMiscCostFallback = shouldUseLegacyMiscAdditionalCostFallback(
+    job?.work_order?.misc_additional_cost_items,
+  );
   const hasApprovalRequiredExtraCharges = Boolean(
     detectedExtraChargeItems.length > 0
     || job?.work_order?.has_extra_charges
@@ -417,7 +421,7 @@ export function EnhancedPropertyNotificationModal({
       const { billAmount, subPayAmount } = getMiscAdditionalCostAmounts(item);
       return billAmount > 0 || (subPayAmount ?? 0) > 0 || Boolean(item.description?.trim());
     })
-    || Number(job?.repair_amount ?? job?.work_order?.repair_cost ?? 0) > 0
+    || (useLegacyMiscCostFallback && Number(job?.repair_amount ?? job?.work_order?.repair_cost ?? 0) > 0)
     || Number(job?.extra_charges_details?.bill_amount ?? 0) > 0
   );
   // The configured template type is authoritative. In particular, drywall
@@ -1248,9 +1252,8 @@ export function EnhancedPropertyNotificationModal({
       });
     }
 
-    const miscItems = Array.isArray(job?.work_order?.misc_additional_cost_items)
-      ? job.work_order.misc_additional_cost_items
-      : [];
+    const rawMiscItems = job?.work_order?.misc_additional_cost_items;
+    const miscItems = Array.isArray(rawMiscItems) ? rawMiscItems : [];
 
     if (miscItems.length > 0) {
       miscItems.forEach((item) => {
@@ -1267,7 +1270,7 @@ export function EnhancedPropertyNotificationModal({
           profit_amount: billAmount - normalizedSubPay,
         });
       });
-    } else {
+    } else if (shouldUseLegacyMiscAdditionalCostFallback(rawMiscItems)) {
       const repairAmount = Number(job?.repair_amount ?? job?.work_order?.repair_cost ?? 0) || 0;
       if (repairAmount > 0) {
         const repairSubPay = Number(job?.repair_sub_pay ?? 0) || 0;

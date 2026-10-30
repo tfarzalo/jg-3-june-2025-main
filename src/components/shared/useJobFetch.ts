@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../utils/supabase';
 import type { Job } from './JobListingPage';
 import { findBillingDetail } from '../../lib/billing/lookups';
+import { resolveJobBillingTotals } from '../../lib/billing/resolveJobBillingTotals';
 
 interface UseJobFetchProps {
   phaseLabel: string | string[];
@@ -286,39 +287,8 @@ export function useJobFetch({ phaseLabel, query }: UseJobFetchProps) {
           const { data: jd } = await supabase.rpc('get_job_details', { p_job_id: jobId });
           let total: number | null = null;
           if (jd) {
-            const base = Number(jd?.billing_details?.bill_amount ?? jd?.billing_details?.base_price ?? 0) || 0;
-            const extraLabor = Number(jd?.extra_charges_details?.bill_amount ?? jd?.extra_charges_details?.total_extra_charges ?? 0) || 0;
-
-            // Extra charge line items
-            const lineItems = jd?.work_order?.extra_charges_line_items ?? [];
-            const lineItemsTotal = Array.isArray(lineItems)
-              ? lineItems.reduce((sum: number, item: any) => {
-                  const qty = Number(item?.quantity ?? 0) || 0;
-                  const rate = Number(item?.billRate ?? 0) || 0;
-                  const calc = Number(item?.calculatedBillAmount ?? qty * rate) || 0;
-                  return sum + calc;
-                }, 0)
-              : 0;
-
-            // Additional services
-            const frozenLines = jd?.work_order?.frozen_billing_lines ?? [];
-            const frozenLinesTotal = Array.isArray(frozenLines)
-              ? frozenLines.reduce((sum: number, line: any) => {
-                  const amt = Number(line?.amountBill ?? 0) || 0;
-                  return sum + amt;
-                }, 0)
-              : 0;
-
-            const additional = jd?.work_order?.additional_services ?? [];
-            const additionalTotal = Array.isArray(additional)
-              ? additional.reduce((sum: number, svc: any) => {
-                  const amt = Number(svc?.amountBill ?? svc?.amount_bill ?? 0) || 0;
-                  return sum + amt;
-                }, 0)
-              : 0;
-
-            const computed = base + extraLabor + lineItemsTotal + Math.max(frozenLinesTotal, additionalTotal);
-            total = computed > 0 ? computed : null;
+            const resolved = resolveJobBillingTotals(jd);
+            total = resolved.totalBill > 0 ? resolved.totalBill : null;
           }
           billingRpcCache.set(jobId, total);
           return total;
@@ -510,33 +480,8 @@ export function useJobFetch({ phaseLabel, query }: UseJobFetchProps) {
               } else {
                 const { data: jd } = await supabase.rpc('get_job_details', { p_job_id: newJob.id });
                 if (jd) {
-                const base = Number(jd?.billing_details?.bill_amount ?? jd?.billing_details?.base_price ?? 0) || 0;
-                const extraLabor = Number(jd?.extra_charges_details?.bill_amount ?? jd?.extra_charges_details?.total_extra_charges ?? 0) || 0;
-                const lineItems = jd?.work_order?.extra_charges_line_items ?? [];
-                const lineItemsTotal = Array.isArray(lineItems)
-                  ? lineItems.reduce((sum: number, item: any) => {
-                      const qty = Number(item?.quantity ?? 0) || 0;
-                      const rate = Number(item?.billRate ?? 0) || 0;
-                      const calc = Number(item?.calculatedBillAmount ?? qty * rate) || 0;
-                      return sum + calc;
-                    }, 0)
-                  : 0;
-                const frozenLines = jd?.work_order?.frozen_billing_lines ?? [];
-                const frozenLinesTotal = Array.isArray(frozenLines)
-                  ? frozenLines.reduce((sum: number, line: any) => {
-                      const amt = Number(line?.amountBill ?? 0) || 0;
-                      return sum + amt;
-                    }, 0)
-                  : 0;
-                const additional = jd?.work_order?.additional_services ?? [];
-                const additionalTotal = Array.isArray(additional)
-                  ? additional.reduce((sum: number, svc: any) => {
-                      const amt = Number(svc?.amountBill ?? svc?.amount_bill ?? 0) || 0;
-                      return sum + amt;
-                    }, 0)
-                  : 0;
-                const computed = base + extraLabor + lineItemsTotal + Math.max(frozenLinesTotal, additionalTotal);
-                if (computed > 0) totalBillingAmount = computed;
+                  const resolved = resolveJobBillingTotals(jd);
+                  if (resolved.totalBill > 0) totalBillingAmount = resolved.totalBill;
                 }
               }
             }
