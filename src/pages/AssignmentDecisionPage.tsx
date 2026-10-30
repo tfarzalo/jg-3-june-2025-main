@@ -96,6 +96,12 @@ export default function AssignmentDecisionPage() {
         p_decline_reason_text: decision === 'declined' ? declineText || null : null
       });
 
+      if (!error && data?.code === 'already_decided') {
+        toast.info('This assignment has already been decided');
+        await fetchDetails();
+        return;
+      }
+
       if (error || !data?.success) {
         throw new Error(error?.message || data?.error || 'Failed to submit decision');
       }

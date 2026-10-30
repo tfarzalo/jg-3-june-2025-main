@@ -4,7 +4,7 @@ import { Upload, X } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { config } from '../config/environment';
 import { WorkOrderLink } from './shared/WorkOrderLink';
-import { optimizeImage } from '../lib/utils/imageOptimization';
+import { filenameForOptimizedImage, isImageUploadCandidate, optimizeImage } from '../lib/utils/imageOptimization';
 
 // Helper to upload with progress
 const uploadFileWithProgress = async (
@@ -263,9 +263,9 @@ export function FileUpload() {
           targetFolderPath = 'general';
         }
 
-        const isImage = (file.type || '').toLowerCase().startsWith('image/')
+        const isImage = isImageUploadCandidate(file)
         const optimized = isImage ? await optimizeImage(file) : { blob: file, mime: file.type || 'application/octet-stream', suggestedExt: '', width: 0, height: 0, originalSize: file.size, optimizedSize: file.size }
-        const finalName = sanitizedFilename
+        const finalName = isImage ? filenameForOptimizedImage(sanitizedFilename, optimized) : sanitizedFilename
         const uploadFile = new File([optimized.blob], finalName, { type: optimized.mime })
         storagePath = `${(targetFolderPath || '').replace(/^\/+/, '')}/${finalName}`.replace(/\/+/g, '/');
         await uploadFileWithProgress('files', storagePath, uploadFile, (progress) => {

@@ -4,6 +4,7 @@ import { CheckCircle, AlertCircle, Loader2, Upload } from 'lucide-react';
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { formatPhoneNumber } from '../lib/utils/formatUtils';
+import { filenameForOptimizedImage, isImageUploadCandidate, optimizeImage } from '../lib/utils/imageOptimization';
 
 interface FormField {
   id: string;
@@ -191,14 +192,20 @@ export function LeadForm() {
       const submissionFolder = `${formId}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
       for (const file of files) {
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const isImage = isImageUploadCandidate(file);
+        const optimized = isImage
+          ? await optimizeImage(file)
+          : { blob: file, mime: file.type || 'application/octet-stream', suggestedExt: '' };
+        const convertedName = isImage ? filenameForOptimizedImage(file.name, optimized) : file.name;
+        const safeName = convertedName.replace(/[^a-zA-Z0-9._-]/g, '_');
         const path = `${submissionFolder}/${safeName}`;
+        const uploadFile = new File([optimized.blob], safeName, { type: optimized.mime });
         const { error: uploadError } = await supabase.storage
           .from('lead-form-media')
-          .upload(path, file, {
+          .upload(path, uploadFile, {
             cacheControl: '3600',
             upsert: false,
-            contentType: file.type || undefined,
+            contentType: optimized.mime || undefined,
           });
 
         if (uploadError) throw uploadError;
@@ -208,9 +215,11 @@ export function LeadForm() {
           .getPublicUrl(path);
 
         uploadedMedia[fieldName].push({
-          name: file.name,
-          size: file.size,
-          type: file.type,
+          name: safeName,
+          original_name: file.name,
+          size: uploadFile.size,
+          original_size: file.size,
+          type: optimized.mime,
           bucket: 'lead-form-media',
           path,
           public_url: publicUrlData.publicUrl,
@@ -477,7 +486,7 @@ export function LeadForm() {
               name={field.field_name}
               type="file"
               multiple
-              accept={field.validation_rules?.accept || 'image/*'}
+              accept={field.validation_rules?.accept || 'image/*,.heic,.heif'}
               required={field.is_required && files.length === 0}
               className="sr-only"
               onChange={(e) => {

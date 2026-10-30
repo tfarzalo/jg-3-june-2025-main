@@ -1,5 +1,5 @@
 import { supabase } from '../../utils/supabase';
-import { optimizeImage } from './imageOptimization';
+import { isImageUploadCandidate, optimizeImage } from './imageOptimization';
 import { buildStoragePath } from '../../utils/storagePaths';
 import { FILE_CATEGORY_PATHS } from '../../utils/fileCategories';
 
@@ -139,7 +139,7 @@ export async function uploadPropertyUnitMap(
     console.log('[uploadPropertyUnitMap] Starting upload:', { propertyId, propertyName, fileName: file.name });
     
     // Validate file type
-    if (!file.type.startsWith('image/')) {
+    if (!isImageUploadCandidate(file)) {
       return {
         success: false,
         error: 'Only image files are allowed for unit maps'
@@ -430,7 +430,7 @@ export async function uploadPropertyUnitMapMulti(
   sortOrder: number = 0
 ): Promise<FileUploadResult & { unitMapId?: string; isPrimary?: boolean }> {
   try {
-    if (!file.type.startsWith('image/')) {
+    if (!isImageUploadCandidate(file)) {
       return { success: false, error: 'Only image files are allowed for unit maps' };
     }
 

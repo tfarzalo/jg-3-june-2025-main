@@ -127,8 +127,21 @@ export function SubcontractorDashboardActions({ jobId, workOrderNum, propertyNam
         p_decline_reason_text: decision === 'declined' ? declineText || null : null
       });
 
+      if (!error && data?.code === 'already_decided') {
+        const existingDecision = data.decision === 'declined' ? 'declined' : 'accepted';
+        setIsSubmitting(false);
+        setSubmitAction(null);
+        toast.info(language === 'es' ? 'Esta asignación ya fue respondida' : 'This assignment has already been decided');
+        onDecision?.(existingDecision);
+        return;
+      }
+
       if (error || !data?.success) {
         throw new Error(error?.message || data?.error || 'Failed to submit decision');
+      }
+
+      if (data.state_changed === false) {
+        throw new Error(data.error || 'This assignment has already been decided');
       }
 
       await sendAdminNotifications(decision, subName || 'Subcontractor');

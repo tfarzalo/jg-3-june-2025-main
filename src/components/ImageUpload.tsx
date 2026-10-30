@@ -788,7 +788,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           <input
             type="file"
             multiple
-            accept={folder === 'other' ? '*/*' : 'image/*'}
+            accept={folder === 'other' ? '*/*' : 'image/*,.heic,.heif'}
             onChange={handleFileInput}
             className="hidden"
             id={fileInputId}
@@ -812,7 +812,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {folder === 'other'
                   ? (language === 'es' ? 'Se admiten todos los tipos de archivo' : 'All file types supported')
-                  : (language === 'es' ? 'JPG · PNG · WebP · se permiten varios (HEIC se guarda en su formato original)' : 'JPG · PNG · WebP · multiple allowed (HEIC is stored in its original format)')}
+                  : (language === 'es' ? 'JPG · PNG · WebP · HEIC · se permiten varios' : 'JPG · PNG · WebP · HEIC · multiple allowed')}
               </p>
             </div>
           </label>

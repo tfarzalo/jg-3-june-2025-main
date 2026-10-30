@@ -191,7 +191,7 @@ export function UnitMapUpload({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.heic,.heif"
         multiple
         onChange={handleFileSelect}
         className="hidden"
@@ -223,7 +223,7 @@ export function UnitMapUpload({
               {dragActive ? 'Drop images here' : 'Click or drag & drop to add images'}
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              PNG, JPG, GIF – up to 10 MB each. Multiple files supported.
+              PNG, JPG, GIF, HEIC – up to 10 MB each. Multiple files supported.
             </p>
           </div>
         )}

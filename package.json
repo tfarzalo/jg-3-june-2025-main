@@ -31,6 +31,7 @@
     "exceljs": "^4.4.0",
     "file-saver": "^2.0.5",
     "handsontable": "^16.2.0",
+    "heic2any": "^0.0.4",
     "html-to-docx": "^1.8.0",
     "http-browserify": "^1.7.0",
     "jspdf": "^2.5.2",

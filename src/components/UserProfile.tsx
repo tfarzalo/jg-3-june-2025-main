@@ -18,6 +18,7 @@ import {
 import { supabase } from '../utils/supabase';
 import { toast } from 'sonner';
 import { SubcontractorJobHistory } from './users/SubcontractorJobHistory';
+import { isImageUploadCandidate, optimizeImage } from '../lib/utils/imageOptimization';
 import { formatDisplayDate } from '../lib/dateUtils';
 import { formatJobPhaseLabel } from '../lib/jobPhaseLabels';
 import { formatPhoneNumber, mapInputValueByField } from '../lib/utils/formatUtils';
@@ -353,7 +354,7 @@ export function UserProfile() {
       }
       
       // Check file type
-      if (!file.type.startsWith('image/')) {
+      if (!isImageUploadCandidate(file)) {
         toast.error('Only image files are allowed.');
         return;
       }
@@ -414,12 +415,14 @@ export function UserProfile() {
       let avatarPath = profile.avatar_url;
       
       if (avatarFile) {
-        const fileExt = avatarFile.name.split('.').pop();
+        const optimized = await optimizeImage(avatarFile);
+        const fileExt = optimized.suggestedExt || avatarFile.name.split('.').pop() || 'jpg';
         const fileName = `${profile.id}-${Date.now()}.${fileExt}`;
+        const uploadFile = new File([optimized.blob], fileName, { type: optimized.mime });
         
         const { error: uploadError } = await supabase.storage
           .from('avatars')
-          .upload(fileName, avatarFile, { upsert: true });
+          .upload(fileName, uploadFile, { upsert: true, contentType: optimized.mime });
           
         if (uploadError) throw uploadError;
         
@@ -556,7 +559,7 @@ export function UserProfile() {
                 type="file"
                 ref={fileInputRef}
                 onChange={handleAvatarChange}
-                accept="image/*"
+                accept="image/*,.heic,.heif"
                 className="hidden"
               />
               

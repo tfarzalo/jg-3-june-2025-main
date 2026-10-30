@@ -1163,7 +1163,7 @@ export function JobEditForm() {
                 id="job-edit-file-input"
                 type="file"
                 multiple
-                accept="image/*,.pdf,.doc,.docx,.txt"
+                accept="image/*,.heic,.heif,.pdf,.doc,.docx,.txt"
                 onChange={handleFileSelect}
                 className="hidden"
               />

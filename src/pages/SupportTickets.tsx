@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useUserRole } from '../hooks/useUserRole';
 import { changelog, ChangelogEntry } from '../data/changelog';
 import { useNavigate } from 'react-router-dom';
+import { isImageUploadCandidate, optimizeImage } from '../lib/utils/imageOptimization';
 
 interface SupportTicketForm {
   fullName: string;
@@ -142,7 +143,7 @@ export function SupportTickets() {
         return;
       }
       // Check file type (images only)
-      if (!file.type.startsWith('image/')) {
+      if (!isImageUploadCandidate(file)) {
         toast.error('Please upload an image file');
         return;
       }
@@ -170,13 +171,15 @@ export function SupportTickets() {
 
       // Upload screenshot if provided
       if (formData.screenshot) {
-        const fileExt = formData.screenshot.name.split('.').pop();
+        const optimized = await optimizeImage(formData.screenshot);
+        const fileExt = optimized.suggestedExt || formData.screenshot.name.split('.').pop() || 'jpg';
         const fileName = `support-${Date.now()}.${fileExt}`;
         const filePath = `support-tickets/${fileName}`;
+        const uploadFile = new File([optimized.blob], fileName, { type: optimized.mime });
 
         const { error: uploadError, data: uploadData } = await supabase.storage
           .from('files')
-          .upload(filePath, formData.screenshot);
+          .upload(filePath, uploadFile, { contentType: optimized.mime });
 
         if (uploadError) {
           console.error('Error uploading screenshot:', uploadError);
@@ -433,7 +436,7 @@ export function SupportTickets() {
                     <input
                       type="file"
                       id="screenshot"
-                      accept="image/*"
+                      accept="image/*,.heic,.heif"
                       onChange={handleFileChange}
                       className="hidden"
                     />

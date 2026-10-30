@@ -913,7 +913,7 @@ export function PropertyForm() {
                       </div>
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/*,.heic,.heif"
                         onChange={(e) => {
                           if (e.target.files && e.target.files[0]) {
                             setPendingUnitMapFile(e.target.files[0]);

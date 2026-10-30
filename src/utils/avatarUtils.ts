@@ -4,6 +4,7 @@
  */
 
 import { supabase } from './supabase';
+import { optimizeImage } from '../lib/utils/imageOptimization';
 
 /**
  * Get the full avatar URL for a user
@@ -80,16 +81,19 @@ export async function uploadAvatar(file: File, userId?: string): Promise<{ succe
       return { success: false, error: 'User not authenticated' };
     }
     
-    // Create file path: userId/filename
-    const fileExt = file.name.split('.').pop();
+    const optimized = await optimizeImage(file);
+    // Create file path: userId/filename using the optimizer's verified format.
+    const fileExt = optimized.suggestedExt || file.name.split('.').pop() || 'jpg';
     const fileName = `${currentUserId}/avatar.${fileExt}`;
+    const uploadFile = new File([optimized.blob], fileName, { type: optimized.mime });
     
     // Upload file to storage
     const { data, error } = await supabase.storage
       .from('avatars')
-      .upload(fileName, file, {
+      .upload(fileName, uploadFile, {
         cacheControl: '3600',
-        upsert: true
+        upsert: true,
+        contentType: optimized.mime,
       });
     
     if (error) {

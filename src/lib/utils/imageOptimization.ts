@@ -9,6 +9,23 @@ export type OptimizeResult = {
 }
 
 const MAX_DIMENSION = 2048
+const JPEG_QUALITY = 0.82
+const HEIC_INTERMEDIATE_QUALITY = 0.95
+
+const IMAGE_EXTENSIONS = new Set([
+  'avif',
+  'bmp',
+  'gif',
+  'heic',
+  'heif',
+  'jpeg',
+  'jpg',
+  'png',
+  'svg',
+  'tif',
+  'tiff',
+  'webp',
+])
 
 const MIME_EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -29,6 +46,19 @@ export const extensionForImageMime = (mime: string, filename = '') => {
   if (mapped) return mapped
   const filenameExtension = filename.trim().toLowerCase().match(/\.([a-z0-9]+)$/)?.[1]
   return filenameExtension || 'bin'
+}
+
+export const isImageUploadCandidate = (file: Pick<File, 'name' | 'type'>) => {
+  const declaredType = (file.type || '').toLowerCase().split(';')[0].trim()
+  if (declaredType.startsWith('image/')) return true
+  const extension = file.name.trim().toLowerCase().match(/\.([a-z0-9]+)$/)?.[1]
+  return Boolean(extension && IMAGE_EXTENSIONS.has(extension))
+}
+
+export const filenameForOptimizedImage = (filename: string, optimized: Pick<OptimizeResult, 'suggestedExt'>) => {
+  if (!optimized.suggestedExt) return filename
+  const baseName = filename.replace(/\.[^./\\]+$/, '') || 'image'
+  return `${baseName}.${optimized.suggestedExt}`
 }
 
 export const detectImageMime = (bytes: Uint8Array): string | null => {
@@ -64,6 +94,8 @@ const canOptimize = (type: string) => {
   return t === 'image/jpeg' || t === 'image/png' || t === 'image/webp'
 }
 
+const isHeicType = (type: string) => type === 'image/heic' || type === 'image/heif'
+
 const computeTargetSize = (w: number, h: number) => {
   const longEdge = Math.max(w, h)
   if (longEdge <= MAX_DIMENSION) return { width: w, height: h }
@@ -71,7 +103,7 @@ const computeTargetSize = (w: number, h: number) => {
   return { width: Math.round(w * scale), height: Math.round(h * scale) }
 }
 
-const loadImage = (file: File) =>
+const loadImage = (file: Blob) =>
   new Promise<HTMLImageElement>((resolve, reject) => {
     const url = URL.createObjectURL(file)
     const img = new Image()
@@ -95,12 +127,33 @@ const canvasToBlob = (canvas: HTMLCanvasElement, mime: string, quality: number) 
     }, mime, q)
   })
 
+const convertHeicToJpeg = async (file: File) => {
+  try {
+    const { default: heic2any } = await import('heic2any')
+    const converted = await heic2any({
+      blob: file,
+      toType: 'image/jpeg',
+      quality: HEIC_INTERMEDIATE_QUALITY,
+    })
+    const jpeg = Array.isArray(converted) ? converted[0] : converted
+    if (!jpeg) throw new Error('The HEIC file did not contain a convertible image')
+
+    const signature = detectImageMime(new Uint8Array(await jpeg.slice(0, 32).arrayBuffer()))
+    if (signature !== 'image/jpeg') throw new Error('The HEIC converter did not produce a valid JPEG')
+    return jpeg
+  } catch (error) {
+    const detail = error instanceof Error && error.message ? ` ${error.message}` : ''
+    throw new Error(`This HEIC/HEIF image could not be converted to JPEG.${detail}`)
+  }
+}
+
 export async function optimizeImage(file: File): Promise<OptimizeResult> {
   const originalSize = file.size
-  const declaredType = file.type || 'application/octet-stream'
+  const declaredType = (file.type || 'application/octet-stream').toLowerCase().split(';')[0].trim()
   const detectedType = detectImageMime(new Uint8Array(await file.slice(0, 32).arrayBuffer()))
   const originalType = detectedType || declaredType
-  if (!canOptimize(originalType)) {
+  const requiresHeicConversion = isHeicType(originalType)
+  if (!requiresHeicConversion && !canOptimize(originalType)) {
     return {
       blob: file,
       mime: originalType,
@@ -113,29 +166,45 @@ export async function optimizeImage(file: File): Promise<OptimizeResult> {
   }
 
   const targetMime = 'image/jpeg'
-  const quality = 0.82
+  const sourceBlob = requiresHeicConversion ? await convertHeicToJpeg(file) : file
+  let sourceWidth = 0
+  let sourceHeight = 0
 
   try {
-    const img = await loadImage(file)
-    const { width, height } = computeTargetSize(img.naturalWidth || img.width, img.naturalHeight || img.height)
+    const img = await loadImage(sourceBlob)
+    sourceWidth = img.naturalWidth || img.width
+    sourceHeight = img.naturalHeight || img.height
+    const { width, height } = computeTargetSize(sourceWidth, sourceHeight)
     const canvas = document.createElement('canvas')
     canvas.width = width
     canvas.height = height
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('Canvas 2D not available')
     ctx.drawImage(img, 0, 0, width, height)
-    const blob = await canvasToBlob(canvas, targetMime, quality)
+    const blob = await canvasToBlob(canvas, targetMime, JPEG_QUALITY)
     const signature = detectImageMime(new Uint8Array(await blob.slice(0, 32).arrayBuffer()))
 
     // Never replace a smaller original with a larger conversion, and only label
-    // the result as JPEG after verifying the actual output bytes.
-    if (signature !== targetMime || blob.size >= originalSize) {
+    // the result as JPEG after verifying the actual output bytes. HEIC/HEIF is
+    // the exception: once converted, always keep a compatible JPEG fallback.
+    if (signature !== targetMime || blob.size >= sourceBlob.size) {
+      if (requiresHeicConversion) {
+        return {
+          blob: sourceBlob,
+          mime: targetMime,
+          suggestedExt: extensionForImageMime(targetMime),
+          width: sourceWidth,
+          height: sourceHeight,
+          originalSize,
+          optimizedSize: sourceBlob.size
+        }
+      }
       return {
         blob: file,
         mime: originalType,
         suggestedExt: extensionForImageMime(originalType, file.name),
-        width: img.naturalWidth || img.width,
-        height: img.naturalHeight || img.height,
+        width: sourceWidth,
+        height: sourceHeight,
         originalSize,
         optimizedSize: originalSize
       }
@@ -151,6 +220,17 @@ export async function optimizeImage(file: File): Promise<OptimizeResult> {
       optimizedSize: blob.size
     }
   } catch {
+    if (requiresHeicConversion) {
+      return {
+        blob: sourceBlob,
+        mime: targetMime,
+        suggestedExt: extensionForImageMime(targetMime),
+        width: sourceWidth,
+        height: sourceHeight,
+        originalSize,
+        optimizedSize: sourceBlob.size
+      }
+    }
     return {
       blob: file,
       mime: originalType,

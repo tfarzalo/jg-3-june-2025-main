@@ -34,7 +34,7 @@ import {
   isDocument,
   isPDF
 } from '../services/fileSaveService';
-import { optimizeImage } from '../lib/utils/imageOptimization';
+import { filenameForOptimizedImage, isImageUploadCandidate, optimizeImage } from '../lib/utils/imageOptimization';
 
 // Translations
 const translations = {
@@ -825,9 +825,9 @@ export function FileManager() {
       }
 
       for (const file of selectedFiles) {
-        const isImage = (file.type || '').toLowerCase().startsWith('image/')
+        const isImage = isImageUploadCandidate(file)
         const optimized = isImage ? await optimizeImage(file) : { blob: file, mime: file.type || 'application/octet-stream', suggestedExt: '', width: 0, height: 0, originalSize: file.size, optimizedSize: file.size }
-        let finalName = file.name
+        let finalName = isImage ? filenameForOptimizedImage(file.name, optimized) : file.name
         let finalCategory = category as string | null
         if (autoCategory && woSegment) {
           const woLabel = `wo-${woSegment.replace('WO-', '')}`

@@ -11,6 +11,7 @@ import { useUnreadMessages } from '../../contexts/UnreadMessagesProvider';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { EnhancedChatApi } from '../../services/enhancedChatApi';
 import { dispatchChatReceivedSms } from '../../lib/sms/dispatchSmsNotification';
+import { filenameForOptimizedImage, isImageUploadCandidate, optimizeImage } from '../../lib/utils/imageOptimization';
 
 interface ChatUser {
   id: string;
@@ -756,12 +757,15 @@ export function ChatMenuEnhanced() {
       const imagesToUpload = [...pendingImages];
       setPendingImages([]);
       for (const pending of imagesToUpload) {
-        const ext = pending.file.name.split('.').pop() || 'jpg';
+        const optimized = await optimizeImage(pending.file);
+        const ext = optimized.suggestedExt || pending.file.name.split('.').pop() || 'jpg';
         const path = `chat-images/${selectedChatId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: uploadError } = await supabase.storage.from('files').upload(path, pending.file, { upsert: false });
+        const attachmentName = filenameForOptimizedImage(pending.file.name, optimized);
+        const uploadFile = new File([optimized.blob], attachmentName, { type: optimized.mime });
+        const { error: uploadError } = await supabase.storage.from('files').upload(path, uploadFile, { upsert: false, contentType: optimized.mime });
         if (!uploadError) {
           const { data: publicData } = supabase.storage.from('files').getPublicUrl(path);
-          attachments.push({ url: publicData.publicUrl, type: pending.file.type, name: pending.file.name });
+          attachments.push({ url: publicData.publicUrl, type: optimized.mime, name: attachmentName });
         }
       }
       setUploadingImages(false);
@@ -1302,11 +1306,11 @@ export function ChatMenuEnhanced() {
                   <input
                     ref={imageInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,.heic,.heif"
                     multiple
                     className="hidden"
                     onChange={(e) => {
-                      const files = Array.from(e.target.files || []);
+                      const files = Array.from(e.target.files || []).filter(isImageUploadCandidate);
                       const newPending = files.map(f => ({ file: f, previewUrl: URL.createObjectURL(f) }));
                       setPendingImages(prev => [...prev, ...newPending]);
                       e.target.value = '';

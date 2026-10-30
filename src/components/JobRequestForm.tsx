@@ -8,7 +8,7 @@ import { JobType } from '../lib/types';
 import { useAuth } from '../contexts/AuthProvider';
 import { WorkOrderLink } from './shared/WorkOrderLink';
 import { PropertyLink } from './shared/PropertyLink';
-import { optimizeImage } from '../lib/utils/imageOptimization';
+import { isImageUploadCandidate, optimizeImage } from '../lib/utils/imageOptimization';
 import { useUnsavedChangesPrompt } from '../hooks/useUnsavedChangesPrompt';
 import { buildStoragePath } from '../utils/storagePaths';
 import { FILE_CATEGORY_PATHS } from '../utils/fileCategories';
@@ -398,7 +398,7 @@ export function JobRequestForm() {
       // Upload each file into the resolved Job Files folder
       for (const file of selectedFiles) {
         try {
-          const optimized = file.type.startsWith('image/') ? await optimizeImage(file) : { blob: file, mime: file.type || 'application/octet-stream', suggestedExt: '', width: 0, height: 0, originalSize: file.size, optimizedSize: file.size }
+          const optimized = isImageUploadCandidate(file) ? await optimizeImage(file) : { blob: file, mime: file.type || 'application/octet-stream', suggestedExt: '', width: 0, height: 0, originalSize: file.size, optimizedSize: file.size }
           const ext = optimized.suggestedExt || (file.name.split('.').pop() || 'bin')
           const woLabel = `wo-${String(workOrderNum).padStart(6, '0')}`
           const autoName = `${woLabel}_job_files_${nextIndex}.${ext}`
@@ -994,7 +994,7 @@ export function JobRequestForm() {
                 id="job-file-input"
                 type="file"
                 multiple
-                accept="image/*,.pdf,.doc,.docx,.txt"
+                accept="image/*,.heic,.heif,.pdf,.doc,.docx,.txt"
                 onChange={handleFileSelect}
                 className="hidden"
               />

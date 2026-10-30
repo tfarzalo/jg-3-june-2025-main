@@ -20,6 +20,7 @@ import {
   Briefcase
 } from 'lucide-react';
 import { formatPhoneNumber, mapInputValueByField } from '../lib/utils/formatUtils';
+import { isImageUploadCandidate, optimizeImage } from '../lib/utils/imageOptimization';
 interface SubcontractorData {
   id: string;
   email: string;
@@ -196,6 +197,11 @@ useEffect(() => {
         return;
       }
 
+      if (!isImageUploadCandidate(file)) {
+        toast.error('Only image files are allowed');
+        return;
+      }
+
       setAvatarFile(file);
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -357,14 +363,17 @@ useEffect(() => {
     if (!avatarFile) return subcontractor?.avatar_url || null;
 
     try {
-      const fileExt = avatarFile.name.split('.').pop();
+      const optimized = await optimizeImage(avatarFile);
+      const fileExt = optimized.suggestedExt || avatarFile.name.split('.').pop() || 'jpg';
       const fileName = `${userId}-${Date.now()}.${fileExt}`;
+      const uploadFile = new File([optimized.blob], fileName, { type: optimized.mime });
 
       const { data, error } = await supabase.storage
         .from('avatars')
-        .upload(fileName, avatarFile, {
+        .upload(fileName, uploadFile, {
           cacheControl: '3600',
-          upsert: false
+          upsert: false,
+          contentType: optimized.mime,
         });
 
       if (error) throw error;
@@ -648,12 +657,12 @@ useEffect(() => {
               </label>
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,.heic,.heif"
                 onChange={handleAvatarChange}
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900/20 dark:file:text-blue-400"
               />
               <p className="text-xs text-gray-500 mt-1">
-                JPG, PNG or GIF. Max size 5MB.
+                JPG, PNG, GIF or HEIC. Max size 5MB.
               </p>
             </div>
           </div>

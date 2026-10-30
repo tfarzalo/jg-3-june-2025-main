@@ -59,7 +59,7 @@ import {
   DEFAULT_CANCELLATION_TRIP_CHARGE,
   findCancellationTripChargeRate,
 } from '../lib/billing/cancellationTripCharge';
-import { optimizeImage } from '../lib/utils/imageOptimization';
+import { isImageUploadCandidate, optimizeImage } from '../lib/utils/imageOptimization';
 import { useJobDetails } from '../hooks/useJobDetails';
 import { useJobPhaseChanges } from '../hooks/useJobPhaseChanges';
 import { useJobActivityLog, type JobActivityCategory } from '../hooks/useJobActivityLog';
@@ -1126,7 +1126,7 @@ export function JobDetails() {
   }, [qualityControlFiles]);
 
   const addQualityControlFiles = (files: File[] | FileList) => {
-    const selectedFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+    const selectedFiles = Array.from(files).filter(isImageUploadCandidate);
 
     if (selectedFiles.length === 0) {
       toast.error('Please add image files for Quality Control media');
@@ -7156,7 +7156,7 @@ export function JobDetails() {
                     <input
                       type="file"
                       multiple
-                      accept="image/*"
+                      accept="image/*,.heic,.heif"
                       className="sr-only"
                       onChange={(e) => {
                         addQualityControlFiles(e.target.files || []);
