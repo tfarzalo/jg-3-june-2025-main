@@ -36,6 +36,7 @@
     "http-browserify": "^1.7.0",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^5.0.2",
+    "jszip": "^3.10.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.344.0",
     "mammoth": "^1.11.0",

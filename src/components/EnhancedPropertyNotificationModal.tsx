@@ -34,6 +34,17 @@ import { config } from '../config/environment';
 import { detectImageMime, extensionForImageMime } from '../lib/utils/imageOptimization';
 import { resolveEmailSendMode, type EmailTemplateMode } from '../lib/emailTemplateMode';
 import { shouldUseLegacyMiscAdditionalCostFallback } from '../lib/billing/miscAdditionalCostEditing';
+import {
+  bytesToBase64,
+  createImagesZipAttachment,
+  EMAIL_SIZE_INFO_BYTES,
+  EMAIL_SIZE_STRONG_WARNING_BYTES,
+  EMAIL_SIZE_WARNING_BYTES,
+  estimateEncodedBase64Bytes,
+  exceedsEmailSizeLimit,
+  type EmailImageDeliveryMode,
+  type PreparedEmailAttachment,
+} from '../lib/outboundEmailAttachments';
 
 const readableErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error && error.message) return error.message;
@@ -117,6 +128,10 @@ interface JobImage {
   image_type?: string;
   category?: string | null;
   created_at: string;
+  size?: number | null;
+  original_size?: number | null;
+  optimized_size?: number | null;
+  mime_type?: string | null;
 }
 
 type ImageBucket = 'before' | 'after' | 'sprinkler' | 'other';
@@ -141,18 +156,12 @@ interface SelectableEmailRecipient {
   source: 'property' | 'configuration';
 }
 
-interface PreparedInlineAttachment {
-  filename: string;
-  content: string;
-  contentType: string;
-  encoding: string;
-  cid: string;
-}
-
 interface PreparedEmailImages {
   key: string;
   cidMap: Record<string, string>;
-  inlineAttachments: PreparedInlineAttachment[];
+  attachments: PreparedEmailAttachment[];
+  embeddedImageCount: number;
+  zipFilename?: string;
   skippedInlineImages: string[];
 }
 
@@ -214,20 +223,11 @@ type SentEmailHistoryItem = {
   sentAt: string;
 };
 const BLANK_GENERAL_WORK_ORDER_TEMPLATE_ID = '__blank_general_work_order__';
-const EMAIL_SIZE_INFO_BYTES = 5 * 1024 * 1024;
-const EMAIL_SIZE_WARNING_BYTES = 8 * 1024 * 1024;
-const EMAIL_SIZE_STRONG_WARNING_BYTES = 12 * 1024 * 1024;
-const EMAIL_SIZE_MAX_BYTES = 18 * 1024 * 1024;
 const ADMIN_COPY_EMAIL = 'admin@jgpaintingprosinc.com';
 
 const formatFileSize = (bytes: number) => {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
-
-const estimateEncodedBase64Bytes = (base64: string) => {
-  const encodedCharacters = base64.replace(/\s/g, '').length;
-  return encodedCharacters + Math.ceil(encodedCharacters / 76) * 2;
 };
 
 const parseEmailList = (value: string) => value
@@ -381,6 +381,7 @@ export function EnhancedPropertyNotificationModal({
   const [emailConfig, setEmailConfig] = useState<EmailConfiguration | null>(null);
   const [jobImages, setJobImages] = useState<JobImageWithMeta[]>([]);
   const [selectedImageIds, setSelectedImageIds] = useState<string[]>([]);
+  const [imageDeliveryMode, setImageDeliveryMode] = useState<EmailImageDeliveryMode>('inline');
   const [emailImageChoiceMade, setEmailImageChoiceMade] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -472,9 +473,13 @@ export function EnhancedPropertyNotificationModal({
     };
     return safeSections.includes(sectionMap[img.normalizedType]);
   }), [isApprovalEmail, safeSections, selectedImages]);
+  const imagesForDelivery = useMemo(
+    () => imageDeliveryMode === 'zip' ? selectedImages : imagesToEmbed,
+    [imageDeliveryMode, imagesToEmbed, selectedImages],
+  );
   const imagePreparationKey = useMemo(
-    () => imagesToEmbed.map((image) => `${image.id}:${image.publicUrl}`).sort().join('|'),
-    [imagesToEmbed],
+    () => `${imageDeliveryMode}|${imagesForDelivery.map((image) => `${image.id}:${image.publicUrl}`).sort().join('|')}`,
+    [imageDeliveryMode, imagesForDelivery],
   );
   const finalRecipientLists = useMemo(() => {
     const toKeys = new Set(parseEmailList(recipientEmail).map(normalizeEmailAddress));
@@ -744,7 +749,7 @@ export function EnhancedPropertyNotificationModal({
 
       let query = supabase
         .from('files')
-        .select('id, name, path, storage_path, category, type, created_at, work_order_id, job_id')
+        .select('id, name, path, storage_path, category, type, size, original_size, optimized_size, created_at, work_order_id, job_id')
         .in('category', relevantCategories)
         .is('removed_from_current_work_order_at', null)
         .order('created_at', { ascending: true });
@@ -774,6 +779,10 @@ export function EnhancedPropertyNotificationModal({
               file_path: storagePath,
               image_type: file.category || file.name,
               category: file.category,
+              size: file.size,
+              original_size: file.original_size,
+              optimized_size: file.optimized_size,
+              mime_type: file.type,
               created_at: file.created_at,
               normalizedType: normalizeImageType({
                 id: file.id,
@@ -856,6 +865,7 @@ export function EnhancedPropertyNotificationModal({
       // Images are intentionally opt-in. Selecting every available image by
       // default can increase attachment scanning and quarantine risk.
       setSelectedImageIds([]);
+      setImageDeliveryMode('inline');
       setEmailImageChoiceMade(false);
 
       const { data: configData, error: configError } = await supabase.rpc('get_active_email_configuration');
@@ -1119,6 +1129,7 @@ export function EnhancedPropertyNotificationModal({
   const selectNoEmailImages = () => {
     setEmailImageChoiceMade(true);
     setSelectedImageIds([]);
+    setImageDeliveryMode('inline');
   };
   const getIdsForBucket = (bucket: ImageBucket) =>
     jobImages.filter((img) => img.normalizedType === bucket).map((img) => img.id);
@@ -1404,45 +1415,22 @@ export function EnhancedPropertyNotificationModal({
     );
   };
 
-  /**
-   * Fetch an image URL and return it as a base64-encoded data URI string,
-   * along with the detected content type.  Returns null on failure.
-   */
-  const fetchImageAsBase64 = async (url: string): Promise<{ base64: string; contentType: string; extension: string } | null> => {
+  /** Download the exact stored object. Image preparation must never invoke the
+   * upload optimizer or introduce another lossy conversion. */
+  const fetchStoredImage = async (url: string): Promise<{
+    bytes: Uint8Array;
+    declaredContentType: string;
+    detectedContentType: string | null;
+  } | null> => {
     try {
       const response = await fetch(url);
       if (!response.ok) return null;
       const declaredContentType = (response.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
       const arrayBuffer = await response.arrayBuffer();
-      const uint8 = new Uint8Array(arrayBuffer);
-      const detectedContentType = detectImageMime(uint8);
-      const supportedInlineTypes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
-
-      // SVG and non-image data are never embedded. HEIC/HEIF and other formats
-      // remain safely stored in the application but are not broadly renderable
-      // as inline email images.
-      if (!detectedContentType || !supportedInlineTypes.has(detectedContentType)) return null;
-      if (
-        declaredContentType &&
-        declaredContentType !== 'application/octet-stream' &&
-        declaredContentType !== detectedContentType
-      ) {
-        console.warn('Skipping inline image with mismatched declared and detected MIME types', {
-          declaredContentType,
-          detectedContentType,
-        });
-        return null;
-      }
-
-      let binary = '';
-      for (let i = 0; i < uint8.byteLength; i++) {
-        binary += String.fromCharCode(uint8[i]);
-      }
-      const base64 = btoa(binary);
       return {
-        base64,
-        contentType: detectedContentType,
-        extension: extensionForImageMime(detectedContentType),
+        bytes: new Uint8Array(arrayBuffer),
+        declaredContentType,
+        detectedContentType: detectImageMime(new Uint8Array(arrayBuffer)),
       };
     } catch {
       return null;
@@ -1451,34 +1439,83 @@ export function EnhancedPropertyNotificationModal({
 
   const prepareInlineImages = async (): Promise<PreparedEmailImages> => {
     const cidMap: Record<string, string> = {};
-    const inlineAttachments: PreparedInlineAttachment[] = [];
+    const attachments: PreparedEmailAttachment[] = [];
     const skippedInlineImages: string[] = [];
 
-    if (imagesToEmbed.length > 0) {
-      const results = await Promise.all(imagesToEmbed.map(async (img) => ({
-        img,
-        data: await fetchImageAsBase64(img.publicUrl),
-      })));
+    if (imagesForDelivery.length > 0) {
+      const results: Array<{
+        img: JobImageWithMeta;
+        data: Awaited<ReturnType<typeof fetchStoredImage>>;
+      }> = [];
+      // Fetch sequentially to avoid a burst of simultaneous large image
+      // buffers in the browser while preparing a near-limit message.
+      for (const img of imagesForDelivery) {
+        results.push({ img, data: await fetchStoredImage(img.publicUrl) });
+      }
+
+      if (imageDeliveryMode === 'zip') {
+        const available = results.filter((result) => {
+          if (result.data) return true;
+          skippedInlineImages.push(result.img.file_name);
+          return false;
+        }) as Array<{ img: JobImageWithMeta; data: NonNullable<Awaited<ReturnType<typeof fetchStoredImage>>> }>;
+
+        if (available.length > 0) {
+          const workOrderLabel = job?.work_order_num
+            ? `WO-${String(job.work_order_num).padStart(6, '0')}`
+            : job?.job_number || 'job';
+          const zipFilename = `${workOrderLabel}-${job?.unit_number || 'images'}-images.zip`
+            .replace(/[^a-z0-9._-]+/gi, '-');
+          attachments.push(await createImagesZipAttachment(
+            available.map(({ img, data }) => ({ filename: img.file_name, bytes: data.bytes })),
+            zipFilename,
+          ));
+          return {
+            key: imagePreparationKey,
+            cidMap,
+            attachments,
+            embeddedImageCount: 0,
+            zipFilename: attachments[0].filename,
+            skippedInlineImages,
+          };
+        }
+      }
 
       for (const { img, data } of results) {
-        if (!data) {
+        const supportedInlineTypes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+        if (
+          !data ||
+          !data.detectedContentType ||
+          !supportedInlineTypes.has(data.detectedContentType) ||
+          (
+            data.declaredContentType &&
+            data.declaredContentType !== 'application/octet-stream' &&
+            data.declaredContentType !== data.detectedContentType
+          )
+        ) {
           skippedInlineImages.push(img.file_name);
           continue;
         }
         const cid = `img_${img.id.replace(/-/g, '')}@jgpaintingprosinc.com`;
         cidMap[img.id] = cid;
         const baseFilename = img.file_name.replace(/\.[^.]+$/, '') || `image_${img.id}`;
-        inlineAttachments.push({
-          filename: `${baseFilename}.${data.extension}`,
-          content: data.base64,
-          contentType: data.contentType,
+        attachments.push({
+          filename: `${baseFilename}.${extensionForImageMime(data.detectedContentType)}`,
+          content: bytesToBase64(data.bytes),
+          contentType: data.detectedContentType,
           encoding: 'base64',
           cid,
         });
       }
     }
 
-    return { key: imagePreparationKey, cidMap, inlineAttachments, skippedInlineImages };
+    return {
+      key: imagePreparationKey,
+      cidMap,
+      attachments,
+      embeddedImageCount: attachments.length,
+      skippedInlineImages,
+    };
   };
 
   /**
@@ -1596,10 +1633,19 @@ export function EnhancedPropertyNotificationModal({
       `);
     };
 
-    imageSection('before', 'before_images');
-    imageSection('after', 'after_images');
-    imageSection('sprinkler', 'sprinkler_images');
-    imageSection('other', 'other_images');
+    if (imageDeliveryMode === 'zip' && selectedImages.length > 0) {
+      sections.push(`
+        <div style="margin-top:24px;padding:14px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;">
+          <strong>${selectedImages.length} job image${selectedImages.length === 1 ? '' : 's'} attached</strong><br />
+          <span style="color:#6b7280;">The selected images are included in one ZIP file.</span>
+        </div>
+      `);
+    } else {
+      imageSection('before', 'before_images');
+      imageSection('after', 'after_images');
+      imageSection('sprinkler', 'sprinkler_images');
+      imageSection('other', 'other_images');
+    }
 
     return sections.join('\n');
   };
@@ -1623,6 +1669,7 @@ export function EnhancedPropertyNotificationModal({
     additional_comments: additionalComments,
     selected_images: selectedImageIds,
     selected_image_types: selectedImages.map((img) => img.normalizedType),
+    email_image_delivery_mode: imageDeliveryMode,
     selected_image_entries: selectedImages.map((img) => ({
       id: img.id,
       source: img.source,
@@ -1686,7 +1733,7 @@ export function EnhancedPropertyNotificationModal({
 
     const sectionHtml = buildSectionHtml(cidMap);
     const previewDisclaimerHtml =
-      isApprovalEmail && selectedImages.length > 0
+      isApprovalEmail && imageDeliveryMode === 'inline' && selectedImages.length > 0
         ? `<p style="margin-top:16px;font-size:12px;color:#6b7280;">${escapeHtml(IMAGE_PREVIEW_DISCLAIMER)}</p>`
         : '';
 
@@ -1712,7 +1759,7 @@ export function EnhancedPropertyNotificationModal({
           ? reviewSizeEstimate
           : await prepareInlineImages();
         const preliminaryHtml = buildFinalEmailHtml(undefined, prepared.cidMap);
-        const encodedAttachmentBytes = prepared.inlineAttachments.reduce(
+        const encodedAttachmentBytes = prepared.attachments.reduce(
           (sum, attachment) => sum + estimateEncodedBase64Bytes(attachment.content),
           0,
         );
@@ -1720,7 +1767,7 @@ export function EnhancedPropertyNotificationModal({
         const estimatedMessageBytes = preliminaryBodyBytes
           + encodedAttachmentBytes
           + 4096
-          + prepared.inlineAttachments.length * 600;
+          + prepared.attachments.length * 600;
         if (!cancelled) setReviewSizeEstimate({ ...prepared, estimatedMessageBytes });
       } catch (error) {
         console.error('Unable to calculate the email size preview', error);
@@ -1779,12 +1826,19 @@ export function EnhancedPropertyNotificationModal({
       const preparedImages = reviewSizeEstimate?.key === imagePreparationKey
         ? reviewSizeEstimate
         : await prepareInlineImages();
-      const { cidMap, inlineAttachments, skippedInlineImages } = preparedImages;
+      const { cidMap, attachments, embeddedImageCount, skippedInlineImages } = preparedImages;
 
       if (skippedInlineImages.length > 0) {
         const skippedSummary = skippedInlineImages.slice(0, 3).join(', ');
         const remainingCount = skippedInlineImages.length - Math.min(3, skippedInlineImages.length);
         const detail = remainingCount > 0 ? `${skippedSummary}, and ${remainingCount} more` : skippedSummary;
+        if (imageDeliveryMode === 'zip') {
+          toast.error(
+            `${skippedInlineImages.length} selected image${skippedInlineImages.length === 1 ? '' : 's'} could not be added to the ZIP (${detail}). No email was sent.`,
+            { duration: 10000 },
+          );
+          return;
+        }
         const shouldContinue = window.confirm(
           `${skippedInlineImages.length} selected image${skippedInlineImages.length === 1 ? '' : 's'} could not be embedded (${detail}). ` +
           'Automatically included approval-page images will remain available there. Send the email with the remaining attachments?',
@@ -1796,17 +1850,17 @@ export function EnhancedPropertyNotificationModal({
       // does not leave an unused token behind. The final approval link adds only
       // a small amount of markup and does not materially change the estimate.
       const preliminaryHtml = buildFinalEmailHtml(undefined, cidMap);
-      const encodedAttachmentBytes = inlineAttachments.reduce(
+      const encodedAttachmentBytes = attachments.reduce(
         (sum, attachment) => sum + estimateEncodedBase64Bytes(attachment.content),
         0,
       );
       const preliminaryBodyBytes = new TextEncoder().encode(preliminaryHtml).byteLength;
-      const estimatedMessageBytes = preliminaryBodyBytes + encodedAttachmentBytes + 4096 + inlineAttachments.length * 600;
+      const estimatedMessageBytes = preliminaryBodyBytes + encodedAttachmentBytes + 4096 + attachments.length * 600;
       const estimatedSizeLabel = formatFileSize(estimatedMessageBytes);
 
-      if (estimatedMessageBytes >= EMAIL_SIZE_MAX_BYTES) {
+      if (exceedsEmailSizeLimit(estimatedMessageBytes)) {
         toast.error(
-          `This email is approximately ${estimatedSizeLabel}, above the 18 MB attachment-email limit. ` +
+          `This email is approximately ${estimatedSizeLabel}, above the 25 MB attachment-email limit. ` +
           'Remove some selected images; all original job images will remain available in the application.',
           { duration: 10000 },
         );
@@ -1815,9 +1869,9 @@ export function EnhancedPropertyNotificationModal({
 
       if (estimatedMessageBytes >= EMAIL_SIZE_WARNING_BYTES) {
         const warning = estimatedMessageBytes >= EMAIL_SIZE_STRONG_WARNING_BYTES
-          ? `This email is approximately ${estimatedSizeLabel}. Messages this large have an elevated risk of delay, rejection, or quarantine. Send it with the selected images?`
-          : `This email is approximately ${estimatedSizeLabel}. Some recipient systems may delay or quarantine larger messages. Send it with the selected images?`;
-        if (!window.confirm(warning)) return;
+          ? `Estimated email size: ${estimatedSizeLabel}. Messages this large have an elevated risk of delay, rejection, or quarantine.`
+          : `Estimated email size: ${estimatedSizeLabel}. Some recipient systems may delay or quarantine larger messages.`;
+        toast.warning(warning, { duration: 7000 });
       } else if (estimatedMessageBytes >= EMAIL_SIZE_INFO_BYTES) {
         toast.info(`Estimated email size: ${estimatedSizeLabel}.`, { duration: 5000 });
       }
@@ -1844,7 +1898,7 @@ export function EnhancedPropertyNotificationModal({
           cc: finalRecipientLists.cc,
           bcc: finalRecipientLists.bcc,
           from: emailConfig ? `${emailConfig.from_name} <${emailConfig.from_email}>` : undefined,
-          attachments: inlineAttachments.length > 0 ? inlineAttachments : undefined,
+          attachments: attachments.length > 0 ? attachments : undefined,
           emailType: isApprovalEmail
             ? 'extra_charge_approval'
             : effectiveNotificationType === 'sprinkler_paint'
@@ -1857,7 +1911,10 @@ export function EnhancedPropertyNotificationModal({
             notification_type: effectiveNotificationType,
             approval_auto_detected: approvalWasAutoDetected,
             selected_image_count: selectedImages.length,
-            inline_attachment_count: inlineAttachments.length,
+            image_delivery_mode: imageDeliveryMode,
+            attachment_count: attachments.length,
+            inline_attachment_count: embeddedImageCount,
+            zip_attachment_count: imageDeliveryMode === 'zip' && attachments.length ? 1 : 0,
             skipped_inline_image_count: skippedInlineImages.length,
             skipped_inline_image_names: skippedInlineImages,
           },
@@ -1880,7 +1937,18 @@ export function EnhancedPropertyNotificationModal({
           });
           if (discardError) console.error('Unable to discard unsent approval token:', discardError);
         }
-        if (error) throw error;
+        if (error) {
+          const context = (error as { context?: Response }).context;
+          if (context) {
+            let serviceError = '';
+            try {
+              const detail = await context.clone().json() as { error?: string };
+              serviceError = detail.error || '';
+            } catch { /* Fall through to the original invocation error. */ }
+            if (serviceError) throw new Error(serviceError);
+          }
+          throw error;
+        }
         if (!sendSucceeded) throw new Error(sendResult?.error || 'The approval email could not be sent.');
         throw new Error('The customer approval email was not accepted for delivery. No active approval request was created.');
       }
@@ -1906,7 +1974,9 @@ export function EnhancedPropertyNotificationModal({
           template_name: selectedTemplate.name,
           included_sections: safeSections,
           selected_image_count: selectedImages.length,
-          inline_attachment_count: inlineAttachments.length,
+          image_delivery_mode: imageDeliveryMode,
+          attachment_count: attachments.length,
+          inline_attachment_count: embeddedImageCount,
           estimated_message_bytes: estimatedMessageBytes,
           approval_link_created: Boolean(approvalLink),
         },
@@ -2037,8 +2107,8 @@ export function EnhancedPropertyNotificationModal({
           </h4>
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {isApprovalEmail
-              ? 'Selected images will be embedded in the email. Approval-page images are selected separately below.'
-              : 'Selected images will be embedded directly in the email.'}
+              ? 'Choose images and whether to embed them or attach them in one ZIP. Approval-page images are managed separately.'
+              : 'Choose images and whether to embed them or attach them in one ZIP.'}
           </p>
         </div>
         <div className="space-x-2">
@@ -2078,6 +2148,34 @@ export function EnhancedPropertyNotificationModal({
         </div>
         <p className="mt-2 text-xs">{attachmentGuidance.detail} Images remain available in the application even when not attached.</p>
       </div>
+      {selectedCount > 0 && (
+        <fieldset className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+          <legend className="px-1 text-xs font-semibold text-gray-700 dark:text-gray-200">Attachment format</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {([
+              ['inline', 'Embed individually', `${selectedCount} inline attachment${selectedCount === 1 ? '' : 's'} with email previews`],
+              ['zip', 'Attach as one ZIP', `1 ZIP containing ${selectedCount} selected image${selectedCount === 1 ? '' : 's'}`],
+            ] as Array<[EmailImageDeliveryMode, string, string]>).map(([mode, label, detail]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setImageDeliveryMode(mode)}
+                className={`rounded-md border p-3 text-left transition ${imageDeliveryMode === mode
+                  ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200 dark:bg-blue-900/30 dark:ring-blue-800'
+                  : 'border-gray-200 hover:border-blue-300 dark:border-gray-700'}`}
+              >
+                <span className="block text-sm font-semibold text-gray-900 dark:text-white">{label}</span>
+                <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{detail}</span>
+              </button>
+            ))}
+          </div>
+          {imageDeliveryMode === 'zip' && (
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              ZIP packaging is lossless relative to the stored, upload-optimized images. It reduces attachment count but may not significantly reduce total size.
+            </p>
+          )}
+        </fieldset>
+      )}
       {jobImages.length > 0 && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {(['before', 'after', 'sprinkler', 'other'] as ImageBucket[]).map((bucket) => {
@@ -2141,6 +2239,13 @@ export function EnhancedPropertyNotificationModal({
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {jobImages.map((image) => {
             const selected = selectedImageIds.includes(image.id);
+            const optimizationStatus = image.original_size == null || image.optimized_size == null
+              ? 'Optimization status unavailable'
+              : image.optimized_size < image.original_size
+                ? 'Upload optimized'
+                : image.optimized_size === image.original_size
+                  ? 'Original retained'
+                  : 'Upload processed';
             return (
               <button
                 type="button"
@@ -2158,6 +2263,7 @@ export function EnhancedPropertyNotificationModal({
                     <span>{IMAGE_TYPE_LABELS[image.normalizedType]}</span>
                     <span>{image.source === 'files' ? 'File Manager' : 'Job Uploads'}</span>
                   </div>
+                  <p className="mt-1 truncate text-[10px] text-gray-500 dark:text-gray-400">{optimizationStatus}</p>
                 </div>
               </button>
             );
@@ -2476,10 +2582,10 @@ export function EnhancedPropertyNotificationModal({
     const previewEmailSignature = applyEmailTokens(emailSignature);
     const currentSizeEstimate = reviewSizeEstimate?.key === imagePreparationKey ? reviewSizeEstimate : null;
     const estimatedBytes = currentSizeEstimate?.estimatedMessageBytes || 0;
-    const sizeLevel = estimatedBytes >= EMAIL_SIZE_MAX_BYTES
+    const sizeLevel = exceedsEmailSizeLimit(estimatedBytes)
       ? { label: 'Cannot send', detail: 'Remove selected images before sending.', classes: 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200' }
       : estimatedBytes >= EMAIL_SIZE_STRONG_WARNING_BYTES
-        ? { label: 'High delivery risk', detail: 'A confirmation will be required before sending.', classes: 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200' }
+        ? { label: 'High delivery risk', detail: 'This warning does not prevent sending.', classes: 'border-red-200 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200' }
         : estimatedBytes >= EMAIL_SIZE_WARNING_BYTES
           ? { label: 'Large message', detail: 'Some recipient systems may delay or quarantine it.', classes: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200' }
           : estimatedBytes >= EMAIL_SIZE_INFO_BYTES
@@ -2509,7 +2615,8 @@ export function EnhancedPropertyNotificationModal({
         ) : (
           <div className="mt-2 space-y-1 text-xs">
             <p><span className="font-medium">Estimated message size:</span> {formatFileSize(currentSizeEstimate.estimatedMessageBytes)}</p>
-            <p><span className="font-medium">Images:</span> {selectedImages.length} selected · {currentSizeEstimate.inlineAttachments.length} ready to embed{currentSizeEstimate.skippedInlineImages.length ? ` · ${currentSizeEstimate.skippedInlineImages.length} unavailable for email embedding` : ''}</p>
+            <p><span className="font-medium">Images:</span> {selectedImages.length} selected · {imageDeliveryMode === 'zip' ? `${currentSizeEstimate.attachments.length} ZIP attachment` : `${currentSizeEstimate.embeddedImageCount} ready to embed`}{currentSizeEstimate.skippedInlineImages.length ? ` · ${currentSizeEstimate.skippedInlineImages.length} unavailable` : ''}</p>
+            <p><span className="font-medium">Attachment mode:</span> {imageDeliveryMode === 'zip' ? `One ZIP${currentSizeEstimate.zipFilename ? ` (${currentSizeEstimate.zipFilename})` : ''}` : 'Individual inline images'}</p>
             <p>{sizeLevel.detail} The approval page automatically includes eligible Before and sprinkler cover-condition images.</p>
             {isApprovalEmail && (
               <p><span className="font-medium">Approval page:</span> {approvalPageImages.length} eligible image{approvalPageImages.length === 1 ? '' : 's'} included automatically</p>

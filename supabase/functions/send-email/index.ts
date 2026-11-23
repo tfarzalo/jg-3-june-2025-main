@@ -63,6 +63,19 @@ interface AttachmentMetric {
   size_known: boolean;
 }
 
+class EmailSizeLimitError extends Error {
+  constructor(
+    message: string,
+    readonly estimatedMessageBytes: number,
+    readonly maximumMessageBytes: number,
+    readonly attachmentCount: number,
+    readonly warnings: string[],
+  ) {
+    super(message);
+    this.name = "EmailSizeLimitError";
+  }
+}
+
 const jsonResponse = (body: Record<string, unknown>, status = 200) => new Response(
   JSON.stringify(body),
   { status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -366,12 +379,15 @@ Deno.serve(async (req) => {
     try {
       const provider = getProvider();
       const config = providerConfiguration(provider);
+      const messageWarningBytes = positiveIntegerEnvironment("EMAIL_SIZE_WARNING_BYTES", 8 * 1024 * 1024);
+      const maximumMessageBytes = positiveIntegerEnvironment("EMAIL_SIZE_MAX_BYTES", 25 * 1024 * 1024);
       return jsonResponse({
         success: true,
         message: "Send-email function is configured",
         timestamp: new Date().toISOString(),
         provider,
         env_check: { configured: Boolean(config.user && config.pass), host: config.host, port: config.port },
+        size_policy: { messageWarningBytes, maximumMessageBytes },
       });
     } catch (error) {
       return jsonResponse({ success: false, error: errorMessage(error) }, 500);
@@ -431,12 +447,12 @@ Deno.serve(async (req) => {
     const estimatedMimeOverheadBytes = 2_048 + addressingBytes + measuredAttachments.length * 600;
     const estimatedMessageBytes = htmlBytes + textBytes + estimatedEncodedAttachmentBytes + estimatedMimeOverheadBytes;
 
-    const messageWarningBytes = positiveIntegerEnvironment("EMAIL_SIZE_WARNING_BYTES", 10 * 1024 * 1024);
+    const messageWarningBytes = positiveIntegerEnvironment("EMAIL_SIZE_WARNING_BYTES", 8 * 1024 * 1024);
     const attachmentWarningBytes = positiveIntegerEnvironment("EMAIL_ATTACHMENT_WARNING_BYTES", 5 * 1024 * 1024);
     const htmlWarningBytes = positiveIntegerEnvironment("EMAIL_HTML_WARNING_BYTES", 100 * 1024);
-    const maximumMessageBytes = positiveIntegerEnvironment("EMAIL_SIZE_MAX_BYTES", 18 * 1024 * 1024);
+    const maximumMessageBytes = positiveIntegerEnvironment("EMAIL_SIZE_MAX_BYTES", 25 * 1024 * 1024);
     const sizeWarnings: string[] = [];
-    if (estimatedMessageBytes >= maximumMessageBytes) {
+    if (estimatedMessageBytes > maximumMessageBytes) {
       sizeWarnings.push(`Estimated message size exceeds the ${maximumMessageBytes} byte sending limit`);
     }
     if (estimatedMessageBytes >= messageWarningBytes) {
@@ -453,6 +469,8 @@ Deno.serve(async (req) => {
     if (measuredAttachments.some((attachment) => !attachment.size_known)) {
       sizeWarnings.push("One or more attachment sizes could not be measured before submission");
     }
+    const queueAttachmentBypassBytes = positiveIntegerEnvironment("EMAIL_QUEUE_ATTACHMENT_BYPASS_BYTES", 8 * 1024 * 1024);
+    const bypassQueueForLargeAttachments = estimatedEncodedAttachmentBytes >= queueAttachmentBypassBytes;
 
     const requestedFrom = provider === "zoho" ? body.from : undefined;
     const requestedReplyTo = normalizeReplyTo(body.replyTo, config.replyTo);
@@ -489,24 +507,41 @@ Deno.serve(async (req) => {
         original_recipient_field: recipient.originalField,
         isolated_recipient_index: index,
         isolated_recipient_count: isolatedRecipients.length,
+        queue_bypassed_for_large_attachments: bypassQueueForLargeAttachments,
       },
     });
 
-    if (estimatedMessageBytes >= maximumMessageBytes) {
+    if (estimatedMessageBytes > maximumMessageBytes) {
       const sizeError =
         `Estimated email size (${estimatedMessageBytes} bytes) exceeds the configured ${maximumMessageBytes} byte limit. ` +
         "Remove attachments or provide the remaining images through the secure notification or approval page.";
       await Promise.all(isolatedRecipients.map((recipient, index) =>
         createAuditRecord(auditValuesFor(recipient, index, "failed", sizeError))
       ));
-      throw new Error(sizeError);
+      throw new EmailSizeLimitError(
+        sizeError,
+        estimatedMessageBytes,
+        maximumMessageBytes,
+        processedAttachments.length,
+        sizeWarnings,
+      );
     }
 
     // Direct delivery is the safe default. The durable pacing queue is opt-in
     // and should only be enabled when its worker and recovery trigger are live.
     const queueEnabled = (Deno.env.get("OUTBOUND_EMAIL_QUEUE_ENABLED") || "false").toLowerCase() === "true";
     const immediateEmailTypes = new Set(["password_reset"]);
-    const shouldQueue = queueEnabled && !queueDirect && !immediateEmailTypes.has(emailType);
+    // Avoid storing very large base64 payloads in queue JSONB. Direct delivery
+    // preserves the same recipient isolation and size enforcement without
+    // duplicating a large attachment payload in Postgres.
+    const shouldQueue = queueEnabled && !queueDirect && !immediateEmailTypes.has(emailType) && !bypassQueueForLargeAttachments;
+
+    if (bypassQueueForLargeAttachments && queueEnabled && !queueDirect) {
+      console.log("Bypassing outbound queue for large attachment payload", {
+        estimatedEncodedAttachmentBytes,
+        queueAttachmentBypassBytes,
+      });
+    }
 
     if (shouldQueue) {
       const admin = auditClient();
@@ -727,6 +762,19 @@ Deno.serve(async (req) => {
   } catch (error) {
     const message = errorMessage(error);
     console.error("Outbound email submission failed", { provider, error: message });
+    if (error instanceof EmailSizeLimitError) {
+      return jsonResponse({
+        success: false,
+        provider,
+        auditId: null,
+        error: message,
+        code: "EMAIL_SIZE_LIMIT_EXCEEDED",
+        estimatedMessageBytes: error.estimatedMessageBytes,
+        maximumMessageBytes: error.maximumMessageBytes,
+        attachmentCount: error.attachmentCount,
+        warnings: error.warnings,
+      }, 413);
+    }
     return jsonResponse({ success: false, provider, auditId: null, error: message }, 500);
   }
 });

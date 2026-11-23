@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import JSZip from "npm:jszip@3.10.2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -140,8 +141,25 @@ serve(async (req) => {
       content: string;
       contentType: string;
       encoding: string;
-      cid: string;
+      cid?: string;
     }> = [];
+
+    const imageDeliveryMode = extraData.email_image_delivery_mode === "zip" ? "zip" : "inline";
+    const imageZip = imageDeliveryMode === "zip" ? new JSZip() : null;
+    const usedZipNames = new Set<string>();
+    const uniqueZipName = (value: string) => {
+      const safe = (value.split(/[\\/]/).pop() || "approval-photo")
+        .replace(/[\u0000-\u001f\u007f<>:"|?*]/g, "_")
+        .replace(/^\.+/, "") || "approval-photo";
+      const dot = safe.lastIndexOf(".");
+      const base = dot > 0 ? safe.slice(0, dot) : safe;
+      const extension = dot > 0 ? safe.slice(dot) : "";
+      let candidate = safe;
+      let suffix = 2;
+      while (usedZipNames.has(candidate.toLowerCase())) candidate = `${base}-${suffix++}${extension}`;
+      usedZipNames.add(candidate.toLowerCase());
+      return candidate;
+    };
 
     const imageEntries = Array.isArray(extraData.selected_image_entries)
       ? extraData.selected_image_entries
@@ -156,6 +174,14 @@ serve(async (req) => {
 
       if (downloadError || !blob) {
         console.warn("Unable to attach approval image", entry.file_path, downloadError);
+        continue;
+      }
+
+      const sourceFilename = entry.file_name || entry.file_path?.split("/").pop() || "approval-photo";
+      if (imageZip) {
+        // Package the exact stored bytes, including formats that are not safe
+        // for CID display. No image conversion occurs in ZIP mode.
+        imageZip.file(uniqueZipName(sourceFilename), new Uint8Array(await blob.arrayBuffer()));
         continue;
       }
 
@@ -174,7 +200,6 @@ serve(async (req) => {
         continue;
       }
       const cid = `approval_${String(entry.id || crypto.randomUUID()).replace(/-/g, "")}@jgpaintingpros.com`;
-      const sourceFilename = entry.file_name || entry.file_path?.split("/").pop() || "approval-photo";
       const filename = `${sourceFilename.replace(/\.[^.]+$/, "")}.${INLINE_IMAGE_EXTENSIONS[contentType]}`;
 
       attachments.push({
@@ -191,6 +216,21 @@ serve(async (req) => {
           <div style="font-size:12px;color:#6b7280;margin-top:4px;">${escapeHtml(filename)}</div>
         </td>
       `);
+    }
+
+    let zipFilename: string | null = null;
+    if (imageZip && Object.keys(imageZip.files).length > 0) {
+      zipFilename = `${workOrderNum.replace(/[^a-z0-9_-]+/gi, "-")}-approval-images.zip`;
+      attachments.push({
+        filename: zipFilename,
+        content: await imageZip.generateAsync({
+          type: "base64",
+          compression: "DEFLATE",
+          compressionOptions: { level: 6 },
+        }),
+        contentType: "application/zip",
+        encoding: "base64",
+      });
     }
 
     const imageRows = imageCards.reduce<string[]>((rows, card, index) => {
@@ -226,7 +266,12 @@ serve(async (req) => {
             </tr>
           </tfoot>
         </table>
-        ${imageRows ? `
+        ${zipFilename ? `
+          <div style="margin:22px 0;padding:14px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;">
+            <strong>Selected job photos are attached in one ZIP file.</strong><br />
+            <span style="font-size:12px;color:#6b7280;">${escapeHtml(zipFilename)}</span>
+          </div>
+        ` : imageRows ? `
           <h3 style="margin:22px 0 8px;">Attached Photos</h3>
           <table style="width:100%;border-collapse:collapse;">${imageRows}</table>
         ` : ""}
@@ -254,7 +299,13 @@ serve(async (req) => {
         attachments: attachments.length > 0 ? attachments : undefined,
         emailType: "approval_receipt",
         jobId: approval.job_id || extraData.job_id || null,
-        metadata: { approval_token_id: approval.id, decision },
+        metadata: {
+          approval_token_id: approval.id,
+          decision,
+          image_delivery_mode: imageDeliveryMode,
+          selected_image_count: imageEntries.length,
+          attachment_count: attachments.length,
+        },
       }),
     });
 

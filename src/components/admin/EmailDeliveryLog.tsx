@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight, MailCheck, RefreshCw, Search } from 'lucide-react';
 import { supabase } from '../../utils/supabase';
+import { exceedsEmailSizeLimit } from '../../lib/outboundEmailAttachments';
 
 type RecipientKind = 'property_contact' | 'subcontractor' | 'internal' | 'external';
 
@@ -17,6 +18,7 @@ interface EmailSend {
   provider_message_id: string | null;
   attachment_count: number;
   estimated_message_bytes: number;
+  metadata: Record<string, unknown> | null;
   submitted_at: string | null;
   delivered_at: string | null;
   last_error: string | null;
@@ -132,7 +134,7 @@ function formatDate(value: string | null): string {
 
 function sizeAssessment(bytes: number): { label: string; classes: string } {
   if (!bytes) return { label: 'Size not recorded', classes: 'text-gray-500' };
-  if (bytes >= 18 * 1024 * 1024) return { label: 'Over send limit', classes: 'text-red-700 dark:text-red-300' };
+  if (exceedsEmailSizeLimit(bytes)) return { label: 'Over send limit', classes: 'text-red-700 dark:text-red-300' };
   if (bytes >= 12 * 1024 * 1024) return { label: 'High delivery risk', classes: 'text-red-700 dark:text-red-300' };
   if (bytes >= 8 * 1024 * 1024) return { label: 'Large message', classes: 'text-amber-700 dark:text-amber-300' };
   if (bytes >= 5 * 1024 * 1024) return { label: 'Review size', classes: 'text-amber-700 dark:text-amber-300' };
@@ -167,7 +169,7 @@ export function EmailDeliveryLog() {
     setError(null);
     try {
       const [sendResult, eventResult, profileResult, contactResult, propertyResult] = await Promise.all([
-        supabase.from('outbound_email_sends').select('id, created_at, provider, status, email_type, subject, to_emails, cc_emails, bcc_emails, provider_message_id, attachment_count, estimated_message_bytes, submitted_at, delivered_at, last_error').order('created_at', { ascending: false }).limit(500),
+        supabase.from('outbound_email_sends').select('id, created_at, provider, status, email_type, subject, to_emails, cc_emails, bcc_emails, provider_message_id, attachment_count, estimated_message_bytes, submitted_at, delivered_at, last_error, metadata').order('created_at', { ascending: false }).limit(500),
         supabase.from('outbound_email_events').select('outbound_email_send_id, event_type, severity, recipient_email, reason, event_at').order('event_at', { ascending: false }).limit(2000),
         supabase.from('profiles').select('email, role').not('email', 'is', null),
         supabase.from('property_contacts').select('email, secondary_email'),
@@ -424,8 +426,9 @@ export function EmailDeliveryLog() {
                           <span>Mailgun accepted this message, but no recipient delivery confirmation has been recorded yet. This is not marked failed; use the message ID below to check Mailgun Events.</span>
                         </div>
                       )}
-                      <div className="mb-3 grid gap-2 text-xs text-gray-500 md:grid-cols-4">
+                      <div className="mb-3 grid gap-2 text-xs text-gray-500 md:grid-cols-5">
                         <span>Attachments: {send.attachment_count}</span>
+                        <span>Mode: {send.metadata?.image_delivery_mode === 'zip' ? `ZIP (${String(send.metadata?.selected_image_count || 0)} images)` : send.attachment_count ? 'Inline/individual' : 'None'}</span>
                         <span className={messageSize.classes}>Size: {formatBytes(send.estimated_message_bytes)} · {messageSize.label}</span>
                         <span>Submitted: {formatDate(send.submitted_at)}</span>
                         <span className="truncate" title={send.provider_message_id || ''}>Message ID: {send.provider_message_id || '—'}</span>
