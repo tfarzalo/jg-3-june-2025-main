@@ -1,11 +1,17 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 
+interface HughFollowUp {
+  question: string;
+  options: { label: string; message: string }[];
+}
+
 export interface HughMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
   isLoading?: boolean;
+  followUp?: HughFollowUp;
 }
 
 interface HughContextType {
@@ -15,7 +21,7 @@ interface HughContextType {
   toggleHugh: () => void;
   messages: HughMessage[];
   addMessage: (role: 'user' | 'assistant', content: string) => string;
-  updateMessage: (id: string, content: string, isLoading?: boolean) => void;
+  updateMessage: (id: string, content: string, isLoading?: boolean, followUp?: HughFollowUp) => void;
   clearMessages: () => void;
   isLoading: boolean;
   setIsLoading: (v: boolean) => void;
@@ -45,9 +51,9 @@ export function HughProvider({ children }: { children: React.ReactNode }) {
     return id;
   }, []);
 
-  const updateMessage = useCallback((id: string, content: string, isLoading = false) => {
+  const updateMessage = useCallback((id: string, content: string, isLoading = false, followUp?: HughFollowUp) => {
     setMessages(prev =>
-      prev.map(m => m.id === id ? { ...m, content, isLoading } : m)
+      prev.map(m => m.id === id ? { ...m, content, isLoading, followUp } : m)
     );
   }, []);
 

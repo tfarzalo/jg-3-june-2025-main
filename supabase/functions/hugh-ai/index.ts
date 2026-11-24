@@ -1,445 +1,294 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
+type Row = { id: string; label: string };
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+// Keep helpers in this file so it can be deployed from the Supabase dashboard.
+export const businessTimeZone = "America/New_York";
 
+function dateOnly(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+export function shiftDay(date: string, days: number) {
+  const result = new Date(`${date}T00:00:00Z`);
+  result.setUTCDate(result.getUTCDate() + days);
+  return dateOnly(result);
+}
+
+export function businessMidnight(date: string) {
+  // 05:00 UTC falls at midnight or 1 a.m. Eastern, before the DST switch.
+  const offset = new Intl.DateTimeFormat("en-US", {
+    timeZone: businessTimeZone,
+    timeZoneName: "longOffset",
+  }).formatToParts(new Date(`${date}T05:00:00Z`)).find(part => part.type === "timeZoneName");
+  return `${date}T00:00:00${offset!.value.replace("GMT", "")}`;
+}
+
+export function dateContext(now: Date) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: businessTimeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "long",
+  });
+  const parts = Object.fromEntries(formatter.formatToParts(now).map(part => [part.type, part.value]));
+  const today = `${parts.year}-${parts.month}-${parts.day}`;
+  const weekdayOffset = (new Date(`${today}T00:00:00Z`).getUTCDay() + 6) % 7;
+  const thisStart = shiftDay(today, -weekdayOffset);
+  return {
+    today,
+    weekday: parts.weekday,
+    thisStart,
+    thisEnd: shiftDay(thisStart, 6),
+    lastStart: shiftDay(thisStart, -7),
+    lastEnd: shiftDay(thisStart, -1),
+  };
+}
+
+export function regularPaintWeek(message: string, dates: ReturnType<typeof dateContext>) {
+  const match = /^how many regular paint jobs (?:were there |were scheduled |are there |are scheduled )?(last|this) week[?.!]?$/i.exec(message.trim());
+  if (!match) return null;
+
+  const lastWeek = match[1].toLowerCase() === "last";
+  return {
+    from: lastWeek ? dates.lastStart : dates.thisStart,
+    through: lastWeek ? dates.lastEnd : dates.thisEnd,
+  };
+}
+
+serve(async req => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+    if (!token) return json({ error: "Authentication required." }, 401);
+    const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { autoRefreshToken: false, persistSession: false } });
+    const { data: auth } = await db.auth.getUser(token);
+    if (!auth.user) return json({ error: "Invalid or expired session." }, 401);
+    const { data: caller } = await db.from("profiles").select("role").eq("id", auth.user.id).maybeSingle();
+    if (!caller?.role || caller.role === "subcontractor") return json({ error: "You do not have permission to use Hugh." }, 403);
 
-    if (!geminiApiKey) {
-      return new Response(
-        JSON.stringify({ error: "Gemini API key not configured. Please add GEMINI_API_KEY to your Supabase secrets." }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 503 }
-      );
+    const body = await req.json();
+    const message = String(body?.message || "").trim();
+    if (!message) return json({ error: "message is required" }, 400);
+    const dates = dateContext(new Date());
+    const paintWeek = regularPaintWeek(message, dates);
+    if (paintWeek) {
+      const { from, through } = paintWeek;
+      const { count, error } = await db.from("jobs")
+        .select("id,job_categories!inner(name)", { count: "exact", head: true })
+        .ilike("job_categories.name", "Regular Paint")
+        .gte("scheduled_date", businessMidnight(from))
+        .lt("scheduled_date", businessMidnight(shiftDay(through, 1)));
+      if (error || count === null) {
+        console.error("Hugh Regular Paint count failed", error);
+        return json({ reply: "I couldn't verify the Regular Paint job count. Please try again later." });
+      }
+      const jobLabel = count === 1 ? "job" : "jobs";
+      return json({
+        reply: `${count.toLocaleString("en-US")} Regular Paint ${jobLabel} scheduled from ${from} through ${through} (Eastern time).`,
+        followUp: count > 0 ? {
+          question: `Would you like me to list ${count === 1 ? "that job" : "those jobs"} with the property, unit number, and work order number?`,
+          options: [{ label: "Yes, list the jobs", message: regularPaintListMessage(from, through) }],
+        } : undefined,
+      });
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
+    const paintList = /^List Regular Paint jobs scheduled from (\d{4}-\d{2}-\d{2}) through (\d{4}-\d{2}-\d{2}) with property, unit number, and work order number(?: \(page ([1-9]\d{0,3})\))?\.$/i.exec(message);
+    if (paintList) {
+      const [, from, through, pageNumber] = paintList;
+      const page = Number(pageNumber || 1);
+      const pageSize = 25;
+      const offset = (page - 1) * pageSize;
+      const { data, count, error } = await db.from("jobs")
+        .select("id,work_order_num,unit_number,property:properties(property_name),job_categories!inner(name)", { count: "exact" })
+        .ilike("job_categories.name", "Regular Paint")
+        .gte("scheduled_date", businessMidnight(from))
+        .lt("scheduled_date", businessMidnight(shiftDay(through, 1)))
+        .order("scheduled_date")
+        .order("id")
+        .range(offset, offset + pageSize - 1);
+      if (error || count === null) {
+        console.error("Hugh Regular Paint list failed", error);
+        return json({ reply: "I couldn't retrieve the Regular Paint jobs. Please try again later." });
+      }
+      if (!data?.length) return json({ reply: `No Regular Paint jobs to show for this page (${from} through ${through}, Eastern time).` });
+      const rows = data.map(job => {
+        const property = job.property as unknown as { property_name: string } | null;
+        return `- [${woFormat(job.work_order_num)}](/dashboard/jobs/${job.id}) · ${property?.property_name || "Property unavailable"} · Unit ${job.unit_number || "unavailable"}`;
+      });
+      const lastRow = offset + data.length;
+      return json({
+        reply: `Regular Paint jobs ${offset + 1}–${lastRow} of ${count}, scheduled from ${from} through ${through} (Eastern time).\n\n${rows.join("\n")}`,
+        followUp: lastRow < count ? {
+          question: "Would you like to see the next jobs?",
+          options: [{ label: "Show next jobs", message: regularPaintListMessage(from, through, page + 1) }],
+        } : undefined,
+      });
+    }
 
-    const { message, history } = await req.json();
-    if (!message) throw new Error("message is required");
-
-    // ── Gather rich app context ──────────────────────────────────────────────
-    const [
-      { data: jobs },
-      { data: properties },
-      { data: phases },
-      { data: profiles },
-      { data: jobTypes },
-      { data: unitSizes },
-      { data: propertyGroups },
-      { data: workOrders },
-      { data: jobCategories },
-    ] = await Promise.all([
-      // Jobs — use correct FK name jobs_assigned_to_fkey and correct job_type column
-      supabase
-        .from("jobs")
-        .select(`
-          id,
-          property_id,
-          assigned_to,
-          work_order_num,
-          unit_number,
-          scheduled_date,
-          status,
-          assignment_status,
-          priority,
-          invoice_sent,
-          invoice_paid,
-          total_billing_amount,
-          purchase_order,
-          is_occupied,
-          created_at,
-          property:properties(id, property_name, city, state),
-          phase:job_phases!jobs_current_phase_id_fkey(job_phase_label),
-          job_type:job_types!jobs_job_type_id_fkey(job_type_label),
-          assigned_to_profile:profiles!jobs_assigned_to_fkey(id, full_name, company_name),
-          unit_size:unit_sizes!jobs_unit_size_id_fkey(unit_size_label)
-        `)
-        .order("created_at", { ascending: false })
-        .limit(200),
-
-      // Properties
-      supabase
-        .from("properties")
-        .select(`
-          id, property_name, address, city, state, is_active, is_archived,
-          community_manager_name, community_manager_email,
-          property_management_group:property_management_groups(company_name)
-        `)
-        .eq("is_archived", false)
-        .limit(300),
-
-      // Job phases in order
-      supabase
-        .from("job_phases")
-        .select("id, job_phase_label, sort_order")
-        .order("sort_order"),
-
-      // All users/subcontractors
-      supabase
-        .from("profiles")
-        .select("id, full_name, role, email, company_name, phone")
-        .limit(200),
-
-      // Job types — correct column name is job_type_label
-      supabase
-        .from("job_types")
-        .select("id, job_type_label"),
-
-      // Unit sizes
-      supabase
-        .from("unit_sizes")
-        .select("id, unit_size_label")
-        .limit(100),
-
-      // Property management groups
-      supabase
-        .from("property_management_groups")
-        .select("id, company_name, group_status")
-        .eq("is_archived", false)
-        .limit(100),
-
-      // Work orders — most recent
-      supabase
-        .from("work_orders")
-        .select(`
-          id, unit_number, unit_size, is_occupied, is_full_paint,
-          bill_amount, sub_pay_amount, profit_amount,
-          submission_date, created_at,
-          job:jobs!work_orders_job_id_fkey(
-            id,
-            work_order_num,
-            property_id,
-            property:properties(id, property_name)
-          )
-        `)
-        .order("created_at", { ascending: false })
-        .limit(100),
-
-      // Job categories
-      supabase
-        .from("job_categories")
-        .select("id, name")
-        .eq("is_hidden", false)
-        .limit(100),
+    const key = Deno.env.get("GEMINI_API_KEY");
+    if (!key) return json({ error: "Gemini API key not configured." }, 503);
+    const [p, t, s, c, g] = await Promise.all([
+      db.from("job_phases").select("id,job_phase_label").order("sort_order"),
+      db.from("job_types").select("id,job_type_label"), db.from("unit_sizes").select("id,unit_size_label"),
+      db.from("job_categories").select("id,name,is_hidden"), db.from("property_management_groups").select("id,company_name"),
     ]);
+    const cats = {
+      phases: catalog(p.data, "job_phase_label"), types: catalog(t.data, "job_type_label"), sizes: catalog(s.data, "unit_size_label"),
+      categories: catalog((c.data || []).filter((x: any) => !x.is_hidden), "name"), groups: catalog(g.data, "company_name"),
+    };
+    const contents: any[] = [
+      { role: "user", parts: [{ text: prompt(dates, cats) }] },
+      { role: "model", parts: [{ text: "Understood. I will query live data before answering." }] },
+    ];
+    for (const m of Array.isArray(body.history) ? body.history.slice(-10) : []) if (m?.content) contents.push({ role: m.role === "user" ? "user" : "model", parts: [{ text: String(m.content).slice(0, 8000) }] });
+    contents.push({ role: "user", parts: [{ text: message }] });
 
-    // ── Build summaries ──────────────────────────────────────────────────────
-    const activeProperties = (properties || []).filter(p => p.is_active !== false);
-    const subcontractors = (profiles || []).filter(p => p.role === "subcontractor");
-    const adminUsers = (profiles || []).filter(p => p.role && p.role !== "subcontractor");
-
-    const phaseLabels = (phases || []).map(p => p.job_phase_label);
-
-    // Format work order number as WO-XXXXXX (zero-padded to 6 digits)
-    const formatWO = (num: number | null | undefined): string =>
-      num != null ? `WO-${String(num).padStart(6, "0")}` : "N/A";
-
-    // Jobs with all key fields + IDs for deep linking
-    const jobSummaries = (jobs || []).slice(0, 150).map(j => ({
-      wo: formatWO(j.work_order_num),
-      job_link: `/dashboard/jobs/${j.id}`,
-      unit: j.unit_number,
-      unit_link: `/dashboard/jobs/${j.id}`,
-      property: (j.property as any)?.property_name,
-      property_link: j.property_id ? `/dashboard/properties/${j.property_id}` : ((j.property as any)?.id ? `/dashboard/properties/${(j.property as any).id}` : null),
-      city: (j.property as any)?.city,
-      phase: (j.phase as any)?.job_phase_label,
-      type: (j.job_type as any)?.job_type_label,
-      size: (j.unit_size as any)?.unit_size_label,
-      sub: (j.assigned_to_profile as any)?.full_name || (j.assigned_to_profile as any)?.company_name,
-      sub_profile_link: j.assigned_to ? `/dashboard/profile/${j.assigned_to}` : null,
-      sub_admin_link: j.assigned_to ? `/dashboard/users/subcontractors/${j.assigned_to}` : null,
-      sub_edit_link: j.assigned_to ? `/dashboard/subcontractor/edit/${j.assigned_to}` : null,
-      status: j.status,
-      assignment_status: j.assignment_status,
-      priority: j.priority,
-      scheduled: j.scheduled_date ? j.scheduled_date.split("T")[0] : null,
-      invoice_sent: j.invoice_sent,
-      invoice_paid: j.invoice_paid,
-      bill_amount: j.total_billing_amount,
-      po: j.purchase_order,
-      occupied: j.is_occupied,
-    }));
-
-    const linkTargets = [
-      ...jobSummaries.flatMap(j => [
-        j.wo && j.job_link ? { label: j.wo, href: j.job_link } : null,
-        j.wo && j.unit && j.job_link ? { label: `${j.wo} Unit ${j.unit}`, href: j.job_link } : null,
-      ]),
-      ...activeProperties.map(p => ({
-        label: p.property_name,
-        href: `/dashboard/properties/${p.id}`,
-      })),
-      ...(propertyGroups || []).map(g => ({
-        label: g.company_name,
-        href: `/dashboard/property-groups/${g.id}`,
-      })),
-      ...subcontractors.flatMap(s => {
-        const displayName = s.full_name || s.company_name || s.email;
-        return [
-          displayName ? { label: displayName, href: `/dashboard/users/subcontractors/${s.id}` } : null,
-          s.company_name && s.company_name !== displayName
-            ? { label: s.company_name, href: `/dashboard/users/subcontractors/${s.id}` }
-            : null,
-        ];
-      }),
-    ].filter((target): target is { label: string; href: string } =>
-      Boolean(target?.label && target?.href)
-    );
-
-    // Phase breakdown counts
-    const phaseBreakdown: Record<string, number> = {};
-    for (const j of jobSummaries) {
-      const p = j.phase || "Unknown";
-      phaseBreakdown[p] = (phaseBreakdown[p] || 0) + 1;
-    }
-
-    // Subcontractor workload
-    const subWorkload: Record<string, number> = {};
-    for (const j of jobSummaries) {
-      if (j.sub) subWorkload[j.sub] = (subWorkload[j.sub] || 0) + 1;
-    }
-
-    // Work order billing summary
-    const woTotal = (workOrders || []).reduce((sum, wo) => sum + (Number(wo.bill_amount) || 0), 0);
-    const woProfitTotal = (workOrders || []).reduce((sum, wo) => sum + (Number(wo.profit_amount) || 0), 0);
-    const workOrderSummaries = (workOrders || []).slice(0, 75).map(wo => {
-      const job = wo.job as any;
-      const property = job?.property as any;
-      return {
-        work_order_submission_id: wo.id,
-        wo: formatWO(job?.work_order_num),
-        job_link: job?.id ? `/dashboard/jobs/${job.id}` : null,
-        unit: wo.unit_number,
-        unit_link: job?.id ? `/dashboard/jobs/${job.id}` : null,
-        property: property?.property_name,
-        property_link: job?.property_id ? `/dashboard/properties/${job.property_id}` : (property?.id ? `/dashboard/properties/${property.id}` : null),
-        submitted: wo.submission_date ? String(wo.submission_date).split("T")[0] : null,
-        bill_amount: wo.bill_amount,
-        sub_pay_amount: wo.sub_pay_amount,
-        profit_amount: wo.profit_amount,
-        full_paint: wo.is_full_paint,
-        occupied: wo.is_occupied,
-      };
-    });
-
-    // Invoice stats
-    const invoicePending = jobSummaries.filter(j => !j.invoice_sent).length;
-    const invoiceUnpaid = jobSummaries.filter(j => j.invoice_sent && !j.invoice_paid).length;
-
-    const appContext = `
-You are Hugh, an AI assistant built exclusively into the JG Painting Pros property management and job tracking application. You have live, real-time access to the application's database. Always answer from this data — never say you don't have access to job or property information.
-
-Today's date: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-
-═══════════════════════════════════════════════
-APPLICATION LIVE DATA SNAPSHOT
-═══════════════════════════════════════════════
-
-## JOB PHASES (in workflow order)
-${phaseLabels.join(" → ")}
-
-## JOB TYPES
-${(jobTypes || []).map(t => t.job_type_label).join(", ")}
-
-## JOB CATEGORIES
-${(jobCategories || []).map(c => c.name).join(", ")}
-
-## UNIT SIZES AVAILABLE
-${(unitSizes || []).map(u => u.unit_size_label).join(", ")}
-
-## PROPERTIES (${activeProperties.length} active)
-${activeProperties.map(p => {
-  const mgGroup = (p.property_management_group as any)?.company_name;
-  return `- ${p.property_name} | Link: /dashboard/properties/${p.id} | ${p.city}, ${p.state}${mgGroup ? ` | Managed by: ${mgGroup}` : ""}`;
-}).join("\n")}
-
-## PROPERTY MANAGEMENT GROUPS
-${(propertyGroups || []).map(g => `- ${g.company_name} (${g.group_status || "active"}) | Link: /dashboard/property-groups/${g.id}`).join("\n")}
-
-## TEAM MEMBERS (Admins/Management)
-${adminUsers.map(u => `- ${u.full_name} (${u.role}) | ${u.email}`).join("\n")}
-
-## SUBCONTRACTORS (${subcontractors.length} total)
-${subcontractors.map(s => `- ${s.full_name}${s.company_name ? ` / ${s.company_name}` : ""} | Active jobs: ${subWorkload[s.full_name] || 0} | Admin view: /dashboard/users/subcontractors/${s.id} | Edit: /dashboard/subcontractor/edit/${s.id} | Profile: /dashboard/profile/${s.id}`).join("\n")}
-
-## JOB PHASE BREAKDOWN (all ${jobSummaries.length} jobs)
-${Object.entries(phaseBreakdown).sort((a, b) => b[1] - a[1]).map(([phase, count]) => `- ${phase}: ${count} jobs`).join("\n")}
-
-## INVOICE STATUS
-- Jobs with invoice NOT sent: ${invoicePending}
-- Jobs invoiced but NOT paid: ${invoiceUnpaid}
-- Jobs invoiced and paid: ${jobSummaries.filter(j => j.invoice_paid).length}
-
-## WORK ORDER BILLING SUMMARY (last ${(workOrders || []).length} work orders)
-- Total billed: $${woTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-- Total profit: $${woProfitTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-
-## RECENT WORK ORDER SUBMISSIONS (with job/property/unit links)
-${JSON.stringify(workOrderSummaries, null, 2)}
-
-## ALL JOBS (work order #, unit, property, phase, type, size, assigned sub, status, scheduled date, billing)
-${JSON.stringify(jobSummaries, null, 2)}
-
-═══════════════════════════════════════════════
-YOUR ROLE & INSTRUCTIONS
-═══════════════════════════════════════════════
-- You have FULL access to this live data — always answer with specifics
-- Reference work order numbers, property names, subcontractor names, phases, and dates
-- When referencing a specific work order, job, unit, property, subcontractor, or subcontractor admin view, make the reference a markdown link using the provided app route.
-- Link jobs, work orders, and units to the job route: [WO-000123 Unit 12](/dashboard/jobs/job-id)
-- Link properties as [Property Name](/dashboard/properties/property-id)
-- Link subcontractor admin views as [Subcontractor Name admin view](/dashboard/users/subcontractors/user-id)
-- Link subcontractor edit pages only when the user asks to edit or manage subcontractor settings: [Edit Subcontractor Name](/dashboard/subcontractor/edit/user-id)
-- Link property groups as [Property Group Name](/dashboard/property-groups/group-id)
-- Do not invent links. Only use routes shown in the live data snapshot.
-- Answer questions about any job, property, subcontractor, phase, billing, or scheduling
-- Provide counts, lists, summaries, and analysis when asked
-- Proactively surface insights: overdue jobs, unassigned work, invoice gaps, subcontractor workload imbalances
-- Recommend subcontractors based on current workload and property preferences
-- Be concise, professional, and direct — you're a tool for busy operations managers
-- Format responses clearly using bullet points or short tables when listing multiple items
-`;
-
-    // ── Build Gemini conversation ────────────────────────────────────────────
-    const geminiContents: any[] = [];
-
-    // Inject system context as first turn
-    geminiContents.push({
-      role: "user",
-      parts: [{ text: `${appContext}\n\n---\nBegin. Acknowledge you're ready with one brief sentence.` }],
-    });
-    geminiContents.push({
-      role: "model",
-      parts: [{ text: "Hi! I'm Hugh — I have live access to your jobs, properties, subcontractors, phases, and billing data. What can I help you with?" }],
-    });
-
-    // Append conversation history
-    if (history && Array.isArray(history)) {
-      for (const msg of history) {
-        geminiContents.push({
-          role: msg.role === "user" ? "user" : "model",
-          parts: [{ text: msg.content }],
-        });
+    let answer = "", links: any[] = [];
+    for (let round = 0; round < 4; round++) {
+      const gemini = await askGemini(key, contents);
+      const parts = gemini?.candidates?.[0]?.content?.parts || [];
+      const calls = parts.filter((x: any) => x.functionCall).map((x: any) => x.functionCall);
+      if (!calls.length) { answer = parts.map((x: any) => x.text || "").join("\n").trim(); break; }
+      contents.push({ role: "model", parts });
+      const responses = [];
+      for (const call of calls) {
+        const result = await runTool(db, call.name, call.args || {}, cats);
+        links = links.concat(getLinks(result));
+        responses.push({ functionResponse: { name: call.name, response: result } });
       }
+      contents.push({ role: "user", parts: responses });
     }
-
-    // Current user message
-    geminiContents.push({
-      role: "user",
-      parts: [{ text: message }],
-    });
-
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: geminiContents,
-          generationConfig: {
-            temperature: 0.4,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 2048,
-          },
-          safetySettings: [
-            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-          ],
-        }),
-      }
-    );
-
-    if (!geminiResponse.ok) {
-      const errText = await geminiResponse.text();
-      throw new Error(`Gemini API error: ${geminiResponse.status} - ${errText}`);
-    }
-
-    const geminiData = await geminiResponse.json();
-    const replyText =
-      geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "I'm sorry, I couldn't generate a response. Please try again.";
-    const replyWithLinks = linkifyHughReply(replyText, linkTargets);
-
-    return new Response(
-      JSON.stringify({ reply: replyWithLinks }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 }
-    );
-  } catch (error) {
-    console.error("Hugh AI error:", error);
-    return new Response(
-      JSON.stringify({ error: error.message || "Unknown error occurred" }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 500 }
-    );
+    const { reply, followUp } = parseFollowUp(answer);
+    return json({ reply: linkify(reply || "I couldn't complete that lookup. Please try again.", links), followUp });
+  } catch (e) {
+    console.error("Hugh AI error", e);
+    return json({ error: e instanceof Error ? e.message : "Unknown error" }, 500);
   }
 });
 
-function linkifyHughReply(reply: string, targets: { label: string; href: string }[]) {
-  if (!reply || targets.length === 0) return reply;
-
-  const uniqueTargets = Array.from(
-    new Map(
-      targets
-        .filter(target => target.label.trim().length >= 3)
-        .map(target => [target.label.toLowerCase(), target])
-    ).values()
-  ).sort((a, b) => b.label.length - a.label.length);
-
-  return linkifyPlainText(reply, uniqueTargets);
+function regularPaintListMessage(from: string, through: string, page = 1) {
+  const pageSuffix = page > 1 ? ` (page ${page})` : "";
+  return `List Regular Paint jobs scheduled from ${from} through ${through} with property, unit number, and work order number${pageSuffix}.`;
 }
 
-function linkifyPlainText(text: string, targets: { label: string; href: string }[]) {
-  let output = text;
-
-  for (const target of targets) {
-    output = replaceOutsideMarkdownLinks(output, segment => linkifyTarget(segment, target));
+export function parseFollowUp(answer: string) {
+  const marker = "\nHUGH_FOLLOW_UP:";
+  const markerIndex = answer.indexOf(marker);
+  if (markerIndex < 0) return { reply: answer };
+  const reply = answer.slice(0, markerIndex).trim();
+  try {
+    const suggestion = JSON.parse(answer.slice(markerIndex + marker.length));
+    const question = typeof suggestion?.question === "string" ? suggestion.question.trim() : "";
+    if (!reply || !question || question.length > 200 || !Array.isArray(suggestion.options)) return { reply };
+    const options = suggestion.options.flatMap((option: { label?: unknown; message?: unknown } | null) => {
+      const label = typeof option?.label === "string" ? option.label.trim() : "";
+      const message = typeof option?.message === "string" ? option.message.trim() : "";
+      return label && label.length <= 48 && message && message.length <= 500 ? [{ label, message }] : [];
+    }).slice(0, 2);
+    return options.length ? { reply, followUp: { question, options } } : { reply };
+  } catch {
+    return { reply };
   }
-
-  return output;
 }
 
-function replaceOutsideMarkdownLinks(text: string, replaceSegment: (segment: string) => string) {
-  const markdownLinkPattern = /\[[^\]]+\]\([^)]+\)/g;
-  const parts: string[] = [];
-  let cursor = 0;
-  let match: RegExpExecArray | null;
+async function askGemini(key: string, contents: any[]) {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents, tools: [{ functionDeclarations: tools }], generationConfig: { temperature: .1, maxOutputTokens: 3072 } }),
+  });
+  if (!res.ok) throw new Error(`Gemini API error: ${res.status} - ${await res.text()}`);
+  return res.json();
+}
 
-  while ((match = markdownLinkPattern.exec(text)) !== null) {
-    parts.push(replaceSegment(text.slice(cursor, match.index)));
-    parts.push(match[0]);
-    cursor = match.index + match[0].length;
+const tools = [
+  { name: "search_jobs", description: "Query and exactly count live jobs. ALWAYS use for job questions, especially counts, dates, types, categories, sizes, properties, phases, assignees, billing, invoices, occupancy, or work orders.", parameters: { type: "OBJECT", properties: {
+    work_order_number: { type: "STRING" }, property_name: { type: "STRING" }, job_type: { type: "STRING" }, job_category: { type: "STRING" }, unit_size: { type: "STRING" }, unit_number: { type: "STRING" }, phase: { type: "STRING" }, assigned_to: { type: "STRING" }, status: { type: "STRING" }, assignment_status: { type: "STRING" }, scheduled_from: { type: "STRING", description: "Inclusive YYYY-MM-DD" }, scheduled_to: { type: "STRING", description: "Inclusive YYYY-MM-DD" }, created_from: { type: "STRING" }, created_to: { type: "STRING" }, invoice_sent: { type: "BOOLEAN" }, invoice_paid: { type: "BOOLEAN" }, occupied: { type: "BOOLEAN" }, full_paint: { type: "BOOLEAN", description: "Whether the submitted work order is marked as full paint" }, limit: { type: "INTEGER", description: "Rows to show; exact_count is unaffected" },
+  } } },
+  { name: "search_properties", description: "Search and exactly count properties and property information, contacts, addresses, groups, and status.", parameters: { type: "OBJECT", properties: { search: { type: "STRING" }, management_group: { type: "STRING" }, active_only: { type: "BOOLEAN" }, include_archived: { type: "BOOLEAN" }, limit: { type: "INTEGER" } } } },
+  { name: "search_users", description: "Search and exactly count application users and user information, roles, companies, and contact details.", parameters: { type: "OBJECT", properties: { search: { type: "STRING" }, role: { type: "STRING" }, include_archived: { type: "BOOLEAN" }, limit: { type: "INTEGER" } } } },
+];
+
+async function runTool(db: any, name: string, a: any, cats: any) {
+  if (name === "search_jobs") return jobs(db, a, cats);
+  if (name === "search_properties") return properties(db, a, cats);
+  if (name === "search_users") return users(db, a);
+  return { error: `Unknown tool ${name}` };
+}
+
+async function jobs(db: any, a: any, cats: any) {
+  const resolved: Record<string, string[]> = {};
+  for (const [col, value, rows] of [["job_type_id", a.job_type, cats.types], ["job_category_id", a.job_category, cats.categories], ["unit_size_id", a.unit_size, cats.sizes], ["current_phase_id", a.phase, cats.phases]]) {
+    if (value) { const ids = resolve(value, rows as Row[]); if (!ids.length) return empty(`No ${String(col).replace(/_id$/, "")} matched “${value}”.`); resolved[String(col)] = ids; }
   }
-
-  parts.push(replaceSegment(text.slice(cursor)));
-  return parts.join("");
+  if (a.property_name) {
+    const { data } = await db.from("properties").select("id").ilike("property_name", `%${like(a.property_name)}%`).limit(100);
+    if (!data?.length) return empty(`No property matched “${a.property_name}”.`); resolved.property_id = data.map((x: any) => x.id);
+  }
+  if (a.assigned_to) {
+    const x = filter(a.assigned_to), { data } = await db.from("profiles").select("id").or(`full_name.ilike.%${x}%,company_name.ilike.%${x}%,email.ilike.%${x}%`).limit(100);
+    if (!data?.length) return empty(`No user matched “${a.assigned_to}”.`); resolved.assigned_to = data.map((x: any) => x.id);
+  }
+  const workOrdersJoin = typeof a.full_paint === "boolean" ? "work_orders!inner" : "work_orders";
+  let q = db.from("jobs").select(`id,work_order_num,unit_number,description,scheduled_date,scheduled_end_date,created_at,updated_at,status,assignment_status,priority,purchase_order,invoice_sent,invoice_paid,total_billing_amount,is_occupied,assigned_to,property:properties(id,property_name,address,city,state,zip),phase:job_phases!jobs_current_phase_id_fkey(id,job_phase_label),job_type:job_types!jobs_job_type_id_fkey(id,job_type_label),job_category:job_categories(id,name),unit_size:unit_sizes!jobs_unit_size_id_fkey(id,unit_size_label),assigned_to_profile:profiles!jobs_assigned_to_fkey(id,full_name,company_name,email),${workOrdersJoin}(id,submission_date,is_active,is_full_paint,unit_size,job_category_id,bill_amount,sub_pay_amount,profit_amount,additional_comments)`, { count: "exact" });
+  for (const [col, ids] of Object.entries(resolved)) q = q.in(col, ids);
+  const wo = String(a.work_order_number || "").replace(/\D/g, "");
+  if (wo) q = q.eq("work_order_num", Number(wo));
+  if (a.unit_number) q = q.ilike("unit_number", a.unit_number);
+  if (a.status) q = q.ilike("status", a.status);
+  if (a.assignment_status) q = q.ilike("assignment_status", a.assignment_status);
+  if (a.scheduled_from) q = q.gte("scheduled_date", businessMidnight(a.scheduled_from));
+  if (a.scheduled_to) q = q.lt("scheduled_date", businessMidnight(shiftDay(a.scheduled_to, 1)));
+  if (a.created_from) q = q.gte("created_at", businessMidnight(a.created_from));
+  if (a.created_to) q = q.lt("created_at", businessMidnight(shiftDay(a.created_to, 1)));
+  for (const col of ["invoice_sent", "invoice_paid"] as const) if (typeof a[col] === "boolean") q = q.eq(col, a[col]);
+  if (typeof a.occupied === "boolean") q = q.eq("is_occupied", a.occupied);
+  if (typeof a.full_paint === "boolean") q = q.eq("work_orders.is_full_paint", a.full_paint).eq("work_orders.is_active", true);
+  const { data, count, error } = await q.order("scheduled_date", { ascending: false }).limit(limit(a.limit));
+  if (error) return { error: error.message };
+  const results = (data || []).map((x: any) => ({ ...x, work_order: woFormat(x.work_order_num), job_link: `/dashboard/jobs/${x.id}`, property_link: x.property?.id ? `/dashboard/properties/${x.property.id}` : null, user_link: x.assigned_to ? `/dashboard/users/subcontractors/${x.assigned_to}` : null }));
+  return { exact_count: count || 0, results_returned: results.length, applied_filters: a, results };
 }
 
-function linkifyTarget(text: string, target: { label: string; href: string }) {
-  const escapedLabel = escapeRegex(target.label.trim());
-  const pattern = new RegExp(`(^|[^\\w\\]/])(${escapedLabel})(?=$|[^\\w\\)])`, "gi");
-
-  return text.replace(pattern, (_full, prefix, label) => (
-    `${prefix}[${label}](${target.href})`
-  ));
+async function properties(db: any, a: any, cats: any) {
+  let q = db.from("properties").select(`id,property_name,address,address_2,city,state,zip,is_active,is_archived,community_manager_name,community_manager_email,community_manager_phone,maintenance_supervisor_name,maintenance_supervisor_email,maintenance_supervisor_phone,primary_contact_name,primary_contact_email,primary_contact_phone,ap_name,ap_email,ap_phone,quickbooks_number,property_management_group:property_management_groups(id,company_name)`, { count: "exact" });
+  if (a.search) { const x = filter(a.search); q = q.or(`property_name.ilike.%${x}%,address.ilike.%${x}%,city.ilike.%${x}%,state.ilike.%${x}%,community_manager_name.ilike.%${x}%,community_manager_email.ilike.%${x}%`); }
+  if (a.management_group) { const ids = resolve(a.management_group, cats.groups); if (!ids.length) return empty(`No management group matched “${a.management_group}”.`); q = q.in("property_management_group_id", ids); }
+  if (a.active_only !== false) q = q.eq("is_active", true); if (!a.include_archived) q = q.eq("is_archived", false);
+  const { data, count, error } = await q.order("property_name").limit(limit(a.limit)); if (error) return { error: error.message };
+  const results = (data || []).map((x: any) => ({ ...x, property_link: `/dashboard/properties/${x.id}` }));
+  return { exact_count: count || 0, results_returned: results.length, applied_filters: a, results };
 }
 
-function escapeRegex(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+async function users(db: any, a: any) {
+  let q = db.from("profiles").select(`id,full_name,email,role,company_name,phone,mobile_phone,sms_phone,preferred_contact_method,address,address_line_1,address_line_2,city,state,zip_code,archived_at,created_at`, { count: "exact" });
+  if (a.search) { const x = filter(a.search); q = q.or(`full_name.ilike.%${x}%,email.ilike.%${x}%,company_name.ilike.%${x}%,phone.ilike.%${x}%,mobile_phone.ilike.%${x}%`); }
+  if (a.role) q = q.ilike("role", a.role); if (!a.include_archived) q = q.is("archived_at", null);
+  const { data, count, error } = await q.order("full_name").limit(limit(a.limit)); if (error) return { error: error.message };
+  const results = (data || []).map((x: any) => ({ ...x, user_link: x.role === "subcontractor" ? `/dashboard/users/subcontractors/${x.id}` : `/dashboard/profile/${x.id}` }));
+  return { exact_count: count || 0, results_returned: results.length, applied_filters: a, results };
 }
+
+function prompt(d: any, c: any) { return `You are Hugh, the JG Painting Pros operations assistant. Answer only from live application data.
+Business timezone: ${businessTimeZone}. Today: ${d.today} (${d.weekday}). This week (Mon-Sun): ${d.thisStart} through ${d.thisEnd}. Last week (Mon-Sun): ${d.lastStart} through ${d.lastEnd}.
+Job types: ${labels(c.types)}. Job categories: ${labels(c.categories)}. Unit sizes: ${labels(c.sizes)}. Phases: ${labels(c.phases)}. Property groups: ${labels(c.groups)}.
+RULES: You MUST call the relevant tool before answering any application-data question. For “last week”, “this month”, etc. filter scheduled dates unless the user explicitly asks when records were created. Date ranges are inclusive. Distinguish job type from job category and map wording to the matching known value; if ambiguous, query both. exact_count is authoritative; results_returned is never the total. Query again for follow-ups. Never guess after an error. Include applied date/filter in count answers. Use supplied links. Do not expose raw JSON, internal IDs, or tool names.
+When there is a useful next step or a clarification with clear choices, append one line after the answer in this format:
+HUGH_FOLLOW_UP: {"question":"Would you like to see the matching jobs?","options":[{"label":"Yes, list the jobs","message":"List the matching jobs with property, unit and work order number, using the same filters."}]}
+Write a self-contained message for each option with the actual dates and filters applied. Offer one or two short, distinct buttons with useful next requests. The UI provides its own No thanks button. Omit this line for errors or when there is no meaningful next step or clarification. Include the follow-up question only in the metadata, once.`; }
+
+function catalog(rows: any[] | null, key: string): Row[] { return (rows || []).filter(x => x.id && x[key]).map(x => ({ id: x.id, label: String(x[key]) })); }
+function resolve(v: string, rows: Row[]) { const n = norm(v), exact = rows.filter(x => norm(x.label) === n); return (exact.length ? exact : rows.filter(x => norm(x.label).includes(n) || n.includes(norm(x.label)))).map(x => x.id); }
+function norm(v: string) { return String(v).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(); }
+function labels(rows: Row[]) { return rows.map(x => x.label).join(", ") || "none"; }
+function limit(v: any) { return Math.min(100, Math.max(1, Number(v) || 25)); }
+function like(v: any) { return String(v).replace(/[%,_]/g, ""); } function filter(v: any) { return String(v).replace(/[(),.%]/g, " ").trim(); }
+function empty(note: string) { return { exact_count: 0, results_returned: 0, results: [], note }; } function woFormat(v: any) { return v == null ? "N/A" : `WO-${String(v).padStart(6, "0")}`; }
+function json(v: any, status = 200) { return new Response(JSON.stringify(v), { status, headers: { ...cors, "Content-Type": "application/json" } }); }
+
+function getLinks(r: any) { const out: any[] = []; for (const x of r?.results || []) { if (x.work_order && x.job_link) out.push({ label: x.work_order, href: x.job_link }); if (x.property?.property_name && x.property_link) out.push({ label: x.property.property_name, href: x.property_link }); if (x.property_name && x.property_link) out.push({ label: x.property_name, href: x.property_link }); if (x.full_name && x.user_link) out.push({ label: x.full_name, href: x.user_link }); if (x.assigned_to_profile?.full_name && x.user_link) out.push({ label: x.assigned_to_profile.full_name, href: x.user_link }); } return out; }
+function linkify(text: string, targets: any[]) { const unique: any[] = Array.from(new Map(targets.filter(x => x.label?.length >= 3).map(x => [x.label.toLowerCase(), x])).values()).sort((a: any, b: any) => b.label.length - a.label.length); let out = text; for (const t of unique) out = outside(out, s => s.replace(new RegExp(`(^|[^\\w\\]/])(${escapeRx(t.label)})(?=$|[^\\w\\)])`, "gi"), (_: any, p: string, l: string) => `${p}[${l}](${t.href})`)); return out; }
+function outside(text: string, fn: (s: string) => string) { const re = /\[[^\]]+\]\([^)]+\)/g, parts = []; let pos = 0, m; while ((m = re.exec(text))) { parts.push(fn(text.slice(pos, m.index)), m[0]); pos = m.index + m[0].length; } parts.push(fn(text.slice(pos))); return parts.join(""); }
+function escapeRx(v: string) { return v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }

@@ -119,8 +119,13 @@ function renderLink(label: string, href: string, key: React.Key): React.ReactNod
 }
 
 // ── Message bubble ───────────────────────────────────────────────────────────
-function MessageBubble({ msg }: { msg: HughMessage }) {
+function MessageBubble({ msg, onFollowUp, onDismiss }: {
+  msg: HughMessage;
+  onFollowUp?: (message: string) => void;
+  onDismiss: () => void;
+}) {
   const isUser = msg.role === 'user';
+  const followUp = !isUser && !msg.isLoading && onFollowUp ? msg.followUp : undefined;
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}>
@@ -147,6 +152,30 @@ function MessageBubble({ msg }: { msg: HughMessage }) {
         ) : (
           <div className="prose-sm dark:prose-invert max-w-none">
             {renderMarkdown(msg.content)}
+          </div>
+        )}
+        {followUp && (
+          <div className="mt-2.5 border-t border-gray-100 pt-2.5 dark:border-slate-700">
+            <p className="text-sm leading-relaxed">{followUp.question}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {followUp.options.map(({ label, message }) => (
+                <button
+                  key={message}
+                  type="button"
+                  onClick={() => onFollowUp?.(message)}
+                  className="min-h-8 rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1 text-left text-xs font-medium text-purple-800 hover:bg-purple-100 focus-visible:ring-2 focus-visible:ring-purple-500 dark:border-purple-800 dark:bg-purple-950 dark:text-purple-200 dark:hover:bg-purple-900"
+                >
+                  {label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={onDismiss}
+                className="min-h-8 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-purple-500 dark:border-slate-600 dark:text-gray-300 dark:hover:bg-slate-700"
+              >
+                No thanks
+              </button>
+            </div>
           </div>
         )}
         <p className={`text-[10px] mt-1 ${isUser ? 'text-blue-200' : 'text-gray-400 dark:text-gray-500'}`}>
@@ -227,7 +256,7 @@ export function HughAssistant() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      updateMessage(loadingId, data.reply || 'Sorry, I could not generate a response.', false);
+      updateMessage(loadingId, data.reply || 'Sorry, I could not generate a response.', false, data.followUp);
     } catch (err) {
       updateMessage(
         loadingId,
@@ -318,8 +347,13 @@ export function HughAssistant() {
           </div>
         ) : (
           <>
-            {messages.map(msg => (
-              <MessageBubble key={msg.id} msg={msg} />
+            {messages.map((msg, index) => (
+              <MessageBubble
+                key={msg.id}
+                msg={msg}
+                onFollowUp={!isLoading && index === messages.length - 1 ? sendMessage : undefined}
+                onDismiss={() => updateMessage(msg.id, msg.content)}
+              />
             ))}
             <div ref={messagesEndRef} />
           </>
